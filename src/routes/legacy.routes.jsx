@@ -21,6 +21,7 @@ import { LegacyMenuOutlet } from '@/App.jsx';
 import { MENU_PATHS, PLANNED_MENU_IDS, PLANNED_PREFIX, SYNTHETIC_DETAIL_IDS } from './menu-paths.js';
 import { CRM_MENU_IDS } from './crm.routes.jsx';
 import { LOGISTICS_WAREHOUSE_MENU_IDS } from './logistics-warehouse.routes.jsx';
+import { FINANCE_MENU_IDS } from './finance.routes.jsx';
 import { SKELETON_ROUTE_MENU_IDS } from './skeleton.routes.jsx';
 
 /** Id yang rutenya sudah dimiliki file lain: modul yang dipindah di G2/G3, plus
@@ -28,7 +29,8 @@ import { SKELETON_ROUTE_MENU_IDS } from './skeleton.routes.jsx';
  *  halamannya MASIH dirender LegacyMenuOutlet — yang pindah alamatnya, bukan
  *  komponennya). Tanpa pengecualian ini akan ada dua rute untuk satu path. */
 const MOVED_MENU_IDS = new Set([
-  ...CRM_MENU_IDS, ...LOGISTICS_WAREHOUSE_MENU_IDS, ...SKELETON_ROUTE_MENU_IDS,
+  ...CRM_MENU_IDS, ...LOGISTICS_WAREHOUSE_MENU_IDS, ...FINANCE_MENU_IDS,
+  ...SKELETON_ROUTE_MENU_IDS,
 ]);
 
 // Satu instance elemen dibagi semua rute: pindah rute → Outlet menerima elemen

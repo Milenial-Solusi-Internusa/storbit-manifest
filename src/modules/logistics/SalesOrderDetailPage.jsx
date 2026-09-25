@@ -14,14 +14,13 @@
 // Shipment / Dokumen / History tabs → empty states (no SP-level tables yet).
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { pdf } from '@react-pdf/renderer';
 import {
   ChevronLeft, Pencil, Trash2, Package,
-  Receipt, FileText, Send, Truck, Wallet,
-  Check, X, History, Download, Printer,
+  Receipt, FileText, Send, Truck,
+  Check, X, History,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, setSpFinanceDocs, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, getCompanyHeader } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, canWriteSpItem as canWriteSpItemRole } from '../../lib/roles';
 import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
@@ -29,119 +28,31 @@ import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
-import InvoicePDF from './InvoicePDF';
 // @font-face Cormorant/Lora — di-scope ke chunk halaman ini. Lihat header file CSS-nya.
 // Import polos (bukan `import styles from`) karena isinya cuma @font-face, nol class.
 import './salesOrderDetail.module.css';
+// Token & komponen kecil keluarga ungu/serif Storbit -- DIANGKAT ke file sendiri
+// saat AR Tahap 2 memindahkan panel Invoice ke modul Finance (25 Sep 2026).
+// Keduanya dipakai bersama InvoicePanel.jsx; definisinya TIDAK lagi hidup di
+// file ini supaya tidak ada dua salinan yang melenceng.
+import {
+  C, FONT_DISPLAY, FONT_TEXT, FONT_MONO, SP, RADIUS,
+  kickerStyle, cardTitleStyle, thStyle,
+  TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN,
+  blurOnWheel, selectOnFocus, rp, fmtDate,
+} from './spDetailTokens.js';
+import { Badge, ModalField, ModalInp, ModalGrid } from './spDetailKit.jsx';
 
 // SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
 const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 // Cool/navy palette — senyawa dengan SalesOrderPage (list SP) + DealDetailPage (detail
-// Inquiry). Semantik lama (green/steel-blue/mustard/brown) di-remap ke navy #1B4D8A
-// dan amber. Tanpa dark green, mustard, teal, coklat.
-//
-// KOREKSI: baris ini dulu berbunyi "tanpa ungu". Sudah tidak berlaku — aksi utama,
-// tab/link, dan seluruh badge status halaman ini kini memakai ungu Storbit, mengikuti
-// Claude Design "Detail Surat Pesanan B.dc.html" dan menyamakan diri dengan
-// InvoicePDF.jsx yang memang sudah ungu/krem/serif sejak awal (keputusan Den).
-// Navy/amber/merah TETAP hidup di elemen non-badge (stat card, MiniBar, modal hapus).
-const C = {
-  surface:   '#FFFFFF',
-  surface2:  '#F4F6F9',
-  ink:       '#2A3340',
-  inkSoft:   '#6B7686',
-  inkFaint:  '#9AA3B2',
-  // Divider dipertegas. Nilainya = #201f1d (ink mockup) di-composite ke background
-  // halaman #F2F5F9 pada opasitas tetap, jadi hasilnya hex opaque yang aman dipakai
-  // di border MAUPUN background. line = 23%, lineSoft = 16% (tingkat divider mockup)
-  // — hierarki dua tingkat tetap terjaga, tidak menyatu jadi satu tebal.
-  line:      '#C2C4C6',   // was #E7EAF0 (≈5%)
-  lineSoft:  '#D0D3D6',   // was #EEF1F5 (≈3%)
-  // Ungu Storbit — anchor diambil dari InvoicePDF.jsx (PURPLE #5b3fa0 /
-  // PURPLE_DEEP #4a3585) supaya layar & PDF sewarna. Tint pale + border
-  // diturunkan di sini dgn mencampur #5b3fa0 ke putih: 10% → accentSoft,
-  // 25% → accentBd. Ramp mockup (#7c4fd1 dst) SENGAJA tidak dipakai — cuma
-  // perannya yang diambil, basis warnanya ikut token yang sudah ada.
-  accent:    '#5b3fa0',
-  accentDeep:'#4a3585',
-  accentSoft:'#EFECF6',
-  accentBd:  '#D6CFE7',
-  // Grand Total sengaja TETAP keluarga oranye (accent-2-700 mockup), bukan ungu.
-  grandTotal:'#82480F',
-  // Oranye "perlu perhatian" — varian ke-4 di luar tiga varian ungu/outline/netral.
-  // Hex teksnya sengaja SAMA dengan grandTotal (#82480F) tapi perannya beda, jadi
-  // ditulis terpisah supaya tak tertukar saat salah satunya diubah. Tint diturunkan
-  // dgn pola yang sama seperti ungu: 10% pada putih → bg, 25% → border.
-  attn:      '#82480F',
-  attnBg:    '#F3EDE7',
-  attnBd:    '#E0D1C3',
-  ok:        '#1B4D8A', okBg:  '#EAF0F8', okBd:  '#CFDDF0',   // positive/done → navy (was dark green)
-  warn:      '#B5772A', warnBg:'#FBEEDD', warnBd:'#E6CE94',   // amber (list SP)
-  danger:    '#C0392B', dangerBg:'#FBEAE8', dangerBd:'#E6BBB2',
-  info:      '#1B4D8A', infoBg:'#EAF0F8', infoBd:'#CFDDF0',   // navy (was steel-blue)
-  neutral:   '#6B7686', neutralBg:'#EEF1F5', neutralBd:'#DDE2EA',
-  // orange/orangeBg/orangeBd dihapus — nol pemakaian setelah aksi & badge pindah
-  // ke keluarga ungu. Satu-satunya sisa oranye di halaman ini adalah `grandTotal`
-  // (disengaja) + palet hash `custColor` (identitas customer, bukan status).
-  yellow:    '#B5772A', yellowBg:'#FBEEDD', yellowBd:'#E6CE94',   // amber (was mustard)
-  purple:    '#B5772A', purpleBg:'#FBEEDD', purpleBd:'#E6CE94',   // amber (was ungu; sisa: stage Faktur Pajak)
-  slate:     '#525E70', slateBg:'#EDF0F4', slateBd:'#D7DDE6',   // PICKING/PACKED — slate-blue soft (samain badge Picking List)
-};
 
-// ─── Tipografi & skala spasi (dari design system mockup) ──────────────────
-// FONT_DISPLAY = --font-heading (Cormorant Garamond 600) → nomor dokumen, judul
-// card, label kicker, teks tab, tombol. FONT_TEXT = --font-body (Lora 400/600).
-// Identifier inline (nomor SP di breadcrumb, kolom angka tabel) SENGAJA tetap
-// IBM Plex Mono — konvensi lintas halaman, mockup sendiri nol monospace.
-const FONT_DISPLAY = "'Storbit Display', 'Cormorant Garamond', Georgia, serif";
-const FONT_TEXT    = "'Storbit Text', Lora, Georgia, serif";
-const FONT_MONO    = "'IBM Plex Mono', ui-monospace, monospace";
 
-// Skala spasi & radius mockup — dipakai apa adanya (bukan dibulatkan) supaya
-// ritme vertikalnya sama persis dengan file desain.
-const SP = { s1: 4.6, s2: 9.2, s3: 13.8, s4: 18.4, s6: 27.6 };
-const RADIUS = { sm: 2, md: 4, lg: 7 };
-
-// .card-kicker mockup. Catatan: design system dasarnya mewarnai kicker dgn accent,
-// TAPI file desain ini meng-override-nya jadi muted 60% — kita ikut override itu.
-const kickerStyle = {
-  fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: C.inkSoft,
-};
-// .card-title mockup (17px) — dipakai judul card Overview.
-const cardTitleStyle = {
-  fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 17, lineHeight: 1.2, color: C.ink,
-};
-// .table th mockup.
-const thStyle = {
-  fontSize: 11, fontWeight: 400, letterSpacing: '.08em', textTransform: 'uppercase',
-  color: C.inkSoft, padding: SP.s2, textAlign: 'left',
-};
 
 // ─── Vokabular badge (3 varian) ───────────────────────────────────────────
-// Mengikuti statusTagCls() dari Claude Design "Detail Surat Pesanan B.dc.html":
-// hanya tiga varian, semuanya satu hue + abu — tanpa hijau/amber/merah semantik.
-// Aturan pemetaan yang dipakai konsisten di seluruh halaman ini:
-//   PALE    → selesai / terpenuhi / positif
-//   OUTLINE → sedang berjalan ATAU butuh perhatian (aktif, belum selesai)
-//   NEUTRAL → belum mulai / inert / informasi netral
-const TAG_PALE    = { bg: C.accentSoft, color: C.accentDeep, bd: C.accentBd };
-const TAG_OUTLINE = { bg: 'transparent', color: C.accent,    bd: C.accent   };
-const TAG_NEUTRAL = { bg: C.neutralBg,   color: C.neutral,   bd: C.neutralBd };
-// Varian ke-4, PENGECUALIAN sempit: hanya untuk kondisi yang menuntut perhatian
-// (stok kurang, invoice belum diterbitkan, menunggu konfirmasi DC). Sumber
-// desain memang punya 4 warna semantik, oranye terpisah dari status siklus
-// hidup biasa. Badge status lain TETAP tiga varian di atas — ini bukan
-// pembatalan keputusan itu.
-const TAG_ATTN    = { bg: C.attnBg,      color: C.attn,      bd: C.attnBd   };
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-// Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
-const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
-// Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
-const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
-const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 // UANG di Tabel Baris Pesanan pakai 2 desimal, mengikuti rp() di mockup.
 const DEC2 = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
 const rp2  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID', DEC2);
@@ -162,12 +73,6 @@ const rp2  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID', DEC2);
 // helper ini — jangan diseragamkan ke sini.
 const qtyFmt = (n) => (Number(n) || 0).toLocaleString('id-ID');
 
-function fmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-}
 
 function daysUntil(iso) {
   if (!iso) return null;
@@ -175,12 +80,6 @@ function daysUntil(iso) {
   if (isNaN(d.getTime())) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   return Math.round((d - today) / 86400000);
-}
-
-function finColor(pct) {
-  if (pct < 30) return C.danger;
-  if (pct <= 70) return C.warn;
-  return C.ok;
 }
 
 function custColor(name) {
@@ -216,19 +115,6 @@ function itemStatusMeta(status) {
 
 // ─── Shared atoms ──────────────────────────────────────────────────────────
 
-function Badge({ bg, color, bd, children }) {
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      background: bg, color, border: `1px solid ${bd}`,
-      // Rounded-rect tipis, BUKAN pill — semua badge di halaman ini lewat komponen
-      // ini, jadi satu perubahan di sini berlaku konsisten ke seluruh badge.
-      fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 3, whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </span>
-  );
-}
 
 // FASE 2E — status headline SP (sp_orders 13 tahap) → badge Detail SP. Warna kalem,
 // semua badge tint + teks senada (tanpa blok solid, tanpa dark green). Selaras STATUS_META di SalesOrderPage.
@@ -289,50 +175,20 @@ const FIN_STAGES = [
   { key: 'kirim',  label: 'Kirim',         icon: Truck,    cls: C.okBg,      clsColor: C.ok      },
 ];
 
-// ─── Edit Item Modal helpers (defined outside to avoid re-render issues) ────
-// Dipakai kartu "Finance & Dokumen" (tab Overview). Dulu hidup di
-// EditItemModal; ikut pindah saat keenam kolom dipromosikan ke level SP.
-// Nilai '' (kosong) TETAP SAH — sp_orders.email_status nullable dan sengaja
-// tanpa CHECK, jadi dropdown-nya punya opsi "belum ditentukan" tersendiri.
-const EMAIL_OPTIONS = ['Belum dikirim', 'Terkirim ke customer', 'Dibalas customer'];
+// ─── Status invoice ──────────────────────────────────────────────
+// Label + varian badge untuk SATU label status di kartu Invoice. Kuncinya =
+// nilai sp_invoices.status. Panel lengkapnya hidup di modul Finance sejak AR
+// Tahap 2; yang tinggal di sini cuma cara MEMBACANYA.
+const INVOICE_STATUS_LABEL = {
+  draft: 'Draft', issued: 'Issued', submitted: 'Submitted',
+  partial: 'Dibayar Sebagian', paid: 'Lunas', void: 'Void',
+};
+const INVOICE_STATUS_TAG = {
+  draft: TAG_NEUTRAL, issued: TAG_OUTLINE, submitted: TAG_OUTLINE,
+  partial: TAG_ATTN,  paid: TAG_PALE,      void: TAG_NEUTRAL,
+};
 
-// Empat flag dokumen level SP. Urutannya = urutan proses nyata
-// (invoice → faktur pajak → submit ke customer → kirim dokumen), jadi jangan
-// diacak; kartu membacanya berurutan sebagai rangkaian tahap.
-const FINANCE_DOC_FLAGS = [
-  { key: 'inv',    label: 'INV'    },
-  { key: 'fp',     label: 'FP'     },
-  { key: 'submit', label: 'SUBMIT' },
-  { key: 'kirim',  label: 'KIRIM'  },
-];
 
-function ModalField({ label, req, children }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <label style={{ fontSize: 12, fontWeight: 700, color: C.inkSoft }}>
-        {label}{req && <span style={{ color: C.danger }}> *</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function ModalInp({ readOnly, mono, ...rest }) {
-  return (
-    <input
-      readOnly={readOnly}
-      {...rest}
-      onWheel={blurOnWheel}
-      style={{
-        height: 38, padding: '0 11px', border: `1px solid ${C.line}`, borderRadius: 8,
-        background: readOnly ? C.surface2 : C.surface, fontSize: 13, color: C.ink,
-        outline: 'none', fontFamily: mono ? "'IBM Plex Mono',monospace" : 'inherit',
-        cursor: readOnly ? 'not-allowed' : 'text', width: '100%', boxSizing: 'border-box',
-        ...rest.style,
-      }}
-    />
-  );
-}
 
 function ModalSect({ children }) {
   return (
@@ -342,13 +198,6 @@ function ModalSect({ children }) {
   );
 }
 
-function ModalGrid({ cols, children }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '12px 16px' }}>
-      {children}
-    </div>
-  );
-}
 
 // spDate/spNo/customer DICABUT dari signature 2 Sep 2026 — ketiganya hanya
 // dipakai section "SP Information" yang dihapus (duplikat murni dari header
@@ -938,6 +787,7 @@ export default function SalesOrderDetailPage({
   onRefresh,
   onOpenPicking,      // (pickingListId)  -> buka PickingListDetailPage
   onOpenDelivery,     // (deliveryNoteId) -> buka DeliveryNoteDetailPage
+  onOpenInvoice,      // (invoiceId)      -> buka InvoiceDetailPage (modul Finance)
   showToast,
   role,
 }) {
@@ -955,15 +805,6 @@ export default function SalesOrderDetailPage({
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineDraft,   setDeadlineDraft]   = useState('');
   const [deadlineSaving,  setDeadlineSaving]  = useState(false);
-  // Status dokumen finance (inv/fp/submit/kirim/submit_date/email_status) —
-  // atribut level SP sejak promosi 2 Sep 2026, diedit inline di kartu
-  // "Finance & Dokumen" tab Overview. Pola state identik editingDeadline.
-  const [editingFinance,  setEditingFinance]  = useState(false);
-  const [financeSaving,   setFinanceSaving]   = useState(false);
-  const [financeDraft,    setFinanceDraft]    = useState({
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-  });
   // Fase 1 — stok tersedia (company-level) untuk cek sebelum Generate Picking.
   const [stockMap,     setStockMap]     = useState({});
   const productIdsKey = useMemo(
@@ -1025,25 +866,19 @@ export default function SalesOrderDetailPage({
   // ── Invoice (SP-level, Fase 4) ───────────────────────────────────────────
   const [invoice,            setInvoice]            = useState(null);
   const [invoiceLoading,     setInvoiceLoading]     = useState(true);
-  const [invoiceSaving,      setInvoiceSaving]      = useState(false);
-  // null | 'download' | 'print' — dipakai dua tombol PDF; keduanya dinonaktifkan
-  // selama salah satu berjalan, tapi hanya yang ditekan yang berubah labelnya.
-  const [invoicePdfBusy,     setInvoicePdfBusy]     = useState(null);
 
   // ── FASE 5: pembayaran & TTF ─────────────────────────────────────────────
   // Gate peran SENGAJA dari erpRoles (array seluruh role aktif), BUKAN prop
-  // `role`. Prop itu hasil pickPrimaryErpRole = satu role berprioritas
-  // tertinggi saja, dan finance_controller berada DI BAWAH manager di daftar
-  // prioritas — jadi user manager+finance_controller akan ter-resolve jadi
-  // 'manager' dan kehilangan akses form, padahal RPC-nya (has_role) meloloskan.
+  // `role`. Prop itu hasil pickPrimaryErpRole = satu role berprioritas tertinggi
+  // saja, jadi user ber-role ganda bisa ter-resolve ke role yang kehilangan
+  // akses padahal RPC-nya (has_role) meloloskan.
   // Daftar rolenya hidup di src/lib/roles.js (cermin is_manager_or_above()).
+  // isFinanceCtl DICABUT bersama form pembayaran/TTF (AR Tahap 2) — sumbu
+  // finance kini dinilai di InvoicePanel, tempat tombolnya hidup.
   const { erpRoles } = useAuth();
   const roleCodes    = (erpRoles || []).map(r => r.roles?.code).filter(Boolean);
   const isSuperAdmin   = roleCodes.includes('super_admin');
-  const isFinanceCtl   = roleCodes.includes('finance_controller');
   const isManagerAbove = isManagerOrAbove(erpRoles);   // src/lib/roles.js, cermin is_manager_or_above()
-  const canRecordPayment = isFinanceCtl || isSuperAdmin;
-  const canMarkTtf       = isManagerAbove || isFinanceCtl || isSuperAdmin;
   // CERMIN guard server pada RPC gudang/SP (migrasi 20260821000003/4/6):
   //   is_super_admin() OR (company ∈ get_user_company_ids()
   //                        AND (is_manager_or_above() OR has_role('operations')))
@@ -1061,23 +896,11 @@ export default function SalesOrderDetailPage({
   // picking, tenggat SP, TTF) yang keputusan itu TIDAK sentuh. Jangan
   // digabungkan jadi satu flag.
   const canWriteSpItem = canWriteSpItemRole(erpRoles);   // src/lib/roles.js, cermin is_sp_item_writer()
-  // CERMIN guard RPC set_sp_finance_docs (migrasi 20260902000004):
-  //   is_super_admin() OR has_role('finance_controller') OR has_role('finance')
-  // Sumbu FINANCE, BUKAN sumbu gudang — is_manager_or_above() sengaja tidak
-  // dipakai karena 04_ROLE_PERMISSION_MATRIX baris "Finance" menaruh manager
-  // di R, bukan CRUD. Jadi ini bukan superset maupun subset canWarehouseOps /
-  // canWriteSpItem; ketiganya tiga sumbu berbeda yang kebetulan bertemu di
-  // halaman yang sama. Jangan digabung.
-  const canEditFinanceDocs = isSuperAdmin || isFinanceCtl || roleCodes.includes('finance');
-
-  const [payments,    setPayments]    = useState([]);
-  const [ttf,         setTtf]         = useState(null);
-  const [paySaving,   setPaySaving]   = useState(false);
-  const [ttfSaving,   setTtfSaving]   = useState(false);
-  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
-  const [pphTouched,  setPphTouched]  = useState(false);
-  const [ttfForm,     setTtfForm]     = useState({ receivedBy: '', ttfNo: '', notes: '' });
-  const [ttfEditing,  setTtfEditing]  = useState(false);
+  // canEditFinanceDocs + seluruh state pembayaran/TTF DICABUT bersama ketiga
+  // kartu yang pindah ke modul Finance (AR Tahap 2). RPC set_sp_finance_docs
+  // tetap hidup di DB tapi tidak punya pintu masuk UI lagi (keputusan Den K-4);
+  // jangan menghidupkan flag-nya kembali tanpa permukaan yang memakainya —
+  // gate tanpa tombol cuma izin nganggur.
 
   // FASE 4 — baca invoice aktif dari sp_invoices via sp_order_id (dari spOrder.id).
   useEffect(() => {
@@ -1092,19 +915,6 @@ export default function SalesOrderDetailPage({
     return () => { cancelled = true; };
   }, [spOrder?.id]);
 
-  // FASE 5 — riwayat pembayaran + status TTF, mengikuti invoice yang aktif.
-  useEffect(() => {
-    const invId = invoice?.id;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!invId) { setPayments([]); setTtf(null); return undefined; }
-    let cancelled = false;
-    Promise.all([getPaymentHistory(invId), getTtfStatus(invId)]).then(([pay, t]) => {
-      if (cancelled) return;
-      setPayments(pay.data || []);
-      setTtf(t.data || null);
-    });
-    return () => { cancelled = true; };
-  }, [invoice?.id]);
 
   // Fase 1 — headline status sp_orders (12-tahap) + flag pernah picking dibatalkan (badge additive).
   useEffect(() => {
@@ -1209,19 +1019,6 @@ export default function SalesOrderDetailPage({
   // DUA refetch sesudahnya, alasan sama persis handleSaveDeadline: `spOrder`
   // memasok kartu di halaman ini, `onRefresh` memasok `rows` App.jsx yang jadi
   // sumber financePct, KPI FinancePage, dan chip OutstandingPage.
-  const handleSaveFinanceDocs = async () => {
-    const cust = group?.customerId;
-    if (!cust || financeSaving) return;
-    setFinanceSaving(true);
-    const { error } = await setSpFinanceDocs(cust, spNo, financeDraft);
-    setFinanceSaving(false);
-    if (error) { showToast?.('Gagal ubah status dokumen: ' + (error.message || 'unknown error'), 'error'); return; }
-    setEditingFinance(false);
-    const { data } = await getSpOrderStatus(cust, spNo);
-    setSpOrder(data || null);
-    await onRefresh?.();
-    showToast?.('Status dokumen SP diperbarui.');
-  };
 
   const handleAddBtb = async () => {
     if (!btbInput.trim() || !canWarehouseOps) return;
@@ -1254,92 +1051,15 @@ export default function SalesOrderDetailPage({
     await refreshBtbAndStatus();
   };
 
-  // Refetch invoice + headline status setelah create/submit invoice (RPC
-  // memicu sp_recompute_status di belakang layar — kartu status di atas
-  // harus ikut naik ke INVOICED/SUBMITTED tanpa reload manual).
-  const refreshInvoiceAndStatus = async () => {
-    const cust = group?.customerId;
-    if (spOrder?.id) { const { data } = await getSpInvoice(spOrder.id); setInvoice(data || null); }
-    if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
-  };
 
   // ── FASE 5: catat pembayaran ────────────────────────────────────────────
   // Pesan RAISE dari record_payment sudah manusiawi & berbahasa Indonesia
   // (mis. "Akun [1-1200] belum ada di chart_of_accounts…"), jadi diteruskan
   // apa adanya — jangan dibungkus pesan generik.
-  const handleRecordPayment = async () => {
-    if (!invoice?.id || paySaving) return;
-    const amt = Number(payForm.amount) || 0;
-    if (amt <= 0) { showToast?.('Nominal pembayaran harus lebih besar dari nol', 'error'); return; }
-    setPaySaving(true);
-    const { error } = await recordPayment({
-      invoiceId:      invoice.id,
-      amount:         amt,
-      paymentDate:    payForm.paymentDate || null,
-      reference:      payForm.reference.trim() || null,
-      pph:            Number(payForm.pph) || 0,
-      buktiPotongUrl: payForm.buktiUrl.trim() || null,
-      buktiPotongNo:  payForm.buktiNo.trim() || null,
-    });
-    if (error) {
-      setPaySaving(false);
-      showToast?.(error.message || 'Gagal mencatat pembayaran', 'error');
-      return;
-    }
-    await refreshInvoiceAndStatus();
-    if (invoice?.id) {
-      const { data } = await getPaymentHistory(invoice.id);
-      setPayments(data || []);
-    }
-    setPayForm({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
-    setPphTouched(false);
-    setPaySaving(false);
-    showToast?.('Pembayaran dicatat', 'success');
-  };
 
   // ── FASE 5: tandai TTF diterima ─────────────────────────────────────────
-  const handleMarkTtf = async () => {
-    if (!invoice?.id || ttfSaving) return;
-    if (!ttfForm.receivedBy.trim()) { showToast?.('Nama penerima wajib diisi', 'error'); return; }
-    setTtfSaving(true);
-    const { error } = await markTtfReceived({
-      invoiceId:  invoice.id,
-      receivedBy: ttfForm.receivedBy.trim(),
-      ttfNo:      ttfForm.ttfNo.trim() || null,
-      notes:      ttfForm.notes.trim() || null,
-    });
-    if (error) {
-      setTtfSaving(false);
-      showToast?.(error.message || 'Gagal menandai TTF', 'error');
-      return;
-    }
-    const { data } = await getTtfStatus(invoice.id);
-    setTtf(data || null);
-    setTtfForm({ receivedBy: '', ttfNo: '', notes: '' });
-    setTtfEditing(false);
-    setTtfSaving(false);
-    showToast?.(ttfEditing ? 'TTF diperbarui' : 'TTF ditandai diterima', 'success');
-  };
 
-  const handleCreateInvoice = async () => {
-    if (!spOrder?.id) return;
-    setInvoiceSaving(true);
-    const { error } = await createInvoiceRpc(spOrder.id);
-    setInvoiceSaving(false);
-    if (error) { showToast?.('Gagal menerbitkan invoice: ' + (error.message || 'unknown error'), 'error'); return; }
-    showToast?.('Invoice berhasil diterbitkan', 'success');
-    await refreshInvoiceAndStatus();
-  };
 
-  const handleSubmitInvoice = async () => {
-    if (!invoice?.id) return;
-    setInvoiceSaving(true);
-    const { error } = await submitInvoiceRpc(invoice.id);
-    setInvoiceSaving(false);
-    if (error) { showToast?.('Gagal submit invoice: ' + (error.message || 'unknown error'), 'error'); return; }
-    showToast?.('Invoice berhasil di-submit', 'success');
-    await refreshInvoiceAndStatus();
-  };
 
   // Generate + download PDF invoice — pola sama persis handlePrint di
   // PickingListDetailPage.jsx (pdf(...).toBlob() → object URL → klik <a> lalu
@@ -1352,31 +1072,12 @@ export default function SalesOrderDetailPage({
   // cuma `variant` yang diteruskan ke InvoicePDF dan nama file hasilnya.
   // ⚠️ Nama file WAJIB beda — kalau sama, file kedua menimpa yang pertama di
   // folder unduhan dan orang mengira tombolnya tidak bekerja.
-  const handleInvoicePdf = async (variant) => {
-    if (!invoice?.id) return;
-    setInvoicePdfBusy(variant);
-    try {
-      const { data: pdfData, error } = await getInvoicePdfData(invoice.id);
-      if (error || !pdfData) {
-        showToast?.('Gagal menyiapkan data invoice: ' + (error?.message || 'unknown error'), 'error');
-        return;
-      }
-      const blob = await pdf(<InvoicePDF invoice={pdfData} variant={variant} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const baseName = `Invoice-${(pdfData.invoice_no || 'INV').replace(/\//g, '-')}`;
-      a.download = variant === 'print' ? `${baseName}-cetak.pdf` : `${baseName}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      showToast?.('Gagal membuat PDF: ' + (e?.message || e), 'error');
-    } finally {
-      setInvoicePdfBusy(null);
-    }
-  };
 
-  // ── Finance stage stats (computed from items) ──────────────────────────
+
+  // ── Finance stage stats (computed from items) ──────────────────────
+  // DIPERTAHANKAN walau kartu "Finance Status" dicabut (AR Tahap 2): baris
+  // "Finance Progress" di kartu "SP Date & Expired" masih membacanya. Keenam
+  // kolom dokumennya tetap ada di DB; yang hilang cuma permukaan EDIT-nya.
   const finStages = useMemo(() => {
     const total = items.length;
     return FIN_STAGES.map(s => {
@@ -1410,27 +1111,6 @@ export default function SalesOrderDetailPage({
     amount: allCalc[idx]?.subtotal ?? 0,
   }));
 
-  // FASE 4 — invoice cuma boleh diterbitkan saat seluruh qty sudah terkirim
-  // (cermin guard Σshipped=Σqty di RPC create_invoice; dihitung dari items
-  // yang sudah ada di state, bukan query baru).
-  const canCreateInvoice = !!spOrder?.id && totalQty > 0 && shippedQty === totalQty;
-
-  // ── FASE 5: turunan pembayaran ──────────────────────────────────────────
-  // Sisa tagihan = total_amount − Σ(amount + pph). Dihitung dari `payments`
-  // yang sudah di-fetch → nol query tambahan. TIDAK di-clamp ke nol: kalau
-  // tercatat lebih bayar, angkanya sengaja tampil negatif (sistem belum punya
-  // konsep overpay — lihat catatan di laporan).
-  const paidSettled = payments.reduce((sum, p) => sum + (Number(p.amount) || 0) + (Number(p.pph) || 0), 0);
-  const sisaTagihan = (Number(invoice?.total_amount) || 0) - paidSettled;
-  // Saran PPh 23 = total ongkir × 2%. Suku ongkir = total_amount − dpp − ppn,
-  // persis definisi v_total_amount di create_invoice.
-  const totalOngkirInv = (Number(invoice?.total_amount) || 0)
-    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
-  const pphSuggestion = Math.round(Math.max(0, totalOngkirInv) * 0.02);
-  const invStatus = invoice?.status || null;
-  const showPaymentForm = canRecordPayment && ['issued', 'submitted', 'partial'].includes(invStatus);
-  const showPaymentHistory = !!invStatus && !['draft', 'void'].includes(invStatus);
-  const showTtfBlock = canMarkTtf && ['issued', 'submitted', 'partial', 'paid'].includes(invStatus);
 
   // ── Deadline display ───────────────────────────────────────────────────
   // Tenggat = atribut HEADER (sp_orders.expired_date, migrasi 20260825000002).
@@ -1833,120 +1513,6 @@ export default function SalesOrderDetailPage({
               </div>
             </div>
 
-            {/* Finance & Dokumen — kartu BARU (2 Sep 2026). Rumah baru keenam
-                kolom yang sebelumnya per-item di EditItemModal; sejak migrasi
-                20260902000003/4 mereka atribut level SP, sumber kebenarannya
-                sp_orders dan ditulis HANYA lewat set_sp_finance_docs.
-                Pola edit inline meniru TTF (pensil -> form -> Simpan/Batal),
-                bukan modal baru. Gate = canEditFinanceDocs (sumbu FINANCE),
-                sengaja BEDA dari pensil tenggat di kartu "SP Date & Expired"
-                yang memakai canWarehouseOps. */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s2 }}>
-                <div style={{ ...kickerStyle }}>Finance &amp; Dokumen</div>
-                {/* Gate = cermin guard RPC: HANYA CANCELLED yang mengunci.
-                    SP LUNAS SENGAJA masih bisa dikoreksi (rekonsiliasi dokumen
-                    historis) — jangan tambahkan LUNAS tanpa mengubah RPC juga. */}
-                {!editingFinance && canEditFinanceDocs && spOrder?.status !== 'CANCELLED' && (
-                  <button
-                    onClick={() => {
-                      setFinanceDraft({
-                        inv:         !!spOrder?.inv,
-                        fp:          !!spOrder?.fp,
-                        submit:      !!spOrder?.submit,
-                        kirim:       !!spOrder?.kirim,
-                        submitDate:  spOrder?.submit_date  || '',
-                        emailStatus: spOrder?.email_status || '',
-                      });
-                      setEditingFinance(true);
-                    }}
-                    aria-label="Ubah status dokumen SP"
-                    title="Ubah status dokumen SP"
-                    style={{ width: 22, height: 22, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm, color: C.accent, cursor: 'pointer' }}
-                  >
-                    <Pencil size={12}/>
-                  </button>
-                )}
-              </div>
-
-              {editingFinance ? (
-                <div style={{ marginTop: SP.s2, display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: SP.s2 }}>
-                    {FINANCE_DOC_FLAGS.map(({ key, label }) => (
-                      <label
-                        key={key}
-                        onClick={() => setFinanceDraft(d => ({ ...d, [key]: !d[key] }))}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
-                          border: `1px solid ${financeDraft[key] ? C.okBd : C.line}`,
-                          borderRadius: RADIUS.md, background: financeDraft[key] ? C.okBg : C.surface,
-                          cursor: financeSaving ? 'not-allowed' : 'pointer', userSelect: 'none',
-                          fontSize: 12.5, opacity: financeSaving ? 0.6 : 1,
-                        }}
-                      >
-                        <div style={{ width: 30, height: 18, borderRadius: 9, background: financeDraft[key] ? C.accent : C.line, position: 'relative', flexShrink: 0, transition: '.15s' }}>
-                          <div style={{ position: 'absolute', top: 2, left: financeDraft[key] ? 14 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: '.15s' }}/>
-                        </div>
-                        <span style={{ fontWeight: 700, letterSpacing: '.3px' }}>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 13, alignItems: 'center' }}>
-                    <div style={{ color: C.inkSoft }}>Submit Date</div>
-                    <input
-                      type="date"
-                      value={financeDraft.submitDate}
-                      disabled={financeSaving}
-                      onChange={e => setFinanceDraft(d => ({ ...d, submitDate: e.target.value }))}
-                      style={{ height: 30, padding: '0 8px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: C.surface, fontSize: 12.5, color: C.ink, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', width: '100%' }}
-                    />
-                    <div style={{ color: C.inkSoft }}>Email Status</div>
-                    <select
-                      value={financeDraft.emailStatus}
-                      disabled={financeSaving}
-                      onChange={e => setFinanceDraft(d => ({ ...d, emailStatus: e.target.value }))}
-                      style={{ height: 30, padding: '0 8px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: C.surface, fontSize: 12.5, color: C.ink, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', width: '100%' }}
-                    >
-                      <option value="">— Belum ditentukan —</option>
-                      {EMAIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button
-                      onClick={handleSaveFinanceDocs}
-                      disabled={financeSaving}
-                      style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 12, fontWeight: 700, cursor: financeSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: financeSaving ? 0.6 : 1 }}
-                    >
-                      {financeSaving ? 'Menyimpan…' : 'Simpan'}
-                    </button>
-                    <button
-                      onClick={() => setEditingFinance(false)}
-                      disabled={financeSaving}
-                      style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: financeSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                    >
-                      Batal
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11, color: C.inkSoft, lineHeight: 1.45 }}>
-                    Berlaku untuk <b>seluruh item</b> SP ini — status dokumen adalah atribut level SP.
-                  </div>
-                </div>
-              ) : (
-                <div style={{ marginTop: SP.s2, display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {FINANCE_DOC_FLAGS.map(({ key, label }) => (
-                      <Badge key={key} {...(spOrder?.[key] ? TAG_PALE : TAG_NEUTRAL)}>{label}</Badge>
-                    ))}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s1}px ${SP.s3}px`, fontSize: 13, alignContent: 'start' }}>
-                    <div style={{ color: C.inkSoft }}>Submit Date</div>
-                    <div>{spOrder?.submit_date ? fmtDate(spOrder.submit_date) : '—'}</div>
-                    <div style={{ color: C.inkSoft }}>Email Status</div>
-                    <div>{spOrder?.email_status || '—'}</div>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Progress Pengiriman — kicker + card-title + bar + body, pola mockup. */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
@@ -1982,313 +1548,48 @@ export default function SalesOrderDetailPage({
               </div>
             </div>
 
-            {/* Finance Status — 4 kolom tahap + bar tipis, full width (pola mockup).
-                Warna bar tetap gradasi semantik finColor(), keputusan yang sudah final. */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, gridColumn: '1 / -1' }}>
-              <div style={{ ...kickerStyle }}>Finance Status</div>
-              <div style={{ ...cardTitleStyle, fontSize: 16, marginTop: 2 }}>{finOverallPct}% selesai</div>
-              <p style={{ margin: '2px 0 0', fontSize: 13, opacity: .8 }}>
-                {finOverallDone}/{finOverallTotal} langkah selesai ({finOverallPct}%)
-              </p>
-              <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: SP.s4, marginTop: SP.s2 }}>
-                {finStages.map(s => (
-                  <div key={s.key}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: SP.s1, gap: SP.s2 }}>
-                      <span>{s.label}</span>
-                      <span style={{ color: C.inkSoft, whiteSpace: 'nowrap' }}>{s.done}/{s.total} &middot; {s.pct}%</span>
-                    </div>
-                    <div style={{ height: 6, background: '#EAE7E7', borderRadius: RADIUS.sm, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${s.pct}%`, background: finColor(s.pct) }}/>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Invoice — card MANDIRI (hasil un-merge). Di mockup asli ini card
-                terpisah ber-kicker "Invoice" (grid-column 1/-1), duduk antara
-                Finance Status dan Nomor BTB. Preview dokumen sudah naik jadi
-                sidebar level halaman. SELURUH field fungsional dipertahankan —
-                mockup cuma badge+tombol, itu contoh bentuk, bukan spek fungsi. */}
+
+            {/* Status Invoice — SATU label yang bisa diklik (AR Tahap 2, 25 Sep 2026).
+                Panel invoice lengkap (terbitkan, submit, catat pembayaran, TTF)
+                PINDAH ke modul Finance: Detail SP sekarang menunjukkan KEADAAN,
+                tidak menawarkan aksinya. Kartu "Finance & Dokumen" dan "Finance
+                Status" DIPENSIUNKAN di sini — keenam kolom dokumennya tetap ada
+                di sp_orders dan set_sp_finance_docs tetap hidup, cuma tidak punya
+                pintu masuk UI lagi (keputusan Den K-4). Financial Summary dan
+                BTB Numbers SENGAJA tetap tinggal. */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, gridColumn: '1 / -1' }}>
               <div style={{ ...kickerStyle }}>Invoice</div>
-              <div style={{ marginTop: SP.s2 }}>
+              <div style={{ marginTop: SP.s2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s3, flexWrap: 'wrap' }}>
                 {invoiceLoading ? (
-                  <p style={{ fontSize: 13, color: C.inkFaint, padding: '10px 0' }}>Memuat…</p>
+                  <p style={{ fontSize: 13, color: C.inkFaint, margin: 0 }}>Memuat…</p>
                 ) : invoice ? (
                   <>
-                    {[
-                      { k: 'No. Invoice', v: invoice.invoice_no || '—' },
-                      { k: 'Tanggal',     v: fmtDate(invoice.invoice_date) },
-                      // due_date diisi RPC submit_invoice; sebelum submit masih NULL
-                      // → fmtDate() mengembalikan '—'. Baris ini otomatis hanya
-                      // tampil saat invoice ada, karena seluruh blok ini di dalam
-                      // cabang `invoice ? …`.
-                      { k: 'Batas Waktu Pembayaran', v: fmtDate(invoice.due_date) },
-                      { k: 'DPP',         v: rp(invoice.total_dpp) },
-                      { k: 'PPN',         v: rp(invoice.total_ppn) },
-                    ].map(row => (
-                      <div key={row.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', fontSize: 13, borderBottom: `1px solid ${C.lineSoft}` }}>
-                        <span style={{ color: C.inkSoft, fontWeight: 600 }}>{row.k}</span>
-                        <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>{row.v}</span>
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0 0', marginTop: 5, borderTop: `1.5px solid ${C.line}` }}>
-                      <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>Total</span>
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 17, fontWeight: 700, color: C.grandTotal }}>{rp(invoice.total_amount)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap', minWidth: 0 }}>
+                      <Badge {...(INVOICE_STATUS_TAG[invoice.status] || TAG_NEUTRAL)}>
+                        {INVOICE_STATUS_LABEL[invoice.status] || invoice.status || '—'}
+                      </Badge>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: C.ink }}>
+                        {invoice.invoice_no || '—'}
+                      </span>
+                      <span style={{ fontSize: 13, color: C.inkSoft }}>{rp(invoice.total_amount)}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
-                      {invoice.status === 'submitted' ? (
-                        <Badge {...TAG_PALE}>Submitted</Badge>
-                      ) : (
-                        <Badge {...TAG_OUTLINE}>Issued</Badge>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          onClick={() => handleInvoicePdf('download')}
-                          disabled={!!invoicePdfBusy}
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoicePdfBusy ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoicePdfBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                        >
-                          <Download size={13}/> {invoicePdfBusy === 'download' ? 'Menyiapkan…' : 'Download'}
-                        </button>
-                        {/* Versi untuk KERTAS KOP: tanpa blok kop & tanpa latar krem,
-                            isinya dijauhkan dari kop/kaki yang sudah tercetak.
-                            Gate-nya SENGAJA identik dgn tombol Download di atas —
-                            tak ada syarat role yang ditambah maupun dikurangi. */}
-                        <button
-                          onClick={() => handleInvoicePdf('print')}
-                          disabled={!!invoicePdfBusy}
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoicePdfBusy ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoicePdfBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-                        >
-                          <Printer size={13}/> {invoicePdfBusy === 'print' ? 'Menyiapkan…' : 'Cetak (Kop Surat)'}
-                        </button>
-                        {invoice.status === 'issued' && (
-                          <button
-                            onClick={handleSubmitInvoice}
-                            disabled={invoiceSaving}
-                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${invoiceSaving ? C.line : C.accent}`, background: 'transparent', color: invoiceSaving ? C.inkFaint : C.accent, fontSize: 13, fontWeight: 600, cursor: invoiceSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-                          >
-                            <Send size={13}/> {invoiceSaving ? 'Menyimpan…' : 'Submit'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* ── TASK 5: badge Lunas ─────────────────────────────── */}
-                    {invStatus === 'paid' && (
-                      <div style={{ marginTop: SP.s3 }}>
-                        <Badge {...TAG_PALE}>Lunas</Badge>
-                      </div>
-                    )}
-
-                    {/* ── TASK 2: Terima Pembayaran (inline) ──────────────── */}
-                    {showPaymentForm && (
-                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
-                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Terima Pembayaran</div>
-                        {/* Label dinamis: negatif = kelebihan bayar, ditampilkan
-                            sebagai angka positif dgn warna perlu-perhatian.
-                            Murni tampilan — perhitungan sisaTagihan tak berubah. */}
-                        <div style={{ fontSize: 13, marginBottom: SP.s2 }}>
-                          {sisaTagihan >= 0 ? (
-                            <>
-                              <span style={{ color: C.inkSoft }}>Sisa Tagihan: </span>
-                              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>
-                                {rp(sisaTagihan)}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span style={{ color: C.attn }}>Lebih Bayar: </span>
-                              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.attn }}>
-                                {rp(Math.abs(sisaTagihan))}
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        <ModalGrid cols={3}>
-                          <ModalField label="Nominal Pembayaran (Rp)" req>
-                            <ModalInp type="number" value={payForm.amount} onFocus={selectOnFocus}
-                              onChange={e => setPayForm(f => ({ ...f, amount: e.target.value.replace(/^0+(?=\d)/, '') }))}/>
-                          </ModalField>
-                          <ModalField label="Tanggal Bayar">
-                            <ModalInp type="date" value={payForm.paymentDate}
-                              onChange={e => setPayForm(f => ({ ...f, paymentDate: e.target.value }))}/>
-                          </ModalField>
-                          <ModalField label="Referensi / No. Transfer">
-                            <ModalInp value={payForm.reference}
-                              onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))}/>
-                          </ModalField>
-                        </ModalGrid>
-
-                        <div style={{ marginTop: SP.s2 }}>
-                          <ModalGrid cols={3}>
-                            <ModalField label="PPh 23 (Rp)">
-                              {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi. */}
-                              <ModalInp type="number"
-                                value={pphTouched ? payForm.pph : (payForm.pph || String(pphSuggestion))}
-                                onFocus={selectOnFocus}
-                                onChange={e => { setPphTouched(true); setPayForm(f => ({ ...f, pph: e.target.value })); }}/>
-                              <span style={{ fontSize: 11, color: C.inkFaint }}>
-                                Saran otomatis, sesuaikan dengan bukti potong asli.
-                              </span>
-                            </ModalField>
-                            <ModalField label="Link Bukti Potong">
-                              <ModalInp type="url" placeholder="https://drive.google.com/…" value={payForm.buktiUrl}
-                                onChange={e => setPayForm(f => ({ ...f, buktiUrl: e.target.value }))}/>
-                            </ModalField>
-                            <ModalField label="No. Bukti Potong">
-                              <ModalInp value={payForm.buktiNo}
-                                onChange={e => setPayForm(f => ({ ...f, buktiNo: e.target.value }))}/>
-                            </ModalField>
-                          </ModalGrid>
-                        </div>
-
-                        <button
-                          onClick={handleRecordPayment}
-                          disabled={paySaving || !(Number(payForm.amount) > 0)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: SP.s3, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(!paySaving && Number(payForm.amount) > 0) ? C.accent : C.line}`, background: 'transparent', color: (!paySaving && Number(payForm.amount) > 0) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (!paySaving && Number(payForm.amount) > 0) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY }}
-                        >
-                          <Wallet size={14}/> {paySaving ? 'Menyimpan…' : 'Catat Pembayaran'}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ── TASK 3: Riwayat Pembayaran (inline) ─────────────── */}
-                    {showPaymentHistory && (
-                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
-                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Riwayat Pembayaran</div>
-                        {payments.length === 0 ? (
-                          <p style={{ fontSize: 13, color: C.inkFaint, margin: 0 }}>Belum ada pembayaran tercatat.</p>
-                        ) : (
-                          <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                              <thead>
-                                <tr>
-                                  {[['Tanggal', 'left'], ['Nominal', 'right'], ['PPh', 'right'], ['Referensi', 'left']].map(([h, align]) => (
-                                    <th key={h} style={{ ...thStyle, textAlign: align, borderBottom: `1px solid ${C.line}` }}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {payments.map(pm => (
-                                  <tr key={pm.id}>
-                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, whiteSpace: 'nowrap' }}>{fmtDate(pm.payment_date)}</td>
-                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, textAlign: 'right', fontFamily: FONT_MONO, whiteSpace: 'nowrap' }}>{rp(pm.amount)}</td>
-                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, textAlign: 'right', fontFamily: FONT_MONO, color: C.inkSoft, whiteSpace: 'nowrap' }}>{rp(pm.pph)}</td>
-                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}` }}>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                        {pm.reference || '—'}
-                                        {pm.bukti_potong_url && (
-                                          <a href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
-                                             title={pm.bukti_potong_no ? `Bukti potong ${pm.bukti_potong_no}` : 'Bukti potong'}
-                                             style={{ color: C.accent, display: 'inline-flex', alignItems: 'center' }}>
-                                            <Link2 size={13}/>
-                                          </a>
-                                        )}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* ── TASK 4: TTF (inline) ────────────────────────────── */}
-                    {showTtfBlock && (
-                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
-                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Tanda Terima Faktur</div>
-                        {(ttf?.tanggal_menerima && !ttfEditing) ? (
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: SP.s2, flexWrap: 'wrap' }}>
-                            <p style={{ fontSize: 13, margin: 0 }}>
-                              TTF diterima <b>{fmtDate(ttf.tanggal_menerima)}</b>
-                              {ttf.diterima_oleh ? <> oleh <b>{ttf.diterima_oleh}</b></> : null}
-                              {ttf.no_ttf ? <span style={{ color: C.inkSoft }}> &middot; No. {ttf.no_ttf}</span> : null}
-                            </p>
-                            {/* Masuk mode form dgn data existing sbg prefill. RPC
-                                mark_ttf_received sudah upsert (IF v_ttf_id IS NULL
-                                → INSERT, ELSE → UPDATE), jadi submit yang sama
-                                akan memperbarui baris, bukan bikin TTF kedua. */}
-                            <button
-                              onClick={() => {
-                                setTtfForm({
-                                  receivedBy: ttf.diterima_oleh || '',
-                                  ttfNo:      ttf.no_ttf || '',
-                                  notes:      ttf.notes || '',
-                                });
-                                setTtfEditing(true);
-                              }}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                            >
-                              <Pencil size={12}/> Edit
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <ModalGrid cols={3}>
-                              <ModalField label="Nama Penerima" req>
-                                <ModalInp value={ttfForm.receivedBy}
-                                  onChange={e => setTtfForm(f => ({ ...f, receivedBy: e.target.value }))}/>
-                              </ModalField>
-                              <ModalField label="No. TTF">
-                                <ModalInp value={ttfForm.ttfNo}
-                                  onChange={e => setTtfForm(f => ({ ...f, ttfNo: e.target.value }))}/>
-                              </ModalField>
-                              <ModalField label="Catatan">
-                                <ModalInp value={ttfForm.notes}
-                                  onChange={e => setTtfForm(f => ({ ...f, notes: e.target.value }))}/>
-                              </ModalField>
-                            </ModalGrid>
-                            <div style={{ display: 'flex', gap: SP.s2, marginTop: SP.s3, flexWrap: 'wrap' }}>
-                              <button
-                                onClick={handleMarkTtf}
-                                disabled={ttfSaving || !ttfForm.receivedBy.trim()}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(!ttfSaving && ttfForm.receivedBy.trim()) ? C.accent : C.line}`, background: 'transparent', color: (!ttfSaving && ttfForm.receivedBy.trim()) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (!ttfSaving && ttfForm.receivedBy.trim()) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY }}
-                              >
-                                <Check size={14}/> {ttfSaving ? 'Menyimpan…' : (ttfEditing ? 'Simpan Perubahan' : 'Tandai TTF Diterima')}
-                              </button>
-                              {ttfEditing && (
-                                <button
-                                  onClick={() => { setTtfEditing(false); setTtfForm({ receivedBy: '', ttfNo: '', notes: '' }); }}
-                                  disabled={ttfSaving}
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: ttfSaving ? 'not-allowed' : 'pointer', fontFamily: FONT_DISPLAY }}
-                                >
-                                  Batal
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
+                    {onOpenInvoice && (
+                      <button
+                        onClick={() => onOpenInvoice(invoice.id)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY, flexShrink: 0 }}
+                      >
+                        <Receipt size={14}/> Buka Detail Invoice
+                      </button>
                     )}
                   </>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: SP.s3, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 240 }}>
-                      <Badge {...TAG_ATTN}>Belum Diterbitkan</Badge>
-                      <p style={{ fontSize: 13, opacity: .8, margin: `${SP.s2}px 0 0` }}>
-                        Invoice diterbitkan setelah barang selesai dikirim atau atas permintaan pelanggan.
-                      </p>
-                      {!canCreateInvoice && (
-                        <p style={{ fontSize: 12, color: C.inkFaint, marginTop: SP.s1 }}>
-                          {!spOrder?.id
-                            ? 'SP ini belum punya data skema baru (sp_orders) — invoice belum bisa diterbitkan.'
-                            : totalQty === 0
-                            ? 'SP belum punya item.'
-                            : `Belum bisa diterbitkan — outstanding ${(totalQty - shippedQty).toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty (${shippedQty.toLocaleString('id-ID')} sudah terkirim). Invoice hanya bisa diterbitkan setelah seluruh qty terkirim penuh.`}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleCreateInvoice}
-                      disabled={!canCreateInvoice || invoiceSaving}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(canCreateInvoice && !invoiceSaving) ? C.accent : C.line}`, background: 'transparent', color: (canCreateInvoice && !invoiceSaving) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (canCreateInvoice && !invoiceSaving) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY, flexShrink: 0 }}
-                    >
-                      <Receipt size={14}/> {invoiceSaving ? 'Menerbitkan…' : 'Terbitkan Invoice'}
-                    </button>
+                  <div style={{ minWidth: 0 }}>
+                    <Badge {...TAG_ATTN}>Belum Diterbitkan</Badge>
+                    <p style={{ margin: `${SP.s2}px 0 0`, fontSize: 13, color: C.inkSoft, lineHeight: 1.45 }}>
+                      Penerbitan invoice dilakukan di <b>Finance &rsaquo; Accounts Receivable &rsaquo; Invoice Management</b>.
+                      Halaman itu juga menyebutkan alasannya kalau SP ini belum boleh ditagih.
+                    </p>
                   </div>
                 )}
               </div>

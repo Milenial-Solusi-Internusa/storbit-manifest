@@ -1609,3 +1609,101 @@ export async function getStorbitTopOutstandingProducts({ companyId = null, limit
   });
   return { data: data || [], error };
 }
+
+// ============================================================
+// AR TAHAP 2 — Invoice Management (modul Finance)
+// ============================================================
+
+/**
+ * Kesiapan tagih seluruh SP terkirim penuh yang belum ber-invoice.
+ *
+ * Alasannya TIDAK dihitung di JavaScript: RPC `sp_invoice_readiness_all`
+ * memanggil `sp_invoice_readiness`, fungsi yang SAMA dengan yang dipakai guard
+ * `create_invoice_for_sp` untuk menolak. Jadi apa yang halaman tampilkan sebagai
+ * alasan selalu = alasan yang sungguh menolak di DB (AR Tahap 2, keputusan K-2).
+ * ⛔ Jangan menambahkan penyaringan alasan di sisi FE — tambahkan di fungsi DB-nya
+ * supaya guard dan tampilan tetap satu kode.
+ *
+ * `sp_invoice_readiness_all` SECURITY INVOKER → RLS yang menentukan SP mana yang
+ * terlihat; `sp_invoice_readiness` di dalamnya SECURITY DEFINER → alasannya
+ * dihitung dari seluruh baris, bukan dari yang kebetulan terlihat pemakai.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getInvoiceReadinessAll(companyId = null) {
+  const { data, error } = await supabase.rpc('sp_invoice_readiness_all', {
+    p_company_id: companyId || null,
+  });
+  return { data: data || [], error };
+}
+
+/** Kesiapan tagih SATU SP. Dipakai saat halaman perlu menyegarkan satu baris. */
+export async function getInvoiceReadiness(spOrderId) {
+  const { data, error } = await supabase.rpc('sp_invoice_readiness', {
+    p_sp_order_id: spOrderId,
+  });
+  // RETURNS TABLE → PostgREST mengembalikan array; yang dipakai baris pertama.
+  return { data: Array.isArray(data) ? (data[0] || null) : (data || null), error };
+}
+
+/**
+ * Daftar invoice untuk InvoiceListPage.
+ *
+ * `.limit(1000)` WAJIB (default PostgREST 10). Nama customer diambil lewat embed
+ * dua tingkat sp_orders → accounts; kalau RLS menyembunyikan account-nya, yang
+ * hilang cuma namanya, barisnya tetap tampil — invoice yang ada tapi tak bisa
+ * dibaca namanya lebih baik terlihat daripada hilang tanpa penjelasan.
+ */
+export async function listInvoices({ companyId = null } = {}) {
+  let q = supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, invoice_date, due_date, status,
+      total_dpp, total_ppn, total_amount, sp_order_id,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, customer_id, company_id,
+        accounts:accounts!sp_orders_customer_id_fkey ( name ) )
+    `)
+    .is('deleted_at', null)
+    .order('invoice_date', { ascending: false })
+    .limit(1000);
+  if (companyId) q = q.eq('company_id', companyId);
+  const { data, error } = await q;
+  return { data: data || [], error };
+}
+
+/** Satu invoice beserta SP-nya — dipakai InvoiceDetailPage untuk resolve sp_order_id. */
+export async function getInvoiceById(invoiceId) {
+  const { data, error } = await supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, invoice_date, due_date, status,
+      total_dpp, total_ppn, total_amount, sp_order_id, company_id,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, customer_id,
+        accounts:accounts!sp_orders_customer_id_fkey ( name ) )
+    `)
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  return { data, error };
+}
+
+/**
+ * Sigma qty & Sigma shipped_qty satu SP — dipakai InvoicePanel untuk gate
+ * "Terbitkan Invoice" saat panel dirender DI LUAR halaman Detail SP (yang punya
+ * angkanya dari props).
+ */
+export async function getSpOrderQtySummary(spOrderId) {
+  const { data, error } = await supabase
+    .from('sp_order_items')
+    .select('qty, shipped_qty')
+    .eq('sp_order_id', spOrderId)
+    .limit(1000);
+  const rows = data || [];
+  return {
+    data: {
+      totalQty:   rows.reduce((s, r) => s + (Number(r.qty) || 0), 0),
+      shippedQty: rows.reduce((s, r) => s + (Number(r.shipped_qty) || 0), 0),
+    },
+    error,
+  };
+}

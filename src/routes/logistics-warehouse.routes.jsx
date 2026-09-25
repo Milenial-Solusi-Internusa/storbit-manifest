@@ -57,6 +57,10 @@ const LIST_DELIVERY = MENU_PATHS['surat-jalan'];
 const spDetailPath       = (customerId, spNo) => `${LIST_SP}/${encodeURIComponent(customerId)}/${encodeURIComponent(spNo)}`;
 const pickingDetailPath  = (id) => `${LIST_PICKING}/${encodeURIComponent(id)}`;
 const deliveryDetailPath = (id) => `${LIST_DELIVERY}/${encodeURIComponent(id)}`;
+// Lintas modul: Detail SP -> Detail Invoice di modul Finance (AR Tahap 2).
+// Bentuknya dibaca dari kontrak URL yang sama (MENU_PATHS.billing), bukan
+// ditulis ulang di sini -- dua salinan bentuk path pasti melenceng suatu hari.
+const invoiceDetailPath  = (id) => `${MENU_PATHS.billing}/${encodeURIComponent(id)}`;
 
 // ── Daftar SP ───────────────────────────────────────────────────────────────
 function SalesOrderListRoute() {
@@ -152,6 +156,7 @@ function SalesOrderDetailRoute() {
         onRefresh={refreshSp}
         onOpenPicking={(pid) => navigate(pickingDetailPath(pid))}
         onOpenDelivery={(did) => navigate(deliveryDetailPath(did))}
+        onOpenInvoice={(invId) => navigate(invoiceDetailPath(invId))}
         showToast={showToast}
         role={role}
       />

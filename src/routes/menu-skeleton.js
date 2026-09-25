@@ -788,7 +788,15 @@ export const SKELETON = [
         tabs: [
           { code: "6.2.1", label: "Invoice Management", slug: "invoice", path: "/finance-accounting/accounts-receivable/invoice",
             desc: "mengelola penerbitan dan pencatatan invoice.",
-            id: "ph-6-2-1", menuKey: "skel_6_2_1", mounts: [] },
+            // AR Tahap 2 (25 Sep 2026): tab ini BERHENTI jadi placeholder.
+            // menuId `billing` -> menu key `fin_invoice` yang SUDAH ada di
+            // katalog; nol key baru lahir, jadi gate-nya cuma soal grant
+            // (20260927000004). Rutenya dimiliki src/routes/finance.routes.jsx,
+            // bukan LegacyMenuOutlet -- itu sebabnya `billing` dikecualikan di
+            // ALREADY_ROUTED skeleton.routes.jsx.
+            mounts: [
+              { menuId: "billing", path: "/finance-accounting/accounts-receivable/invoice" },
+            ] },
           { code: "6.2.2", label: "Invoice Submission & Acknowledgement (TTF / Customer System Confirmation)", slug: "submission", path: "/finance-accounting/accounts-receivable/submission",
             desc: "mencatat gerbang wajib sebelum invoice berstatus siap ditagih.",
             mounts: [
