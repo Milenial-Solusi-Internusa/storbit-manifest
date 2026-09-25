@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import {
   getDeliveryNoteDetail, updateDeliveryArmada, setDeliveryStatus, cancelDelivery,
-  updateDeliveryItemQty, deleteDeliveryItem, addDeliveryItem,
+  updateDeliveryItemQty, deleteDeliveryItem, addDeliveryItem, setDeliverySignedDate,
 } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -164,6 +164,26 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal memperbarui status', 'error'); return; }
     showToast?.(next === 'in_transit' ? 'Surat jalan diberangkatkan.' : 'Surat jalan ditandai terkirim.');
+    load();
+  }, [deliveryNoteId, showToast, load, canWarehouseOps, signedDate, detail]);
+
+  // Melengkapi tanggal pada Surat Jalan yang SUDAH delivered tapi signed_date-nya
+  // kosong (AR Tahap 1). Validasi di sini SENGAJA cermin guard RPC-nya, bukan
+  // pengganti: RPC tetap menolak kosong, masa depan, sebelum berangkat, bukan
+  // delivered, sudah terisi, dan peran yang tak berhak.
+  const handleLengkapiSignedDate = useCallback(async () => {
+    if (!canWarehouseOps) return;
+    if (!signedDate) { showToast?.('Isi tanggal SJ ditandatangani customer/DC dulu', 'error'); return; }
+    if (signedDate > getTodayWIB()) { showToast?.('Tanggal SJ ditandatangani tidak boleh di masa depan', 'error'); return; }
+    const dispatchedDate = detail?.dispatched_at
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(detail.dispatched_at))
+      : '';
+    if (dispatchedDate && signedDate < dispatchedDate) { showToast?.('Tanggal SJ ditandatangani tidak boleh sebelum tanggal berangkat', 'error'); return; }
+    setBusy(true);
+    const { error } = await setDeliverySignedDate(deliveryNoteId, signedDate);
+    setBusy(false);
+    if (error) { showToast?.(error.message || 'Gagal melengkapi tanggal', 'error'); return; }
+    showToast?.('Tanggal SJ ditandatangani dilengkapi.');
     load();
   }, [deliveryNoteId, showToast, load, canWarehouseOps, signedDate, detail]);
 
@@ -399,6 +419,25 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
               title={!signedDate ? 'Isi tanggal SJ ditandatangani customer/DC dulu' : ''}
               style={{ background: C.greenI, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: (busy || !signedDate) ? 'not-allowed' : 'pointer', opacity: (busy || !signedDate) ? 0.5 : 1 }}>
               {busy ? 'Memproses…' : 'Tandai Terkirim'}
+            </button>
+          </>
+        )}
+        {/* AR Tahap 1: Surat Jalan SUDAH delivered tapi tanggal tanda tangannya
+            kosong. Hanya tampil untuk kondisi itu (guard a) dan peran gudang
+            (guard c) — Finance sengaja tidak diberi akses. Selama tanggalnya
+            kosong, SP-nya tidak bisa ditagih: create_invoice_for_sp hanya
+            menjurnal SJ delivered ber-signed_date. */}
+        {status === 'delivered' && !detail?.signed_date && canWarehouseOps && (
+          <>
+            <div style={{ width: 300 }}>
+              <span style={lblStyle}>Tanggal SJ ditandatangani customer/DC</span>
+              <input type="date" style={inputStyle} value={signedDate} max={getTodayWIB()} disabled={busy}
+                onChange={e => setSignedDate(e.target.value)} />
+            </div>
+            <button onClick={handleLengkapiSignedDate} disabled={busy || !signedDate}
+              title={!signedDate ? 'Isi tanggal SJ ditandatangani customer/DC dulu' : 'Tanggal hanya bisa diisi sekali'}
+              style={{ background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: (busy || !signedDate) ? 'not-allowed' : 'pointer', opacity: (busy || !signedDate) ? 0.5 : 1 }}>
+              {busy ? 'Memproses…' : 'Lengkapi Tanggal Ditandatangani'}
             </button>
           </>
         )}

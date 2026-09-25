@@ -28,8 +28,14 @@
 | 5 | `20260924000001` + `20260924000002` (katalog menu) | ⛔ belum | ⛔ belum | opsional, lihat butir 5 |
 | 6 | `20260925000001_dni_sp_order_item_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — paling lambat bersama AR Tahap 1 |
 | 7 | `20260925000002_sp_order_items_legacy_unique` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 6 |
+| 8 | `20260926000001_set_delivery_signed_date` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1 |
+| 9 | `20260926000002_ar_single_issue_path` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1, TERAKHIR |
 
-**Butir 3** memblokir launching. **Butir 6 dan 7** wajib tapi tenggatnya lebih jauh: paling lambat serempak dengan AR Tahap 1. Menjalankannya **lebih awal aman dan justru dianjurkan** — keduanya idempoten, dan setiap Surat Jalan baru yang terbit sebelum butir 6 jalan menambah baris cacat yang harus di-backfill nanti. **Urutannya mengikat: 6 lalu 7.**
+**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
+
+⛔ Urutan itu bukan kerapian. Butir 9 punya palang yang **menolak jalan** kalau butir 6 dan 7 belum terpasang, karena invariant piutang di dalamnya menuntut setiap Surat Jalan punya `sp_order_item_id`; tanpa butir 6, setiap invoice baru nol jurnal dan invariant gagal untuk **semuanya**. Butir 8 sebelum 9 karena butir 9 menyempitkan apa yang boleh ditagih, dan butir 8 adalah satu-satunya jalan membuka 9 SP yang tertahan hanya karena tanggal tanda tangan kosong.
+
+Butir 6 dan 7 boleh dijalankan **lebih awal** dari 8 dan 9 — keduanya idempoten, dan setiap Surat Jalan baru yang terbit sebelum butir 6 jalan menambah baris cacat yang harus di-backfill nanti.
 
 ---
 
@@ -176,6 +182,66 @@ WHERE mm.key = 'crm_rate_list';
 ⚠️ **`V1c` sempat hijau palsu dan resepnya sudah dikoreksi di berkasnya.** Percobaan pertama hanya mengisi lima kolom, lalu **gagal lebih dulu** di `company_id` dan `product_id` yang `NOT NULL` — cek uniknya tidak pernah tersentuh. Bentuk yang benar menyalin seluruh kolom dari baris yang sudah ada dan hanya mengganti `product_name`, plus cabang `WHEN OTHERS` yang membedakan "ditolak karena duplikat" dari "ditolak karena hal lain". Tanpa cabang itu, error `NOT NULL` terbaca sebagai bukti index bekerja. **Kelas yang sama dengan pelajaran lintas-alat di `scripts/qa/README.md`: asersi yang lolos karena prasyaratnya tak pernah terpenuhi.**
 
 **Rollback:** `DROP INDEX IF EXISTS public.sp_order_items_legacy_sp_item_id_key;` — aman dan lengkap; index ini tidak menopang FK maupun constraint apa pun, dan butir 6 tetap benar tanpanya.
+
+## 8. ⛔ `20260926000001_set_delivery_signed_date` — WAJIB (AR Tahap 1)
+
+| | |
+|---|---|
+| Isi | 2 kolom jejak `delivery_notes.signed_date_filled_by`/`_at` + RPC `set_delivery_signed_date(uuid, date)` + ACL |
+| Berkas | ✔ `supabase/migrations/20260926000001_set_delivery_signed_date.sql` |
+| Staging | ✔ **dijalankan 25 Sep 2026**, V1a/V1b/V1c lolos |
+| Production | ⛔ belum |
+| Sifat | Aditif dan idempoten. 2 `ADD COLUMN IF NOT EXISTS` + 1 `CREATE OR REPLACE`. Nol baris data diubah. **Boleh naik sendiri** — perilaku penagihan tidak berubah oleh butir ini |
+
+**Untuk apa.** `create_invoice_for_sp` hanya menjurnal Surat Jalan yang `delivered` **dan** ber-`signed_date`. SJ `delivered` tanpa tanggal karena itu membuat SP-nya tidak bisa ditagih, dan sampai sekarang **tidak ada jalan melengkapinya** — `mark_delivery_delivered` hanya menerima SJ `in_transit`.
+
+**Populasi di produksi (read-only 25 Sep 2026):** **106 dari 698** SJ `delivered` ber-`signed_date` NULL, yang terakhir 15 Sep 2026 — sebelum kolomnya jadi wajib pada 17 Sep. **9 SP tertahan HANYA karena ini**; butir ini membuka tepat 9 SP.
+
+⛔ **Ini bukan backfill.** Tanggal tanda tangan adalah fakta dari kertas SJ yang dipegang gudang; ia diketik orang yang memegang kertasnya, satu per satu. Backfill dari xlsx sudah dibatalkan (koreksi D-2): kolom di `SURAT_JALAN_2026.xlsx` adalah tanggal **dokumen dibuat**, dan di 6 dari 12 SP tanggal itu lebih awal dari `dispatched_at`.
+
+Guard: hanya `delivered` + `signed_date IS NULL` (isi **sekali**, tidak bisa menimpa) · tanggal wajib, tidak di masa depan **WIB**, tidak sebelum `dispatched_at` WIB (dilewati bila `dispatched_at` NULL) · peran `roles.level <= 6` **ATAU** `operations` — **Finance tidak diberi akses** · `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`.
+
+⚠️ Guard tanggalnya memakai **WIB**, sengaja tidak mewarisi TD-264 (`mark_delivery_delivered` memakai `current_date` UTC sehingga menolak tanggal hari ini antara 00:00–06:59 WIB).
+
+⚠️ Daftar peran di dalamnya adalah instance **baru** TD-233 (kini hidup di `is_manager_or_above()`, `mark_delivery_delivered`, `prf_release`, `prf_select_offer`, `is_manager_or_above_in()`, dan ini). Duplikasinya disengaja; perlakukan sebagai **checklist**.
+
+**Rollback:** `DROP FUNCTION IF EXISTS public.set_delivery_signed_date(uuid, date);`. Kolomnya **sengaja tidak di-drop** — men-DROP kolom membuang jejak audit yang sudah terkumpul, tepatnya hal yang paling tidak boleh hilang saat rollback.
+
+## 9. ⛔ `20260926000002_ar_single_issue_path` — WAJIB (AR Tahap 1, TERAKHIR)
+
+| | |
+|---|---|
+| Isi | (a) `create_invoice` jadi pembungkus tipis · (b) `due_date` saat terbit · (c) `record_payment` tolak `issued` · (d) tiga guard baru · (e) ACL 3 fungsi · (f) DROP `mark_delivery_delivered(uuid)` |
+| Berkas | ✔ `supabase/migrations/20260926000002_ar_single_issue_path.sql` |
+| Staging | ✔ **dijalankan 25 Sep 2026**, V1a/V1b/V1c lolos + uji a–f lolos + seed 32/32 |
+| Production | ⛔ belum |
+| Sifat | 3 `CREATE OR REPLACE` + 3 blok ACL + 1 `DROP FUNCTION`. Nol DDL tabel, nol policy, nol baris data diubah |
+
+**Masalah yang ditutup.** Ada **dua** penerbit invoice yang hidup bersamaan dengan aturan berbeda: `create_invoice` (dipakai FE, 1 jurnal per invoice, nol guard BTB/SJ) dan `create_invoice_for_sp` (jurnal dipecah per SJ, tak pernah dipakai FE). Selama dua-duanya ada, "bagaimana invoice dijurnal" tidak punya satu jawaban.
+
+⛔ **RADIUS DAMPAK DI PRODUKSI — baca sebelum menjalankan.** Diukur read-only 25 Sep 2026:
+
+| | |
+|---|---|
+| SP terkirim penuh, belum ber-invoice | **62** |
+| → **LOLOS** ketiga guard, masih bisa ditagih hari-1 | **5** |
+| → tertahan **hanya** karena `signed_date` kosong (dibuka butir 8) | **9** |
+| → tertahan karena **BTB belum ada** | **47** |
+| → tertahan karena ada SJ belum `delivered` | **1** |
+
+Yang bisa ditagih menyempit **62 → 5**, lalu **→ 14** setelah 9 tanggal dilengkapi lewat butir 8. **47 sisanya tertahan BTB, dan itu DITERIMA sebagai konsekuensi aturan CEO** (kirim penuh + BTB lengkap) — pekerjaan gudang, bukan pekerjaan Tahap 1 (keputusan Den D-17). Daftar 47 SP itu ada di laporan sesi 25 Sep 2026, **sengaja tidak ditulis ke berkas repo** (data produksi yang berubah tiap hari).
+
+✅ **Guard (c) nol blast radius:** produksi punya **0** pembayaran pada invoice berstatus `issued`.
+
+⚠️ **`due_date` NULL di 508 dari 509 invoice hidup.** Butir (b) hanya memperbaiki invoice **BARU**. Backfill 508 invoice lama **TIDAK** di Tahap 1 (keputusan Den D-14) — AR Aging nanti berbasis tanggal **TTF**, bukan `due_date`; itu Tahap 2.
+
+⚠️ **TODO Tahap 3 (keputusan Den D-15):** sesudah butir (b), `due_date` dihitung di **dua** tempat (`create_invoice_for_sp` saat terbit, `submit_invoice` saat submit). Sengaja dibiarkan — rantai terminnya sama sehingga nilainya identik (idempoten). Dirapikan saat `submit_invoice` ditulis ulang. Sampai itu, **mengubah rantai termin berarti menyentuh kedua fungsi.**
+
+⭐ **Butir (f) melakukan dua hal, dan yang kedua tidak langsung kelihatan.** Overload `mark_delivery_delivered(uuid)` sebenarnya sudah **tidak bisa dipanggil**: versi 2-argumen ber-`p_signed_date DEFAULT NULL`, jadi setiap panggilan 1-argumen cocok untuk **kedua** kandidat dan Postgres menolak dengan `42725 function ... is not unique` — dibuktikan di produksi lewat `EXPLAIN` (read-only, nol baris tersentuh). Jadi DROP ini **memperbaiki pesan gagalnya** (sesudahnya panggilan 1-argumen sah, jatuh ke versi 2-argumen, lalu ditolak guard "signed_date wajib" — pesan bisnis, bukan error resolusi fungsi) **dan** menutup lubang `PUBLIC EXECUTE` pada satu-satunya jalur yang bisa menandai SJ terkirim tanpa tanggal. Itu isi **TD-263**, dan butir ini menutupnya. Nol pemanggil 1-argumen di mana pun (FE punya satu titik panggil dan selalu mengirim dua argumen; nol fungsi/trigger DB di staging maupun produksi).
+
+⚠️ **Cadangan rollback WAJIB diambil ulang pada hari launching** sebelum butir 9 dijalankan. Cadangan 25 Sep 2026 ada (5 fungsi, md5 dicocokkan ke produksi), tapi ia memotret produksi pada tanggal itu. Cocokkan md5-nya ke produksi lebih dulu; kalau berbeda, produksi sudah bergerak dan cadangannya basi.
+
+⚠️ **Saat rollback butir 9:** `create_invoice_for_sp` di cadangan adalah versi **produksi**, yaitu **tanpa** guard butir 6. Kalau butir 6 sudah jalan, memulihkan dari cadangan akan **menghapus guard itu**. Yang benar: pulihkan dari cadangan lalu jalankan ulang butir 6 bagian 1 dan 3.
 
 ---
 

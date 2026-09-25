@@ -975,6 +975,12 @@ export default function SalesOrderDetailPage({
   const [btbs,         setBtbs]         = useState([]);
   const [btbInput,     setBtbInput]     = useState('');
   const [btbRemarks,   setBtbRemarks]   = useState('');
+  // AR Tahap 1: btb_date dan delivery_note_id akhirnya dikirim dari form.
+  // issueSpBtb (db.js) SUDAH menerima keduanya sejak lama; yang belum ada
+  // hanyalah tempat mengisinya, sehingga 456 BTB lama lahir tanpa tanggal
+  // (temuan D-01 blueprint Finance).
+  const [btbDate,      setBtbDate]      = useState('');
+  const [btbDnId,      setBtbDnId]      = useState('');
   const [btbSaving,    setBtbSaving]    = useState(false);
   const [spOrder,      setSpOrder]      = useState(null);  // Fase 1: headline sp_orders (status + flag)
   // Dokumen fulfillment SP (picking list + surat jalan) — tab Shipment & Dokumen.
@@ -1222,11 +1228,22 @@ export default function SalesOrderDetailPage({
     const cust = group?.customerId;
     if (!cust) { showToast?.('Customer SP tidak diketahui', 'error'); return; }
     setBtbSaving(true);
-    const { error } = await issueSpBtb({ customerId: cust, spNo, btbNo: btbInput, remarks: btbRemarks });
+    // btbDate dan deliveryNoteId IKUT dikirim (AR Tahap 1). Keduanya opsional
+    // di RPC: kosong -> NULL, jadi BTB tanpa Surat Jalan tetap bisa diterbitkan
+    // untuk kasus lama. Tanggal kosong dibiarkan NULL, BUKAN diisi hari ini --
+    // menebak tanggal dokumen fisik lebih buruk daripada mengosongkannya.
+    const { error } = await issueSpBtb({
+      customerId: cust, spNo, btbNo: btbInput,
+      btbDate: btbDate || null,
+      deliveryNoteId: btbDnId || null,
+      remarks: btbRemarks,
+    });
     setBtbSaving(false);
     if (error) { showToast?.('Gagal tambah BTB: ' + error.message, 'error'); return; }
     setBtbInput('');
     setBtbRemarks('');
+    setBtbDate('');
+    setBtbDnId('');
     await refreshBtbAndStatus();
   };
 
@@ -2318,7 +2335,7 @@ export default function SalesOrderDetailPage({
                 )}
                 {canWarehouseOps && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <input
                       value={btbInput}
                       onChange={e => setBtbInput(e.target.value)}
@@ -2326,12 +2343,37 @@ export default function SalesOrderDetailPage({
                       placeholder="Nomor BTB…"
                       style={{ width: 180, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", outline: 'none', boxSizing: 'border-box', flexShrink: 0 }}
                     />
+                    {/* Tanggal BTB — tanggal pada kertas BTB, bukan tanggal input.
+                        Dibiarkan kosong kalau kertasnya tak bertanggal; RPC
+                        menerima NULL. */}
+                    <input
+                      type="date"
+                      value={btbDate}
+                      max={getTodayWIB()}
+                      onChange={e => setBtbDate(e.target.value)}
+                      title="Tanggal pada kertas BTB (opsional)"
+                      style={{ width: 150, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', flexShrink: 0 }}
+                    />
+                    {/* Surat Jalan yang BTB ini menutup. Hanya SJ milik SP ini,
+                        dan hanya yang sudah delivered -- BTB lahir dari barang
+                        yang sudah diterima DC. */}
+                    <select
+                      value={btbDnId}
+                      onChange={e => setBtbDnId(e.target.value)}
+                      title="Surat Jalan yang ditutup BTB ini (opsional)"
+                      style={{ width: 210, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 9px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', flexShrink: 0 }}
+                    >
+                      <option value="">Surat Jalan (opsional)…</option>
+                      {fulfillDocs.deliveries
+                        .filter(d => d.status === 'delivered')
+                        .map(d => <option key={d.id} value={d.id}>{d.do_no}</option>)}
+                    </select>
                     <input
                       value={btbRemarks}
                       onChange={e => setBtbRemarks(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') handleAddBtb(); }}
                       placeholder="Remarks (opsional)…"
-                      style={{ flex: 1, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                      style={{ flex: 1, minWidth: 140, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
                     />
                     <button
                       onClick={handleAddBtb}
@@ -2468,11 +2510,21 @@ export default function SalesOrderDetailPage({
                         <Truck size={14} style={{ color: C.accent, flexShrink: 0 }}/>
                         <b style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.ink }}>{d.do_no}</b>
                         <Badge {...meta}>{meta.label}</Badge>
+                        {/* AR Tahap 1: Surat Jalan sudah sampai tapi tanggal tanda
+                            tangannya kosong. Selama kosong, porsi SJ ini TIDAK
+                            dijurnal dan SP-nya tidak bisa ditagih. Tombol
+                            pengisinya ada di Detail Surat Jalan (kartu ini sudah
+                            bisa diklik ke sana) -- sengaja TIDAK diduplikasi di
+                            sini supaya jalur pengisian tetap satu. */}
+                        {d.status === 'delivered' && !d.signed_date && (
+                          <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>Tanggal tanda tangan belum diisi</Badge>
+                        )}
                       </div>
                       <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 12.5 }}>
                         {[
                           { k: 'Berangkat', v: fmtDate(d.dispatched_at || d.ship_date) },
                           { k: 'Sampai',    v: fmtDate(d.delivered_at) },
+                          { k: 'Ditandatangani', v: d.signed_date ? fmtDate(d.signed_date) : '—' },
                           { k: 'Driver',    v: d.driver_name || '—' },
                           { k: 'Kendaraan', v: d.vehicle_no || '—' },
                           { k: 'Koli',      v: d.total_koli != null ? d.total_koli.toLocaleString('id-ID') : '—' },
