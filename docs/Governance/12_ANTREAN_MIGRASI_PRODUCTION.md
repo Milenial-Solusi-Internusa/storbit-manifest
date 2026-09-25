@@ -36,6 +36,16 @@
 | 13 | `20260927000003_journal_account_roles_and_readiness` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9 DAN butir 12 |
 | 14 | Grant menu `fin_invoice` (`20260927000004`) | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — tanpa ini halaman baru super_admin-only |
 | 15 | Parity staging: `20260902000006` + `20260910000001` | ✔ 25 Sep | ✔ sudah sejak 2-11 Sep | — **nol** — arah terbalik |
+| 16 | `20260928000001_invoice_header_v2` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — invoice lengkap, PERTAMA |
+| 17 | `20260928000002_invoice_line_v2` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 16 |
+| 18 | `20260928000003_invoice_issue_v2` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 17 DAN butir 9 |
+| 19 | `20260928000004_invoice_write_lockdown` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18 |
+| 20 | `20260928000005_staging_only_taxes_from_production` | ✔ 25 Sep | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
+| 21 | `20260928000006_invoice_line_tax_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 17 |
+| 22 | `20260928000007_invoice_post_issue_rpcs` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 16 |
+| 23 | `20260928000008_invoice_attachments` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — bucket Storage, lihat butir 23 |
+| 24 | `20260928000009_invoice_notes` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 25 | `20260928000010_invoice_issue_tax_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18 dan 21 |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -402,6 +412,236 @@ Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_rea
 **Perbaikan data yang menyertainya (bukan migrasi):** `zzztest.controller.profiles.company_id` MSI → **SOA**. Akun itu hanya ber-role `finance_controller@SOA`, jadi home MSI membuat `activeCompanyId` default ke entitas tempat ia tak punya role — label topbar berbunyi "Tanpa role di entitas ini" padahal CompanySwitcher menampilkan nama SOA. Populasi keadaan itu di **produksi = NOL** (23 profil aktif, semuanya punya role di home-nya), jadi ini fixture yang tidak representatif, bukan bug pengguna. Perbaikan kodenya → **TD-278**.
 
 ⭐ **Dan inilah yang paling penting dari butir ini: sisa drift-nya JAUH lebih banyak.** Alat baru `scripts/qa/env-drift-check.mjs` membandingkan staging vs produksi dan menemukan **23 perbedaan yang tidak punya penjelasan** — 8 fungsi hanya ada di produksi, 5 fungsi beda isi, 8 policy, 1 trigger, dan tabel `sp_orders` yang di staging **kurang enam kolom** (`inv`, `fp`, `submit`, `kirim`, `submit_date`, `email_status`). Rincian + rencana → **TD-279**. Butir 15 ini hanya menutup lima policy yang memblokir UAT AR Tahap 2; sisanya pekerjaan tersendiri.
+
+---
+
+## Invoice lengkap (butir 16-25) — satu gelombang, urutan MENGIKAT
+
+Sepuluh berkas `20260928*` lahir dari satu keputusan: **seluruh kolom form invoice Odoo ditambahkan sekarang**, sekaligus menanam seam untuk invoice MSI (forwarding) yang belum punya SP. Arsitekturnya **opsi C — generalisasi di tempat**: tabelnya tetap `sp_invoices`/`sp_invoice_lines`, yang ditambahkan adalah `source_type`, `sp_order_id` yang boleh NULL dengan CHECK per sumber, uang yang turun ke baris, dan penerbit per sumber di atas satu pemosting jurnal bersama. **Rename fisik sengaja ditunda** — butir 6-14 dokumen ini diuji terhadap nama yang sekarang dan belum satu pun naik ke produksi.
+
+**Urutan produksi (mengikat):**
+
+```
+16 -> 17 -> 18 -> 19        (berkas 1-4, berurutan)
+17 -> 21 -> 25              (tautan pajak, sesudah baris punya kolomnya)
+16 -> 22                    (RPC pasca-terbit)
+23, 24                      (mandiri, boleh kapan saja sesudah 16)
+20                          JANGAN — staging saja
+```
+
+⛔ **Butir 18 juga menuntut butir 9 (`ar_single_issue_path`) sudah jalan**, karena ia menulis ulang `create_invoice_for_sp` di atas bentuk yang dibuat butir 9. Menjalankan 18 di produksi yang belum punya butir 9 akan menimpa jalur penerbitan dengan versi yang mengandaikan guard yang belum ada.
+
+⚠️ **Seluruh sepuluh berkas dijalankan di STAGING 25 Sep 2026. Produksi belum satu pun.** Angka di bawah diukur di staging kecuali disebutkan lain.
+
+---
+
+## 16. ⛔ `20260928000001_invoice_header_v2` — WAJIB (invoice lengkap, PERTAMA)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000001_invoice_header_v2.sql` (416 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — V1a-V1e lolos |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, PALING DULU di gelombang ini** |
+
+**Apa isinya.** 20 kolom kepala (`customer_tax_id`, `payment_term_days/label`, `salesperson_id`, `sales_team`, `is_reimbursement`, `print_to`, `replaces_invoice_id`, `printed_*`, `emailed_*`, `coretax_tx_code`, `use_dpp_nilai_lain`, `rounding_method`, `currency_code`, `fx_rate`, `total_amount_currency`), kolom `source_type`, `sp_order_id` jadi nullable dengan CHECK per sumber, dan **tiga CHECK "terkunci"** yang namanya menyebut apa yang membukanya: `..._dpp_nilai_lain_terkunci`, `..._rounding_terkunci`, `..._fx_terkunci`.
+
+⭐ **Kolom angka yang tampil tapi tidak ikut jurnal DILARANG.** Itu aturan Den, dan CHECK terkunci adalah bentuk penegakannya: mata uang, pembulatan, dan DPP Nilai Lain ADA sebagai kolom (supaya form Odoo bisa dipetakan satu-satu) tapi **tidak bisa diisi nilai lain** sampai kebijakannya ada. Kolom yang bisa diisi tapi diabaikan jurnal adalah angka yang berbohong.
+
+⚠️ **`REVOKE UPDATE (faktur_no) FROM authenticated`** ikut di berkas ini — sejak butir 22, satu-satunya jalur mengisinya adalah `set_invoice_tax_info`.
+
+⭐ **Pelajaran urutan yang dibayar mahal:** versi pertama menambahkan CHECK `total_amount_currency` **sebelum** backfill-nya, dan seluruh transaksi gagal 23514 lalu rollback penuh. Urutan di berkas yang sekarang **backfill dulu, CONSTRAINT belakangan**, dan alasannya ditulis di dalam berkasnya. Jangan "dirapikan" kembali ke urutan deklaratif.
+
+**Rollback.** `DROP` 20 kolom + 3 constraint + kembalikan `sp_order_id` ke NOT NULL. Hanya aman selama butir 17-25 belum jalan.
+
+---
+
+## 17. ⛔ `20260928000002_invoice_line_v2` — WAJIB, sesudah butir 16
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000002_invoice_line_v2.sql` (378 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — V1a-V1f lolos |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa isinya.** 15 kolom baris (`line_type`, `product_name`, `sku`, `uom`, `description`, `unit_price`, `line_amount`, `account_id`, `tax_id`, `tax_rate`, `discount_pct`, `analytic_ref`, `analytic_label`, `days`, `position`), `qty` naik dari `integer` ke `numeric(18,4)`, dan **baris ongkos kirim** yang selama ini hanya hidup sebagai angka di kepala.
+
+⭐ **`line_amount` TERPISAH dari `dpp`, dan itu keputusan Den yang menyelamatkan tiga identitas sekaligus.** `dpp` adalah dasar pengenaan pajak BARANG; `ppn` per baris **sudah memuat porsi ongkir baris itu** (rumusnya cocok 23/23 saat diukur). Kalau ongkir diberi `dpp`, PPN-nya terhitung dua kali. Jadi baris ongkir membawa `line_amount` dengan `dpp = 0, ppn = 0`, dan yang berlaku adalah:
+
+```
+SUM(dpp)         = total_dpp
+SUM(ppn)         = total_ppn
+SUM(line_amount) + SUM(ppn) = total_amount
+```
+
+⚠️ **Nol angka kepala berubah** — V1 membuktikannya untuk SELURUH invoice hidup, bukan sampel.
+
+⚠️ **Dua CHECK terkunci lagi di sini:** `..._diskon_terkunci` (diskon hidup di harga SP, bukan di invoice) dan `..._tarif_pajak_terkunci`, `..._days_terkunci`, ditambah `..._amount_rumus` dan `..._shipping_bukan_basis_pajak`.
+
+⭐ **Pelajaran SQL:** backfill-nya memakai **subquery skalar berkorelasi**, bukan `UPDATE ... FROM ... JOIN` — bentuk JOIN gagal 42P01 karena merujuk tabel target dari dalam JOIN-nya sendiri. Alasannya ditulis di berkasnya.
+
+**Rollback.** `DROP` 15 kolom + 5 constraint, `qty` kembali `integer`, hapus baris `line_type = 'shipping'`. Hanya aman selama butir 18/21/25 belum jalan.
+
+---
+
+## 18. ⛔ `20260928000003_invoice_issue_v2` — WAJIB, sesudah butir 17 DAN butir 9
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000003_invoice_issue_v2.sql` (611 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — proyeksi jurnal identik dua arah, **0 selisih** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 17 dan butir 9** |
+
+**Apa isinya.** `create_invoice_for_sp` versi 3 (mengisi kolom kepala + baris + baris ongkir), `post_invoice_journal()`, dan — yang paling penting — **`invoice_journal_projection()`**.
+
+⭐ **Bentuk pembuktiannya adalah desain, bukan lampiran.** Seluruh aritmetika jurnal pindah ke SATU fungsi **baca-saja** yang mengembalikan baris jurnal yang *seharusnya*. `post_invoice_journal()` tidak menghitung apa pun; ia hanya **menulis** apa yang diproyeksikan. Karena itu bukti "jurnalnya identik" mengeksekusi **kode yang sama dengan yang menulis**, bukan salinan kedua yang bisa melenceng diam-diam. Blok pembuktiannya berjalan **SEBELUM** pergantian fungsi, di transaksi yang sama: kalau ada selisih, migrasi berhenti dan tidak ada yang tertukar.
+
+⚠️ **Jurnal kini per AKUN BARIS**, bukan satu akun untuk seluruh invoice. Akun diambil lewat `get_mapped_account()` (butir 12) dengan cadangan ke kode lama.
+
+**Rollback.** Kembalikan `create_invoice_for_sp` ke versi butir 9 + `DROP` dua fungsi baru. Berkas 25 bergantung pada versi ini — balikkan 25 dulu.
+
+---
+
+## 19. ⛔ `20260928000004_invoice_write_lockdown` — WAJIB, sesudah butir 18
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000004_invoice_write_lockdown.sql` (164 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — V1a-V1d lolos, termasuk uji sesi user asli |
+| Production | ⛔ **belum** — bentuk hak di sana **sudah diukur read-only** dan **identik** dengan staging sebelum pengerasan |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa yang dicabut.** `INSERT, UPDATE, DELETE ON sp_invoice_lines` dan `INSERT ON sp_invoices`, keduanya dari `authenticated`.
+
+**Kenapa boleh dicabut.** Diukur lebih dulu, per lokasi: **nol penulis langsung** dari FE (`src/`) maupun dari fungsi non-`SECURITY DEFINER`. Seluruh penulisan sudah lewat RPC. Kalau pengukuran itu menemukan penulis, perintahnya adalah **berhenti dan lapor, jangan cabut** — dan itu tidak terjadi.
+
+⚠️ **Satu pengecualian tercatat: `seed_uat_bill`** (staging-only, dijalankan sebagai `postgres`, dihapus `99-purge`, tidak menyentuh `sp_invoice_lines`, dan UPDATE-nya tidak terdampak `REVOKE INSERT`). Pengecualiannya ditulis di komentar berkas migrasi **dan** di `scripts/seed/uat/README.md` — dua tempat, karena yang membaca seed belum tentu membaca migrasi.
+
+⭐ **Koreksi atas rencana yang disetujui, dan ini harus dibaca sebelum menyentuh hak invoice lagi:** rencana semula menulis "kolom baru baca-saja". Itu **SALAH untuk `sp_invoice_lines`**. Diukur dari `pg_class.relacl` dan `pg_attribute.attacl` (bukan `information_schema`, yang memipihkan bentuknya): pada `sp_invoices`, SELECT dan INSERT adalah hak **TABEL** sementara UPDATE **kolom-spesifik**; pada `sp_invoice_lines`, UPDATE juga hak tabel. Artinya kolom baru **tidak bisa** dikecualikan satu-satu — yang bisa dilakukan adalah mencabut haknya sekalian, dan itulah yang dilakukan.
+
+⚠️ **`sp_invoices.UPDATE` SENGAJA tidak dicabut** — tetap kolom-spesifik (9 kolom sesudah `faktur_no` dicabut berkas 1). V1d menegaskan angka 9 itu sebagai **pembanding**, supaya "nol hak tulis" tidak lolos hanya karena semuanya nol.
+
+**Rollback.** `GRANT` kembali persis bentuk yang diukur sebelum pengerasan; bentuk itu tercatat di berkasnya.
+
+---
+
+## 20. ⛔ `20260928000005_staging_only_taxes_from_production` — ARAH TERBALIK, **JANGAN NAIK KE PRODUKSI**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000005_staging_only_taxes_from_production.sql` (128 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — 21 baris masuk |
+| Production | — **TIDAK BOLEH** — di sanalah 21 baris itu berasal |
+| Tindakan saat launching | ⛔ **JANGAN dijalankan** |
+
+**Apa isinya.** Menyalin 21 baris master `taxes` produksi (7 kode x 3 entitas, **id identik**, termasuk 6 baris yang sudah `deleted_at`) ke staging, yang punya **nol** baris. Tanpa ini, `sp_invoice_lines.tax_id` di staging tidak punya apa pun untuk ditunjuk dan butir 21 mendarat kosong.
+
+**Di produksi hanya dilakukan SELECT** (disetujui Den), dan **isi master tidak diubah**.
+
+⛔ **Guard-nya berbentuk DATA, bukan nama environment:** berkas menolak jalan kalau `taxes` sudah berisi baris. Di produksi ia akan berhenti sendiri — tapi jangan bersandar pada itu; ia tercatat di sini justru supaya tidak dijalankan.
+
+---
+
+## 21. ⛔ `20260928000006_invoice_line_tax_link` — WAJIB, sesudah butir 17
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000006_invoice_line_tax_link.sql` (135 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa isinya.** Mengisi `sp_invoice_lines.tax_id` untuk baris yang sudah ada. **Aman untuk produksi** (beda dari butir 20): produksi sudah punya master `taxes` sejak Mei/Juni 2026.
+
+⭐ **Penautannya lewat KODE + TARIF, bukan lewat id.** Pencarian memakai `(company_id, code = 'VAT_FULL', deleted_at IS NULL)` **dan memeriksa** bahwa tarif baris master itu benar-benar sama dengan tarif yang tersimpan di barisnya. Menyalin id antar-lingkungan akan bekerja hari ini dan patah diam-diam begitu master dibuat ulang.
+
+⚠️ **`tax_id` MURNI RUJUKAN NAMA.** Yang menghitung tetap `tax_rate` dan `ppn`. Nol total bergerak.
+
+⚠️ **Ini backfill — ia berjalan SEKALI.** Jalur yang mengisinya saat terbit ada di butir 25, dan tanpa butir 25 setiap invoice baru lahir dengan tautan kosong.
+
+---
+
+## 22. ⛔ `20260928000007_invoice_post_issue_rpcs` — WAJIB, sesudah butir 16
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000007_invoice_post_issue_rpcs.sql` (336 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — V1 tiap RPC lolos, termasuk uji ACL grantee kosong |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa isinya.** `invoice_dapat_dibaca()` + empat RPC kelas (c): `set_invoice_tax_info`, `mark_invoice_printed`, `mark_invoice_emailed`, `link_replacement_invoice`. Semuanya `SECURITY DEFINER` + `REVOKE ALL FROM PUBLIC` + menulis `audit_logs`.
+
+**Izin (koreksi Den yang sudah diterapkan):** `set_invoice_tax_info` boleh **`finance`**, `finance_controller`, `super_admin`. **Isi sekali**; mengubah nilai yang sudah terisi **hanya `super_admin`**. `mark_invoice_printed`/`mark_invoice_emailed` boleh **siapa pun yang boleh membaca** invoice itu.
+
+⭐ **"Isi sekali" ditegakkan DUA KALI** — di `IF` dan **diulang di `WHERE` UPDATE-nya** — supaya dua panggilan berbarengan tidak sama-sama lolos. Pola yang sama dengan `set_delivery_signed_date`.
+
+⚠️ **`invoice_dapat_dibaca()` menduplikasi syarat `sp_invoices_read`, dan itu disengaja** (RLS tidak berlaku di dalam `SECURITY DEFINER`). **Kelas checklist TD-233:** kalau `sp_invoices_read` berubah, fungsi ini **wajib ikut**. Yang menjaganya bukan ingatan: `scripts/qa/ar-role-visibility-check.sql` Bagian 3 mengasersi, **per akun uji**, bahwa jumlah invoice yang lolos `invoice_dapat_dibaca()` **SAMA** dengan jumlah yang terlihat lewat RLS di sesi user asli.
+
+⚠️ **Uji ACL grantee kosong wajib** untuk tiap RPC: `proacl IS NULL` **atau** ada entri berawalan `'='` sama-sama berarti PUBLIC EXECUTE (gotcha #40).
+
+---
+
+## 23. ⛔ `20260928000008_invoice_attachments` — WAJIB (ada bucket Storage)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000008_invoice_attachments.sql` (279 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** — dan **periksa bucket-nya benar-benar terbuat** |
+
+**Apa isinya.** Bucket **PRIVAT** `invoice-docs` (10 MB, 6 tipe MIME), 3 policy `storage.objects`, tabel `invoice_attachments` + RLS, dan dua RPC (`add_invoice_attachment` / `delete_invoice_attachment`, batas **10 lampiran** per invoice).
+
+⭐ **Dua lapis penjagaan, dan keduanya perlu:** policy `storage.objects` menjaga **byte**-nya, RLS `invoice_attachments` menjaga **daftar**-nya. Satu lapis saja meninggalkan salah satu bocor.
+
+⛔ **Bucket PRIVAT, bukan menumpang `assets`/`avatars`** — keduanya publik. Faktur pajak dan bukti potong tidak boleh punya URL yang bisa ditebak; FE membukanya lewat URL bertanda tangan yang dibuat saat diklik dan **tidak disimpan**.
+
+⚠️ **Kontrak path `<company_id>/<invoice_id>/<uuid>.<ext>`** ditegakkan RPC-nya, dan **segmen pertama** itulah yang dibaca policy Storage. Mengubah bentuk path berarti mengubah policy-nya juga.
+
+**Izin unggah (koreksi Den):** `finance`, `finance_controller`, manager ke atas, `super_admin`. **Hapus** = pengunggahnya sendiri atau `super_admin`, dan **soft delete**.
+
+---
+
+## 24. ⛔ `20260928000009_invoice_notes` — WAJIB (mandiri)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000009_invoice_notes.sql` (167 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa isinya.** Tabel `invoice_notes` **append-only** + `add_invoice_note`, tampil digabung ke Riwayat invoice.
+
+**Siapa boleh menulis: siapa pun yang boleh MEMBACA invoice itu** — termasuk `finance` polos yang tidak boleh menerbitkan maupun mencatat pembayaran. Gerbangnya **READ, bukan peran**, dan itu disengaja: menutup catatan dari orang yang mengerjakan dokumennya membuat fitur ini mati sebelum dipakai.
+
+⛔ **Tidak ada jalur sunting**, dan itu bukan kelalaian: jejak yang bisa ditulis ulang bukan jejak. Salah tulis → tulis catatan baru. Hapus = soft delete, dan barisnya tetap tampil sebagai "Catatan dihapus."
+
+⚠️ `created_by` **tanpa FK ke `profiles`** (pola yang sama dengan `signed_date_filled_by`), jadi nama penulisnya diambil FE dalam dua langkah, bukan lewat embed PostgREST.
+
+---
+
+## 25. ⛔ `20260928000010_invoice_issue_tax_link` — WAJIB, sesudah butir 18 dan 21
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000010_invoice_issue_tax_link.sql` (243 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — dibuktikan **saat terbit** lewat dua uji RPC yang di-rollback, salah satunya SP berongkir |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+⚠️ **Berkas ini lahir SESUDAH kesepuluh butir direncanakan** — Den memerintahkan "butir 16 sampai 24" ketika berkasnya baru sembilan. Ia ditambahkan karena gerbang (d) menemukan cacat, bukan karena rencananya berubah.
+
+⭐ **Cacat yang ditemukan dengan MENJALANKAN, bukan membaca.** Butir 21 adalah backfill: ia berjalan sekali. `create_invoice_for_sp` versi butir 18 mengisi `tax_rate` tapi **tidak** `tax_id`, jadi setiap invoice yang terbit sesudah backfill lahir dengan tautan pajak kosong. Tidak terlihat sampai seed UAT dijalankan ulang penuh: purge menghapus 25 baris hasil backfill, seed menerbitkan 22 invoice baru lewat RPC, dan **V12h berbunyi 25 baris tanpa `tax_id`**.
+
+⭐ **Kelas kegagalan yang sama persis dengan `delivery_note_items.sp_order_item_id` (25 Sep 2026):** kolom yang TAMPAK terisi karena pernah di-backfill, padahal jalur yang mengisinya tidak ada. *Kolom yang penuh karena backfill bukan kolom yang terisi.*
+
+⛔ **Butir 18 SENGAJA TIDAK DISUNTING.** Ia sudah tercatat dijalankan di staging; mengubah isinya membuat berkas di repo berhenti menggambarkan apa yang benar-benar jalan. Perbaikan punya nomornya sendiri.
+
+**Isinya.** `create_invoice_for_sp` mengisi `tax_id` saat terbit + UPDATE susulan yang **idempoten** untuk baris yang terlanjur lahir kosong. Pencariannya sama dengan butir 21 (kode + tarif). **Nol total bergerak**, dan V1 membuktikannya.
 
 ---
 
