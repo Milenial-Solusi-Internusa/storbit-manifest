@@ -178,3 +178,32 @@ V11 ada justru untuk menangkap keadaan itu.
 Baseline sweep **dibiarkan basi** (keputusan Den Q4). Data dummy mengubah
 `surfaceHash` halaman Storbit/Finance/CRM, jadi sweep akan melaporkan perbedaan
 -- itu diharapkan. Baseline baru dibuat di sweep malam berikutnya.
+
+## `seed_uat_bill` -- pengecualian tercatat pada pengerasan hak invoice
+
+Migrasi `20260928000004_invoice_write_lockdown.sql` mencabut hak tulis langsung
+`authenticated` ke `sp_invoice_lines` (INSERT/UPDATE/DELETE) dan ke
+`sp_invoices` (INSERT). Sesudahnya penulisan invoice hanya lewat RPC
+SECURITY DEFINER.
+
+`seed_uat_bill` adalah **satu-satunya penulis non-SECURITY-DEFINER** yang
+ditemukan saat pengukuran 27 September 2026 -- ia SECURITY INVOKER dan
+melakukan `UPDATE sp_invoices SET created_at / status / submitted_at /
+updated_at` untuk menggeser stempel waktu seed ke tanggal historis.
+
+Ia **DIKECUALIKAN** dari pencabutan itu (keputusan Den, 27 Sep 2026), dengan
+empat alasan yang masing-masing bisa diperiksa:
+
+1. helper ini **khusus staging** dan dijalankan `seed.sh` sebagai `postgres`,
+   jadi hak `authenticated` tidak berlaku untuknya;
+2. ia **dihapus `99-purge.sql`**, jadi tidak hidup di luar masa seed;
+3. ia **tidak menyentuh `sp_invoice_lines`** sama sekali;
+4. ia melakukan **UPDATE, bukan INSERT** -- dan yang dicabut di `sp_invoices`
+   hanyalah INSERT.
+
+⭐ Lagi pula ia **sudah mustahil** berjalan sebagai `authenticated`: `status`
+dan `submitted_at` bukan bagian dari kolom ber-UPDATE untuk role itu.
+
+⛔ Kalau `seed_uat_bill` suatu saat dipanggil dari jalur lain (mis. dari FE atau
+dari fungsi yang berjalan sebagai `authenticated`), pengecualian ini **gugur** --
+jadikan ia SECURITY DEFINER ber-guard, jangan kembalikan hak tabelnya.
