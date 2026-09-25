@@ -19,6 +19,25 @@
 //
 // Hasilnya dikelompokkan: HANYA DI STAGING, HANYA DI PRODUCTION, BEDA ISI.
 //
+// ── TIGA KELAS PERBEDAAN ────────────────────────────────────────────────────
+//   ANTRE      sudah di staging, MENUNGGU hari launching. Dicetak beserta
+//              NOMOR BUTIR doc 12-nya -- tidak disembunyikan, dan tidak
+//              dihitung sebagai drift tanpa penjelasan. Ia HARUS tetap
+//              terlihat sampai benar-benar naik ke produksi; menyembunyikannya
+//              berarti kehilangan satu-satunya daftar yang mengatakan apa yang
+//              masih menggantung.
+//   SELAMANYA  memang sengaja berbeda dan tidak akan pernah disamakan
+//              (mis. notify_sp_milestone no-op, fungsi bantu seed).
+//   DRIFT      tidak ada penjelasannya. Ini yang ditindaklanjuti, dan
+//              satu-satunya yang membuat exit code != 0.
+//
+// ── YANG TIDAK DILIHAT ALAT INI (batas, bukan jaminan) ──────────────────────
+//   index, constraint, sequence, extension, hak tabel/kolom (relacl/attacl),
+//   dan ISI DATA. Contoh nyata: 20260925000002 hanya membuat index unik
+//   parsial, jadi ia TIDAK akan pernah muncul di sini -- bukan karena ia sudah
+//   sama, melainkan karena index tidak dibandingkan. Untuk kelas itu, doc 12
+//   yang jadi daftarnya, bukan skrip ini.
+//
 // ── DUA FASE, DAN ITU DISENGAJA ─────────────────────────────────────────────
 // Kolom dibandingkan PER TABEL, bukan per kolom: satu md5 atas seluruh daftar
 // kolom tabel itu. Alasannya dua. (1) Ukuran: public punya ~2.400 kolom, dan
@@ -55,6 +74,7 @@ import { readFileSync } from 'node:fs';
 // perbedaannya keputusan tertulis (doc 12) atau konsekuensi yang dicatat.
 const DIKETAHUI = [
   {
+    kelas: 'selamanya',
     cocok: (kat, kunci) => kat === 'fungsi' && kunci.startsWith('notify_sp_milestone('),
     alasan: 'no-op KHUSUS staging (20260925000003, doc 12 butir 10) -- badan produksi memanggil Edge Function produksi lewat URL hardcode, jadi staging sengaja BERBEDA selamanya',
   },
@@ -69,9 +89,12 @@ const DIKETAHUI = [
       (kat === 'fungsi' && /^(create_invoice_for_sp|create_invoice|record_payment|submit_invoice|generate_delivery_from_picking|set_delivery_signed_date|sp_invoice_readiness|sp_invoice_readiness_all|get_mapped_account|mark_delivery_delivered)\(/.test(kunci))
       || (kat === 'kolom' && /^(delivery_notes|account_role_mappings|sp_invoices_due_date_backfill_20260927|sp_invoices)$/.test(kunci))
       || (kat === 'policy' && kunci.startsWith('account_role_mappings.')),
-    alasan: 'AR Tahap 1/2 menunggu hari launching (doc 12 butir 6-9 dan 11-14) -- LIVE staging, produksi belum, dan urutannya mengikat',
+    kelas: 'antre',
+    butir: '6-9, 11-14',
+    alasan: 'AR Tahap 1/2 menunggu hari launching -- LIVE staging, produksi belum, dan urutannya mengikat',
   },
   {
+    kelas: 'selamanya',
     cocok: (kat, kunci) => kat === 'fungsi' && /^(seed_uat_build|seed_uat_bill|derive_status)\(/.test(kunci),
     alasan: 'fungsi bantu seed data dummy UAT (scripts/seed/uat/) -- staging saja, dan dihapus oleh 99-purge',
   },
@@ -87,7 +110,9 @@ const DIKETAHUI = [
       (kat === 'kolom' && /^(sp_invoice_lines|invoice_attachments|invoice_notes)$/.test(kunci))
       || (kat === 'fungsi' && /^(invoice_journal_projection|post_invoice_journal|invoice_dapat_dibaca|set_invoice_tax_info|mark_invoice_printed|mark_invoice_emailed|link_replacement_invoice|add_invoice_attachment|delete_invoice_attachment|add_invoice_note|delete_invoice_note)\(/.test(kunci))
       || (kat === 'policy' && /^(invoice_attachments|invoice_notes)\./.test(kunci)),
-    alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..10, doc 12 butir 16-24) -- LIVE staging, produksi belum, urutannya mengikat',
+    kelas: 'antre',
+    butir: '16-26',
+    alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..11) -- LIVE staging, produksi belum, urutannya mengikat',
   },
   {
     // !! sp_invoices sudah tercakup entri AR Tahap 1/2 di atas untuk kategori
@@ -96,13 +121,14 @@ const DIKETAHUI = [
     // membaca relacl/attacl tabel sama sekali -- pencabutan INSERT/UPDATE
     // (berkas 1 dan 4) karena itu TIDAK akan muncul sebagai drift. Itu batas
     // alat ini, bukan tanda tidak ada perbedaan: periksa lewat doc 12 butir 19.
+    kelas: 'selamanya',
     cocok: () => false,
     alasan: '(penanda dokumentasi, tidak mencocokkan apa pun)',
   },
 ];
 
 function klasifikasi(kat, kunci) {
-  for (const d of DIKETAHUI) if (d.cocok(kat, kunci)) return d.alasan;
+  for (const d of DIKETAHUI) if (d.cocok(kat, kunci)) return d;
   return null;
 }
 
@@ -190,7 +216,8 @@ export function bandingkan(stg, prd) {
 }
 
 export function laporkan(hasil) {
-  let drift = 0, diketahui = 0;
+  let drift = 0, antre = 0, selamanya = 0;
+  const butirAntre = new Map();
   for (const [kat, h] of Object.entries(hasil)) {
     const total = h.hanyaStg.length + h.hanyaPrd.length + h.bedaIsi.length;
     console.log(`\n=== ${kat.toUpperCase()} — staging ${h.n_stg} objek, production ${h.n_prd} objek, ${total} perbedaan ===`);
@@ -202,9 +229,16 @@ export function laporkan(hasil) {
       if (!daftar.length) continue;
       console.log(`  ${label} (${daftar.length}):`);
       for (const k of daftar) {
-        const alasan = klasifikasi(kat, k);
-        if (alasan) { diketahui++; console.log(`    [diketahui] ${k}\n                ${alasan}`); }
-        else {
+        const d = klasifikasi(kat, k);
+        if (d && d.kelas === 'antre') {
+          antre++;
+          const b = d.butir || '(butir belum dicatat)';
+          butirAntre.set(b, (butirAntre.get(b) || 0) + 1);
+          console.log(`    [ANTRE doc 12 butir ${b}] ${k}\n                ${d.alasan}`);
+        } else if (d) {
+          selamanya++;
+          console.log(`    [selamanya] ${k}\n                ${d.alasan}`);
+        } else {
           drift++;
           console.log(`    [DRIFT]     ${k}`);
           if (kat === 'kolom') console.log(`                drill-down: node scripts/qa/env-drift-check.mjs --sql-kolom ${k}`);
@@ -213,10 +247,19 @@ export function laporkan(hasil) {
     }
     if (!total) console.log('  (identik)');
   }
-  console.log(`\n--- ringkasan: ${diketahui} perbedaan DIKETAHUI, ${drift} DRIFT ---`);
+  console.log(`\n--- ringkasan: ${antre} ANTRE, ${selamanya} SELAMANYA, ${drift} DRIFT ---`);
+  if (antre) {
+    console.log('ANTRE = sudah di staging, menunggu hari launching. Per butir doc 12:');
+    for (const [b, n] of [...butirAntre.entries()].sort()) {
+      console.log(`  butir ${b}: ${n} objek`);
+    }
+    console.log('  (angka ini OBJEK yang berbeda, bukan jumlah migrasi -- satu migrasi');
+    console.log('   bisa menyentuh beberapa fungsi/policy/kolom sekaligus.)');
+  }
   if (drift) {
     console.log('DRIFT = perbedaan yang tidak ada penjelasannya. Periksa satu per satu:');
-    console.log('kalau memang disengaja, tulis alasannya di DIKETAHUI; kalau tidak, itu temuan.');
+    console.log('kalau memang disengaja, tulis alasannya di DIKETAHUI beserta kelasnya');
+    console.log("('antre' + nomor butir doc 12, atau 'selamanya'); kalau tidak, itu temuan.");
   }
   return drift;
 }
