@@ -75,6 +75,47 @@
 
 **12. Gate repo (diukur ulang).** build clean **3.030** modul · lint **137 error / 21 warning = baseline PERSIS** · `check-menu-paths` ✔ **237 MENU_PATHS / 324 rute kanonik**.
 
+**13. Putaran rapi-rapi sesudah review Preview pertama (25 Sep 2026, lima butir Den).** Fungsional sudah lolos; yang dirapikan tampilan dan penjagaan, **nol logika/RPC/izin/uji yang sudah lolos berubah**.
+
+⭐ **Kode Coretax berhenti jadi isian bebas.** Daftar tetap **01..10** hidup di `src/lib/taxConstants.js` (`CORETAX_TX_CODES`) dan dipakai sebagai dropdown; **berkas 11** (`20260928000011`) menolak kode di luar daftar **di server**, karena dropdown adalah kenyamanan, bukan penjagaan — RPC-nya bisa dipanggil langsung. Yang diperiksa **hanya kodenya**, bukan kalimat keterangannya: kalimatnya masih menunggu Finance, dan memvalidasinya berarti setiap koreksi kata akan menolak nilai yang sudah tersimpan. ⚠️ `substring` dipakai, **bukan** `LIKE '[0-9][0-9]%'` — di SQL kurung siku bukan kelas karakter, jadi pola itu **meloloskan `'[99] apa pun'`** tanpa berbunyi.
+
+⛔ **Nomor Faktur Pajak: contoh format e-Faktur lama DICABUT, dan SENGAJA tidak diganti validasi.** Placeholder-nya netral ("Nomor faktur dari Coretax"). Format Coretax belum dikonfirmasi, dan *pola yang salah menolak nomor yang sah sambil terlihat seperti sistem yang rusak*. Pertanyaannya masuk daftar Finance (butir 2b), bersama konfirmasi kalimat tiap kode (butir 3b).
+
+**Seluruh teks keterangan ditulis ulang jadi kalimat pengguna** — daftar sebelum/sesudah lengkap ada di laporan sesi. Penjelasan teknisnya **tidak dibuang, dipindah**: ke komentar kode di tempat yang bersangkutan (TERKUNCI, append-only catatan, tombol Coretax nonaktif) dan ke berkas migrasinya. *Layar Finance bukan tempat menjelaskan invariant piutang.* Kalimat "koreksi lewat void & terbit ulang" ikut dicabut — **jalur void belum ada**, jadi ia menjanjikan tombol yang tidak bisa dicari.
+
+**Kejadian "dikirim lewat email" dicabut dari fixture seed.** Storbit mengirim lewat **upload portal**; seed yang mengisinya menaruh kejadian yang tidak pernah terjadi di Riwayat, dan penguji UAT tidak punya cara membedakannya dari yang nyata. Kolomnya tetap ada di skema — yang dicabut pengisinya. ⭐ Fixture juga **membersihkan sisa fixture lama** (`emailed_at` → NULL untuk SP `91%`), supaya staging yang sudah pernah di-seed tanpa purge ikut bersih; dan **V12i baru** mengasersi **0** invoice seed ber-`emailed_at` — kalau kelak ada yang menghidupkannya lagi, verifikasinya berbunyi.
+
+⭐ **Baris TTF di kotak meta dipecah jadi No. TTF + Tanggal TTF, dan sebab melorotnya ternyata bukan yang pertama diduga.** Dugaan awal "teks panjang membungkus" tidak cukup: `align-items: baseline` menyejajarkan baris PERTAMA, jadi span biasa tidak menurunkan label. Yang menurunkannya adalah nilainya sendiri — `<Ref>` adalah **`<button>` = inline-block**, dan baseline inline-block adalah baris **TERAKHIR** isinya. **Diukur** di kolom 280px (lebar layar 1000px): label turun **13 px** dengan `baseline`, **0 px** dengan `flex-start`. Karena itu perbaikannya dua lapis — barisnya dipecah **dan** `MetaRow` pindah ke `flex-start`, sehingga baris mana pun yang nilainya membungkus ikut aman. ⚠️ Di 1000px `.nx-grid-2` memang sudah turun satu kolom, tapi kolom metanya tetap `flex: 0 1 280px` — jadi lebar itulah yang diuji, bukan lebar layarnya.
+
+**Gate putaran ini:** build clean **3.030** modul · lint **137/21 = baseline PERSIS** · `check-menu-paths` ✔.
+
+⭐⭐ **14. `seed.sh` ternyata tidak pernah bisa jalan lewat `psql` — ketahuan hanya karena dicoba lewat `psql`.** Seluruh rangkaian seed lahir dan diuji lewat **MCP Supabase**, yang mengeksekusi satu berkas sebagai **satu batch = satu transaksi**. Percobaan pertama lewat `psql` gagal di `02-scenario-1.sql` dengan `ERROR: Tidak berhak membuat picking list untuk SP ini` — pesan yang terdengar seperti bug izin, padahal sebabnya transaksi.
+
+**Dua cacat, dan keduanya hanya muncul lewat psql:** (1) `set_config(..., true)` itu **transaction-scoped** — di bawah autocommit psql tiap pernyataan adalah transaksinya sendiri, jadi GUC impersonasi hilang begitu blok palang selesai dan `seed_uat_build(...)` berikutnya berjalan dengan `auth.uid()` NULL; (2) **tiap berkas adalah proses `psql` SENDIRI = sesi sendiri**, sehingga enam berkas yang menulis prasyarat *"00-guards.sql sudah dijalankan di sesi yang SAMA"* mengandaikan sesuatu yang **`seed.sh` tidak pernah lakukan**.
+
+⭐ **Pelajaran yang layak dibawa keluar:** *prasyarat yang ditulis di komentar bukan prasyarat yang ditegakkan.* Kalimat itu bertahan berhari-hari sambil salah, karena satu-satunya jalur yang dipakai mengujinya kebetulan memenuhinya.
+
+**Perbaikannya dua lapis, dan tidak satu pun melemahkan palang:** tiap berkas kini memanggil **`\i 00-guards.sql` sendiri** (palangnya berjalan 9x, termasuk palang `notify_sp_milestone` no-op — lebih ketat, bukan lebih longgar), dan `seed.sh` memakai **`--single-transaction`** sehingga satu berkas = satu transaksi dan `set_config(..., true)` berlaku untuk seluruh isinya. ⛔ **`true` sengaja TIDAK diganti `false`:** scope transaksi adalah sifat yang diinginkan; yang salah cuma transaksinya yang terlalu pendek.
+
+**Efek yang ikut didapat: tiap berkas jadi ATOMIK** — gagal di tengah membatalkan berkas itu seluruhnya, bukan meninggalkan staging separuh jadi, persis keadaan yang harus dibereskan tangan hari itu.
+
+**Aturannya dijaga mekanis, bukan oleh ingatan:** `scripts/seed/uat/cek-guards.sh` (100% baca berkas, nol koneksi) menolak berkas seed yang tidak memanggil palangnya **dan** berkas seed baru yang belum terdaftar — *daftar yang diam-diam ketinggalan adalah cara aturan ini mati pelan-pelan*. Ia dijalankan `seed.sh` sebelum menyentuh database.
+
+⭐⭐ **15. `ar-health-check.sql` diam-diam melewati salah satu pemeriksaannya sendiri — sejak hari ia ditulis.** Putaran psql yang berhasil mencetak satu `ERROR: column je.entry_no does not exist` di B3 (blok "invoice void yang jurnal penerbitannya belum dicabut"). Kolom `entry_no` **tidak pernah ada** di `journal_entries` — ia karangan saat berkas itu ditulis, dan `grep` ke seluruh repo mengonfirmasi nol kemunculan lain.
+
+⛔ **Yang membuatnya bertahan bukan kolomnya, melainkan psql tanpa `ON_ERROR_STOP`:** ERROR-nya dicetak, lalu berkas itu **lanjut ke query berikutnya**. Hasilnya keluaran yang tampak lengkap dan rapi — tujuh baris ringkasan H1..H7, semua tabel lampiran tercetak — sambil satu pemeriksaannya tidak pernah dijalankan sekali pun. *Cek kesehatan yang diam-diam melewati pemeriksaannya sendiri lebih buruk daripada tidak ada cek sama sekali, karena ia menghasilkan keyakinan.*
+
+**Perbaikannya dua lapis:** B3 memakai kolom yang memang ada (`id`, `entry_date`, `description`, `created_at`), dan berkas itu kini dibuka `\set ON_ERROR_STOP on` sehingga query yang error **menghentikan berkasnya** dan psql keluar != 0 — ditangkap `set -e` + `pipefail` di skrip gerbang. Ditutup penanda `\echo '=== ar-health-check SELESAI ...'` di ekornya, yang diperiksa skrip gerbang sebagai **lapis kedua**: ia menangkap keluaran terpotong yang tidak lewat exit code (mis. koneksi putus), kasus yang kalau tidak diperiksa akan terbaca sebagai lolos justru karena tabel-tabel sebelumnya tercetak rapi.
+
+⚠️ **B3 belum dijalankan ulang** (keputusan Den: jangan seed ulang, hemat kuota log). Nama kolomnya diverifikasi ke `schema_snapshot.sql`; bukti runtime-nya menunggu putaran berikutnya. ⚠️ B3 memang mengembalikan **0 baris** di staging (H4 = 0), jadi yang diuji putaran berikutnya adalah query-nya **parse**, bukan isinya.
+
+⚠️ Skrip gerbang juga memanggil `06-verify.sql` **dua kali** — sekali sebagai langkah terakhir `seed.sh seed`, sekali lagi lewat `./seed.sh verify`. Panggilan keduanya dicabut: hasilnya sama persis, dan satu putaran verify penuh tidak gratis.
+
+⚠️ **Diperiksa statis, BUKAN dijalankan:** tidak ada berkas seed yang memuat `BEGIN;`/`COMMIT;` tingkat SQL, `VACUUM`, `CONCURRENTLY`, atau `CALL` — jadi tiap berkas aman di dalam satu transaksi; seluruh `BEGIN` yang ada adalah pembuka blok PL/pgSQL. Probe tulis V13 meng-`INSERT` lalu langsung `DELETE` di blok yang sama, jadi ia tidak meninggalkan baris walau probenya diterima. ⛔ **Bukti runtime-nya menunggu putaran `psql` berikutnya** — sesi ini tidak punya kredensial staging (disengaja: URL-nya hanya diketik Den lewat `read -s`).
+
+---
+
+
 ⚠️ **Batas yang perlu disebut apa adanya: tampilan tab baru (Info Lain, Pajak & Coretax, Lampiran & Catatan) dan panel samping BELUM dirender di browser** — yang membuktikannya sejauh ini hanya build + eslint, berbeda dari rombak tampilan tahap pertama yang sempat dilihat langsung. Uji runtime FE-nya menunggu review Den di Preview.
 
 ⚠️ **Nol dari sepuluh migrasi ada di produksi, dan gelombang ini TIDAK boleh naik sendirian** — butir 18 menuntut butir 9 (`ar_single_issue_path`) sudah jalan lebih dulu. Urutan lengkap di doc 12.

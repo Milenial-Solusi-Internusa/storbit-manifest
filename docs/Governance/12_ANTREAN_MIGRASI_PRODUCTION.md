@@ -46,6 +46,7 @@
 | 23 | `20260928000008_invoice_attachments` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — bucket Storage, lihat butir 23 |
 | 24 | `20260928000009_invoice_notes` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
 | 25 | `20260928000010_invoice_issue_tax_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18 dan 21 |
+| 26 | `20260928000011_invoice_coretax_code_whitelist` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 22 |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -424,7 +425,7 @@ Sepuluh berkas `20260928*` lahir dari satu keputusan: **seluruh kolom form invoi
 ```
 16 -> 17 -> 18 -> 19        (berkas 1-4, berurutan)
 17 -> 21 -> 25              (tautan pajak, sesudah baris punya kolomnya)
-16 -> 22                    (RPC pasca-terbit)
+16 -> 22 -> 26              (RPC pasca-terbit, lalu daftar kode Coretax)
 23, 24                      (mandiri, boleh kapan saja sesudah 16)
 20                          JANGAN — staging saja
 ```
@@ -642,6 +643,31 @@ SUM(line_amount) + SUM(ppn) = total_amount
 ⛔ **Butir 18 SENGAJA TIDAK DISUNTING.** Ia sudah tercatat dijalankan di staging; mengubah isinya membuat berkas di repo berhenti menggambarkan apa yang benar-benar jalan. Perbaikan punya nomornya sendiri.
 
 **Isinya.** `create_invoice_for_sp` mengisi `tax_id` saat terbit + UPDATE susulan yang **idempoten** untuk baris yang terlanjur lahir kosong. Pencariannya sama dengan butir 21 (kode + tarif). **Nol total bergerak**, dan V1 membuktikannya.
+
+---
+
+## 26. ⛔ `20260928000011_invoice_coretax_code_whitelist` — WAJIB, sesudah butir 22
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000011_invoice_coretax_code_whitelist.sql` (~200 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — V1 lolos, V2 mencetak keadaan data lama |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 22** |
+
+**Apa isinya.** Satu `CREATE OR REPLACE set_invoice_tax_info` yang menolak kode transaksi Coretax di luar daftar **01..10**. Nol kolom, nol tabel, nol izin berubah; badannya disalin dari butir 22 dan **hanya** ditambahi satu blok validasi.
+
+**Kenapa ada.** Sampai berkas 10, kode Coretax adalah **isian bebas** — salah ketik masuk tanpa perlawanan dan baru ketahuan saat rekonsiliasi Faktur Pajak. FE kini memakai dropdown, tapi **dropdown adalah kenyamanan, bukan penjagaan**: RPC-nya bisa dipanggil langsung.
+
+⭐ **Yang diperiksa HANYA kodenya, bukan kalimat keterangannya** (bentuk `'[NN] ...'`, NN salah satu dari 01..10). Itu keputusan sadar: keterangan tiap kode **masih menunggu konfirmasi Finance** (`09_ROADMAP.md` §Pertanyaan untuk Finance butir 3b), dan memvalidasi kalimat berarti setiap koreksi kata dari Finance akan menolak nilai yang sudah tersimpan. Yang mengikat secara pajak adalah kodenya.
+
+⚠️ **`substring` dipakai, BUKAN `LIKE '[0-9][0-9]%'`** — di SQL kurung siku bukan kelas karakter, jadi pola itu mencari kurung siku harfiah dan **meloloskan `'[99] apa pun'`**. Kegagalannya akan senyap.
+
+⛔ **Kembaran yang wajib bergerak bersama (kelas checklist TD-233):** himpunan kode di RPC ↔ `CORETAX_TX_CODES` di `src/lib/taxConstants.js`. Menambah/menghapus **baris** = sentuh keduanya; mengubah **kalimat** = FE saja.
+
+⚠️ **Tidak retroaktif.** Nilai yang sudah tersimpan tidak divalidasi ulang dan tidak diubah — fungsinya "isi sekali", jadi nilai lama memang tidak lewat sini lagi. **V2 menghitung dan MENCETAK** berapa baris lama yang di luar daftar (sampai 20 contoh): angka > 0 **bukan kegagalan**, itu daftar kerja untuk Finance.
+
+**Rollback.** Jalankan ulang blok `CREATE OR REPLACE set_invoice_tax_info` dari butir 22. Nol data yang perlu dibalik — berkas ini tidak menyentuh satu baris pun.
 
 ---
 
