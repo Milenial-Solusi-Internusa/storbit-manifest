@@ -12,7 +12,7 @@
 // Nol logika bisnis di berkas ini: ia tidak tahu apa itu invoice. Yang
 // memutuskan tombol aktif/nonaktif tetap pemanggilnya.
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal } from 'lucide-react';
 import {
   C, FONT_DISPLAY, FONT_TEXT, FONT_MONO, SP, RADIUS,
   kickerStyle, cardTitleStyle, thStyle,
@@ -405,5 +405,96 @@ export function Avatar({ name, size = 30 }) {
     >
       {initials}
     </span>
+  );
+}
+
+/* ========================================================================== */
+/* REF -- rujukan yang bisa diklik untuk membuka PANEL SAMPING.               */
+/*                                                                            */
+/* Aturan Contextual Master Data Access (Grand Design Bagian 1): satu master  */
+/* data cuma punya SATU layar CRUD, yaitu rumah aslinya. Modul lain mengakses */
+/* lewat REFERENSI -- panel untuk melihat tanpa pindah halaman, plus tombol   */
+/* pintas ke layar aslinya. Dokumen (SP, SJ, BTB, TTF, pembayaran)            */
+/* diperlakukan seperti kelas berat (keputusan Den 27 Sep 2026).              */
+/*                                                                            */
+/* ⛔ JANGAN menjadikan panel ini layar kedua: ia MELIHAT, tidak menyunting.  */
+/* ========================================================================== */
+export function Ref({ children, onClick, mono = true, title }) {
+  if (!onClick) {
+    return <span style={{ fontFamily: mono ? FONT_MONO : 'inherit', color: C.inkSoft }}>{children}</span>;
+  }
+  return (
+    <button
+      type="button" onClick={onClick} title={title || 'Lihat ringkas'}
+      style={{
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        color: C.accent, fontFamily: mono ? FONT_MONO : 'inherit',
+        fontSize: 'inherit', fontWeight: 600, textAlign: 'left',
+        borderBottom: `1px dotted ${C.accentBd}`,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ========================================================================== */
+/* QUICKPANEL -- panel samping ringkas. Melihat, bukan menyunting.            */
+/* `rows` = [[label, nilai]]; `onOpenFull` memunculkan tombol pintas ke layar */
+/* aslinya. Tanpa `onOpenFull` panel tetap sah: sebagian rujukan (BTB) memang */
+/* belum punya halaman sendiri, dan itu keadaan, bukan kelalaian.             */
+/* ========================================================================== */
+export function QuickPanel({ open, onClose, kicker, title, rows = [], extra, onOpenFull, fullLabel = 'Buka halaman penuh' }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <>
+      <div
+        onClick={onClose} aria-hidden="true"
+        style={{ position: 'fixed', inset: 0, background: 'rgba(42,51,64,.32)', zIndex: 80 }}
+      />
+      <aside
+        role="dialog" aria-modal="true" aria-label={title}
+        style={{
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(420px, 92vw)', zIndex: 81,
+          background: C.surface, borderLeft: `1px solid ${C.line}`,
+          boxShadow: '-8px 0 28px rgba(45,43,43,.18)',
+          display: 'flex', flexDirection: 'column', fontFamily: FONT_TEXT,
+        }}
+      >
+        <header style={{ padding: `${SP.s3}px ${SP.s4}px`, borderBottom: `1px solid ${C.lineSoft}`, background: C.surface2 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s2 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {kicker && <div style={{ ...kickerStyle }}>{kicker}</div>}
+              <div style={{ ...cardTitleStyle, fontSize: 16, marginTop: 2, wordBreak: 'break-word' }}>{title}</div>
+            </div>
+            <button
+              type="button" onClick={onClose} aria-label="Tutup"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft, fontSize: 20, lineHeight: 1, padding: 0 }}
+            >
+              &times;
+            </button>
+          </div>
+        </header>
+        <div style={{ flex: 1, overflowY: 'auto', padding: SP.s4 }}>
+          {rows.map(([label, nilai], i) => (
+            <MetaRow key={`${label}-${i}`} label={label}>{nilai}</MetaRow>
+          ))}
+          {extra}
+        </div>
+        {onOpenFull && (
+          <footer style={{ padding: SP.s3, borderTop: `1px solid ${C.lineSoft}` }}>
+            <Btn variant="outline" icon={ExternalLink} onClick={onOpenFull} style={{ width: '100%' }}>
+              {fullLabel}
+            </Btn>
+          </footer>
+        )}
+      </aside>
+    </>
   );
 }

@@ -16,14 +16,15 @@
 // "melengkapi" halaman ini dengan tombol ubah.
 //
 // Keluarga token: ungu/serif Storbit (lihat catatan di financeKit.jsx / TD-277).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, Download, FileText, Link2, Pencil, Printer, Receipt,
-  Send, Stamp, Truck, Wallet,
+  AlertTriangle, Check, Download, FileText, Link2, Lock, MessageSquare,
+  Paperclip, Pencil, Printer, Receipt, Send, Stamp, Trash2, Truck, Upload, Wallet,
 } from 'lucide-react';
 import {
   getInvoiceViewData, listInvoices, getSpFulfillmentDocs, listSpBtbNew,
 } from '../../lib/db';
+import useInvoiceExtras from './useInvoiceExtras';
 import { useAuth } from '../../contexts/useAuth';
 import { PPN_RATE } from '../../lib/taxConstants';
 import { getTodayWIB, fmtRelativeWIB, fmtDateTimeWIB } from '../../lib/dateUtils';
@@ -34,13 +35,44 @@ import {
 } from './invoiceStatus.js';
 import {
   Crumbs, Btn, MoreMenu, RecordNav, Stepper, Panel, MetaRow, TabBar, TabBtn,
-  TableShell, Td, Notice, Hint, Empty, Avatar,
+  TableShell, Td, Notice, Hint, Empty, Avatar, Ref, QuickPanel,
 } from './financeKit.jsx';
 import {
   C, FONT_DISPLAY, FONT_MONO, SP, RADIUS, kickerStyle, thStyle,
   rp, fmtDate, selectOnFocus,
 } from '../logistics/spDetailTokens.js';
 import { Badge, ModalField, ModalInp } from '../logistics/spDetailKit.jsx';
+
+/* Kolom yang MENGUBAH ANGKA dan sengaja dikunci di DB sampai tahapnya
+   (CHECK bernama, 20260928000001/2). Ditampilkan READ-ONLY beserta ALASANNYA
+   -- bukan disembunyikan: kolom yang hilang dari layar akan ditanyakan lagi,
+   sementara kolom yang tampil dengan alasannya menjawab pertanyaannya sekali. */
+const TERKUNCI = {
+  currency: 'Mata uang & kurs dikunci IDR / 1,000000. Jurnal Nexus dalam IDR; membuka kurs menuntut kebijakan revaluasi dan akun selisih kurs yang belum ada.',
+  rounding: 'Pembulatan dikunci "tidak ada". Rumahnya Pengaturan Keuangan entitas, dan membukanya mengubah Total, jurnal, dan invariant piutang.',
+  dppnl:    'DPP Nilai Lain (11/12) dikunci mati. Tarif 11% yang dipakai menghitung invoice ini SUDAH hasil 12% x 11/12, jadi menyalakannya berarti menerapkannya dua kali.',
+  diskon:   'Diskon per baris dikunci 0. Diskon hari ini hidup di harga SP, bukan di invoice.',
+  days:     'Kolom Days dikunci kosong. Tagihan berbasis hari memakai kolom Qty; Days yang terisi tanpa ikut Total adalah angka yang tidak sampai ke jurnal.',
+};
+
+/* Baris nilai yang terkunci: nilainya tampil, gemboknya tampil, alasannya
+   tersedia di tooltip DAN di teks kecil -- tooltip saja tidak terbaca di
+   sentuh. */
+function Terkunci({ label, children, alasan }) {
+  return (
+    <div style={{ padding: '6px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: SP.s3, fontSize: 13 }}>
+        <span style={{ color: C.inkSoft, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Lock size={11} style={{ color: C.inkFaint }}/> {label}
+        </span>
+        <span style={{ color: C.inkSoft, fontFamily: FONT_MONO, textAlign: 'right' }}>{children}</span>
+      </div>
+      <p title={alasan} style={{ margin: '3px 0 0', fontSize: 11.5, color: C.inkFaint, lineHeight: 1.45 }}>
+        {alasan}
+      </p>
+    </div>
+  );
+}
 
 // Alasan tertulis di tombol yang akan ditolak server (aturan K-6). Teksnya
 // SENGAJA menyebut siapa yang boleh, bukan cuma "tidak diizinkan": orang yang
@@ -110,6 +142,11 @@ export default function InvoiceDetailPage({
 
   const [tab,     setTab]     = useState('lines');
   const [payOpen, setPayOpen] = useState(false);
+  // Panel samping (Contextual Master Data Access). Satu state untuk SELURUH
+  // jenis rujukan: dua panel terbuka sekaligus tidak pernah masuk akal, dan
+  // satu state membuat itu mustahil alih-alih cuma tidak dilakukan.
+  const [panel,   setPanel]   = useState(null);
+  const berkasRef = useRef(null);
 
   const muat = useCallback(async () => {
     const { data, error: err } = await getInvoiceViewData(invoiceId);
@@ -159,6 +196,114 @@ export default function InvoiceDetailPage({
   }, [activeCompanyId]);
 
   const wf = useInvoiceWorkflow({ invoice: inv, showToast, onChanged: muat });
+  const ex = useInvoiceExtras({ invoice: inv, showToast, onChanged: muat });
+
+  // Satu pembangun per jenis rujukan. Sengaja fungsi kecil yang mengembalikan
+  // bentuk panel, bukan komponen per jenis: panelnya SATU, isinya yang berbeda.
+  // Cetak = buat PDF dulu, baru catat jejaknya. Urutannya penting dan bukan
+  // gaya: mencatat di depan akan menghitung percobaan yang gagal.
+  const cetak = async (variant) => {
+    await wf.handleInvoicePdf(variant);
+    await ex.catatCetak(variant);
+  };
+
+  const panelCustomer = () => setPanel({
+    kicker: 'Customer', title: inv.customer_name || '(tanpa nama)',
+    rows: [
+      ['Alamat', inv.customer_address || '—'],
+      ['NPWP', inv.customer_tax_id || <span style={{ color: C.inkFaint }}>Belum diisi</span>],
+      ['Termin', inv.payment_term_days != null ? `${inv.payment_term_days} hari` : '—'],
+    ],
+  });
+  const panelDc = () => setPanel({
+    kicker: 'DC tujuan', title: [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '(tanpa DC)',
+    rows: [['Kode', inv.dc?.kode || '—'], ['Wilayah', inv.dc?.wilayah || '—'], ['Alamat', inv.dc?.alamat || '—']],
+  });
+  const panelSp = () => setPanel({
+    kicker: 'Surat Pesanan', title: inv.sp_no || '(tanpa nomor)',
+    rows: [
+      ['Tanggal SP', fmtDate(inv.sp_date)],
+      ['Customer', inv.customer_name || '—'],
+      ['DC', [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '—'],
+    ],
+    onOpenFull: onOpenSp && inv.customer_id ? () => onOpenSp(inv.customer_id, inv.sp_no) : null,
+    fullLabel: 'Buka Detail SP',
+  });
+  const panelDelivery = (d) => setPanel({
+    kicker: 'Surat Jalan', title: d.do_no || '(tanpa nomor)',
+    rows: [
+      ['Status', d.status || '—'],
+      ['Diberangkatkan', d.dispatched_at ? fmtDate(d.dispatched_at) : '—'],
+      ['Ditandatangani', d.signed_date
+        ? fmtDate(d.signed_date)
+        : <span style={{ color: C.attn }}>Belum diisi</span>],
+      ['Sopir', d.driver_name || '—'],
+      ['Kendaraan', d.vehicle_no || '—'],
+      ['Koli / Qty', `${d.total_koli ?? '—'} / ${(d.total_qty ?? 0).toLocaleString('id-ID')}`],
+    ],
+    onOpenFull: onOpenDelivery ? () => onOpenDelivery(d.id) : null,
+    fullLabel: 'Buka Detail Surat Jalan',
+  });
+  // BTB belum punya halaman detail sendiri -- panelnya sengaja tanpa tombol
+  // "buka halaman penuh", bukan dengan tombol yang mati.
+  const panelBtb = (b) => setPanel({
+    kicker: 'Bukti Terima Barang', title: b.btb_no || '(tanpa nomor)',
+    rows: [
+      ['Tanggal BTB', b.btb_date ? fmtDate(b.btb_date) : <span style={{ color: C.inkFaint }}>Kosong</span>],
+      ['Qty diterima', b.qty == null ? '—' : Number(b.qty).toLocaleString('id-ID')],
+      ['Dicatat', fmtDate(b.created_at)],
+      ['Catatan', b.remarks || '—'],
+    ],
+  });
+  const panelTtf = () => setPanel({
+    kicker: 'Tanda Terima Faktur', title: wf.ttf?.no_ttf || '(tanpa nomor)',
+    rows: [
+      ['Tanggal diterima', fmtDate(wf.ttf?.tanggal_menerima)],
+      ['Diterima oleh', wf.ttf?.diterima_oleh || '—'],
+      ['Catatan', wf.ttf?.notes || '—'],
+    ],
+  });
+  const panelProduk = (l) => setPanel({
+    kicker: 'Produk', title: l.product_name || '(tanpa nama)',
+    rows: [
+      ['SKU', l.sku || '—'],
+      ['Satuan', l.uom || '—'],
+      ['Harga satuan', rp(l.unit_price)],
+      ['Qty', l.qty.toLocaleString('id-ID')],
+      ['Akun', l.account_code ? `${l.account_code} - ${l.account_name}` : <span style={{ color: C.inkFaint }}>Belum dipetakan</span>],
+      ['Pajak', l.tax_code ? `${l.tax_code} (${l.tax_name})` : <span style={{ color: C.inkFaint }}>Belum ditautkan</span>],
+      ['Keterangan', l.description || '—'],
+    ],
+    extra: (
+      <div style={{ marginTop: SP.s3 }}>
+        <Terkunci label="Diskon" alasan={TERKUNCI.diskon}>{l.discount_pct}%</Terkunci>
+        <Terkunci label="Hari (analytic)" alasan={TERKUNCI.days}>{l.days == null ? '—' : l.days}</Terkunci>
+        <Hint>
+          Angka di panel ini SNAPSHOT saat invoice terbit, bukan master produk hari ini.
+        </Hint>
+      </div>
+    ),
+  });
+  const panelBayar = (pm) => setPanel({
+    kicker: 'Pembayaran', title: pm.reference || fmtDate(pm.payment_date),
+    rows: [
+      ['Tanggal', fmtDate(pm.payment_date)],
+      ['Nominal', rp(pm.amount)],
+      ['PPh dipotong', rp(pm.pph)],
+      ['No. bukti potong', pm.bukti_potong_no || '—'],
+      ['Metode', pm.method || '—'],
+    ],
+    extra: pm.bukti_potong_url ? (
+      <div style={{ marginTop: SP.s3 }}>
+        <a
+          href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
+          style={{ color: C.accent, fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <Link2 size={14}/> Buka berkas bukti potong
+        </a>
+      </div>
+    ) : null,
+  });
 
   // ── Turunan tampilan ────────────────────────────────────────────────────
   const hariIni = getTodayWIB();
@@ -214,8 +359,28 @@ export default function InvoiceDetailPage({
           .filter(Boolean).join(' · ') || null,
       });
     }
+    if (inv.printed_at) {
+      out.push({
+        key: 'printed', at: inv.printed_at, icon: Printer,
+        title: inv.print_count > 1 ? `Invoice dicetak (${inv.print_count}x)` : 'Invoice dicetak',
+        actor: null, detail: null,
+      });
+    }
+    if (inv.emailed_at) {
+      out.push({ key: 'emailed', at: inv.emailed_at, icon: Send, title: 'Invoice dikirim lewat email', actor: null, detail: null });
+    }
+    // Catatan internal masuk ke lini masa yang SAMA, bukan lini masa kedua:
+    // memisahkannya membuat pembaca harus menggabungkan dua urutan waktu
+    // sendiri untuk tahu apa yang terjadi lebih dulu.
+    for (const n of ex.notes) {
+      if (n.deleted_at) continue;
+      out.push({
+        key: `note-${n.id}`, at: n.created_at, icon: MessageSquare,
+        title: 'Catatan internal', actor: n.penulis || null, detail: n.body,
+      });
+    }
     return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  }, [inv, wf.payments, wf.ttf]);
+  }, [inv, wf.payments, wf.ttf, ex.notes]);
 
   // ── Keadaan gagal / kosong ──────────────────────────────────────────────
   if (loading) {
@@ -331,12 +496,12 @@ export default function InvoiceDetailPage({
       <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
         {aksiUtama}
         <Btn
-          icon={Printer} onClick={() => wf.handleInvoicePdf('print')} disabled={!!wf.invoicePdfBusy}
+          icon={Printer} onClick={() => cetak('print')} disabled={!!wf.invoicePdfBusy}
           title="Versi untuk kertas kop: tanpa blok kop & tanpa latar krem"
         >
           {wf.invoicePdfBusy === 'print' ? 'Menyiapkan…' : 'Cetak PDF (Kop Surat)'}
         </Btn>
-        <Btn icon={Download} onClick={() => wf.handleInvoicePdf('download')} disabled={!!wf.invoicePdfBusy}>
+        <Btn icon={Download} onClick={() => cetak('download')} disabled={!!wf.invoicePdfBusy}>
           {wf.invoicePdfBusy === 'download' ? 'Menyiapkan…' : 'Download PDF'}
         </Btn>
         <MoreMenu items={[{
@@ -367,14 +532,18 @@ export default function InvoiceDetailPage({
               <div style={{ minWidth: 220, flex: '1 1 260px' }}>
                 <div style={{ ...kickerStyle }}>Ditagihkan ke</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 3 }}>
-                  {inv.customer_name || '—'}
+                  <Ref mono={false} onClick={panelCustomer} title="Lihat ringkas customer">
+                    {inv.customer_name || '—'}
+                  </Ref>
                 </div>
                 <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.5, marginTop: 2 }}>
                   {inv.customer_address || '—'}
                 </div>
                 <div style={{ ...kickerStyle, marginTop: SP.s3 }}>DC tujuan</div>
                 <div style={{ fontSize: 12.5, color: C.ink, marginTop: 2 }}>
-                  {inv.dc ? [inv.dc.kode, inv.dc.nama].filter(Boolean).join(' · ') : '—'}
+                  {inv.dc
+                    ? <Ref mono={false} onClick={panelDc} title="Lihat ringkas DC">{[inv.dc.kode, inv.dc.nama].filter(Boolean).join(' - ')}</Ref>
+                    : '—'}
                 </div>
                 {inv.dc?.alamat && (
                   <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>{inv.dc.alamat}</div>
@@ -384,14 +553,9 @@ export default function InvoiceDetailPage({
               <div style={{ minWidth: 220, flex: '0 1 280px' }}>
                 <MetaRow label="No. Invoice" mono strong>{inv.invoice_no || '—'}</MetaRow>
                 <MetaRow label="No. SP" mono>
-                  {onOpenSp && inv.customer_id ? (
-                    <button
-                      type="button" onClick={() => onOpenSp(inv.customer_id, inv.sp_no)}
-                      style={{ background: 'none', border: 'none', padding: 0, color: C.accent, cursor: 'pointer', fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600 }}
-                    >
-                      {inv.sp_no || '—'}
-                    </button>
-                  ) : (inv.sp_no || '—')}
+                  {inv.sp_no
+                    ? <Ref onClick={panelSp} title="Lihat ringkas SP">{inv.sp_no}</Ref>
+                    : '—'}
                 </MetaRow>
                 <MetaRow label="Tanggal Invoice">{fmtDate(inv.invoice_date)}</MetaRow>
                 <MetaRow label="Jatuh Tempo">
@@ -401,7 +565,9 @@ export default function InvoiceDetailPage({
                 </MetaRow>
                 <MetaRow label="TTF">
                   {wf.ttf?.tanggal_menerima
-                    ? <>{wf.ttf.no_ttf ? `${wf.ttf.no_ttf} · ` : ''}{fmtDate(wf.ttf.tanggal_menerima)}</>
+                    ? <Ref onClick={panelTtf} title="Lihat ringkas TTF">
+                        {wf.ttf.no_ttf ? `${wf.ttf.no_ttf} - ` : ''}{fmtDate(wf.ttf.tanggal_menerima)}
+                      </Ref>
                     : <span style={{ color: C.inkFaint }}>Belum ada</span>}
                 </MetaRow>
               </div>
@@ -410,8 +576,10 @@ export default function InvoiceDetailPage({
             {/* Tab dokumen */}
             <TabBar style={{ margin: `${SP.s4}px 0 ${SP.s4}px` }}>
               <TabBtn active={tab === 'lines'} onClick={() => setTab('lines')} label="Baris Invoice" count={inv.lines.length}/>
+              <TabBtn active={tab === 'other'} onClick={() => setTab('other')} label="Info Lain"/>
+              <TabBtn active={tab === 'tax'}   onClick={() => setTab('tax')}   label="Pajak & Coretax"/>
               <TabBtn active={tab === 'docs'}  onClick={() => setTab('docs')}  label="Dokumen Terkait" count={docs.deliveries.length + docs.btb.length}/>
-              <TabBtn active={tab === 'tax'}   onClick={() => setTab('tax')}   label="Pajak"/>
+              <TabBtn active={tab === 'files'} onClick={() => setTab('files')} label="Lampiran & Catatan" count={ex.attachments.length + ex.notes.filter((n) => !n.deleted_at).length}/>
             </TabBar>
 
             {/* ── Tab: Baris Invoice ── */}
@@ -425,7 +593,11 @@ export default function InvoiceDetailPage({
                     <tr><td colSpan={5} style={{ padding: SP.s3, fontSize: 12.5, color: C.inkFaint, textAlign: 'center' }}>Invoice ini tidak punya baris.</td></tr>
                   ) : inv.lines.map((l) => (
                     <tr key={l.id}>
-                      <Td>{l.product_name || '—'}</Td>
+                      <Td>
+                        <Ref mono={false} onClick={() => panelProduk(l)} title="Lihat ringkas baris">
+                          {l.product_name || '(tanpa nama)'}
+                        </Ref>
+                      </Td>
                       <Td mono style={{ color: C.inkSoft, fontSize: 12 }}>{l.sku || '—'}</Td>
                       <Td align="right" mono nowrap>
                         {l.qty.toLocaleString('id-ID')}
@@ -494,19 +666,16 @@ export default function InvoiceDetailPage({
                       {docs.deliveries.map((d) => (
                         <div
                           key={d.id}
-                          onClick={onOpenDelivery ? () => onOpenDelivery(d.id) : undefined}
-                          role={onOpenDelivery ? 'button' : undefined}
-                          tabIndex={onOpenDelivery ? 0 : undefined}
-                          onKeyDown={onOpenDelivery ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDelivery(d.id); } } : undefined}
                           style={{
                             display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap',
                             border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md,
                             padding: `${SP.s2}px ${SP.s3}px`, background: C.surface,
-                            cursor: onOpenDelivery ? 'pointer' : 'default',
                           }}
                         >
-                          <Truck size={14} style={{ color: onOpenDelivery ? C.accent : C.inkFaint, flexShrink: 0 }}/>
-                          <b style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: C.ink }}>{d.do_no || '—'}</b>
+                          <Truck size={14} style={{ color: C.accent, flexShrink: 0 }}/>
+                          <span style={{ fontSize: 12.5 }}>
+                            <Ref onClick={() => panelDelivery(d)} title="Lihat ringkas Surat Jalan">{d.do_no || '(tanpa nomor)'}</Ref>
+                          </span>
                           <span style={{ fontSize: 12, color: C.inkSoft }}>
                             {d.signed_date
                               ? <>Ditandatangani {fmtDate(d.signed_date)}</>
@@ -524,16 +693,18 @@ export default function InvoiceDetailPage({
                     <Hint>Belum ada BTB untuk SP ini.</Hint>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s1 }}>
-                      {/* BTB belum punya halaman detail sendiri — barisnya memang
-                          tidak bisa diklik, bukan kelalaian. */}
+                      {/* BTB belum punya halaman detail sendiri — panelnya sengaja
+                          tanpa tombol "buka halaman penuh", bukan tombol mati. */}
                       {docs.btb.map((b) => (
                         <div key={b.id} style={{
                           display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap',
                           border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md,
                           padding: `${SP.s2}px ${SP.s3}px`, background: C.surface,
                         }}>
-                          <FileText size={14} style={{ color: C.inkFaint, flexShrink: 0 }}/>
-                          <b style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: C.ink }}>{b.btb_no || '—'}</b>
+                          <FileText size={14} style={{ color: C.accent, flexShrink: 0 }}/>
+                          <span style={{ fontSize: 12.5 }}>
+                            <Ref onClick={() => panelBtb(b)} title="Lihat ringkas BTB">{b.btb_no || '(tanpa nomor)'}</Ref>
+                          </span>
                           <span style={{ fontSize: 12, color: C.inkSoft }}>
                             {b.btb_date ? fmtDate(b.btb_date) : <span style={{ color: C.inkFaint }}>Tanggal kosong</span>}
                           </span>
@@ -545,19 +716,266 @@ export default function InvoiceDetailPage({
               </div>
             )}
 
-            {/* ── Tab: Pajak ── */}
+            {/* ── Tab: Info Lain ── */}
+            {tab === 'other' && (
+              <div className="nx-grid-2 nx-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: SP.s4 }}>
+                <div>
+                  <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Penjualan &amp; dokumen</div>
+                  <MetaRow label="Salesperson">
+                    {inv.salesperson_name || <span style={{ color: C.inkFaint }}>Belum dipetakan</span>}
+                  </MetaRow>
+                  <MetaRow label="Sales team">
+                    {inv.sales_team || <span style={{ color: C.inkFaint }}>Belum dipetakan</span>}
+                  </MetaRow>
+                  <MetaRow label="Termin">
+                    {inv.payment_term_days != null
+                      ? <>{inv.payment_term_days} hari{inv.payment_term_label ? ` (${inv.payment_term_label})` : ''}</>
+                      : <span style={{ color: C.inkFaint }}>-</span>}
+                  </MetaRow>
+                  <MetaRow label="Cetak untuk">{inv.print_to === 'agen' ? 'Agen' : 'Customer'}</MetaRow>
+                  <MetaRow label="Reimbursement">
+                    {inv.is_reimbursement ? 'Ya' : 'Tidak'}
+                  </MetaRow>
+                  {inv.is_reimbursement && (
+                    <Hint>Penanda ini belum mengubah perhitungan pajak apa pun.</Hint>
+                  )}
+                  <MetaRow label="Sumber">{inv.source_type === 'sp_storbit' ? 'SP Storbit' : inv.source_type}</MetaRow>
+                  <MetaRow label="NPWP customer" mono>
+                    {inv.customer_tax_id || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Belum diisi</span>}
+                  </MetaRow>
+                  <MetaRow label="Dibuat oleh">{inv.created_by_name || '—'}</MetaRow>
+                </div>
+
+                <div>
+                  <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Jejak &amp; penggantian</div>
+                  <MetaRow label="Terakhir dicetak">
+                    {inv.printed_at
+                      ? <span title={fmtDateTimeWIB(inv.printed_at)}>{fmtRelativeWIB(inv.printed_at)} ({inv.print_count}x)</span>
+                      : <span style={{ color: C.inkFaint }}>Belum pernah dicetak</span>}
+                  </MetaRow>
+                  <MetaRow label="Kirim email">
+                    {inv.emailed_at
+                      ? <span title={fmtDateTimeWIB(inv.emailed_at)}>{fmtRelativeWIB(inv.emailed_at)}</span>
+                      : <span style={{ color: C.inkFaint }}>Belum pernah dikirim</span>}
+                  </MetaRow>
+                  {!inv.emailed_at && (
+                    <Hint>Pengiriman invoice lewat email belum dibangun; kolom ini penandanya saja.</Hint>
+                  )}
+                  <MetaRow label="Menggantikan">
+                    {inv.replaces
+                      ? <Ref onClick={() => onOpenInvoice?.(inv.replaces.id)} title="Buka invoice yang digantikan">{inv.replaces.invoice_no}</Ref>
+                      : <span style={{ color: C.inkFaint }}>-</span>}
+                  </MetaRow>
+                  <MetaRow label="Digantikan oleh">
+                    {inv.replaced_by
+                      ? <Ref onClick={() => onOpenInvoice?.(inv.replaced_by.id)} title="Buka invoice pengganti">{inv.replaced_by.invoice_no}</Ref>
+                      : <span style={{ color: C.inkFaint }}>-</span>}
+                  </MetaRow>
+
+                  <div style={{ ...kickerStyle, margin: `${SP.s4}px 0 ${SP.s2}px` }}>Terkunci sampai tahapnya</div>
+                  <Terkunci label="Mata uang / kurs" alasan={TERKUNCI.currency}>
+                    {inv.currency_code} / {Number(inv.fx_rate).toLocaleString('id-ID', { minimumFractionDigits: 6 })}
+                  </Terkunci>
+                  <Terkunci label="Pembulatan" alasan={TERKUNCI.rounding}>
+                    {inv.rounding_method === 'none' ? 'Tidak ada' : inv.rounding_method}
+                  </Terkunci>
+                  <Terkunci label="DPP Nilai Lain (11/12)" alasan={TERKUNCI.dppnl}>
+                    {inv.use_dpp_nilai_lain ? 'Ya' : 'Tidak'}
+                  </Terkunci>
+                </div>
+              </div>
+            )}
+
+            {/* ── Tab: Pajak & Coretax ── */}
             {tab === 'tax' && (
-              <div style={{ maxWidth: 420 }}>
-                <MetaRow label="No. Faktur Pajak" mono strong>
-                  {inv.faktur_no || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Belum ada</span>}
-                </MetaRow>
-                <MetaRow label="DPP" mono>{rp(inv.total_dpp)}</MetaRow>
-                <MetaRow label={`PPN (${Math.round(PPN_RATE * 100)}%)`} mono>{rp(inv.total_ppn)}</MetaRow>
-                <div style={{ marginTop: SP.s3 }}>
+              <div style={{ maxWidth: 520 }}>
+                {ex.bolehIsiPajak ? (
+                  <>
+                    <FormGrid min={200}>
+                      <ModalField label="No. Faktur Pajak">
+                        <ModalInp
+                          value={ex.taxForm.fakturNo}
+                          placeholder="010.000-26.12345678"
+                          readOnly={!!inv.faktur_no && !ex.isSuperAdmin}
+                          onChange={(e) => ex.setTaxForm((f) => ({ ...f, fakturNo: e.target.value }))}
+                        />
+                        {!!inv.faktur_no && !ex.isSuperAdmin && (
+                          <span style={{ fontSize: 11, color: C.inkFaint }}>Sudah terisi. Hanya Super Admin yang boleh mengubahnya.</span>
+                        )}
+                      </ModalField>
+                      <ModalField label="Kode Transaksi Coretax">
+                        <ModalInp
+                          value={ex.taxForm.coretaxTxCode}
+                          placeholder="[05] 05 - Besaran tertentu"
+                          readOnly={!!inv.coretax_tx_code && !ex.isSuperAdmin}
+                          onChange={(e) => ex.setTaxForm((f) => ({ ...f, coretaxTxCode: e.target.value }))}
+                        />
+                      </ModalField>
+                    </FormGrid>
+                    <div style={{ marginTop: SP.s3 }}>
+                      <Btn variant="primary" icon={Stamp} onClick={ex.simpanPajak} disabled={ex.taxSaving}>
+                        {ex.taxSaving ? 'Menyimpan…' : 'Simpan Data Pajak'}
+                      </Btn>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <MetaRow label="No. Faktur Pajak" mono strong>
+                      {inv.faktur_no || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Belum ada</span>}
+                    </MetaRow>
+                    <MetaRow label="Kode Transaksi Coretax" mono>
+                      {inv.coretax_tx_code || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Belum ada</span>}
+                    </MetaRow>
+                    <div style={{ marginTop: SP.s2 }}>
+                      <Notice tone="attn" icon={AlertTriangle}>
+                        Peran kamu boleh MELIHAT data pajak ini tapi belum boleh mengisinya —
+                        server hanya menerima <b>Finance</b>, <b>Finance Controller</b>, atau <b>Super Admin</b>.
+                      </Notice>
+                    </div>
+                  </>
+                )}
+
+                <div style={{ marginTop: SP.s4 }}>
+                  <MetaRow label="DPP" mono>{rp(inv.total_dpp)}</MetaRow>
+                  <MetaRow label={`PPN (${Math.round(PPN_RATE * 100)}%)`} mono>{rp(inv.total_ppn)}</MetaRow>
+                  <MetaRow label="Bukti potong diterima">
+                    {wf.payments.some((p) => p.bukti_potong_no || p.bukti_potong_url)
+                      ? <Badge {...STATUS_TAG.paid}>Ada</Badge>
+                      : <span style={{ color: C.inkFaint }}>Belum ada</span>}
+                  </MetaRow>
+                  <Terkunci label="DPP Nilai Lain (11/12)" alasan={TERKUNCI.dppnl}>
+                    {inv.use_dpp_nilai_lain ? 'Ya' : 'Tidak'}
+                  </Terkunci>
+                </div>
+
+                <div style={{ marginTop: SP.s3, display: 'flex', gap: SP.s2, flexWrap: 'wrap' }}>
+                  <Btn icon={Download} disabled title="Integrasi Coretax belum tersambung">Unduh XLSX Coretax</Btn>
+                  <Btn icon={Download} disabled title="Integrasi Coretax belum tersambung">Unduh XML Coretax</Btn>
+                </div>
+                <div style={{ marginTop: SP.s2 }}>
                   <Notice tone="info" icon={Stamp}>
-                    <b>Coretax</b> belum tersambung. Nomor Faktur Pajak hari ini diisi dari luar
-                    Nexus; begitu integrasinya ada, blok ini yang menampilkan status penerbitannya.
+                    <b>Coretax belum tersambung.</b> Kedua tombol unduh di atas sengaja tampil nonaktif,
+                    bukan disembunyikan: jalurnya direncanakan, dan menyembunyikannya membuat orang
+                    mencarinya berulang kali. Nomor Faktur Pajak hari ini diisi dari luar Nexus.
                   </Notice>
+                </div>
+              </div>
+            )}
+
+            {/* ── Tab: Lampiran & Catatan ── */}
+            {tab === 'files' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: SP.s2, marginBottom: SP.s2, flexWrap: 'wrap' }}>
+                    <span style={{ ...kickerStyle, flex: 1 }}>Lampiran ({ex.attachments.length}/10)</span>
+                    <input
+                      ref={berkasRef} type="file" multiple hidden
+                      accept={ex.mimeDiterima.join(',')}
+                      onChange={(e) => { ex.unggah(e.target.files); e.target.value = ''; }}
+                    />
+                    <Btn
+                      size="sm" icon={Upload} onClick={() => berkasRef.current?.click()}
+                      disabled={!ex.bolehUnggah || ex.uploading || ex.attachments.length >= 10}
+                      title={ex.bolehUnggah ? undefined : 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengunggah.'}
+                    >
+                      {ex.uploading ? 'Mengunggah…' : 'Unggah'}
+                    </Btn>
+                  </div>
+                  <Hint>PDF, JPG, PNG, XLSX, atau XML. Maksimum 10 MB per berkas.</Hint>
+                  {ex.attachments.length === 0 ? (
+                    <div style={{ marginTop: SP.s2 }}>
+                      <Empty icon={Paperclip} title="Belum ada lampiran" sub="Faktur pajak dan bukti potong diunggah di sini."/>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s1, marginTop: SP.s2 }}>
+                      {ex.attachments.map((a) => (
+                        <div key={a.id} style={{
+                          display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap',
+                          border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md,
+                          padding: `${SP.s2}px ${SP.s3}px`, background: C.surface,
+                        }}>
+                          <Paperclip size={14} style={{ color: C.accent, flexShrink: 0 }}/>
+                          <Ref mono={false} onClick={() => ex.bukaLampiran(a.storage_path)} title="Buka berkas">
+                            {a.file_name}
+                          </Ref>
+                          <span style={{ fontSize: 12, color: C.inkSoft }}>
+                            {(a.size_bytes / 1024).toLocaleString('id-ID', { maximumFractionDigits: 0 })} KB
+                            {' · '}
+                            <span title={fmtDateTimeWIB(a.uploaded_at)}>{fmtRelativeWIB(a.uploaded_at)}</span>
+                            {a.pengunggah ? ` · ${a.pengunggah}` : ''}
+                          </span>
+                          <button
+                            type="button" onClick={() => ex.hapusLampiran(a.id)} title="Hapus lampiran"
+                            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.inkFaint, padding: 0 }}
+                          >
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Catatan internal</div>
+                  <Hint>
+                    Catatan tidak bisa disunting setelah dikirim — jejak yang bisa ditulis ulang
+                    bukan jejak. Salah tulis: kirim catatan baru.
+                  </Hint>
+                  <div style={{ marginTop: SP.s2 }}>
+                    <textarea
+                      value={ex.noteDraft}
+                      onChange={(e) => ex.setNoteDraft(e.target.value)}
+                      placeholder="Tulis catatan untuk tim…"
+                      rows={3}
+                      style={{
+                        width: '100%', boxSizing: 'border-box', padding: SP.s2,
+                        border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface,
+                        fontSize: 13, color: C.ink, fontFamily: 'inherit', outline: 'none', resize: 'vertical',
+                      }}
+                    />
+                    <div style={{ marginTop: SP.s2 }}>
+                      <Btn
+                        size="sm" variant="primary" icon={MessageSquare}
+                        onClick={ex.kirimCatatan} disabled={ex.noteSaving || !ex.noteDraft.trim()}
+                      >
+                        {ex.noteSaving ? 'Menyimpan…' : 'Kirim Catatan'}
+                      </Btn>
+                    </div>
+                  </div>
+                  {ex.notes.length === 0 ? (
+                    <div style={{ marginTop: SP.s3 }}>
+                      <Hint>Belum ada catatan.</Hint>
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: 'none', margin: `${SP.s3}px 0 0`, padding: 0 }}>
+                      {ex.notes.map((n) => (
+                        <li key={n.id} style={{ display: 'flex', gap: SP.s2, padding: `${SP.s2}px 0`, borderBottom: `1px solid ${C.lineSoft}` }}>
+                          <Avatar name={n.penulis || 'Tim'} size={28}/>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11.5, color: C.inkFaint }} title={fmtDateTimeWIB(n.created_at)}>
+                              {fmtRelativeWIB(n.created_at)}
+                            </div>
+                            <div style={{
+                              fontSize: 13, color: n.deleted_at ? C.inkFaint : C.ink,
+                              fontStyle: n.deleted_at ? 'italic' : 'normal',
+                              lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            }}>
+                              {n.deleted_at ? 'Catatan dihapus.' : n.body}
+                            </div>
+                          </div>
+                          {!n.deleted_at && (
+                            <button
+                              type="button" onClick={() => ex.hapusCatatan(n.id)} title="Hapus catatan"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkFaint, padding: 0, alignSelf: 'flex-start' }}
+                            >
+                              <Trash2 size={13}/>
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             )}
@@ -601,7 +1019,9 @@ export default function InvoiceDetailPage({
                         <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>{rp(pm.pph)}</Td>
                         <Td style={{ fontSize: 12.5 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            {pm.reference || '—'}
+                            <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
+                              {pm.reference || fmtDate(pm.payment_date)}
+                            </Ref>
                             {pm.bukti_potong_url && (
                               <a
                                 href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
@@ -762,22 +1182,38 @@ export default function InvoiceDetailPage({
           {/* ── Riwayat (chatter) ── */}
           <Panel title="Riwayat" icon={FileText}>
             {events.length === 0 ? (
-              <Empty icon={FileText} title="Belum ada kejadian" sub="Riwayat terisi sendiri dari penerbitan, upload portal, TTF, dan pembayaran."/>
+              <Empty icon={FileText} title="Belum ada kejadian" sub="Riwayat terisi sendiri dari penerbitan, upload portal, TTF, cetak, dan pembayaran."/>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {events.map((ev) => <EventRow key={ev.key} ev={ev}/>)}
               </ul>
             )}
-            {/* Lini masa ini disusun dari data yang SUDAH ADA (created_at,
-                submitted_at, ar_ttfs, sp_payments) — nol tabel baru, nol kolom
-                baru. Karena itu ia tidak bisa menampilkan komentar bebas, dan
-                beberapa kejadian tidak punya pelaku. */}
+            {/* Lini masa disusun dari jejak yang SUDAH tersimpan (created_at,
+                submitted_at, ar_ttfs, sp_payments, printed_at/emailed_at) plus
+                catatan internal dari `invoice_notes`. Beberapa kejadian tidak
+                punya pelaku karena kolomnya memang tidak ada. */}
             <p style={{ ...thStyle, padding: `${SP.s2}px 0 0`, letterSpacing: '.06em' }}>
               Disusun dari jejak yang sudah tersimpan
             </p>
+            <div style={{ marginTop: SP.s2 }}>
+              <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setTab('files')}>
+                Tulis catatan
+              </Btn>
+            </div>
           </Panel>
         </aside>
       </div>
+
+      {/* Panel samping rujukan (Contextual Master Data Access). Dirender di
+          akar halaman, bukan di dalam kartu: ia `position: fixed`, dan menaruh
+          elemen fixed di dalam kartu ber-`box-shadow` membuatnya ikut terpotong
+          kalau kelak ada induk ber-`transform`. */}
+      <QuickPanel
+        open={!!panel} onClose={() => setPanel(null)}
+        kicker={panel?.kicker} title={panel?.title || ''}
+        rows={panel?.rows || []} extra={panel?.extra}
+        onOpenFull={panel?.onOpenFull} fullLabel={panel?.fullLabel}
+      />
     </div>
   );
 }
