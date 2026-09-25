@@ -30,10 +30,13 @@
 | 7 | `20260925000002_sp_order_items_legacy_unique` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 6 |
 | 8 | `20260926000001_set_delivery_signed_date` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1 |
 | 9 | `20260926000002_ar_single_issue_path` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1, TERAKHIR |
+| 10 | `20260925000003` — `notify_sp_milestone` no-op | ✔ 25 Sep | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
 ⛔ Urutan itu bukan kerapian. Butir 9 punya palang yang **menolak jalan** kalau butir 6 dan 7 belum terpasang, karena invariant piutang di dalamnya menuntut setiap Surat Jalan punya `sp_order_item_id`; tanpa butir 6, setiap invoice baru nol jurnal dan invariant gagal untuk **semuanya**. Butir 8 sebelum 9 karena butir 9 menyempitkan apa yang boleh ditagih, dan butir 8 adalah satu-satunya jalan membuka 9 SP yang tertahan hanya karena tanggal tanda tangan kosong.
+
+**Butir 10 arahnya bukan "staging menyusul produksi", melainkan "staging sengaja BERBEDA dari produksi, selamanya".** Ia ada di daftar ini justru supaya tidak ikut terbawa naik saat butir lain dijalankan.
 
 Butir 6 dan 7 boleh dijalankan **lebih awal** dari 8 dan 9 — keduanya idempoten, dan setiap Surat Jalan baru yang terbit sebelum butir 6 jalan menambah baris cacat yang harus di-backfill nanti.
 
@@ -242,6 +245,35 @@ Yang bisa ditagih menyempit **62 → 5**, lalu **→ 14** setelah 9 tanggal dile
 ⚠️ **Cadangan rollback WAJIB diambil ulang pada hari launching** sebelum butir 9 dijalankan. Cadangan 25 Sep 2026 ada (5 fungsi, md5 dicocokkan ke produksi), tapi ia memotret produksi pada tanggal itu. Cocokkan md5-nya ke produksi lebih dulu; kalau berbeda, produksi sudah bergerak dan cadangannya basi.
 
 ⚠️ **Saat rollback butir 9:** `create_invoice_for_sp` di cadangan adalah versi **produksi**, yaitu **tanpa** guard butir 6. Kalau butir 6 sudah jalan, memulihkan dari cadangan akan **menghapus guard itu**. Yang benar: pulihkan dari cadangan lalu jalankan ulang butir 6 bagian 1 dan 3.
+
+---
+
+## 10. ⛔ `20260925000003_staging_only_notify_sp_milestone_noop` — ARAH TERBALIK, **JANGAN NAIK KE PRODUKSI**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260925000003_staging_only_notify_sp_milestone_noop.sql` (221 baris, ASCII murni) |
+| Staging | ✔ **dipasang manual 25 Sep 2026**; berkas ini rekaman retroaktifnya, dijalankan ulang 25 Sep dan hasilnya **byte-identik** (md5 `1fc558be2e4a29800ca8c2f4da3da998`, 465 karakter) |
+| Production | — **tidak pernah, dan tidak boleh** |
+| Tindakan saat launching | ⛔ **lewati.** Ia bukan bagian antrean produksi |
+
+**Apa isinya.** `notify_sp_milestone` di staging dijadikan **no-op**: ia hanya `RAISE NOTICE`, tidak memanggil apa pun ke luar.
+
+**Kenapa.** Badan **produksi** fungsi itu memanggil Edge Function **produksi** lewat URL yang **di-hardcode di dalam badan fungsi** (`net.http_post` ke `.../functions/v1/notify-sp-milestone`; tokennya sudah diambil dari vault, URL-nya tidak — **TD-274**). Selama staging membawa badan produksi, **setiap perubahan status SP di staging menyuruh PRODUKSI mengirim notifikasi.** Itu bukan risiko teoretis: satu run seed UAT memanggil `sp_recompute_status` ratusan kali.
+
+**Kenapa dicatat di sini walau tidak akan pernah dijalankan ke produksi.** Perubahannya dilakukan **manual, di luar berkas migrasi mana pun**, jadi nol jejak di git — kelas yang sama dengan butir 3. Bedanya: butir 3 **harus diulang di produksi**, butir ini **harus tidak pernah**. Dua-duanya berbahaya kalau tidak tertulis, dengan cara yang berlawanan.
+
+**Kapan berkas ini dipakai.** Setiap kali staging di-refresh/di-restore dari produksi dan membawa badan produksi lagi. Gejalanya sudah ada alat pendeteksinya: seluruh skrip `scripts/seed/uat/` **menolak jalan** kalau badan fungsi ini memuat `net.http` atau ref produksi (uji V10 di `06-verify.sql`). ⛔ Kalau seed tiba-tiba menolak jalan sesudah staging di-refresh, jawabannya **jalankan berkas ini**, bukan melemahkan palangnya.
+
+**Palangnya rem tangan, bukan deteksi lingkungan — dan itu disengaja.** Tidak ada cara andal mendeteksi "ini produksi" dari dalam SQL: staging yang baru di-restore dari produksi berisi data yang sama persis, sehingga penanda berbasis data akan menolak tepat pada saat berkas ini paling dibutuhkan. Maka operator harus menyatakan niatnya di sesi yang sama:
+
+```
+SET nexus.izin_staging_only = 'ya-ini-staging';
+```
+
+Tanpa baris itu berkas ini berhenti dan tidak mengubah apa pun — diuji 25 Sep 2026: dijalankan tanpa `SET`, ditolak `P0001`; dijalankan dengan `SET`, lolos dan V1 hijau. Palang kedua menolak kalau tanda tangan fungsinya berubah, supaya `CREATE OR REPLACE` tidak diam-diam melahirkan **overload baru** yang hidup berdampingan dengan badan produksi (kelas gotcha #37/#39).
+
+**Rollback.** "Rollback" di sini berarti mengembalikan badan produksi ke staging, dan itu hampir selalu salah. Badan produksi **sengaja tidak disalin** ke dalam berkas migrasi ini — menaruhnya di sana membuatnya mudah ter-copy-paste ke staging, persis hal yang berkas ini cegah. Sumbernya hidup di produksi (`pg_proc.prosrc`) dan hanya di sana ia perlu ada.
 
 ---
 
