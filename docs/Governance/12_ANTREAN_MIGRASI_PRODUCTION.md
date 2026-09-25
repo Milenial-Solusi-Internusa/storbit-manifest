@@ -35,6 +35,7 @@
 | 12 | `20260927000002_account_role_mapping` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 2, SEBELUM butir 13 |
 | 13 | `20260927000003_journal_account_roles_and_readiness` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9 DAN butir 12 |
 | 14 | Grant menu `fin_invoice` (`20260927000004`) | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — tanpa ini halaman baru super_admin-only |
+| 15 | Parity staging: `20260902000006` + `20260910000001` | ✔ 25 Sep | ✔ sudah sejak 2-11 Sep | — **nol** — arah terbalik |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -378,6 +379,29 @@ Tanpa baris itu berkas ini berhenti dan tidak mengubah apa pun — diuji 25 Sep 
 ⚠️ **Berkas `20260924000001` ikut disunting** (keputusan Den K-8): key `skel_6_2_1` dicabut dari seed katalog, karena tab 6.2.1 berhenti jadi placeholder. Angka di dalamnya turun **157 → 156**. Migrasi itu sendiri masih **belum dijalankan di mana pun**.
 
 **Rollback.** DELETE ber-batas: hanya aksi `view` dan ketiga role itu. Menghapus SEMUA grant `fin_invoice` akan ikut mencabut grant per-user yang mungkin sudah diberikan lewat Admin Settings.
+
+---
+
+## 15. Parity staging — ARAH TERBALIK, produksi TIDAK disentuh
+
+| | |
+|---|---|
+| Berkas | `20260902000006_td180_sp_btb_dc_master` + `20260910000001_finance_read_access` (keduanya sudah di repo) |
+| Staging | ✔ **dijalankan 25 Sep 2026** |
+| Production | ✔ **sudah sejak 2 dan 10-11 Sep 2026** — tidak ada yang perlu dijalankan |
+| Tindakan saat launching | **nol** |
+
+**Apa yang terjadi.** Uji manual AR Tahap 2 di Preview menampilkan **Siap Ditagih 0 dan Tertahan 0** untuk `zzztest.controller` dan `zzztest.finance`, padahal staging punya 40 SP seed. Akarnya: **LIMA policy di staging masih home-company-only** sementara produksi sudah punya varian jamak — `sp_order_items_read`, `sp_invoices_read`, `sp_invoice_lines_read`, `sp_btb_read`, `dc_master_read`.
+
+Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_read` sudah jamak (itu sebabnya 40 SP tetap terlihat dan halamannya tampak hidup), tapi `sp_invoice_readiness_all` menghitung kandidat dari `SUM(sp_order_items.qty) > 0` → nol baris → nol kandidat. **Gagalnya senyap: nol baris, bukan error.**
+
+⭐ **Perbaikannya BUKAN keputusan RLS baru.** Produksi sudah benar, jadi yang dijalankan adalah dua migrasi yang **sudah ada di repo dan sudah LIVE di produksi**. Blast radius di produksi: **NOL**.
+
+⚠️ `20260910000001` tampaknya dulu dijalankan **separuh** di staging: FIX 1 (`prospects_read` + cabang finance) sudah ada, FIX 2a/2b/2c (tiga policy jamak) tidak. Karena itu ia dijalankan **utuh** — ALTER POLICY idempoten.
+
+**Perbaikan data yang menyertainya (bukan migrasi):** `zzztest.controller.profiles.company_id` MSI → **SOA**. Akun itu hanya ber-role `finance_controller@SOA`, jadi home MSI membuat `activeCompanyId` default ke entitas tempat ia tak punya role — label topbar berbunyi "Tanpa role di entitas ini" padahal CompanySwitcher menampilkan nama SOA. Populasi keadaan itu di **produksi = NOL** (23 profil aktif, semuanya punya role di home-nya), jadi ini fixture yang tidak representatif, bukan bug pengguna. Perbaikan kodenya → **TD-278**.
+
+⭐ **Dan inilah yang paling penting dari butir ini: sisa drift-nya JAUH lebih banyak.** Alat baru `scripts/qa/env-drift-check.mjs` membandingkan staging vs produksi dan menemukan **23 perbedaan yang tidak punya penjelasan** — 8 fungsi hanya ada di produksi, 5 fungsi beda isi, 8 policy, 1 trigger, dan tabel `sp_orders` yang di staging **kurang enam kolom** (`inv`, `fp`, `submit`, `kirim`, `submit_date`, `email_status`). Rincian + rencana → **TD-279**. Butir 15 ini hanya menutup lima policy yang memblokir UAT AR Tahap 2; sisanya pekerjaan tersendiri.
 
 ---
 
