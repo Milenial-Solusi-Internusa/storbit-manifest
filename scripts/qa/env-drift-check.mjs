@@ -60,6 +60,16 @@
 //
 //   --sql   mencetak SQL inventarisnya lalu keluar (untuk ditempel manual).
 //
+//   Drill-down (semuanya HANYA MENCETAK SQL, nol koneksi -- jalankan sendiri
+//   di KEDUA database lalu bandingkan keluarannya):
+//     --sql-kolom  <tabel>
+//     --sql-policy <tabel.policy.cmd>   (kunci persis seperti yang dicetak)
+//     --sql-fungsi <nama>               (tanpa argumen; semua overload dicetak)
+//
+//   ⭐ Drill-down sengaja MENCETAK SQL, bukan menjalankannya. Sidik jari di
+//   skrip ini md5 -- ia bisa bilang "berbeda", tidak pernah "berbeda di mana".
+//   Yang menjawab itu hanya teks aslinya, dibaca manusia, dari KEDUA sisi.
+//
 // ⚠️ Nol kredensial di berkas ini. Keduanya dibaca dari environment.
 // ⚠️ Read-only: satu-satunya SQL yang dikirim adalah SELECT atas katalog sistem.
 import { execFileSync } from 'node:child_process';
@@ -265,6 +275,51 @@ export function laporkan(hasil) {
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
+/** Kutip literal SQL. Satu tempat, supaya tidak ada yang menyalin setengahnya. */
+const lit = (v) => "'" + String(v).replace(/'/g, "''") + "'";
+
+/** Kunci policy dicetak sebagai `tabel.policyname.cmd`. Dipecah dari UJUNG:
+ *  nama policy boleh memuat titik, nama tabel dan cmd tidak. Memecah dengan
+ *  split('.') polos akan salah untuk policy bernama titik -- dan salahnya
+ *  diam-diam mengembalikan nol baris, yang terbaca seperti "tidak ada". */
+export const POLICY_SQL = (kunci) => {
+  const p1 = kunci.indexOf('.');
+  const p2 = kunci.lastIndexOf('.');
+  if (p1 < 0 || p2 <= p1) throw new Error(`kunci policy tidak berbentuk tabel.policy.cmd: ${kunci}`);
+  const tabel = kunci.slice(0, p1);
+  const nama  = kunci.slice(p1 + 1, p2);
+  const cmd   = kunci.slice(p2 + 1);
+  return `
+SELECT tablename, policyname, cmd, permissive,
+       COALESCE(array_to_string(roles, ','), '') AS roles,
+       COALESCE(qual, '(null)')       AS qual,
+       COALESCE(with_check, '(null)') AS with_check
+  FROM pg_policies
+ WHERE schemaname = 'public'
+   AND tablename  = ${lit(tabel)}
+   AND policyname = ${lit(nama)}
+   AND cmd        = ${lit(cmd)};
+`;
+};
+
+/** Seluruh overload dicetak: yang berbeda bisa saja overload yang tidak
+ *  terpikirkan, dan menyaring per-argumen di sini akan menyembunyikannya.
+ *  proacl IKUT -- perbedaan ACL tidak terlihat dari badan fungsi sama sekali,
+ *  dan itu persis kasus get_table_columns. */
+export const FUNGSI_SQL = (nama) => `
+SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS kunci,
+       p.prosecdef AS security_definer,
+       p.provolatile::text AS volatile,
+       COALESCE(array_to_string(p.proconfig, ','), '(null)') AS config,
+       COALESCE(array_to_string(p.proacl::text[], ','), '(null -- PUBLIC EXECUTE)') AS acl,
+       length(p.prosrc) AS panjang_badan,
+       md5(p.prosrc) AS md5_badan,
+       p.prosrc AS badan
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.proname = ${lit(nama)}
+ ORDER BY kunci;
+`;
+
 export const KOLOM_SQL = (tabel) => `
 SELECT column_name, data_type, is_nullable, COALESCE(column_default,'(null)') AS bawaan
   FROM information_schema.columns
@@ -274,6 +329,16 @@ SELECT column_name, data_type, is_nullable, COALESCE(column_default,'(null)') AS
 
 const arg = process.argv.slice(2);
 if (arg[0] === '--sql') { console.log(INVENTARIS_SQL); process.exit(0); }
+if (arg[0] === '--sql-policy') {
+  if (!arg[1]) { console.error('Pemakaian: --sql-policy <tabel.policy.cmd>'); process.exit(2); }
+  console.log(POLICY_SQL(arg[1]));
+  process.exit(0);
+}
+if (arg[0] === '--sql-fungsi') {
+  if (!arg[1]) { console.error('Pemakaian: --sql-fungsi <nama fungsi tanpa argumen>'); process.exit(2); }
+  console.log(FUNGSI_SQL(arg[1]));
+  process.exit(0);
+}
 if (arg[0] === '--sql-kolom') {
   if (!arg[1]) { console.error('Pemakaian: --sql-kolom <nama tabel>'); process.exit(2); }
   console.log(KOLOM_SQL(arg[1]));
