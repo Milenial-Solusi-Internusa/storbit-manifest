@@ -90,7 +90,7 @@
 
 ---
 
-### Seed data dummy UAT untuk STAGING — `scripts/seed-uat/` (11 berkas, ASCII murni), 40 SP entitas SOA — ⛔ PRODUKSI tidak pernah disentuh; NOL perubahan skema; verifikasi 32/32 LOLOS
+### Seed data dummy UAT untuk STAGING — `scripts/seed/uat/` (11 berkas, ASCII murni), 40 SP entitas SOA — ⛔ PRODUKSI tidak pernah disentuh; NOL perubahan skema; verifikasi 30/30 agregat + 21/21 rinci V11b LOLOS
 
 > **Sifat.** Alat + data, bukan fitur. Seluruh angka DB = **laporan sesi**; yang diukur ulang doc-keeper hanya sisi repo (11 berkas ada, ASCII, `seed.sh` + `00-guards.sql` memuat palang dua arah).
 
@@ -102,7 +102,7 @@
 
 ⛔ **Palang `notify_sp_milestone`, dan kenapa ia bukan kehati-hatian berlebihan.** Fungsi itu dijadikan **no-op di staging** 25 Sep 2026 (di luar sesi ini), dan **setiap** skrip seed menolak jalan kalau badan fungsinya masih memuat `net.http` **atau** ref produksi `untmpqceexwxzuhlmyrg`. Sebabnya: seed memanggil `sp_recompute_status` **ratusan kali**, jadi kalau badan produksinya masih hidup di staging, **staging akan menyuruh PRODUKSI mengirim notifikasi** — 40 SP dummy menghasilkan banjir notifikasi ke orang sungguhan. Uji **V10** memverifikasinya **di setiap putaran**: LOLOS.
 
-**4. Berkas & sifat.** `README.md` · `00-guards.sql` · `01-stock.sql` · **`01b-helper.sql`** · `02-scenario-1.sql` · `03-scenario-2.sql` · `04-scenario-3.sql` · `05-ttf.sql` · `06-verify.sql` · `99-purge.sql` · `seed.sh`. Idempoten **per-SP** + mode **purge** yang memulihkan stok. ⚠️ `01b-helper.sql` **tidak ada di rencana** — ia lahir saat pelaksanaan karena ketiga skrip skenario memanggil rantai langkah yang sama; dinomori `01b` supaya nama berkas lain tidak bergeser. Verifikasi **V1..V11** (**V11** tambahan: tiap invoice non-void wajib punya minimal satu jurnal `invoice_issued`) — hasil akhir **32/32 LOLOS**, dijalankan berkali-kali termasuk purge + seed ulang.
+**4. Berkas & sifat.** `README.md` · `00-guards.sql` · `01-stock.sql` · **`01b-helper.sql`** · `02-scenario-1.sql` · `03-scenario-2.sql` · `04-scenario-3.sql` · `05-ttf.sql` · `06-verify.sql` · `99-purge.sql` · `seed.sh`. Idempoten **per-SP** + mode **purge** yang memulihkan stok. ⚠️ `01b-helper.sql` **tidak ada di rencana** — ia lahir saat pelaksanaan karena ketiga skrip skenario memanggil rantai langkah yang sama; dinomori `01b` supaya nama berkas lain tidak bergeser. Verifikasi **V1..V11** (**V11** tambahan: tiap invoice non-void wajib punya minimal satu jurnal `invoice_issued`) — hasil akhir **30/30 agregat + 21/21 rinci V11b LOLOS**, dijalankan berkali-kali termasuk purge + seed ulang.
 
 **5. ⭐ EMPAT temuan yang lahir dari MENJALANKAN, bukan dari membaca.** Ini nilai sesungguhnya seed ini, di luar datanya.
 

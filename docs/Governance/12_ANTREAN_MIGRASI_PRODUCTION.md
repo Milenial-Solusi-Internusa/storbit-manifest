@@ -213,7 +213,7 @@ Guard: hanya `delivered` + `signed_date IS NULL` (isi **sekali**, tidak bisa men
 |---|---|
 | Isi | (a) `create_invoice` jadi pembungkus tipis · (b) `due_date` saat terbit · (c) `record_payment` tolak `issued` · (d) tiga guard baru · (e) ACL 3 fungsi · (f) DROP `mark_delivery_delivered(uuid)` |
 | Berkas | ✔ `supabase/migrations/20260926000002_ar_single_issue_path.sql` |
-| Staging | ✔ **dijalankan 25 Sep 2026**, V1a/V1b/V1c lolos + uji a–f lolos + seed 32/32 |
+| Staging | ✔ **dijalankan 25 Sep 2026**, V1a/V1b/V1c lolos + uji a–f lolos + seed 30/30 agregat + 21/21 rinci V11b |
 | Production | ⛔ belum |
 | Sifat | 3 `CREATE OR REPLACE` + 3 blok ACL + 1 `DROP FUNCTION`. Nol DDL tabel, nol policy, nol baris data diubah |
 

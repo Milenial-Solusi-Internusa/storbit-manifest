@@ -1,4 +1,4 @@
--- scripts/seed-uat/01-stock.sql
+-- scripts/seed/uat/01-stock.sql
 -- Stok awal lewat RPC resmi create_goods_receipt (tipe adjustment, nol vendor).
 -- Prasyarat KERAS: tanpa ini sebagian besar SP jatuh ke MENUNGGU_STOK dan
 -- skenario 2-3 tidak akan pernah terbentuk (rencana 2.1).

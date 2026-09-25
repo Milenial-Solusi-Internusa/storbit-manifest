@@ -1,4 +1,4 @@
--- scripts/seed-uat/00-guards.sql
+-- scripts/seed/uat/00-guards.sql
 -- Palang untuk SELURUH skrip seed. Di-include di kepala tiap berkas.
 --
 -- Impersonasi: auth.uid() di staging membaca GUC request.jwt.claim.sub, dan

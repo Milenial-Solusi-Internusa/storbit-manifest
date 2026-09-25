@@ -11,7 +11,7 @@ disentuh oleh berkas mana pun di folder ini** -- `seed.sh` menolak jalan kalau
 | Penanda | nomor SP `91xxxxx` - `notes = 'DATA DUMMY UAT'` - `goods_receipts.reference_no LIKE 'GR-DUMMY-UAT-%'` |
 | Cakupan | 40 SP: 12 belum ditagih - 6 siap ditagih - 22 sudah invoice - 8 TTF |
 | Rentang tanggal | Juli-September 2026, KECUALI 9100019 (Mei) dan 9100020 (Juni) -- lihat "Dua SP di Mei/Juni" |
-| Dijalankan | 25 September 2026, tiga putaran (seed, purge, seed ulang, lalu seed ulang dengan tanggal direvisi). Verifikasi LOLOS penuh di ketiganya; putaran terakhir 32/32 |
+| Dijalankan | 25 September 2026, tiga putaran (seed, purge, seed ulang, lalu seed ulang dengan tanggal direvisi). Verifikasi LOLOS penuh di ketiganya; putaran terakhir 30/30 agregat + 21/21 rinci V11b |
 
 ## Cara jalan
 

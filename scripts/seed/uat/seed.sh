@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/seed-uat/seed.sh -- pembungkus seed data dummy UAT untuk nexus-staging.
+# scripts/seed/uat/seed.sh -- pembungkus seed data dummy UAT untuk nexus-staging.
 #
 # ASCII MURNI. Jangan tambahkan karakter non-ASCII: /bin/bash macOS 3.2.57 di
 # bawah locale UTF-8 menelan byte non-ASCII yang MENEMPEL pada $var menjadi

@@ -1,4 +1,4 @@
--- scripts/seed-uat/99-purge.sql
+-- scripts/seed/uat/99-purge.sql
 -- Mode HAPUS. Membersihkan SELURUH data dummy tanpa menyentuh data lain.
 -- Penanda: sp_no LIKE '91%' - goods_receipts.reference_no LIKE 'GR-DUMMY-UAT-%'
 --
