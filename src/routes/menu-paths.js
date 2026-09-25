@@ -27,132 +27,92 @@
 // pohon menu App.jsx harus punya path, nol path ganda di MENU_PATHS ∪ PLANNED.
 // ============================================================================
 
-const LW = '/logistics-warehouse/warehouse';   // prefix panjang dipertahankan (keputusan #1)
+import { SKELETON_MENU_PATHS } from './menu-skeleton.js';
+
 const FA = '/finance-accounting';
-const HC = '/hcga/service-request';
 const AS = '/admin-settings';
 
-/** id menu → path. Halaman NYATA hari ini (ada blok render / shell-nya). */
+/** id menu → path.
+ *
+ *  Sejak kerangka Bagian 1 dipasang, SEBAGIAN BESAR isi tabel ini datang dari
+ *  `menu-skeleton.js`: tiap halaman hidup kini duduk di sebuah tab Level 3, dan
+ *  path-nya adalah path tab itu. Yang tertinggal sebagai literal di bawah hanya
+ *  yang memang TIDAK duduk di kerangka — shell, BNF (keluar dari sidebar tapi
+ *  rutenya hidup), Admin Settings, master customer Storbit, dan id sintetis
+ *  halaman detail.
+ *
+ *  Path LAMA tidak hilang: pasangannya ada di `LEGACY_PATH_REDIRECTS`
+ *  (menu-skeleton.js) dan dipasang sebagai rute redirect oleh
+ *  `redirects.routes.jsx`, jadi bookmark & `nexus_last_path` lama tetap mendarat
+ *  di tempat yang benar. */
 export const MENU_PATHS = Object.freeze({
   // ── Sistem / shell ───────────────────────────────────────────────────────
   'home':                    '/home',
   'dashboard':               '/dashboard',                 // Command Center (public)
 
-  // ── CRM (modules/crm hari ini → /crm) ────────────────────────────────────
-  'crm-dashboard':           '/crm/dashboard',
-  'indomarco-dashboard':     '/crm/dashboard/indomarco',
-  'crm-pipeline':            '/crm/pipeline',
-  'crm-prospects':           '/crm/lead',                   // "Prospects" = akun tahap lead (Peta: crm/lead)
-  'crm-lead-pool':           '/crm/lead/pool',
-  'crm-lead-pool-approval':  '/crm/lead/pool/approval',
-  'crm-inquiry':             '/crm/inquiry',
-  'quotation-draft':         '/crm/quotation',
-  'crm-customers':           '/crm/customer',
-  'crm-calls':               '/crm/activity',               // tab "Jadwal & Tugas"
-  'crm-activity-log':        '/crm/activity/log',
-  'riwayat-visit':           '/crm/activity/visit',
-  'crm-rate-list':           '/crm/rate-list',              // Shared Reference; rumah target belum diputuskan → tetap di /crm
-  'reporting-sales':         '/crm/report',                 // CRMReportPage (folder crm/)
-  'crm-sales-order':         '/crm/sales-order',            // dokumen SO CRM (tabel sales_orders)
-
-  // ── Procurement ──────────────────────────────────────────────────────────
-  'proc-inquiry-fwd-msi':    '/procurement/prf',            // daftar "Forwarding (MSI)" = daftar PRF
-  'prf':                     '/procurement/prf/new',        // menu `prf` hari ini = form buat PRF
-  'proc-vendor-list':        '/procurement/vendor',
-  'proc-sales-order':        '/procurement/sales-order',    // varian read-only SO (komponen sama dgn CRM)
-
-  // ── Logistics & Warehouse (Storbit + Inventory) ──────────────────────────
-  'manifest':                `${LW}/sales-order`,           // SP Storbit (tabel sp_orders) — BUKAN sales_orders CRM
-  'input':                   `${LW}/sales-order/new`,       // Input SP (menyatukan menu `input` & tombol Tambah SP, keputusan #9)
-  'picking':                 `${LW}/picking-packing`,
-  'surat-jalan':             `${LW}/delivery-note`,
-  'storbit-dashboard':       `${LW}/dashboard`,
-  'shipment':                `${LW}/shipment`,              // halaman inline App.jsx (Pengiriman SP)
-  'inventory-dashboard':     `${LW}/stock-dashboard`,
-  'inventory-stok':          `${LW}/stock`,
-  'inventory-penerimaan':    `${LW}/goods-receiving`,
-
-  // ── Finance & Accounting (4 halaman inline App.jsx; Fase 0 §10) ──────────
-  'finance':                 `${FA}/documents`,             // FinancePage — status dokumen per SP
-  'outstanding':             `${FA}/outstanding`,
-  'ar':                      `${FA}/accounts-receivable`,   // ARTrackerPage (TTF)
-  'customers':               `${FA}/customer`,              // CustomersPage — master customer Storbit (≠ /crm/customer)
-
-  // ── HCGA (modules/hrga hari ini → /hcga/service-request) ─────────────────
-  'hrga':                    HC,                            // My Requests (public)
-  'hrga-semua-request':      `${HC}/all`,
-  'hrga-buat-request':       `${HC}/new`,                   // (public)
-  'hrga-pending-approval':   `${HC}/pending-approval`,
-  'hrga-arsip':              `${HC}/archive`,               // (public)
-
-  // ── Assets (AssetShell; 4 kategori nyata + 11 ComingSoon di dalam shell) ─
-  'assets':                  '/assets',
-  'assets-it':               '/assets/it',
-  'assets-kendaraan':        '/assets/vehicle',
-  'assets-furniture':        '/assets/furniture',
-  'assets-properti':         '/assets/property',
-  'assets-analytics':        '/assets/analytics',
-  'assets-maint':            '/assets/maintenance-schedule',
-  'assets-hist':             '/assets/maintenance-history',
-  'assets-workorders':       '/assets/work-orders',
-  'assets-docs':             '/assets/documents',
-  'assets-expiring':         '/assets/expiring',
-  'assets-expired':          '/assets/expired',
-  'assets-kategori':         '/assets/categories',
-  'assets-lokasi':           '/assets/locations',
-  'assets-vendor':           '/assets/vendors',
-  'assets-settings':         '/assets/settings',
+  // ── Master customer Storbit ──────────────────────────────────────────────
+  // SENGAJA tidak dipasang di tab mana pun (keputusan Den): rute dan izinnya
+  // (`logistics_customer_storbit`) tetap apa adanya, ia hanya memang tidak
+  // pernah punya leaf sidebar — sama seperti sebelum kerangka ini ada.
+  'customers':               `${FA}/customer`,
 
   // ── Keluarga BNF ─────────────────────────────────────────────────────────
+  // Keluar dari sidebar (keputusan Den #7). Rute `/bnf/*` TETAP HIDUP dan
+  // gate `is_bnf_authorized()` tidak disentuh — yang hilang hanya entri menunya.
   'bnf':                     '/bnf',
   'briefing-harian':         '/bnf/daily-briefing',
   'meeting-mingguan':        '/bnf/weekly-meeting',
 
-  // ── Reporting (MOM) — modul target belum ada di Peta, tetap /reporting ───
-  'reporting-mom':           '/reporting/mom',
-
-  // ── Admin / Foundation ───────────────────────────────────────────────────
+  // ── Admin Settings (layer sistem, bukan modul bisnis) ────────────────────
   'admin-hub':               AS,                            // landing AdminHub
   'products':                `${AS}/products`,
-  'bulk-edit-price':         `${AS}/bulk-price`,            // id sintetis (di luar pohon)
-  'bnf-org-roles':           `${AS}/bnf-org-roles`,         // id sintetis (di luar pohon)
-  'schema-manager':          `${AS}/schema-manager`,        // id sintetis (di luar pohon)
+  'bulk-edit-price':         `${AS}/bulk-price`,            // kartu AdminHub, tanpa leaf sidebar
+  'bnf-org-roles':           `${AS}/bnf-org-roles`,         // kartu AdminHub, tanpa leaf sidebar
+  'schema-manager':          `${AS}/schema-manager`,        // kartu AdminHub, tanpa leaf sidebar
+
+  // ── Kerangka Bagian 1 ────────────────────────────────────────────────────
+  // 54 id halaman lama yang kini duduk di tab Level 3 (id & menu key-nya TIDAK
+  // berubah — itu yang menjaga izin tetap sama), 157 id tab placeholder
+  // (`ph-*`), dan 11 id stub AssetShell.
+  ...SKELETON_MENU_PATHS,
 
   // ── Id sintetis halaman DETAIL (dinavigasi programatik, tanpa id record di
   //    URL hari ini). Dari `?menu=<id>` lama tanpa record → mendarat di DAFTAR
-  //    induknya; template detail ber-`:id` ada di DETAIL_ROUTE_TEMPLATES (G1+). ─
-  'customer-detail':         '/crm/customer',
+  //    induknya; template detail ber-`:id` ada di DETAIL_ROUTE_TEMPLATES. ─────
+  'customer-detail':         '/crm/customer/legal-contact',
   'product-detail':          `${AS}/products`,
-  'assets-detail':           '/assets',
+  'assets-detail':           '/it/asset-inventory/asset-master/overview',
   'user-edit':               `${AS}/user-access`,
 });
 
-/** Template rute detail/aksi yang akan lahir saat modulnya dipindah (G2–G6).
- *  Sejak G2 sebagian SUDAH dipakai kode (file rute per modul membangun path-nya
- *  dari sini); sisanya tetap dokumentasi kontrak sampai gilirannya tiba. */
+/** Template rute detail/aksi milik tiap halaman.
+ *  DITURUNKAN dari MENU_PATHS, bukan ditulis ulang: sejak halaman-halaman itu
+ *  duduk di tab Level 3, alamat induknya bergeser, dan template yang ditulis
+ *  tangan akan diam-diam menunjuk path lama. Dipakai nyata oleh
+ *  logistics-warehouse.routes.jsx (tiga rute detail) dan sebagai kontrak
+ *  tertulis untuk sisanya. */
+const P = MENU_PATHS;
 export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
-  'crm-inquiry':        ['/crm/inquiry/new', '/crm/inquiry/:id', '/crm/inquiry/:id/edit'],
-  'quotation-draft':    ['/crm/quotation/new', '/crm/quotation/:id', '/crm/quotation/:id/edit'],
-  'crm-prospects':      ['/crm/lead/new', '/crm/lead/:id/edit'],
+  'crm-inquiry':        [`${P['crm-inquiry']}/new`, `${P['crm-inquiry']}/:id`, `${P['crm-inquiry']}/:id/edit`],
+  'quotation-draft':    [`${P['quotation-draft']}/new`, `${P['quotation-draft']}/:id`, `${P['quotation-draft']}/:id/edit`],
+  'crm-prospects':      [`${P['crm-prospects']}/new`, `${P['crm-prospects']}/:id/edit`],
   // Dua bentuk BERSARANG lahir di G3 sebagai konsekuensi keputusan Den
   // "kembali ke customer yang membukanya": tujuan itu hanya deterministik
   // kalau ASAL-USULNYA ada di URL. Kalau dititipkan ke location.state,
   // janji "tetap benar setelah refresh / deep-link" gugur persis di kasus
-  // yang jadi alasan memilihnya. Komponen yang dirender sama dengan bentuk
-  // tunggalnya ('/crm/inquiry/:id/edit', '/crm/quotation/:id'); yang berbeda
-  // hanya rute mana yang cocok — dan karenanya ke mana tombol kembali menuju.
-  'customer-detail':    ['/crm/customer/:id',
-                         '/crm/customer/:id/inquiry/:inquiryId/edit',
-                         '/crm/customer/:id/quotation/:quotationId'],
-  'crm-sales-order':    ['/crm/sales-order/new', '/crm/sales-order/:id'],
-  'proc-inquiry-fwd-msi': ['/procurement/prf/:id', '/procurement/prf/:id/edit'],
-  'proc-sales-order':   ['/procurement/sales-order/:id'],
-  'manifest':           [`${LW}/sales-order/:customerId/:spNo`],
-  'picking':            [`${LW}/picking-packing/:id`],
-  'surat-jalan':        [`${LW}/delivery-note/:id`],
-  'hrga':               [`${HC}/:id`],
-  'assets-detail':      ['/assets/:category/:id', '/assets/:category/new'],
-  'reporting-mom':      ['/reporting/mom/new', '/reporting/mom/:id', '/reporting/mom/:id/edit'],
+  // yang jadi alasan memilihnya.
+  'customer-detail':    [`${P['crm-customers']}/:id`,
+                         `${P['crm-customers']}/:id/inquiry/:inquiryId/edit`,
+                         `${P['crm-customers']}/:id/quotation/:quotationId`],
+  'crm-sales-order':    [`${P['crm-sales-order']}/new`, `${P['crm-sales-order']}/:id`],
+  'proc-inquiry-fwd-msi': [`${P['proc-inquiry-fwd-msi']}/:id`, `${P['proc-inquiry-fwd-msi']}/:id/edit`],
+  'proc-sales-order':   [`${P['proc-sales-order']}/:id`],
+  'manifest':           [`${P.manifest}/:customerId/:spNo`],
+  'picking':            [`${P.picking}/:id`],
+  'surat-jalan':        [`${P['surat-jalan']}/:id`],
+  'hrga':               [`${P.hrga}/:id`],
+  'assets-detail':      [`${P.assets}/:category/:id`, `${P.assets}/:category/new`],
+  'reporting-mom':      [`${P['reporting-mom']}/new`, `${P['reporting-mom']}/:id`, `${P['reporting-mom']}/:id/edit`],
   'admin-hub':          [`${AS}/:section`],
   'user-edit':          [`${AS}/user-access/:userId`],
   'product-detail':     [`${AS}/products/:id`],
@@ -179,10 +139,10 @@ export const PLANNED_MENU_IDS = Object.freeze([
   'dashboard-tasks', 'dashboard-notifications', 'dashboard-activity',
   // Logistics placeholder
   'shipment-jadwal', 'shipment-riwayat',
-  'inventory-opname', 'inventory-pengeluaran', 'inventory-transfer',
+  'inventory-pengeluaran',   // 'inventory-opname' & 'inventory-transfer' kini tab 3.12.1 / 3.11.1
   'freight', 'freight-air', 'freight-fcl', 'freight-lcl',
-  'job', 'job-aktif', 'job-buat', 'job-history', 'job-semua',
-  'trading', 'trading-rekap', 'trading-transaksi',
+  'job-aktif', 'job-buat', 'job-history', 'job-semua',   // 'job' kini tab 3.1.1
+  'trading-rekap', 'trading-transaksi',                  // 'trading' kini tab 2.5.1
   'ppjk', 'ppjk-bc11', 'ppjk-bc23', 'ppjk-bc30', 'ppjk-ekspor', 'ppjk-ekspor-tracking',
   'ppjk-impor', 'ppjk-impor-tracking', 'ppjk-manifest', 'ppjk-peb', 'ppjk-pib',
   'ppjk-trucking', 'ppjk-trucking-jadwal', 'ppjk-trucking-order', 'ppjk-trucking-riwayat',
@@ -191,16 +151,16 @@ export const PLANNED_MENU_IDS = Object.freeze([
   // Procurement placeholder
   'vendors', 'vendors-daftar', 'vendors-evaluasi', 'vendors-kontrak', 'vendors-blacklist',
   // Finance placeholder
-  'billing', 'ap', 'accounting',
+  'billing',                                             // 'ap' → tab 6.3.1, 'accounting' → 6.4.1, 'cashBank' → 6.1.1
   // IT / Service placeholder
-  'it', 'it-tickets', 'it-buat', 'it-semua', 'it-pending', 'it-arsip', 'it-sla', 'it-kategori',
+  'it-tickets', 'it-buat', 'it-semua', 'it-pending', 'it-arsip', 'it-sla', 'it-kategori',   // 'it' kini tab 8.1.1
   // Workflow / approvals placeholder
   'approvals', 'approvals-pending', 'approvals-processed', 'approvals-delegasi',
   'approvals-template', 'approvals-template-buat',
   // Reporting / audit / performance placeholder
   'reports', 'reports-executive', 'reports-operasional', 'reports-keuangan', 'reports-custom',
   'reporting-form-report',
-  'audit', 'audit-activity', 'audit-compliance', 'audit-log',
+  'audit-activity', 'audit-compliance', 'audit-log',     // 'audit' kini tab 9.2.1
   'performance', 'performance-system', 'performance-cache',
   // ── 32 id camelCase (ditambahkan G1, 22 Sep 2026) ────────────────────────
   // Terlewat di G0: regex gate check-menu-paths.mjs hanya menyapu id kebab-case,
@@ -210,10 +170,10 @@ export const PLANNED_MENU_IDS = Object.freeze([
   // Id dipakai VERBATIM di path (/planned/jobCosting) sesuai #3 — bukan kebab —
   // supaya PLANNED_MODULES[activeMenu] (ComingSoon spesifik) tetap cocok tanpa
   // mengubah pohon menu; rename ke kebab-case = kandidat Fase 3/8 Batch FS.
-  'jobCosting', 'cashBank',
+  'jobCosting',
   'procRequest', 'procRequest-buat', 'procRequest-semua', 'procRequest-pending', 'procRequest-arsip',
-  'purchaseOrder', 'purchaseOrder-buat', 'purchaseOrder-semua', 'purchaseOrder-pending', 'purchaseOrder-history',
-  'docMgmt', 'docMgmt-upload', 'docMgmt-semua', 'docMgmt-kategori', 'docMgmt-arsip',
+  'purchaseOrder-buat', 'purchaseOrder-semua', 'purchaseOrder-pending', 'purchaseOrder-history',   // 'purchaseOrder' kini tab 2.4.1
+  'docMgmt-upload', 'docMgmt-semua', 'docMgmt-kategori', 'docMgmt-arsip',   // 'docMgmt' kini tab 9.1.1
   'apiCenter', 'apiCenter-keys', 'apiCenter-webhook', 'apiCenter-log',
   'publicTracking', 'publicTracking-page', 'publicTracking-settings',
   'customerPortal', 'customerPortal-dashboard', 'customerPortal-tracking', 'customerPortal-history',
@@ -238,17 +198,20 @@ export const LEGACY_MENU_PATHS = Object.freeze({
   'admin-settings-audit':           `${AS}/audit-log`,
   'admin-settings-general':         `${AS}/general-preferences`,
   'admin-settings-integrations':    `${AS}/integrations`,
-  // normalisasi Master Customer per-entitas (Tahap 2a)
-  'crm-customers-msi':              '/crm/customer',
-  'crm-customers-jci':              '/crm/customer',
-  'crm-customers-soa':              '/crm/customer',
-  'crm-customers-free':             '/crm/customer',
+  // normalisasi Master Customer per-entitas (Tahap 2a). Tujuannya DITURUNKAN
+  // dari MENU_PATHS, bukan literal: sejak halaman-halaman ini duduk di tab
+  // Level 3, alamatnya bergeser, dan literal lama akan menunjuk ke rute yang
+  // kini hanya redirect (dua lompatan untuk hasil yang sama).
+  'crm-customers-msi':              MENU_PATHS['crm-customers'],
+  'crm-customers-jci':              MENU_PATHS['crm-customers'],
+  'crm-customers-soa':              MENU_PATHS['crm-customers'],
+  'crm-customers-free':             MENU_PATHS['crm-customers'],
   // induk `inventory` → default Stok Barang (effect redirect App.jsx)
-  'inventory':                      `${LW}/stock`,
+  'inventory':                      MENU_PATHS['inventory-stok'],
   // kontainer CRM (klik = tab pertama; `?menu=` langsung hari ini = blank)
-  'crm-group':                      '/crm/dashboard',
-  'crm-account':                    '/crm/lead',
-  'crm-aktivitas':                  '/crm/activity',
+  'crm-group':                      MENU_PATHS['crm-dashboard'],
+  'crm-account':                    MENU_PATHS['crm-prospects'],
+  'crm-aktivitas':                  MENU_PATHS['crm-calls'],
 });
 
 /** Rute shell tanpa id menu. */

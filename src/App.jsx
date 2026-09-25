@@ -11,7 +11,10 @@ import {
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, Activity, BookOpen,
-  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp, Sunrise, Presentation,
+  // Contact / FileCheck / CreditCard / LifeBuoy / ShieldCheck dicabut: kelimanya
+  // hanya dipakai NEXUS_NAV lama. Ikon modul & Level 2 kini datang dari
+  // menu-skeleton.js, yang mengimpornya sendiri dari lucide-react.
+  Home, TrendingUp, Sunrise, Presentation,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
@@ -29,6 +32,7 @@ import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSup
 // Batch FS Fase 2.5 G1 — routing berbasis path: activeMenu diturunkan dari rute
 // (handle.menuId, src/routes/legacy.routes.jsx); setActiveMenu = navigate(pathFor(id)).
 import { pathFor, ADMIN_SECTION_IDS } from './routes/menu-paths';
+import { SKELETON, SKELETON_PLACEHOLDER_KEYS, tabHasLivePage } from './routes/menu-skeleton.js';
 import { AppShellContext } from './contexts/appShellCtx';
 import { useAppShell } from './contexts/useAppShell';
 import LegacyMenuRedirect from './routes/LegacyMenuRedirect';
@@ -507,49 +511,14 @@ const CRM_MENU_ITEMS = [
   { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck },
 ];
 
-// Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
-// ids; the tab id IS the route. Gates live on the matching children of the
-// 'crm-account' node in CRM_MENU_ITEMS (found via findMenuItemById).
-
-// Tahap 2c: tabs inside the merged "Aktivitas" menu (gates on the matching
-// children of 'crm-aktivitas' in CRM_MENU_ITEMS). activeMenu stays the tab id.
-
-// Presentational tab strip shared by the tabbed CRM menus (Account, Aktivitas).
-// `tabs` is already gate-filtered by the caller; active tab = navy underline
-// (var(--navy), matches sidebar/CRM).
-/** Tab bar CRM untuk file rute modul (G3). Sengaja TIDAK menyalin markup
- *  MenuTabBar maupun logika filternya ke src/routes/ — pelajaran TD-273:
- *  satu penjaga, satu rumah. Dipakai ACCOUNT_TABS & ACTIVITY_TABS. */
-export function CrmTabBar({ tabs }) {
-  const { activeMenu, navigateTo, hasMenuPermission, isBnfAuthorized } = useAppShell();
-  const visible = tabs.filter(t => {
-    const it = findMenuItemById(t.id);
-    return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
-  });
-  return <MenuTabBar tabs={visible} active={activeMenu} onSelect={navigateTo} />;
-}
-
-function MenuTabBar({ tabs, active, onSelect }) {
-  return (
-    <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--line, #E8ECF2)', marginBottom: 20, flexWrap: 'wrap' }}>
-      {tabs.map(t => {
-        const on = active === t.id;
-        return (
-          <button key={t.id} type="button" onClick={() => onSelect(t.id)}
-            style={{
-              appearance: 'none', border: 'none', background: 'transparent', cursor: 'pointer',
-              padding: '10px 16px', marginBottom: -1,
-              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13.5, fontWeight: on ? 700 : 600,
-              color: on ? 'var(--navy)' : '#7E8899',
-              borderBottom: on ? '2px solid var(--navy)' : '2px solid transparent',
-            }}>
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// Tahap 2b/2c: dua menu CRM bertab ('crm-account' = Account, 'crm-aktivitas' =
+// Aktivitas) tetap hidup di CRM_MENU_ITEMS sebagai REGISTRY GATE — gate tiap
+// tab dicari lewat findMenuItemById terhadap anak-anaknya. Yang hilang sejak
+// kerangka Bagian 1 dipasang hanyalah tab bar-nya: Prospects/Lead Pool kini dua
+// ITEM Level 3 terpisah di sidebar (1.1.1 / 1.1.2) dan Jadwal/Log/Visit jadi
+// satu item Level 3 (1.7.3) yang pilihan sekundernya dirender ContextHeader.
+// Menyisakan CrmTabBar berarti dua baris navigasi untuk hal yang sama, dengan
+// label lama yang justru dilarang (label navigasi wajib nama Bagian 1).
 
 const ERP_MENU_GROUPS = [
   // ── CORE ──────────────────────────────────────────────────────────────────
@@ -979,6 +948,26 @@ const ERP_MENU_GROUPS = [
       { id: 'products',  label: 'Products & Services', icon: Package },
     ],
   },
+  // ── Registry gate kerangka Bagian 1 ──────────────────────────────────────
+  // DITAMBAHKAN DI EKOR, dan itu disengaja: `visFlat[0]` (tujuan pentalan FIX B,
+  // lihat efek "redirect guard" di bawah) adalah item pertama yang terlihat di
+  // SELURUH pohon ini. Menaruh grup baru di depan akan menggeser ke mana setiap
+  // user yang ditolak mendarat — grup `Core` harus tetap yang pertama.
+  //
+  // Isinya id yang belum punya rumah di pohon lama: 157 tab placeholder
+  // (`ph-*`) dan DC Master. Keduanya butuh entri di sini karena canRenderPage
+  // FAIL-CLOSED terhadap pohon ini, dan karena canSeeMenuItem hanya mengenal
+  // item yang bisa ditemukan findMenuItemById. Gate-nya sendiri datang dari
+  // MENU_KEY_MAP (`skel_*` tidak di-seed → super_admin; `foundation_master`
+  // untuk DC Master). Grup ini TIDAK pernah dirender — sidebar dibangun dari
+  // NEXUS_NAV di bawah.
+  {
+    label: 'Bagian 1 — Registry',
+    items: [
+      { id: 'dc-master', label: 'Distribution Center (DC) Master' },
+      ...Object.keys(SKELETON_PLACEHOLDER_KEYS).map((id) => ({ id, label: id })),
+    ],
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -991,250 +980,96 @@ const ERP_MENU_GROUPS = [
 // the real ERP_MENU_GROUPS entry (findMenuItemById + canSeeMenuItem); a `role`
 // on a child/module is used as a fallback when the id isn't in that tree.
 // ─────────────────────────────────────────────────────────────────────────────
+/** Node sidebar TIGA TINGKAT dari kerangka Bagian 1:
+ *    modul  →  Level 2 (grup, bisa dibuka/tutup, tak punya halaman sendiri)
+ *           →  Level 3 (yang diklik dan membuka halaman)
+ *
+ *  Tiga bentuk Level 3, dan gate-nya ikut bentuknya:
+ *    - satu halaman   → leaf biasa, id = id menu LAMA → izinnya juga yang lama
+ *    - banyak halaman → leaf `merged`: satu baris, gate = OR seluruh halaman di
+ *                       dalamnya, klik → halaman pertama yang boleh dibuka.
+ *                       Pemilihan antar-halaman terjadi DI DALAM halaman lewat
+ *                       pilihan sekunder (ContextHeader), bukan di sidebar.
+ *    - nol halaman    → leaf `soon`: tampil untuk SEMUA user, redup, tak bisa
+ *                       diklik. Rutenya tetap super_admin-only (menu key
+ *                       `skel_*` yang tak di-seed) — yang dibuka di sini cuma
+ *                       penanda bahwa fiturnya ada di peta Bagian 1.
+ *
+ *  Level 2 tanpa Level 3 (6.6 Payment Terms Master) jadi satu leaf `soon` di
+ *  posisi Level 2 — tidak dibungkus grup yang isinya cuma dirinya sendiri. */
+const SKELETON_NAV_ITEMS = (mod) =>
+  mod.items.map((l2) => {
+    if (!l2.tabs.length) {
+      return { id: l2.placeholderId, label: l2.label, icon: l2.icon, soon: true };
+    }
+    return {
+      id: `l2-${l2.code.replace(/\./g, '-')}`,
+      label: l2.label,
+      icon: l2.icon,
+      children: l2.tabs.map((t) => {
+        if (!t.mounts.length) return { id: t.id, label: t.label, soon: true };
+        // Tab yang seluruh halamannya ComingSoon lama diperlakukan SAMA dengan
+        // tab Soon: redup, tak bisa diklik, dan tidak ikut menghidupkan modul
+        // (navModuleHasLivePage melewati node ber-`soon`). Id-nya tetap id menu
+        // lama supaya sorotan/auto-expand masih menemukannya kalau seseorang
+        // membuka rutenya langsung — rutenya sendiri tidak disentuh.
+        if (!tabHasLivePage(t)) return { id: t.mounts[0].menuId, label: t.label, soon: true };
+        if (t.mounts.length === 1) return { id: t.mounts[0].menuId, label: t.label };
+        return {
+          id: `l3-${t.code.replace(/\./g, '-')}`,
+          label: t.label,
+          merged: true,
+          children: t.mounts.map((m) => ({ id: m.menuId, label: m.label })),
+        };
+      }),
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEXUS_NAV — sidebar yang dirender. Sejak kerangka Bagian 1 dipasang, isinya
+// PERSIS Grand Design Bagian 1: Beranda di atas, sembilan modul bisnis dalam
+// urutan Bagian 1, Admin Settings di bawah. Tidak ada grup atau item lain.
+//
+// Level 3 IKUT dirender di sini sebagai anak Level 2 (lihat SKELETON_NAV_ITEMS
+// di atas) — sejak sidebar jadi TIGA tingkat, tab bar di dalam halaman dibuang.
+// Yang keluar dari sidebar tapi rutenya tetap hidup: keluarga BNF, 19 id
+// PLANNED terparkir, seluruh id Level 3 PLANNED lama, master customer Storbit,
+// dan tiga kartu AdminHub (bulk-edit-price / bnf-org-roles / schema-manager).
+//
+// Sub-grup Level 1 Logistics & Warehouse ("Freight & Delivery Operations" /
+// "Warehouse & Inventory Operations") tidak jadi node sidebar — urutan ke-14
+// itemnya sudah mencerminkannya. Ia juga TIDAK disebut di kepala halaman:
+// breadcrumb ContextHeader hanya "Modul > Level 2 > Level 3" (diperiksa 25 Sep
+// 2026). Di URL ia tetap ada sebagai segmen (/freight/…, /warehouse/…).
+//
+// Gate tiap leaf diselesaikan findMenuItemById + canSeeMenuItem terhadap
+// ERP_MENU_GROUPS, sama seperti sebelumnya — nol menu key berubah di sini.
+// ─────────────────────────────────────────────────────────────────────────────
 const NEXUS_NAV = [
   {
     group: 'Beranda',
     items: [
       { id: 'nav-home', label: 'Beranda', icon: Home, tone: 'blue', target: 'home' },
+      { id: 'nav-command', label: 'Command Center', icon: LayoutDashboard, tone: 'blue', target: 'dashboard' },
     ],
   },
   {
-    group: 'Bisnis',
-    items: [
-      {
-        // Children come from the shared CRM_MENU_ITEMS (single source with the
-        // gate tree). The sidebar renders id/label/icon/children only; gates on
-        // those items are resolved via findMenuItemById (ERP_MENU_GROUPS).
-        id: 'nav-crm', label: 'Commercial & CRM', icon: Contact, tone: 'blue',
-        children: CRM_MENU_ITEMS,
-      },
-      {
-        id: 'nav-sp', label: 'Daftar Pesanan (Storbit)', icon: ClipboardList, tone: 'violet',
-        children: [
-          { id: 'storbit-dashboard', label: 'Dashboard Storbit', icon: LayoutDashboard },
-          { id: 'manifest', label: 'SP Manifest',    icon: LayoutList },
-          { id: 'input',    label: 'Input SP',       icon: Plus },
-          { id: 'picking',  label: 'Picking List',   icon: ClipboardList },
-          { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck },
-          { id: 'shipment', label: 'Pengiriman SP',  icon: Truck },
-        ],
-      },
-      {
-        id: 'nav-inv', label: 'Inventory', icon: Package, tone: 'amber',
-        children: [
-          { id: 'inventory-dashboard',   label: 'Dashboard Inventory', icon: LayoutDashboard },
-          { id: 'inventory-stok',        label: 'Stok Barang',         icon: Package },
-          { id: 'inventory-penerimaan',  label: 'Penerimaan Barang',   icon: Download },
-          { id: 'inventory-pengeluaran', label: 'Pengeluaran Barang',  icon: Upload },
-          { id: 'inventory-transfer',    label: 'Transfer Stok',       icon: ArrowUpDown },
-          { id: 'inventory-opname',      label: 'Opname / Adjustment', icon: ClipboardCheck },
-        ],
-      },
-      {
-        id: 'nav-freight', label: 'Freight Forwarding', icon: Ship, tone: 'teal', soon: true,
-        children: [
-          { id: 'freight-sales-order', label: 'Sales Order', icon: FileText,          soon: true },
-          { id: 'freight-job-order',   label: 'Job Order',   icon: BriefcaseBusiness, soon: true },
-        ],
-      },
-      {
-        id: 'nav-customs', label: 'Customs / PPJK', icon: FileCheck, tone: 'blue', soon: true,
-        children: [
-          { id: 'customs-doc', label: 'Customs Doc',      icon: FileText,       soon: true },
-          { id: 'customs-tps', label: 'TPS / Bea Cukai',  icon: ClipboardCheck, soon: true },
-        ],
-      },
-    ],
+    group: 'Modul',
+    items: SKELETON.map((mod) => ({
+      id: `nav-${mod.slug}`,
+      label: mod.label,
+      icon: mod.icon,
+      tone: mod.tone,
+      children: SKELETON_NAV_ITEMS(mod),
+    })),
   },
   {
-    group: 'Shared Services',
+    group: 'Admin Settings',
     items: [
-      {
-        id: 'nav-fin', label: 'Finance & Accounting', icon: CreditCard, tone: 'green',
-        children: [
-          { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt },
-          { id: 'billing',     label: 'Billing / Invoice',   icon: FileText },
-          { id: 'ar',          label: 'AR / Collection',     icon: Wallet },
-          { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
-          { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
-          { id: 'fin-bank-disbursement', label: 'Bank Disbursement', icon: Wallet, soon: true },
-          { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
-          { id: 'outstanding', label: 'Outstanding',         icon: Clock },
-          { id: 'finance',     label: 'Finance Docs',        icon: FileText },
-        ],
-      },
-      {
-        id: 'nav-log', label: 'Logistic', icon: Truck, tone: 'teal', soon: true,
-        children: [
-          { id: 'log-pengiriman', label: 'Pengiriman', icon: Truck, soon: true },
-        ],
-      },
-      {
-        id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach',
-        // Skeleton roadmap: container nodes = plain expandable (no badge); leaf
-        // nodes = `soon` (disabled), EXCEPT the one active node below.
-        children: [
-          {
-            id: 'proc-inquiry', label: 'Inquiry / RFQ', icon: FileText,
-            children: [
-              {
-                id: 'proc-inquiry-direct', label: 'Direct', icon: Link2,
-                children: [
-                  { id: 'proc-inquiry-fwd-msi',  label: 'Forwarding (MSI)',        icon: Ship },              // ← ACTIVE
-                  { id: 'proc-inquiry-prod-soa', label: 'Product / Storbit (SOA)', icon: Package, soon: true },
-                ],
-              },
-              {
-                id: 'proc-inquiry-indirect', label: 'Indirect', icon: Globe,
-                children: [
-                  { id: 'proc-inquiry-allentity', label: 'All Entity (MSI Group)', icon: Boxes, soon: true },
-                ],
-              },
-              { id: 'proc-inquiry-award', label: 'Quotation Comparison & Award', icon: Receipt, soon: true },
-            ],
-          },
-          {
-            id: 'proc-pr', label: 'Purchase Request', icon: ClipboardList,
-            children: [
-              { id: 'proc-pr-storbit',  label: 'Product / Storbit', icon: Package, soon: true },
-              { id: 'proc-pr-allentity', label: 'All Entity',       icon: Boxes,   soon: true },
-            ],
-          },
-          { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList },   // ← ACTIVE (SO diterima dari Sales, read-only)
-          { id: 'proc-po', label: 'Purchase Order', icon: ScrollText, soon: true },
-          {
-            id: 'proc-grn', label: 'Goods Receipt (GRN)', icon: Download,
-            children: [
-              { id: 'proc-grn-receiving', label: 'Receiving',        icon: Download, soon: true },
-              { id: 'proc-grn-return',    label: 'Return to Vendor', icon: Upload,   soon: true },
-            ],
-          },
-          {
-            id: 'proc-invoice', label: 'Invoice & Matching', icon: Receipt,
-            children: [
-              { id: 'proc-invoice-3way', label: '3-Way Match',   icon: CheckCircle2, soon: true },
-              { id: 'proc-invoice-ap',   label: 'Hand-off ke AP', icon: Wallet,      soon: true },
-            ],
-          },
-          {
-            id: 'proc-contracts', label: 'Contracts / Rate Agreement', icon: FileCheck,
-            children: [
-              { id: 'proc-contracts-framework', label: 'Framework Agreement',          icon: FileText, soon: true },
-              { id: 'proc-contracts-carrier',   label: 'Shipping Line / Carrier Rate', icon: Ship,     soon: true },
-            ],
-          },
-          {
-            id: 'proc-vendor', label: 'Vendor Management', icon: UsersRound,
-            children: [
-              { id: 'proc-vendor-list',       label: 'Vendor List',                     icon: Users   },              // ← ACTIVE (Master Vendor)
-              { id: 'proc-vendor-onboarding', label: 'Vendor Onboarding / Registration', icon: Contact, soon: true },
-              { id: 'proc-vendor-catalog',    label: 'Vendor Price List / Catalog',      icon: Tag,     soon: true },
-              {
-                id: 'proc-vendor-performance', label: 'Vendor Performance / Analysis', icon: BarChart2,
-                children: [
-                  { id: 'proc-vendor-scorecard', label: 'Vendor Score Card From User', icon: ClipboardCheck, soon: true },
-                ],
-              },
-            ],
-          },
-          {
-            id: 'proc-reporting', label: 'Reporting', icon: BarChart3,
-            children: [
-              { id: 'proc-report-spend',       label: 'Vendor Spend',              icon: TrendingUp, soon: true },
-              { id: 'proc-report-negotiation', label: 'Negotiation Performance',   icon: BarChart2,  soon: true },
-              { id: 'proc-report-category',    label: 'Spend by Entity / Category', icon: Boxes,     soon: true },
-              { id: 'proc-report-poaging',     label: 'PO Aging',                  icon: Clock,      soon: true },
-              { id: 'proc-report-cycle',       label: 'PR → PO Cycle Time',        icon: Zap,        soon: true },
-              { id: 'proc-report-savings',     label: 'Savings / PPV',             icon: Wallet,     soon: true },
-              { id: 'proc-report-otif',        label: 'On-Time Delivery (OTIF)',   icon: Truck,      soon: true },
-            ],
-          },
-          {
-            id: 'proc-settings', label: 'Settings / Master Data', icon: Settings,
-            children: [
-              { id: 'proc-settings-product',  label: 'Master Product',                icon: Package,     soon: true },
-              { id: 'proc-settings-approval', label: 'Approval Matrix',               icon: ShieldCheck, soon: true },
-              { id: 'proc-settings-category', label: 'Procurement Category',          icon: Tag,         soon: true },
-              { id: 'proc-settings-uom',      label: 'UOM / Payment Terms / Currency', icon: Landmark,   soon: true },
-              { id: 'proc-settings-poseries', label: 'PO Number Series',              icon: ScrollText,  soon: true },
-            ],
-          },
-        ],
-      },
-      // Rate List (crm-rate-list) — moved out of the CRM module. No inline
-      // `role` here: navModuleVisible resolves the gate via findMenuItemById
-      // against its ERP_MENU_GROUPS entry ('Shared Reference'), so the role
-      // array stays single-sourced there.
-      { id: 'nav-rate-list', label: 'Rate List', icon: Tag, tone: 'slate', target: 'crm-rate-list' },
-      {
-        id: 'nav-hrga', label: 'HRGA', icon: Users, tone: 'rose',
-        children: [
-          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList },
-          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus },
-          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList },
-          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock },
-          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive },
-        ],
-      },
-      { id: 'nav-it', label: 'IT / Service Management', icon: LifeBuoy, tone: 'slate', soon: true },
-      {
-        id: 'nav-asset', label: 'Asset', icon: Building2, tone: 'amber',
-        children: [
-          { id: 'assets',           label: 'Dashboard',           icon: LayoutDashboard },
-          { id: 'assets-analytics', label: 'Analytics & Reports', icon: BarChart2 },
-          { id: 'assets-kendaraan', label: 'Kendaraan',           icon: Car },
-          { id: 'assets-it',        label: 'IT Equipment',        icon: Monitor },
-          { id: 'assets-furniture', label: 'Furniture & Office',  icon: Sofa },
-          { id: 'assets-properti',  label: 'Properti',            icon: Building2 },
-          { id: 'assets-maint',     label: 'Jadwal Maintenance',  icon: Wrench },
-          { id: 'assets-hist',      label: 'History Maintenance', icon: Clock },
-          { id: 'assets-workorders', label: 'Work Orders',        icon: FolderOpen },
-          { id: 'assets-docs',      label: 'Semua Dokumen',       icon: FolderOpen },
-          { id: 'assets-expiring',  label: 'Akan Expired',        icon: Clock },
-          { id: 'assets-expired',   label: 'Sudah Expired',       icon: FileX },
-          { id: 'assets-kategori',  label: 'Kategori Aset',       icon: Tag },
-          { id: 'assets-lokasi',    label: 'Lokasi & Ruangan',    icon: MapPin },
-          { id: 'assets-vendor',    label: 'Vendor & Supplier',   icon: Truck },
-          { id: 'assets-settings',  label: 'Settings',            icon: Settings },
-        ],
-      },
-    ],
-  },
-  {
-    group: 'Foundation',
-    items: [
-      {
-        id: 'nav-report', label: 'Reporting', icon: BarChart3, tone: 'indigo',
-        children: [
-          { id: 'reporting-sales', label: 'Sales Report',          icon: BarChart2 },
-          { id: 'indomarco-dashboard', label: 'Indomarco Dashboard', icon: Building2 },
-          { id: 'reporting-mom',   label: 'MOM',                   icon: BookOpen },
-          { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
-          { id: 'performance',     label: 'Performance & Cache',   icon: Zap },
-          { id: 'audit',           label: 'Audit & Compliance',    icon: ScrollText },
-          // ⚠️ [Updated 2026-08-11] 'bnf' is no longer unconditionally public —
-          // gated to is_bnf_authorized() via a canSeeMenuItem special-case, see
-          // the full comment on the 'bnf' item in ERP_MENU_GROUPS. This node
-          // itself carries no gate props (resolved via findMenuItemById back to
-          // ERP_MENU_GROUPS, same as every other child here) — nothing to
-          // change on this side. 'briefing-harian' stays genuinely public; the
-          // "Reporting" parent module's visible-to-everyone side effect now
-          // comes from it alone.
-          { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle },
-          { id: 'briefing-harian', label: 'Briefing Harian', icon: Sunrise },
-          { id: 'meeting-mingguan', label: 'Meeting Mingguan', icon: Presentation },
-        ],
-      },
-      {
-        id: 'nav-master', label: 'Master Data', icon: Database, tone: 'slate',
-        children: [
-          // Fase 1 selesai — admin/bulk-edit-price/bnf-org-roles/schema-manager/
-          // admin-settings (5 leaf lama) melebur jadi 1 leaf permanen di bawah
-          // ini. Products & Services SENGAJA tetap terpisah (dual-access).
-          { id: 'admin-hub', label: 'Master Data & Admin Settings', icon: Database },
-          { id: 'products',  label: 'Products & Services', icon: Package },
-        ],
-      },
+      // `nav-master` DIPERTAHANKAN apa adanya: id itu di-hardcode di
+      // moduleContainsMenu untuk menautkan halaman detail produk ke modulnya.
+      { id: 'nav-master', label: 'Master Data & Admin Settings', icon: Database, tone: 'slate', target: 'admin-hub' },
+      { id: 'nav-products', label: 'Products & Services', icon: Package, tone: 'slate', target: 'products' },
     ],
   },
 ];
@@ -1360,6 +1195,40 @@ const MENU_KEY_MAP = {
   // (laporan Tahap A) — tak ada user yg kehilangan visibility leaf krn pemetaan
   // ini. Key lama 'admin'/'admin-settings' di atas dibiarkan (dead, harmless).
   'admin-hub': 'foundation_master',
+  // ── Kerangka Bagian 1 ──────────────────────────────────────────────────
+  // DC Master dipasang di tab 3.7.1. Key-nya SENGAJA `foundation_master`, key
+  // yang sama dengan gate-nya hari ini di AdminHub (AdminHub.jsx:230/:249) —
+  // dengan begitu populasi yang boleh membukanya persis tidak berubah, dan
+  // kartu di AdminHub tidak perlu disentuh (keputusan Den Q-B).
+  'dc-master': 'foundation_master',
+  // 15 halaman aset yang selama ini GATELESS: visibilitasnya diwarisi dari
+  // modul sidebar 'nav-asset', yang terlihat persis kalau `service_asset` view
+  // bernilai true. Begitu mereka pindah jadi isi tab 8.5.1 di modul IT,
+  // pewarisan itu akan menjawab `hrga_it OR service_asset` — melebar. Gate
+  // eksplisit di bawah mengunci nilainya ke `service_asset`, sama persis
+  // dengan hari ini (keputusan Den Q-A). Gate KONTEN mereka tidak berubah:
+  // allow-list prefix `assets-` di canAccessActiveMenu/FIX B tetap apa adanya,
+  // jadi TD-272 tidak diperbaiki dan tidak diperburuk.
+  'assets-analytics':  'service_asset',
+  'assets-kendaraan':  'service_asset',
+  'assets-it':         'service_asset',
+  'assets-furniture':  'service_asset',
+  'assets-properti':   'service_asset',
+  'assets-maint':      'service_asset',
+  'assets-hist':       'service_asset',
+  'assets-workorders': 'service_asset',
+  'assets-docs':       'service_asset',
+  'assets-expiring':   'service_asset',
+  'assets-expired':    'service_asset',
+  'assets-kategori':   'service_asset',
+  'assets-lokasi':     'service_asset',
+  'assets-vendor':     'service_asset',
+  'assets-settings':   'service_asset',
+  // 157 tab placeholder: key `skel_*` SENGAJA tidak di-seed di katalog
+  // module_menus/menu_actions, jadi hasMenuPermission default-deny untuk semua
+  // orang KECUALI super_admin (bypass tier 1). Itulah seluruh mekanisme
+  // "placeholder hanya terlihat super_admin" — nol gate baru, nol SQL.
+  ...SKELETON_PLACEHOLDER_KEYS,
 };
 
 // Menu id sintetis / halaman detail yang dinavigasi programatik dari halaman
@@ -1470,12 +1339,20 @@ export function AccessDeniedPage({ onGoHome }) {
 function moduleContainsMenu(m, activeMenu) {
   if (!m || !activeMenu) return false;
   if (m.target && m.target === activeMenu) return true;
-  // Synthetic detail pages belong to their parent module.
-  if (m.id === 'nav-asset' && activeMenu.startsWith('assets')) return true;
+  // Synthetic detail pages belong to their parent module. `nav-it`: sejak
+  // kerangka Bagian 1, halaman aset duduk di tab 8.5.1 milik modul
+  // Digital Transformation (IT) — dulu modul tersendiri `nav-asset`.
+  if (m.id === 'nav-it' && activeMenu.startsWith('assets')) return true;
   if (m.id === 'nav-crm' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers'))) return true;
   if (m.id === 'nav-master' && activeMenu === 'product-detail') return true;
-  return (m.children || []).some(c =>
-    c.id === activeMenu || (c.children || []).some(gc => gc.id === activeMenu));
+  // Rekursif: pohon sidebar kini tiga tingkat di bawah modul (Level 2 → tab →
+  // halaman), bukan dua. Versi lama berhenti di cucu, sehingga halaman yang
+  // duduk di dalam tab ber-pilihan-sekunder tidak pernah dikenali sebagai
+  // "milik modul ini" — sorotan sidebar padam dan navModuleContaining meleset.
+  const walk = (nodes) => (nodes || []).some(
+    (n) => n.id === activeMenu || walk(n.children)
+  );
+  return walk(m.children);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1490,6 +1367,16 @@ function navHasGate(item) {
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
 function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
+  // Item Soon (Level 3 Bagian 1 yang belum punya halaman) tampil untuk SEMUA
+  // user — keputusan Den: kerangka menunya memang untuk dilihat semua orang.
+  // Ia tidak bisa diklik (lihat cabang `c.soon` di LeafRow) dan tidak membuka
+  // data apa pun, jadi ini murni visibilitas baris, bukan pemberian akses:
+  // gate KONTEN-nya tetap MENU_KEY_MAP → `skel_*` yang tidak di-seed, sehingga
+  // deep-link ke rutenya tetap super_admin-only.
+  // Ditaruh di penjaga BERSAMA ini supaya `childVisible` (baris Level 3),
+  // `navModuleVisible` (baris modul), dan OR grup Level 2 ikut benar sekaligus
+  // — tanpa logika kedua yang harus diingat bergerak bersama.
+  if (c.soon) return true;
   if (c.children) {
     const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized));
     if (subs.some(s => s === true)) return true;
@@ -1500,6 +1387,33 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
   if (!real) return null;              // not in ERP_MENU_GROUPS (e.g. 'users')
   if (!navHasGate(real)) return null;  // gateless → inherit parent module
   return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+}
+// Apakah modul Level 1 memuat minimal satu halaman HIDUP yang boleh dibuka user.
+// Sengaja TIDAK memakai navChildGate: penjaga itu menganggap item Soon terlihat
+// (memang begitu aturannya untuk baris Level 2/Level 3), sementara di tingkat
+// modul Soon TIDAK boleh ikut menentukan (keputusan Den, revisi visibilitas).
+// Tanpa pemisahan ini setiap modul akan selalu tampil untuk semua orang, karena
+// tiap modul pasti punya Soon.
+function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
+  return (nodes || []).some((n) => {
+    if (n.soon) return false;                       // Soon tidak menghidupkan modul
+    if (n.children) return navModuleHasLivePage(n.children, hasMenuPermission, isBnfAuthorized);
+    const real = findMenuItemById(n.id);
+    if (!real) return false;
+    // Halaman `public: true` juga TIDAK menghidupkan modulnya (keputusan Den).
+    // Gejalanya: ketiga halaman HRGA yang publik membuat modul HCGA muncul untuk
+    // SEMUA orang, jadi modul penuh hadir untuk sesuatu yang tak menandakan
+    // urusan departemen itu sama sekali. Modul kini bergantung pada halaman
+    // ber-key — yang izinnya memang bisa diatur dari Admin Settings.
+    // Halaman publiknya sendiri TIDAK disentuh: tetap public, tetap bisa dibuka
+    // lewat path/deep-link, dan tetap tampil di dalam modul begitu modulnya
+    // tampil. Yang berubah hanya perannya sebagai penentu.
+    // (`bnf`/`meeting-mingguan` juga ber-`public: true` tapi sebenarnya
+    // digerbang isBnfAuthorized; keduanya tidak dipasang di tab mana pun, jadi
+    // tidak pernah sampai ke sini.)
+    if (real.public === true) return false;
+    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+  });
 }
 function navModuleVisible(m, hasMenuPermission, isBnfAuthorized) {
   if (m.soon) return true;             // roadmap skeleton — shown, disabled
@@ -1531,7 +1445,7 @@ function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized) {
 
 function NexusSidebar({
   activeMenu, onNavigate, hasMenuPermission, isBnfAuthorized,
-  profile, currentRoleLabel,
+  profile, currentRoleLabel, isSuperAdminUser = false,
   asDrawer = false, isOpen = false, onClose,
 }) {
   // An item is "gated" only if it carries an explicit access rule (public flag
@@ -1543,7 +1457,18 @@ function NexusSidebar({
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
   const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized) !== false;
-  const moduleVisible = (m) => navModuleVisible(m, hasMenuPermission, isBnfAuthorized);
+  // Level 1: tampil HANYA kalau user boleh membuka minimal satu Level 3 hidup di
+  // dalamnya (keputusan Den). super_admin dikecualikan — ia tetap melihat
+  // sembilan modul, termasuk Console & PPJK yang hari ini NOL halaman hidup dan
+  // karenanya akan hilang untuk semua orang kalau aturannya dipakai polos.
+  // Modul ber-`target` (Beranda, Admin Settings) tidak punya anak → tetap
+  // dinilai navModuleVisible seperti sebelumnya.
+  const moduleVisible = (m) => {
+    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized)) return false;
+    if (!m.children) return true;
+    if (isSuperAdminUser) return true;
+    return navModuleHasLivePage(m.children, hasMenuPermission, isBnfAuthorized);
+  };
 
   const activeModId = (() => {
     for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
@@ -1584,33 +1509,39 @@ function NexusSidebar({
   // Leaf row (objek). `depth` controls indent for grandchildren.
   const LeafRow = (c, depth = 0) => {
     const Icon = c.icon;
-    // Soon objek — disabled skeleton + "soon" badge, non-clickable (no navigateTo).
+    // Level 3 Bagian 1 yang belum punya halaman: baris redup ber-badge "Soon",
+    // TIDAK bisa diklik oleh siapa pun (termasuk super_admin) — tidak ada
+    // onClick sama sekali, dan pointerEvents dimatikan. Tampil untuk semua user
+    // (lihat navChildGate); rutenya tetap super_admin-only.
     if (c.soon) {
       return (
         <div key={c.id} title="Segera hadir"
           className="w-full flex items-center gap-2.5 rounded-[10px]"
           style={{ padding: '7px 10px', marginBottom: 1, color: 'var(--faint)', fontSize: 12.5, fontWeight: 500, cursor: 'default', opacity: 0.75, pointerEvents: 'none' }}>
-          {Icon
-            ? <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />
-            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: 0.4, flexShrink: 0 }} />}
-          <span className="flex-1 truncate">{c.label}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D' }}>soon</span>
+          {/* Tanpa bullet: Level 3 (satu-satunya node tanpa ikon) tampil teks saja —
+              hierarkinya dibawa indentasi, bukan titik. */}
+          {Icon && <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />}
+          <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D', flexShrink: 0 }}>Soon</span>
         </div>
       );
     }
     const active = activeMenu === c.id ||
       (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
-    // Tahap 2b/2c: render a merged tabbed node ('crm-account' = Account,
-    // 'crm-aktivitas' = Aktivitas) as a SINGLE leaf (not an expandable submenu).
-    // Tab ids are the node's own children. Visible iff ≥1 tab (navChildGate OR,
-    // via childVisible); click → first permitted tab; active when activeMenu ∈ tabs.
-    if (c.id === 'crm-account' || c.id === 'crm-aktivitas') {
-      const tabIds = (c.children || []).map(gc => gc.id);
-      const firstTab = tabIds.find(id => {
+    // Level 3 yang memuat LEBIH DARI SATU halaman lama: dirender sebagai SATU
+    // baris, bukan submenu yang mengembang — pemilihan antar-halaman terjadi di
+    // dalam halaman lewat pilihan sekunder. Anaknya cuma dipakai untuk gate:
+    // baris terlihat kalau ≥1 halaman di dalamnya boleh dibuka (navChildGate OR,
+    // via childVisible); klik → halaman pertama yang boleh dibuka; aktif kalau
+    // activeMenu salah satu di antaranya.
+    if (c.merged) {
+      const leafIds = (c.children || []).map(gc => gc.id);
+      const permitted = (id) => {
         const it = findMenuItemById(id);
         return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
-      });
-      const tabbedActive = tabIds.includes(activeMenu);
+      };
+      const firstTab = leafIds.find(permitted);
+      const tabbedActive = leafIds.includes(activeMenu);
       return (
         <button key={c.id} type="button" onClick={() => firstTab && go(firstTab)}
           className="w-full flex items-center gap-2.5 rounded-[10px] transition-colors"
@@ -1618,17 +1549,20 @@ function NexusSidebar({
           onMouseEnter={e => { if (!tabbedActive) e.currentTarget.style.background = '#F5F7FA'; }}
           onMouseLeave={e => { if (!tabbedActive) e.currentTarget.style.background = 'transparent'; }}
         >
-          {Icon
-            ? <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />
-            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: tabbedActive ? 1 : 0.5, flexShrink: 0 }} />}
-          <span className="flex-1 truncate">{c.label}</span>
+          {Icon && <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />}
+          <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
         </button>
       );
     }
     if (c.children) {
       const subVisible = c.children.filter(childVisible);
       if (!subVisible.length) return null;
-      const subActive = c.children.some(gc => gc.id === activeMenu) || active;
+      // Rekursif: sejak sidebar tiga tingkat, halaman aktif bisa duduk satu
+      // tingkat lebih dalam (Level 3 `merged` → halaman). Versi lama berhenti di
+      // anak langsung, sehingga grup Level 2 yang memuat halaman aktif TIDAK
+      // ikut terbuka sendiri (keputusan Den #7).
+      const holdsActive = (nodes) => (nodes || []).some(n => n.id === activeMenu || holdsActive(n.children));
+      const subActive = holdsActive(c.children) || active;
       const isExp = openSet[c.id] !== undefined ? openSet[c.id] : subActive;
       return (
         <div key={c.id}>
@@ -1640,11 +1574,16 @@ function NexusSidebar({
             onMouseLeave={e => { if (!subActive) e.currentTarget.style.background = 'transparent'; }}
           >
             {Icon && <Icon size={15} strokeWidth={1.8} style={{ flexShrink: 0, color: subActive ? 'var(--navy)' : 'var(--faint)' }} />}
-            <span className="flex-1 truncate">{c.label}</span>
+            <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
-            <div style={{ marginLeft: 12, paddingLeft: 8 }}>
+            // depth 0 = node Level 2, jadi anaknya adalah Level 3. Level 3 tak
+            // lagi punya ikon maupun bullet, sehingga tanpa tambahan indent
+            // teksnya justru mendarat 5 px di KIRI teks Level 2 (yang tergeser
+            // ikon 15 px + gap 10 px). paddingLeft 18 menaruhnya ~5 px di KANAN
+            // teks induknya — hierarki terbaca, tetap rapat.
+            <div style={{ marginLeft: 12, paddingLeft: depth === 0 ? 18 : 8 }}>
               {subVisible.map(gc => LeafRow(gc, depth + 1))}
             </div>
           )}
@@ -1658,10 +1597,8 @@ function NexusSidebar({
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#F5F7FA'; }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
       >
-        {Icon
-          ? <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />
-          : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: active ? 1 : 0.5, flexShrink: 0 }} />}
-        <span className="flex-1 truncate">{c.label}</span>
+        {Icon && <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />}
+        <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
       </button>
     );
   };
@@ -1710,7 +1647,7 @@ function NexusSidebar({
                       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                     >
                       <NavBubble Icon={Icon} tone={m.tone} />
-                      <span className="flex-1 truncate">{m.label}</span>
+                      <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                     </button>
                   );
                 }
@@ -1728,7 +1665,7 @@ function NexusSidebar({
                         className="w-full flex items-center gap-3 rounded-[11px]"
                         style={{ padding: '8px 10px', marginBottom: 2, color: 'var(--faint)', fontSize: 13, fontWeight: 500, cursor: 'default', opacity: 0.7, pointerEvents: 'none' }}>
                         <NavBubble Icon={Icon} tone={m.tone} dim />
-                        <span className="flex-1 truncate">{m.label}</span>
+                        <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                         {soonBadge}
                       </div>
                     );
@@ -1743,7 +1680,7 @@ function NexusSidebar({
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       >
                         <NavBubble Icon={Icon} tone={m.tone} dim />
-                        <span className="flex-1 truncate">{m.label}</span>
+                        <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                         {soonBadge}
                         <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: soonExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
                       </button>
@@ -1768,7 +1705,7 @@ function NexusSidebar({
                       onMouseLeave={e => { if (!(modActive && !isExp)) e.currentTarget.style.background = 'transparent'; }}
                     >
                       <NavBubble Icon={Icon} tone={m.tone} />
-                      <span className="flex-1 truncate">{m.label}</span>
+                      <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                       <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
                     </button>
                     {isExp && (
@@ -2801,6 +2738,7 @@ export default function StorbitManifest() {
           isBnfAuthorized={isBnfAuthorized}
           profile={profile}
           currentRoleLabel={currentRoleLabel}
+          isSuperAdminUser={isSuperAdmin(authErpRoles)}
         />
 
         {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
@@ -2825,6 +2763,7 @@ export default function StorbitManifest() {
             isBnfAuthorized={isBnfAuthorized}
             profile={profile}
             currentRoleLabel={currentRoleLabel}
+            isSuperAdminUser={isSuperAdmin(authErpRoles)}
           />
         </>
 

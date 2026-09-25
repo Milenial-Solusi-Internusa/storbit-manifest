@@ -46,8 +46,7 @@ import { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAppShell } from '@/contexts/useAppShell';
 import { supabase } from '@/lib/supabase';
-import { AccessDeniedPage, CrmTabBar } from '@/App.jsx';
-import { ACCOUNT_TABS, ACTIVITY_TABS } from './crmTabs.js';
+import { AccessDeniedPage } from '@/App.jsx';
 import { MENU_PATHS } from './menu-paths.js';
 import Boundary from './Boundary.jsx';
 import ModuleShell from './ModuleShell.jsx';
@@ -171,7 +170,6 @@ function ProspectListRoute() {
   const navigate = useNavigate();
   return (
     <div>
-      <CrmTabBar tabs={ACCOUNT_TABS} />
       <Boundary title="CRM Prospects temporarily unavailable">
         <ProspectListPage
           onAddProspect={() => navigate(`${P_LEAD}/new`)}
@@ -208,7 +206,6 @@ function LeadPoolRoute() {
   const { showToast } = useAppShell();
   return (
     <div>
-      <CrmTabBar tabs={ACCOUNT_TABS} />
       <Boundary title="Lead Pool temporarily unavailable"><LeadPoolPage showToast={showToast} /></Boundary>
     </div>
   );
@@ -477,7 +474,6 @@ function ActivitiesRoute() {
   const wantForm = useRef(false);
   return (
     <div>
-      <CrmTabBar tabs={ACTIVITY_TABS} />
       <Boundary title="Activities temporarily unavailable">
         <ActivitiesPage
           showToast={showToast}
@@ -502,7 +498,6 @@ function ActivityLogRoute() {
   const { showToast } = useAppShell();
   return (
     <div>
-      <CrmTabBar tabs={ACTIVITY_TABS} />
       <Boundary title="Activity Log temporarily unavailable"><ActivityLogPage showToast={showToast} /></Boundary>
     </div>
   );
@@ -512,7 +507,6 @@ function RiwayatVisitRoute() {
   const { showToast } = useAppShell();
   return (
     <div>
-      <CrmTabBar tabs={ACTIVITY_TABS} />
       <Gated menuId="riwayat-visit">
         <Boundary title="Riwayat Visit temporarily unavailable"><RiwayatVisitPage showToast={showToast} /></Boundary>
       </Gated>
