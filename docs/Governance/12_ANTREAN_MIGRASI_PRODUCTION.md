@@ -51,7 +51,7 @@ Arahnya **terbalik** dari butir lain: produksi lebih dulu.
 | Terukur di staging | kolom ada · overload 2-argumen ada |
 | Tindakan | **NOL.** Jangan dijalankan lagi |
 
-⚠️ Overload lama `mark_delivery_delivered(uuid)` **masih hidup di kedua environment**, tanpa `REVOKE … FROM PUBLIC` dan tanpa syarat `signed_date` — **TD-263**, DROP-nya = Keputusan Terbuka **#59**. Bukan bagian antrean ini.
+~~⚠️ Overload lama `mark_delivery_delivered(uuid)` **masih hidup di kedua environment**, tanpa `REVOKE … FROM PUBLIC` dan tanpa syarat `signed_date` — **TD-263**, DROP-nya = Keputusan Terbuka **#59**. Bukan bagian antrean ini.~~ **[KOREKSI 25 Sep 2026 — dua hal berubah.]** **(1)** Ia **KINI BAGIAN antrean ini**: butir **9** men-DROP-nya, jadi di staging sudah tidak ada dan di produksi akan hilang bersama butir 9 (**#59 TERJAWAB**, opsi DROP; **TD-263 RESOLVED di kode**). **(2)** Deskripsinya **salah pada satu titik**: overload itu **tidak bisa dipanggil sama sekali** — versi 2-argumen ber-`DEFAULT NULL` membuat setiap panggilan 1-argumen **ambigu** (`42725 function … is not unique`), dibuktikan di produksi lewat `EXPLAIN`. Jadi jalan pintas "tandai terkirim tanpa tanggal" **terkunci**, bukan terbuka. ⚠️ Dan badannya **tetap punya guard peran** — yang absen hanyalah syarat tanggal + `REVOKE PUBLIC`. Lihat butir 9 dan `03_DATA_MODEL.md` gotcha **#39**.
 
 ## 2. Parity AR Tahap 0 + seed COA SOA — REFERENSI SAJA
 
@@ -71,7 +71,7 @@ Objek yang disamakan, **terukur di staging 25 Sep 2026**:
 |---|---|
 | Tindakan | **NOL.** Produksi sudah memilikinya |
 
-⚠️ ACL kedua fungsi invoice **masih default PUBLIC di kedua environment**. Pengetatannya (`REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`) adalah **Tahap 1 rencana AR**, bukan butir antrean ini.
+~~⚠️ ACL kedua fungsi invoice **masih default PUBLIC di kedua environment**. Pengetatannya (`REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`) adalah **Tahap 1 rencana AR**, bukan butir antrean ini.~~ **[KOREKSI 25 Sep 2026: pengetatan itu KINI butir 9 (butir e), dan cakupannya TIGA fungsi — `create_invoice` + `create_invoice_for_sp` + `submit_invoice`, ketiganya ber-PUBLIC EXECUTE sebelumnya.** Sudah berlaku di staging; produksi mengikut butir 9. Jadi kalimat "bukan butir antrean ini" **tidak berlaku lagi**.]
 
 ## 3. ⛔ `crm_rate_list` → katalog modul `procurement` — WAJIB
 

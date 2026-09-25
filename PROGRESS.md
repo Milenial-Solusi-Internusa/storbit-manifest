@@ -67,6 +67,183 @@
 
 **7. Baseline `scripts/qa/baseline/*` (ketiga mode) DIPERBARUI dari run ini atas persetujuan Den** (commit terpisah) — run-nya sah (gagal-muat 0, akun 5/5) dan mencerminkan struktur menu baru. Sejak ini, sweep berikutnya dibandingkan ke perilaku kerangka Bagian 1, **termasuk keadaan "dipental" akun sales di keempat tujuan butir 3** dan **termasuk 157 tujuan placeholder**. ⚠️ Baseline = potret **staging + build branch**, bukan produksi (kerangka ini belum di produksi).
 
+
+### `develop` jadi branch integrasi + Preview `beta.nexus.msigroup.co.id` + Vercel Authentication DIMATIKAN — ⛔ NOL kode aplikasi; NOL migrasi/SQL; PRODUKSI tidak disentuh
+
+> **Sifat.** Aturan kerja + konfigurasi platform. Keadaan Vercel/DNS di bawah = **laporan sesi** (doc-keeper hanya memverifikasi sisi repo). Aturan branch-nya sendiri sudah ditulis Den ke `CLAUDE.md` §Aturan Wajib.
+
+**1. Dua branch, dua peran.** Sejak 25 Sep 2026 **`develop` = branch integrasi, `main` = produksi.** Fitur baru bercabang dari `develop` dan kembali ke `develop`; `main` hanya menerima **dua** hal — hotfix produksi, dan merge `develop` saat launching. ⛔ **Perbaikan apa pun yang mendarat di `main` WAJIB ditarik kembali ke `develop`** sebelum pekerjaan berikutnya; kalau tidak, hotfix itu hilang saat launching berikutnya menimpanya.
+
+⛔ **Yang paling mudah terlupa: merge kode TIDAK membawa perubahan DB.** Sebelum `develop` → `main`, buka `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` dan jalankan butir yang masih ⛔. Itu sebabnya dokumen itu lahir (24-25 Sep) dan kenapa ia acuan ke-19.
+
+**2. Peta Vercel.** `main` → Production (`nexus.msigroup.co.id`, Supabase **produksi**) · `develop` → Preview, dengan **domain kustom `beta.nexus.msigroup.co.id`** (terdaftar di project, verified, `gitBranch=develop`) + alias `nexus-git-develop-msi-group.vercel.app`, Supabase **staging**.
+
+**3. Vercel Authentication project `nexus` DIMATIKAN (keputusan Den 25 Sep 2026).** Sebelumnya `ssoProtection = all_except_custom_domains`, dan ⭐ **pengecualian itu ternyata TIDAK mencakup `beta`**: Standard Protection hanya mengecualikan deployment **Production** beserta domainnya, sementara `beta` menunjuk deployment **Preview**. Akibatnya penguji UAT non-Vercel selalu mentok dinding login Vercel sebelum sampai ke aplikasi — gejala yang mudah dikira salah DNS atau salah domain, padahal konfigurasi proteksi.
+
+**Alasan mematikan, dan syaratnya.** Staging kini hanya berisi **data dummy seed** (lihat entri seed UAT di bawah), dan aplikasinya sendiri **tetap wajib login Nexus** — jadi yang dibuang lapisan gerbang Vercel, bukan autentikasi aplikasi. Produksi tidak terpengaruh (domainnya tetap `main`). ⛔ **Kalau staging suatu saat berisi data ASLI, proteksi WAJIB dinyalakan kembali lebih dulu** — dan pada saat itu `all_except_custom_domains` **bukan** jawabannya untuk `beta`, karena persis itu yang tidak bekerja.
+
+**4. Terbukti sesudah dimatikan** *(laporan sesi)*: HTTP **200**, `<title>Nexus by MSI</title>`, nol penanda SSO. **Env Supabase Preview = STAGING**, dibuktikan dari **bundle yang ter-deploy**, bukan dari dashboard: chunk `src/lib/supabase.js` memuat `createClient('https://oovmlhilhqzejnawqkvt.supabase.co', …)`. **Nol env Vercel didekripsi.**
+
+⚠️ **`beta` memuat logo + latar login dari Storage PRODUKSI** — **9 kemunculan di 7 berkas** `src/` (diukur ulang doc-keeper; antara lain `printTokens.js`, `Login.jsx`, `InvoicePDF.jsx`, `QuotationPDF.jsx`). Aset publik baca-saja, **bukan jalur data**, jadi bukan kebocoran; tapi **tampilan `beta` bergantung pada Storage produksi** — kalau bucket itu dirapikan, `beta` ikut kehilangan gambarnya.
+
+⭐ **PELAJARAN METODE, dan ini yang paling layak dibawa ke pemeriksaan deployment berikutnya.** Pemeriksaan pertama **MENYIMPULKAN SALAH bahwa `beta` menunjuk produksi** — ia hanya menyapu chunk yang dirujuk `index.html`, menemukan 3 kemunculan ref produksi, dan berhenti di situ; ketiganya ternyata **URL Storage, bukan URL client**. Dan string UI halaman tidak ketemu sama sekali sampai chunk **LAZY**-nya (`SalesOrderDetailPage-*.js`, `DeliveryNoteDetailPage-*.js`) diambil **dengan nama yang dipakai deploy**, bukan nama hasil build lokal — hash-nya beda. **Aturan:** (a) menemukan sebuah ref di bundle belum berarti ref itu dipakai sebagai endpoint — periksa **pemakaiannya**, bukan kemunculannya; (b) bundle ber-code-splitting **tidak seluruhnya** tergantung di `index.html`, jadi "tidak ketemu di chunk yang saya ambil" bukan "tidak ada"; (c) nama chunk **milik deploy**, jangan diduga dari build lokal.
+
+---
+
+### Seed data dummy UAT untuk STAGING — `scripts/seed-uat/` (11 berkas, ASCII murni), 40 SP entitas SOA — ⛔ PRODUKSI tidak pernah disentuh; NOL perubahan skema; verifikasi 32/32 LOLOS
+
+> **Sifat.** Alat + data, bukan fitur. Seluruh angka DB = **laporan sesi**; yang diukur ulang doc-keeper hanya sisi repo (11 berkas ada, ASCII, `seed.sh` + `00-guards.sql` memuat palang dua arah).
+
+**1. Cakupan.** 40 SP entitas **SOA** bernomor **`91xxxxx`**, `notes = 'DATA DUMMY UAT'`: **12** belum ditagih · **6** siap ditagih · **22** sudah invoice (5 `issued`, 4 `submitted`, 4 `partial`, 8 `paid`, 1 `void`) · **8** TTF. Rentang **Juli–September 2026 KECUALI** `9100019` (`sp_date` 2026-05-11) dan `9100020` (2026-06-08).
+
+**2. Dua keputusan bentuk yang membuat seed ini bisa dipercaya.** **(a) Seluruh langkah ber-RPC memakai RPC resmi** — `create_goods_receipt`, `dispatch_delivery`, `mark_delivery_delivered`, `sp_issue_btb`, `create_invoice`, `submit_invoice`, `record_payment`, `mark_ttf_received`. **Status SP TIDAK pernah dipaksa**: ia diturunkan `sp_recompute_status` dan hanya **dibaca** oleh verifikasi. Konsekuensinya seed ini sekaligus **menguji jalur produksinya sendiri** — dan itulah sebabnya empat temuan di butir 5 muncul. **(b) Impersonasi lewat GUC `request.jwt.claim.sub`** (`set_config('request.jwt.claim.sub', '<uid>', true)`): guard `is_super_admin()` lolos karena `auth.uid()` membaca GUC itu, **sementara sesi tetap role `postgres`** sehingga RLS tidak menghalangi UPDATE tanggal historis. Dua sifat yang dibutuhkan sekaligus, dan **tanpa satu pun password** — satu-satunya env var **`STG_DB_URL`**.
+
+**3. Palang DUA ARAH, bukan satu.** Skripnya menuntut ref **staging ADA** dan menolak kalau ref **produksi MUNCUL**. Satu arah saja tidak cukup: URL kosong/typo akan lolos uji "bukan produksi".
+
+⛔ **Palang `notify_sp_milestone`, dan kenapa ia bukan kehati-hatian berlebihan.** Fungsi itu dijadikan **no-op di staging** 25 Sep 2026 (di luar sesi ini), dan **setiap** skrip seed menolak jalan kalau badan fungsinya masih memuat `net.http` **atau** ref produksi `untmpqceexwxzuhlmyrg`. Sebabnya: seed memanggil `sp_recompute_status` **ratusan kali**, jadi kalau badan produksinya masih hidup di staging, **staging akan menyuruh PRODUKSI mengirim notifikasi** — 40 SP dummy menghasilkan banjir notifikasi ke orang sungguhan. Uji **V10** memverifikasinya **di setiap putaran**: LOLOS.
+
+**4. Berkas & sifat.** `README.md` · `00-guards.sql` · `01-stock.sql` · **`01b-helper.sql`** · `02-scenario-1.sql` · `03-scenario-2.sql` · `04-scenario-3.sql` · `05-ttf.sql` · `06-verify.sql` · `99-purge.sql` · `seed.sh`. Idempoten **per-SP** + mode **purge** yang memulihkan stok. ⚠️ `01b-helper.sql` **tidak ada di rencana** — ia lahir saat pelaksanaan karena ketiga skrip skenario memanggil rantai langkah yang sama; dinomori `01b` supaya nama berkas lain tidak bergeser. Verifikasi **V1..V11** (**V11** tambahan: tiap invoice non-void wajib punya minimal satu jurnal `invoice_issued`) — hasil akhir **32/32 LOLOS**, dijalankan berkali-kali termasuk purge + seed ulang.
+
+**5. ⭐ EMPAT temuan yang lahir dari MENJALANKAN, bukan dari membaca.** Ini nilai sesungguhnya seed ini, di luar datanya.
+
+**(a) `mark_delivery_delivered(uuid)` tidak bisa dipanggil sama sekali** → entri KOREKSI TD-263 di bawah.
+
+**(b) `picking_list_items.status` tidak menerima `'partial'`** — constraintnya hanya `pending`/`picked`/`short`. Helper versi pertama memakai `'partial'` dan **ditolak**. Status kini diturunkan dari **angkanya** lewat fungsi `derive_status`, cermin `derivePickingItemStatus` (`src/lib/db.js`). ⚠️ **Kenapa tidak terlihat lebih awal:** probe sebelumnya hanya memakai pick **100%**, keadaan di mana cabang itu tak pernah dipilih. *Jalur yang tak pernah dilewati uji adalah jalur yang belum diuji, walau fungsinya sudah dipakai berkali-kali.*
+
+**(c) Rantai termin pembayaran ikut teruji DUA jalur, dan itu MENGOREKSI asumsi rencana** yang menulis rantai itu tidak teruji: Indomarco punya `accounts.invoice_payment_terms_days = 30` (**tingkat 1**), tiga customer lain NULL sehingga jatuh ke **hardcode 30** (**tingkat 3**). Dua tingkat dari tiga terlewati tanpa direncanakan.
+
+**(d) Ember umur TTF "di atas 90 hari" menuntut `sp_date` di luar Juli–September.** Diselesaikan dengan **menggeser SP-nya** (`9100019` → Mei, `9100020` → Juni), **BUKAN memalsukan tanggal TTF** — memalsukan TTF akan membuat datanya lolos verifikasi sambil berbohong tentang hubungan antar-tanggal. `receipt_date` stok ikut digeser ke 2026-04-20 supaya stok tidak "diterima" **sesudah** barangnya dikirim. ⭐ Pengecualiannya **dicatat sebagai UJI, bukan sebagai catatan**: **V6f** (Mei–Sep semua) · **V6g** (Jul–Sep semua **kecuali** dua itu) · **V6h** (`receipt_date` wajib mendahului `sp_date` terawal). Dengan begitu, kalau kelak ada yang "merapikan" tanggalnya, verifikasinya yang berbunyi.
+
+**6. Dua pelajaran purge.** **(a) `session_replication_role` TIDAK bisa diset dari koneksi non-superuser** — pooler menolaknya; jadi purge tidak bisa mengandalkan mematikan trigger. **(b) ⛔ `stock_ledger` WAJIB dihapus SEBELUM `delivery_notes`/`picking_lists`** — kalau induknya hilang dulu, baris ledger jadi **yatim** dan stok **tidak pulih**. Uji pertama kena ini: stok **29.700**, bukan 30.000. Angka yang hampir benar itulah bentuk kegagalannya — bukan error.
+
+⚠️ **Yang SENGAJA tidak dibalik purge:** `document_sequences` (deret monoton — seed ulang memberi nomor invoice **berbeda**, dan itu benar: nomor yang pernah terpakai tidak boleh dipakai ulang) dan `audit_logs`.
+
+---
+
+### Migrasi `20260925000001_dni_sp_order_item_link` — BUG LATEN: invoice bisa terbit dengan NOL JURNAL, senyap — ⛔ LIVE DI STAGING 25 Sep 2026, PRODUKSI BELUM
+
+**1. Sebabnya.** `generate_delivery_from_picking` menyisipkan `delivery_note_items` **TANPA** kolom `sp_order_item_id` (kolomnya ada, dibiarkan NULL). `create_invoice_for_sp` menghitung jurnal per Surat Jalan lewat `JOIN sp_order_items soi ON soi.id = dni.sp_order_item_id`. Dengan NULL, join itu kosong → `v_amount_sj = 0` → `IF v_amount_sj = 0 THEN CONTINUE` → **invoice terbit dengan `total_amount` terisi, NOL jurnal, NOL error.**
+
+**Terbukti runtime di staging:** invoice `SOA-INV-VII-2026-0001`, `total_amount` **9.490.500**, `n_jurnal` **0**, debit piutang **NULL**.
+
+⚠️⚠️ **PRODUKSI TAMPAK BERSIH, DAN ITU MENYESATKAN.** `delivery_note_items` = **1070 total, 1070 terisi, 0 NULL** — tapi **237** baris yang berasal dari picking terisi oleh **BACKFILL rekonsiliasi 22-23 Sep**, bukan oleh fungsinya, dan **belum ada Surat Jalan baru dari picking sejak 22 Sep 15:50 UTC**. Jadi "0 NULL" **bukan bukti fungsinya benar** — ia bukti belum ada yang memakainya sejak backfill. Surat Jalan berikutnya dari UI akan NULL lagi. ⭐ Kelas yang sama dengan pelajaran 10 Sep (*trigger yang ADA di skema tidak sama dengan trigger yang PERNAH MENYALA*) — kali ini: **kolom yang terisi tidak sama dengan kolom yang DIISI oleh jalur aplikasinya.**
+
+**2. Isi (3 bagian).** **(1)** `generate_delivery_from_picking` mengisi kolom itu lewat rantai `picking_list_items.sp_item_id` → `sp_order_items.legacy_sp_item_id`, memakai **subquery SKALAR, bukan `LEFT JOIN`** — keunikan `legacy_sp_item_id` waktu itu **tidak dijamin constraint apa pun**, dan JOIN yang beranak akan **menambah baris pada Surat Jalan**, yaitu kertas yang dipegang customer. **(2)** Backfill idempoten + **guard pra-terbang** yang menolak jalan kalau ada pasangan duplikat. **(3)** Guard keras di `create_invoice_for_sp` yang **menyebut nomor Surat Jalan** — jalur senyap `v_amount_sj = 0 → CONTINUE` dipertahankan **hanya** untuk SJ yang nilainya memang nol, bukan untuk kaitan yang hilang.
+
+**3. Dua bug milik migrasi ini sendiri, ketemu saat dijalankan.** **(a)** Backfill semula `UPDATE … FROM a JOIN b ON b.x = dni.y` — **ditolak Postgres `42P01`**: kondisi `JOIN` tidak boleh merujuk tabel target. Bentuk benar = **daftar FROM + seluruh syarat di `WHERE`**. **(b)** **`V1a` di staging bernilai 5, dan itu BUKAN kegagalan** — kelimanya milik SP uji lama `ZZZTEST-SP-0001` yang dual-write-nya tidak pernah lengkap (sisi baru cuma **satu** baris ber-`legacy_sp_item_id` NULL dan `shipped_qty` 0, jadi tidak ada kandidat untuk dipetakan); SP itu ditolak `create_invoice_for_sp` lebih dulu di cek "terkirim penuh". ⛔ **Di produksi `V1a` harus 0.**
+
+⛔ **Jangan DROP lalu CREATE** untuk kedua fungsi — itu mereset ACL (`generate_delivery_from_picking` punya ACL eksplisit; `create_invoice_for_sp` memakai default). Detail langkah produksi + rollback: `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 6.
+
+---
+
+### Migrasi `20260925000002_sp_order_items_legacy_unique` — keunikan rantai dual-write jadi jaminan SKEMA, bukan lagi kebetulan DATA — ⛔ LIVE DI STAGING 25 Sep 2026, PRODUKSI BELUM
+
+Index unik **PARSIAL** `sp_order_items_legacy_sp_item_id_key ON sp_order_items (legacy_sp_item_id) WHERE legacy_sp_item_id IS NOT NULL` + pra-cek duplikat. Sebelum ini keunikan rantai yang dipakai migrasi `…0001` **tidak dijamin apa pun**: satu-satunya index di tabel itu adalah `sp_order_items_pkey`. Produksi **siap**: 974 baris, nol `legacy_sp_item_id` NULL, nol duplikat, nol id lintas SP.
+
+⭐ **Kolomnya HANYA `legacy_sp_item_id`, bukan pasangan `(sp_order_id, legacy_sp_item_id)`** — satu baris `sp_items` lama dimiliki tepat **satu** baris `sp_order_items` **di seluruh sistem**. Id lama yang sama muncul di dua SP berbeda bukan keadaan sah yang perlu diizinkan; itu tanda dual-write melenceng. Melebarkan index ke pasangan justru akan **mengizinkan** keadaan yang ingin dicegah.
+
+⚠️⚠️ **`V1c` sempat HIJAU PALSU, dan resepnya sudah dikoreksi di berkasnya.** Percobaan insert duplikat hanya mengisi **5 kolom**, lalu **gagal lebih dulu** di `company_id` dan `product_id` yang `NOT NULL` — **cek uniknya tidak pernah tersentuh**, dan error `NOT NULL` itu terbaca sebagai bukti index bekerja. Bentuk yang benar **menyalin seluruh kolom** dari baris yang sudah ada (hanya `product_name` diganti) + cabang **`WHEN OTHERS`** yang membedakan *"ditolak karena duplikat"* dari *"ditolak karena hal lain"*. ⭐ **Kelas yang sama dengan pelajaran lintas-alat di `scripts/qa/README.md`: asersi yang lolos karena PRASYARATNYA tak pernah terpenuhi** (kerabat "identik palsu" `menu-sweep.mjs` dan "3/4 lolos" butir 5 G2).
+
+⚠️ `CREATE UNIQUE INDEX` mengambil ShareLock; `CONCURRENTLY` **sengaja tidak dipakai** (tak boleh di dalam blok transaksi). Di 974 baris = milidetik. Rollback: `DROP INDEX IF EXISTS …` — aman dan lengkap, `…0001` tetap benar tanpanya. Detail: `12_ANTREAN…` butir 7.
+
+---
+
+### AR Tahap 1 — SATU jalur penerbitan invoice + pelengkap tanggal Surat Jalan (`20260926000001` + `20260926000002` + 3 berkas FE) — ⛔ KEDUANYA LIVE DI STAGING 25 Sep 2026, PRODUKSI BELUM; uji manual Den di Preview LOLOS
+
+> Dikerjakan di branch `feat/ar-t1-satu-jalur-invoice`. ⛔ **Urutan produksi MENGIKAT:** `20260925000001` → `…0002` → `20260926000001` → `20260926000002`. Migrasi terakhir punya **palang** yang menolak jalan kalau dua migrasi 25 Sep belum terpasang. Langkah + rollback: `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 6–9.
+
+#### `20260926000001_set_delivery_signed_date` — aditif, boleh naik sendiri
+
+**Isi:** 2 kolom `delivery_notes.signed_date_filled_by` (uuid) + `signed_date_filled_at` (timestamptz), **sengaja TANPA FK** (pola sama dengan `created_by` di tabel itu) + RPC **`set_delivery_signed_date(uuid, date)`**.
+
+**Untuk apa.** `create_invoice_for_sp` hanya menjurnal SJ yang `delivered` **dan** ber-`signed_date`. SJ `delivered` tanpa tanggal karena itu membuat SP-nya **tidak bisa ditagih**, dan sampai sekarang **tidak ada jalan melengkapinya** — `mark_delivery_delivered` hanya menerima SJ `in_transit`. Populasi produksi (read-only 25 Sep): **106 dari 698** SJ `delivered` ber-`signed_date` NULL, yang terakhir **15 Sep 2026** — yaitu **sebelum kolomnya jadi wajib pada 17 Sep**; **9 SP tertahan HANYA karena ini**.
+
+⛔ **INI BUKAN BACKFILL, dan perbedaannya bukan formalitas.** Tanggal tanda tangan adalah fakta dari kertas SJ yang dipegang gudang; ia diketik orang yang memegang kertasnya, satu per satu. **Backfill dari xlsx sudah DIBATALKAN (koreksi D-2):** kolom di `SURAT_JALAN_2026.xlsx` adalah **tanggal dokumen dibuat**, dan di **6 dari 12 SP** tanggal itu **lebih awal dari `dispatched_at`** — mengimpornya akan menghasilkan tanggal tanda tangan sebelum barangnya berangkat, dan guard RPC-nya sendiri akan menolaknya.
+
+**Guard:** hanya `delivered` + `signed_date IS NULL` (**isi SEKALI, tidak bisa menimpa**; syaratnya **diulang di `WHERE` UPDATE** supaya dua panggilan berbarengan tidak sama-sama lolos) · tanggal wajib, tidak di masa depan **WIB**, tidak sebelum `dispatched_at` WIB (dilewati bila `dispatched_at` NULL) · peran `roles.level <= 6` **ATAU** `operations` — **Finance TIDAK** · `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`.
+
+⚠️ **Guard tanggalnya memakai WIB, SENGAJA tidak mewarisi TD-264** (`mark_delivery_delivered` memakai `current_date` UTC). TD-264 **tetap OPEN** — yang baru hanya fungsi ini.
+
+⚠️ **Daftar perannya = instance BARU TD-233**, kini hidup di **ENAM** tempat: `is_manager_or_above()` · `mark_delivery_delivered` · `prf_release` · `prf_select_offer` · `is_manager_or_above_in()` · **`set_delivery_signed_date`**. Perlakukan sebagai **checklist**.
+
+⭐ **Jejak disimpan sebagai KOLOM, bukan `audit_logs`** — dan alasannya mengikat, bukan selera: guard "isi sekali" perlu membacanya **pada baris yang sama** dengan `signed_date`, dan UI perlu menampilkannya **tanpa join**. Menaruhnya di `audit_logs` membuat guard bergantung pada dua tabel yang bisa berbeda nasib dalam satu transaksi.
+
+#### `20260926000002_ar_single_issue_path` — enam butir
+
+Masalah yang ditutup: ada **DUA** penerbit invoice hidup bersamaan dengan aturan berbeda — `create_invoice` (dipakai FE, **1 jurnal per invoice**, nol guard BTB/SJ) dan `create_invoice_for_sp` (jurnal **dipecah per Surat Jalan**, tak pernah dipakai FE). Selama dua-duanya ada, *"bagaimana invoice dijurnal"* tidak punya satu jawaban.
+
+**(a)** `create_invoice` jadi **pembungkus tipis** `RETURN create_invoice_for_sp(…)`. Signature + `DEFAULT NULL` **dipertahankan** supaya panggilan FE tidak berubah. ⛔ **PERUBAHAN PERILAKU:** sejak ini `create_invoice` **memecah jurnal PER SURAT JALAN** (sebelumnya satu jurnal per invoice) dan **tunduk pada ketiga guard baru**.
+
+**(b)** `due_date` dihitung **SAAT INVOICE TERBIT** (sebelumnya hanya saat submit), rantai termin **3 tingkat** sama dengan `submit_invoice`.
+
+**(c)** `record_payment` **menolak** invoice berstatus `issued`. Blast radius produksi **NOL** (0 pembayaran pada invoice `issued`).
+
+**(d) Tiga guard di `create_invoice_for_sp`:** tolak SP **tanpa BTB hidup** · **pra-terbang** tolak SP yang masih punya SJ selain `delivered`/`cancelled` — ditolak **SEBELUM** invoice dibuat, supaya **nomor invoice tidak terbuang** · **invariant** debit piutang = `total_amount`, toleransi **jumlah SJ berjurnal × Rp1**. ⭐ **Toleransi Rp1 bukan kira-kira: ia diukur.** Dari **507** invoice berjurnal di produksi — **474 pas persis, 33 selisih tepat Rp1, NOL di atas Rp1**, walau ada invoice dengan **5** SJ. Jadi batasnya diturunkan dari sebaran nyata pembulatan PPN, bukan dikarang.
+
+**(e)** `create_invoice` + `create_invoice_for_sp` + `submit_invoice`: **`REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`**. **Ketiganya ber-PUBLIC EXECUTE sebelumnya.**
+
+**(f)** **DROP overload `mark_delivery_delivered(uuid)`** → lihat entri KOREKSI TD-263 di bawah.
+
+⛔ **RADIUS DAMPAK DI PRODUKSI — ini MENYEMPITKAN** (read-only 25 Sep 2026): dari **62** SP terkirim penuh yang belum ber-invoice, hanya **5 LOLOS** ketiga guard; **9** tertahan HANYA karena `signed_date` kosong (dibuka `20260926000001`); **47** tertahan karena **BTB belum ada**; **1** karena masih ada SJ belum `delivered`. Penyempitan **62 → 5 → 14** adalah **penegakan aturan CEO** (kirim penuh + BTB lengkap) dan **DITERIMA sebagai konsekuensi (keputusan Den D-17)**; 47 SP itu **pekerjaan gudang, bukan pekerjaan Tahap 1**.
+
+⚠️ **`due_date` NULL di 508 dari 509 invoice hidup di produksi.** Butir (b) hanya memperbaiki invoice **BARU**. **Backfill 508 invoice lama BUKAN Tahap 1 (keputusan Den D-14)** — AR Aging nanti berbasis tanggal **TTF**, bukan `due_date`; itu **Tahap 2**.
+
+⚠️ **TODO Tahap 3 (keputusan Den D-15):** `due_date` kini dihitung di **DUA** tempat — `create_invoice_for_sp` (saat terbit) dan `submit_invoice` (saat submit). **Sengaja dibiarkan**: rantai terminnya sama sehingga nilainya identik (idempoten); dirapikan saat `submit_invoice` ditulis ulang. **Sampai itu, mengubah rantai termin berarti menyentuh KEDUA fungsi.**
+
+⚠️ **`V1b` sempat cacat.** Uji "PUBLIC sudah dicabut" memakai `LIKE '%=X/%'` — pola itu **juga kena `postgres=X/postgres`**, jadi **SELALU true** dan tidak pernah membuktikan apa pun. **PUBLIC diwakili entri ber-grantee KOSONG (diawali `'='`).** Sudah dikoreksi di **kedua** berkas migrasi. ⭐ Bentuk ketiga dalam satu hari dari kelas "asersi lolos tanpa prasyaratnya terpenuhi" (bersama `V1c` `…0002` dan jebakan `LIKE` ini) → gotcha **#40**.
+
+**Cadangan rollback.** 5 fungsi produksi (`create_invoice`, `create_invoice_for_sp`, `record_payment`, `submit_invoice`, `mark_delivery_delivered` 1-arg) diambil **read-only** dan kelima **md5-nya DICOCOKKAN ke produksi**; cadangannya **di luar repo**. ⛔ **Wajib diambil ULANG pada hari launching** (cadangan 25 Sep memotret produksi tanggal itu; cocokkan md5 dulu — beda = produksi sudah bergerak). ⚠️⚠️ **Saat rollback: `create_invoice_for_sp` di cadangan adalah versi PRODUKSI, yaitu TANPA guard `20260925000001`** — kalau migrasi itu sudah jalan, memulihkan dari cadangan akan **MENGHAPUS guard itu**. Yang benar: pulihkan, lalu **jalankan ulang `20260925000001` bagian 1 dan 3**.
+
+#### FE AR Tahap 1 (3 berkas)
+
+`setDeliverySignedDate()` baru di `db.js` · **`getSpFulfillmentDocs` menambah `signed_date` ke `select`** — tanpa itu Detail SP tidak bisa membedakan SJ yang tanggalnya sudah diisi dari yang belum, sehingga tombolnya tak punya dasar untuk tampil · tombol **"Lengkapi Tanggal Ditandatangani"** di `DeliveryNoteDetailPage` (tampil hanya untuk `delivered` + `signed_date` kosong + peran gudang) · penanda **"Tanggal tanda tangan belum diisi"** + kolom **Ditandatangani** di tab Shipment `SalesOrderDetailPage` (**sengaja TIDAK menduplikasi tombolnya** — jalur pengisian tetap satu) · dan **form BTB akhirnya mengirim `btb_date` + `delivery_note_id`**.
+
+⭐ **Soal form BTB, dan ini yang paling layak dibaca.** `issueSpBtb` di `db.js` **SUDAH menerima `btbDate` dan `deliveryNoteId` sejak lama**; yang tidak ada **hanyalah tempat mengisinya** — dan **ITULAH sebabnya 456 BTB lama lahir tanpa tanggal** (temuan **D-01** blueprint Finance, `11_FINANCE_ACCOUNTING_BLUEPRINT.md`). Jadi perubahannya **murni di form**, nol perubahan RPC, nol migrasi. *Parameter yang ada tapi tak pernah diisi dari UI adalah parameter yang efektifnya tidak ada.* Tanggal kosong **dibiarkan NULL, bukan diisi hari ini** — menebak tanggal dokumen fisik lebih buruk daripada mengosongkannya; dropdown SJ dibatasi ke SJ **`delivered`** milik SP itu.
+
+#### Uji di staging — semua LOLOS *(laporan sesi)*
+
+**(a)** lengkapi tanggal berhasil **sekali**, percobaan kedua **ditolak**. **(b)** tanggal masa depan / sebelum berangkat / NULL **ditolak**. **(c)** akun **`zzztest.finance` ASLI** (uid-nya; `is_super_admin` **diperiksa false lebih dulu**) **DITOLAK karena peran**, dengan **PEMBANDING** akun gudang yang diterima. **(d)** SP terkirim penuh **tanpa BTB** ditolak (`9100009`, `9100010`). **(e)** SP dengan SJ `in_transit` ditolak (`9100011`). **(f)** invoice dengan **2 SJ → 2 jurnal**, debit piutang **28.749.000 = total 28.749.000**, selisih **0**; butir (b) `due_date` terisi saat terbit; butir (c) invoice `issued` ditolak dengan **PEMBANDING** invoice `submitted` yang diterima.
+
+⭐ **Pola uji yang dipakai konsisten: setiap penolakan diuji BERSAMA pembandingnya yang diterima.** Tanpa pembanding, "ditolak" bisa berarti guardnya bekerja **atau** berarti tidak ada yang pernah bisa lolos.
+
+**Gate repo (diukur ulang doc-keeper):** build clean **3.020** modul · lint **137 error / 21 warning = baseline PERSIS** · `check-menu-paths` ✔ **334 id / 325 rute**.
+
+---
+
+### KOREKSI TD-263 — overload `mark_delivery_delivered(uuid)` ternyata SUDAH TIDAK BISA DIPANGGIL, bukan jalan pintas yang terbuka
+
+**TD-263 berbunyi:** overload lama masih hidup, tanpa `REVOKE PUBLIC`, tanpa syarat `signed_date` → *"jalur pintas + ambigu"*.
+
+**KOREKSINYA.** Overload itu **tidak bisa dipanggil sama sekali**. Versi 2-argumen ber-**`p_signed_date date DEFAULT NULL`**, jadi setiap panggilan **1-argumen cocok untuk KEDUA kandidat** dan Postgres menolak dengan **`42725 function … is not unique`**. Dibuktikan **di PRODUKSI** lewat **`EXPLAIN SELECT mark_delivery_delivered('…'::uuid)`** — `EXPLAIN` menyelesaikan **nama fungsi** saat parse/plan tetapi **tidak menjalankan** fungsi volatile, jadi **NOL baris tersentuh**.
+
+⭐ **Artinya jalan pintas "tandai terkirim tanpa tanggal" itu TERKUNCI oleh ambiguitas, bukan terbuka** — walaupun ACL `PUBLIC EXECUTE`-nya memang ada. Yang **nyata** bermasalah adalah **ambiguitasnya sendiri**: panggilan 1-argumen mana pun **gagal**.
+
+**Pemanggil (diukur):** FE hanya **satu** titik (`src/lib/db.js` `setDeliveryStatus`) dan **selalu** mengirim kedua argumen · **NOL** fungsi/trigger DB di staging maupun produksi · **nol pemanggil 1-argumen di mana pun**.
+
+**Butir (f) `20260926000002` men-DROP overload itu, dan itu melakukan DUA hal:** **(1) memperbaiki pesan gagalnya** — sesudahnya panggilan 1-argumen **sah**, jatuh ke versi 2-argumen, lalu ditolak guard *"signed_date wajib"*, yaitu **pesan bisnis**, bukan error resolusi fungsi; **(2) menutup lubang `PUBLIC EXECUTE`.**
+
+⚠️ **Catatan yang wajib ikut, supaya koreksi ini tidak melenceng ke arah lain:** badan overload 1-argumen itu **TETAP punya guard peran** (`level <= 6` atau `operations`) — yang tidak ada hanyalah **syarat `signed_date`** dan **`REVOKE PUBLIC`**. **Jangan menulis bahwa ia tanpa guard peran.**
+
+**Status:** TD-263 → **RESOLVED di kode (staging)**; produksi menunggu `12_ANTREAN…` butir 9. **Keputusan Terbuka #59** (DROP overload) **TERJAWAB** oleh butir (f) — opsi (a). **TD-264 TETAP OPEN** (`current_date` UTC di `mark_delivery_delivered`); yang memakai WIB hanya `set_delivery_signed_date` yang baru.
+
+---
+
+### Anomali SP 2046670 → ternyata SATU KELAS (29 SP), bukan kasus tunggal — ⛔ READ-ONLY, nol data diubah
+
+Ditemukan saat menyusun daftar 47 SP tertahan BTB: SP **2046670** (produksi) tercatat **terkirim penuh** tapi punya **NOL `delivery_notes`**.
+
+**Yang diperiksa (read-only, produksi).** `sp_orders`: id `8f400246-cfd1-4816-9eb0-e418e5a719e4`, `sp_date` 2026-02-04, status `TERKIRIM_PENUH`, `created_at` **2026-07-02 04:27:45**, `created_by` **NULL**. **Kedua sisi dual-write KONSISTEN**: `sp_order_items` dan `sp_items` sama-sama qty **290** / `shipped_qty` **290**, `created_at` identik dengan headernya, `legacy_sp_item_id` tersambung, `sp_items.sp_status = 'confirmed'`. **Nol** `picking_lists`, **nol** `delivery_notes`, **nol** `sp_btb`, **nol** `sp_invoices`, **NOL** jejak `audit_logs`.
+
+⭐ **BUKAN kasus tunggal.** Ada **29 SP** ber-`shipped_qty > 0` dengan **NOL `delivery_notes`**. Semuanya terkirim **PENUH**, **NOL** punya picking, dan **semuanya lahir dalam jendela 22 DETIK** pada **2026-07-02 04:27:45–04:28:07**. Jendela itu = **impor massal 435 SP** (405 + 30 dalam dua menit) — yaitu "Import Data Produksi (720 baris/435 SP)" yang sudah tercatat. **Setiap SP yang lahir SESUDAH impor punya SJ.**
+
+Dari 29 itu: **26 sudah punya BTB**, **20 sudah diinvoice** (status sampai `LUNAS`). Yang **nol BTB DAN nol invoice hanya SATU: 2046670** — dan itu **satu-satunya irisan** dengan daftar 47.
+
+**KESIMPULAN.** `shipped_qty`-nya berasal dari **impor**, yang merekam **pengiriman historis yang terjadi SEBELUM Nexus ada**; karena itu tidak ada Surat Jalan di Nexus. **BUKAN** rekonsiliasi Fase B, **BUKAN** `dispatch_delivery` (satu-satunya penulis normal `shipped_qty`), dan nol jejak `audit_logs` karena impor menulis langsung. Jadi **BUKAN kerusakan data**: 2046670 adalah **satu-satunya anggota kohort impor yang BTB-nya belum pernah dimasukkan**. **Paperwork, bukan bug.**
+
+⚠️ **Konsekuensi untuk AR Tahap 1:** 2046670 **akan ditolak guard BTB, dan itu benar.**
+
+⭐ **Pelajaran metode:** pertanyaan *"kenapa SP ini aneh"* dijawab dengan **menghitung berapa banyak yang seaneh itu** — dan jawabannya (29, semuanya dalam 22 detik) langsung menunjuk **satu peristiwa**, bukan 29 kesalahan terpisah. Satu anomali tanpa kohortnya mudah disalahartikan sebagai kerusakan.
+
 ---
 
 ## 2026-09-24
