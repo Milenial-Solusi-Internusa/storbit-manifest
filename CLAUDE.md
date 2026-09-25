@@ -1,6 +1,6 @@
 # CLAUDE.md — Nexus by MSI
 
-> Lean entry point untuk Claude Code. Detail lengkap ada di `docs/` (daftar 18 dokumen acuan: `docs/Governance/00_INDEX_README.md`, lihat §Dokumentasi Lengkap di bawah). `AGENTS.md` = identitas produk + safety rules — struktur/kebijakan/prinsip JANGAN diubah (kontrak Codex, lihat `.codex/agents/*.toml`); koreksi angka/fakta yang TERVERIFIKASI basi (mis. line-count, nama domain) BOLEH, syarat diff sekecil mungkin + commit message eksplisit sebut "koreksi fakta" (pola commit `c5476ae`). `PROGRESS.md` = dev log per-tanggal.
+> Lean entry point untuk Claude Code. Detail lengkap ada di `docs/` (daftar 19 dokumen acuan: `docs/Governance/00_INDEX_README.md`, lihat §Dokumentasi Lengkap di bawah). `AGENTS.md` = identitas produk + safety rules — struktur/kebijakan/prinsip JANGAN diubah (kontrak Codex, lihat `.codex/agents/*.toml`); koreksi angka/fakta yang TERVERIFIKASI basi (mis. line-count, nama domain) BOLEH, syarat diff sekecil mungkin + commit message eksplisit sebut "koreksi fakta" (pola commit `c5476ae`). `PROGRESS.md` = dev log per-tanggal.
 
 ## Quick Reference
 
@@ -29,7 +29,7 @@
 
 ## Dokumentasi Lengkap
 
-Daftar lengkap **18 dokumen acuan tetap** (13 file `docs/Governance/`, `CLAUDE.md`, `AGENTS.md`, `PROGRESS.md`, `supabase/schema_snapshot.sql`, `docs/DESIGN_SYSTEM_REFERENCE.md`) — dengan kolom *isinya apa · buat siapa · kapan dibuka* — hidup di **satu tempat**: `docs/Governance/00_INDEX_README.md` §Daftar Dokumen (rumah resmi sejak 20 Sep 2026; tabel ini sengaja tidak disalin ke sini supaya tidak ada dua salinan yang melenceng). Urutan baca wajib tiap sesi: `CLAUDE.md` → `AGENTS.md` → `docs/Governance/02_RULES_GOVERNANCE.md`, lalu dokumen per tipe task menurut tabel "Cara Pakai" di index itu. Subfolder `docs/architecture/`, `docs/security/`, `docs/database/`, dll. = blueprint/baseline pre-existing (lihat "Required Reading" `AGENTS.md`).
+Daftar lengkap **19 dokumen acuan tetap** (14 file `docs/Governance/`, `CLAUDE.md`, `AGENTS.md`, `PROGRESS.md`, `supabase/schema_snapshot.sql`, `docs/DESIGN_SYSTEM_REFERENCE.md`) — dengan kolom *isinya apa · buat siapa · kapan dibuka* — hidup di **satu tempat**: `docs/Governance/00_INDEX_README.md` §Daftar Dokumen (rumah resmi sejak 20 Sep 2026; tabel ini sengaja tidak disalin ke sini supaya tidak ada dua salinan yang melenceng). Urutan baca wajib tiap sesi: `CLAUDE.md` → `AGENTS.md` → `docs/Governance/02_RULES_GOVERNANCE.md`, lalu dokumen per tipe task menurut tabel "Cara Pakai" di index itu. Subfolder `docs/architecture/`, `docs/security/`, `docs/database/`, dll. = blueprint/baseline pre-existing (lihat "Required Reading" `AGENTS.md`).
 
 ## Current Phase & Recent Changes
 

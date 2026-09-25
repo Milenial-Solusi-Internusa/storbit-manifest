@@ -16,7 +16,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 
 ---
 
-## Daftar Dokumen — 18 acuan tetap (rumah resmi tabel ini; `CLAUDE.md` & `PROJECT_CONTEXT.md` hanya menunjuk ke sini)
+## Daftar Dokumen — 19 acuan tetap (rumah resmi tabel ini; `CLAUDE.md` & `PROJECT_CONTEXT.md` hanya menunjuk ke sini)
 
 > Tiga kolom: **isinya apa · buat siapa · kapan dibuka**. Tanggal pembaruan **tidak** dicatat di sini — `git log -1 -- <file>` adalah sumber tanggal. Ukuran/angka di kolom "Isinya apa" diukur 20 Sep 2026.
 
@@ -39,11 +39,12 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/Governance/09_ROADMAP.md` | Status modul, next up, keputusan struktur (Finance, Design System D1–D7), **Keputusan Terbuka #1–#63** (yang perlu keputusan Den; #63 = bentuk perbaikan TD-271, 21 Sep 2026 — DIJAWAB hari itu juga: hotfix `main`; #60–#63 sudah terjawab semua) | Den (memutuskan); AI (tahu apa yang belum diputuskan) | Sebelum memulai fitur; saat menemukan hal yang butuh keputusan |
 | `docs/Governance/10_TASK_BREAKDOWN.md` | Pecahan task aktif/backlog + template task & change request; berbanner "BASI — cek sumbernya dulu" sejak 7 Sep 2026 | Den/AI menyusun task | Jarang — hanya untuk template; jangan dipakai sebagai daftar kerja tanpa cek `09`/`08` |
 | `docs/Governance/11_FINANCE_ACCOUNTING_BLUEPRINT.md` | Cetak biru Finance & Accounting v1.0 (9 Sep 2026): prinsip (invoice = anak BTB), diagnosa D-01…D-12, model data, aturan tanggal, jurnal, matriks role, menu, rencana migrasi F1–F7 | Den & AI saat membangun modul Finance | Task Finance/invoice/jurnal; sebelum menyentuh `sp_invoices`/`ar_btbs` |
+| `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` | Daftar urut perubahan DB yang belum berlaku di produksi: apa, sudah di staging atau belum, tindakan saat launching. Memuat juga butir yang arahnya terbalik (produksi dulu, staging menyusul) supaya tidak dikira utang. Keadaan staging di dalamnya DIUKUR, bukan disalin dari laporan | Den saat launching; AI sebelum/sesudah SQL manual di staging | Sebelum merge `develop` → `main`; setiap kali ada SQL manual yang tidak punya berkas migrasi |
 | `docs/DESIGN_SYSTEM_REFERENCE.md` | Kebijakan palet **sage** + tiga font + arah kit tunggal (Bagian A, termasuk **rencana Batch DS 1–7 di A.4 — Batch DS 1 selesai 20 Sep 2026 malam & review-nya ditutup Den (sesi keenam; #62 → 4 fg STATUS `tokens.js` digeser ke AA): Batch DS 2 (AdminKit → kit, 22 file + `main.jsx`) selesai & review-nya ditutup Den 20 Sep 2026 malam (sesi kesembilan) — 22 halaman admin/Foundation memakai kit `src/kit/` di `main`, halaman lain belum; ⚠️ HRGA "Simpan Semua" belum teruji (→ Batch DS 6); Batch DS 3–7 belum mulai**; status per Batch DS di kolom Status A.4.3) + inventaris & angka kit/token yang ada di kode (§0–§18) + checklist menerjemahkan mockup AI | AI/desainer saat implementasi UI atau menerjemahkan mockup | Task UI; sebelum memakai komponen kit; selama penyatuan kit berjalan |
 
 Di luar 18 acuan tetap: `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` (pre-existing, Fase 0.1 — blueprint & baseline, lihat "Required Reading" di `AGENTS.md`; `[TODO]` verifikasi keberadaan/isi tiap file yang dirujuk) dan `docs/archive/` (rekaman historis).
 
-> **Dokumen 11-18 lama sudah diserap ke canon 00-10 lalu diarsipkan** ke `docs/archive/audits/` (konsolidasi governance, 17 Jul 2026): **11**→`02 §8` (QA Checklist), **12**→`10` (Template Change Request) + rollback CR-002 di `08` TD-01, **13-18** (audit CRM/SP/input/pending)→diserap jadi TD di `08` / task di `10` / keputusan di `09`. File aslinya tetap bisa dibaca di `docs/archive/audits/` sebagai rekaman historis. (Nomor **11** kini dipakai ulang oleh `11_FINANCE_ACCOUNTING_BLUEPRINT.md`, dokumen baru 9 Sep 2026 — bukan dokumen 11 lama.)
+> **Dokumen 11-18 lama sudah diserap ke canon 00-10 lalu diarsipkan** ke `docs/archive/audits/` (konsolidasi governance, 17 Jul 2026): **11**→`02 §8` (QA Checklist), **12**→`10` (Template Change Request) + rollback CR-002 di `08` TD-01, **13-18** (audit CRM/SP/input/pending)→diserap jadi TD di `08` / task di `10` / keputusan di `09`. File aslinya tetap bisa dibaca di `docs/archive/audits/` sebagai rekaman historis. (Nomor **11** kini dipakai ulang oleh `11_FINANCE_ACCOUNTING_BLUEPRINT.md`, dokumen baru 9 Sep 2026 — bukan dokumen 11 lama. Nomor **12** dipakai `12_ANTREAN_MIGRASI_PRODUCTION.md`, dokumen baru 25 Sep 2026 — juga bukan dokumen 12 lama.)
 
 ---
 

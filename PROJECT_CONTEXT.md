@@ -47,7 +47,7 @@ Alur: Vira rancang -> Den relay ke CC -> CC balik PLAN -> Vira review -> CC ekse
 Keamanan: kalau password DB ter-paste di chat -> GANTI segera.
 
 ## 5. STATUS TERKINI — baca sumber hidup di repo, JANGAN cari di sini
-Daftar lengkap 18 dokumen acuan tetap (isinya apa / buat siapa / kapan dibuka)
+Daftar lengkap 19 dokumen acuan tetap (isinya apa / buat siapa / kapan dibuka)
 hidup di SATU tempat: docs/Governance/00_INDEX_README.md §Daftar Dokumen
 (rumah resmi sejak 20 Sep 2026; tidak disalin ke sini supaya tidak melenceng).
 Titik masuk: CLAUDE.md (acuan utama AI, paling dinamis) -> index itu -> dokumen
