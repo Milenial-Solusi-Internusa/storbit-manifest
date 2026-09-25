@@ -113,27 +113,27 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
       <PageHead
         kicker="Accounts Receivable"
         title="Siap Ditagih"
-        sub="SP yang sudah terkirim penuh dan belum punya invoice aktif. Alasan tertahan dihitung dari aturan yang sama dengan yang menolak di server."
+        sub="SP yang sudah terkirim penuh dan belum punya invoice aktif."
         right={<Btn icon={RefreshCw} onClick={muat} disabled={loading}>{loading ? 'Memuat…' : 'Muat Ulang'}</Btn>}
       />
 
       {error && (
         <Notice tone="danger" icon={AlertTriangle}>
-          Gagal memuat daftar: {error.message || 'unknown error'}
+          Daftar gagal dimuat: {error.message || 'penyebab tidak diketahui'}
         </Notice>
       )}
 
+      {/* Tombolnya tetap TAMPIL nonaktif (aturan K-6) supaya jelas jalurnya ada
+          dan siapa yang bisa memakainya. */}
       {!bolehTerbit && (
         <Notice tone="attn" icon={AlertTriangle}>
-          Peran kamu boleh MELIHAT halaman ini tapi belum boleh menerbitkan invoice —
-          server hanya menerima <b>Finance Controller</b>, <b>manager ke atas</b>, atau <b>Super Admin</b>.
-          Tombolnya tetap ditampilkan (nonaktif) supaya jelas jalurnya ada dan siapa yang bisa memakainya.
+          Hanya Finance Controller, manager ke atas, atau Super Admin yang bisa menerbitkan invoice.
         </Notice>
       )}
 
       {/* ── Strip ringkas ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: SP.s3 }}>
-        <StatCard label="Siap ditagih" value={siap.length} sub="lolos seluruh guard di server" tone={C.accentDeep}/>
+        <StatCard label="Siap ditagih" value={siap.length} sub="siap diterbitkan sekarang" tone={C.accentDeep}/>
         <StatCard label="Tertahan" value={tertahan.length} sub="menunggu dokumen atau pengiriman" tone={tertahan.length > 0 ? C.attn : undefined}/>
         <StatCard
           label="Penahan terbanyak"
@@ -231,10 +231,9 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
         )}
       </Panel>
 
-      <Hint>
-        Nilai invoice belum ditampilkan di halaman ini: angkanya baru pasti saat invoice terbit
-        (dihitung per Surat Jalan yang sudah ditandatangani).
-      </Hint>
+      {/* Nilainya baru pasti saat terbit -- dihitung per Surat Jalan yang sudah
+          ditandatangani (create_invoice_for_sp). */}
+      <Hint>Nilai invoice baru muncul setelah invoice terbit.</Hint>
     </div>
   );
 }

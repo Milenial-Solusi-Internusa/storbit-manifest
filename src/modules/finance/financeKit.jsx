@@ -272,8 +272,15 @@ export function Panel({ title, icon: Icon, right, children, pad = SP.s3, style }
 
 /* Baris label -> nilai, dipakai blok meta dokumen & kartu kanan. */
 export function MetaRow({ label, children, mono = false, strong = false }) {
+  // `flex-start`, BUKAN `baseline`. Sebabnya spesifik dan mudah terlewat:
+  // sebagian nilai di sini adalah <Ref>, yaitu <button> = inline-block, dan
+  // baseline sebuah inline-block adalah baseline baris TERAKHIR isinya. Begitu
+  // nilainya membungkus, label di sebelahnya ikut turun menyejajari baris
+  // kedua itu -- terlihat melorot. Diukur di lebar kolom 280px (kolom meta
+  // pada lebar layar 1000px): label turun 13px dengan `baseline`, 0px dengan
+  // `flex-start`. Untuk nilai satu baris keduanya identik (font-size sama).
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: SP.s3, padding: '5px 0', fontSize: 13 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: SP.s3, padding: '5px 0', fontSize: 13 }}>
       <span style={{ color: C.inkSoft, whiteSpace: 'nowrap' }}>{label}</span>
       <span style={{
         textAlign: 'right', minWidth: 0, color: C.ink,
@@ -444,6 +451,24 @@ export function Ref({ children, onClick, mono = true, title }) {
 /* aslinya. Tanpa `onOpenFull` panel tetap sah: sebagian rujukan (BTB) memang */
 /* belum punya halaman sendiri, dan itu keadaan, bukan kelalaian.             */
 /* ========================================================================== */
+/** Dropdown daftar tetap. Bentuknya sengaja sama dengan `ModalInp` supaya
+ *  isian bebas dan pilihan tidak terlihat seperti dua jenis kolom berbeda. */
+export function Sel({ value, onChange, disabled, children }) {
+  return (
+    <select
+      value={value} onChange={onChange} disabled={disabled}
+      style={{
+        height: 38, padding: '0 11px', border: `1px solid ${C.line}`, borderRadius: 8,
+        background: disabled ? C.surface2 : C.surface, fontSize: 13, color: C.ink,
+        outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {children}
+    </select>
+  );
+}
+
 export function QuickPanel({ open, onClose, kicker, title, rows = [], extra, onOpenFull, fullLabel = 'Buka halaman penuh' }) {
   useEffect(() => {
     if (!open) return undefined;

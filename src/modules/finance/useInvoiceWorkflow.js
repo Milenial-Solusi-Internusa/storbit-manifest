@@ -92,7 +92,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     setInvoiceSaving(true);
     const { error } = await submitInvoiceRpc(invoiceId);
     setInvoiceSaving(false);
-    if (error) { showToast?.('Gagal menandai invoice: ' + (error.message || 'unknown error'), 'error'); return; }
+    if (error) { showToast?.('Gagal menandai invoice: ' + (error.message || 'penyebab tidak diketahui'), 'error'); return; }
     showToast?.('Invoice ditandai sudah diupload ke portal', 'success');
     await onChanged?.();
   }, [invoiceId, showToast, onChanged]);
@@ -162,7 +162,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     try {
       const { data: pdfData, error } = await getInvoicePdfData(invoiceId);
       if (error || !pdfData) {
-        showToast?.('Gagal menyiapkan data invoice: ' + (error?.message || 'unknown error'), 'error');
+        showToast?.('Gagal menyiapkan data invoice: ' + (error?.message || 'penyebab tidak diketahui'), 'error');
         return;
       }
       const blob = await pdf(createElement(InvoicePDF, { invoice: pdfData, variant })).toBlob();

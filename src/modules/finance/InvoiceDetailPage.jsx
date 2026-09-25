@@ -26,7 +26,7 @@ import {
 } from '../../lib/db';
 import useInvoiceExtras from './useInvoiceExtras';
 import { useAuth } from '../../contexts/useAuth';
-import { PPN_RATE } from '../../lib/taxConstants';
+import { PPN_RATE, CORETAX_TX_CODES } from '../../lib/taxConstants';
 import { getTodayWIB, fmtRelativeWIB, fmtDateTimeWIB } from '../../lib/dateUtils';
 import useInvoiceWorkflow from './useInvoiceWorkflow';
 import {
@@ -35,7 +35,7 @@ import {
 } from './invoiceStatus.js';
 import {
   Crumbs, Btn, MoreMenu, RecordNav, Stepper, Panel, MetaRow, TabBar, TabBtn,
-  TableShell, Td, Notice, Hint, Empty, Avatar, Ref, QuickPanel,
+  TableShell, Td, Notice, Hint, Empty, Avatar, Ref, QuickPanel, Sel,
 } from './financeKit.jsx';
 import {
   C, FONT_DISPLAY, FONT_MONO, SP, RADIUS, kickerStyle, thStyle,
@@ -43,16 +43,20 @@ import {
 } from '../logistics/spDetailTokens.js';
 import { Badge, ModalField, ModalInp } from '../logistics/spDetailKit.jsx';
 
-/* Kolom yang MENGUBAH ANGKA dan sengaja dikunci di DB sampai tahapnya
-   (CHECK bernama, 20260928000001/2). Ditampilkan READ-ONLY beserta ALASANNYA
-   -- bukan disembunyikan: kolom yang hilang dari layar akan ditanyakan lagi,
-   sementara kolom yang tampil dengan alasannya menjawab pertanyaannya sekali. */
+/* Kolom yang MENGUBAH ANGKA dan dikunci di DB sampai kebijakannya ada
+   (CHECK bernama, 20260928000001/2). Ditampilkan read-only beserta alasannya --
+   bukan disembunyikan: kolom yang hilang dari layar akan ditanyakan lagi.
+
+   Teks di bawah untuk PENGGUNA: satu kalimat, tanpa istilah teknis. Alasan
+   teknis lengkapnya (kebijakan revaluasi, akun selisih kurs, invariant piutang,
+   jurnal) ada di komentar masing-masing CHECK di berkas migrasinya -- itu
+   tempatnya, bukan layar Finance. */
 const TERKUNCI = {
-  currency: 'Mata uang & kurs dikunci IDR / 1,000000. Jurnal Nexus dalam IDR; membuka kurs menuntut kebijakan revaluasi dan akun selisih kurs yang belum ada.',
-  rounding: 'Pembulatan dikunci "tidak ada". Rumahnya Pengaturan Keuangan entitas, dan membukanya mengubah Total, jurnal, dan invariant piutang.',
-  dppnl:    'DPP Nilai Lain (11/12) dikunci mati. Tarif 11% yang dipakai menghitung invoice ini SUDAH hasil 12% x 11/12, jadi menyalakannya berarti menerapkannya dua kali.',
-  diskon:   'Diskon per baris dikunci 0. Diskon hari ini hidup di harga SP, bukan di invoice.',
-  days:     'Kolom Days dikunci kosong. Tagihan berbasis hari memakai kolom Qty; Days yang terisi tanpa ikut Total adalah angka yang tidak sampai ke jurnal.',
+  currency: 'Semua invoice Nexus dibuat dalam Rupiah.',
+  rounding: 'Nilai invoice tidak dibulatkan.',
+  dppnl:    'DPP Nilai Lain tidak perlu diaktifkan. PPN 11% di invoice ini sudah setara 12% x 11/12.',
+  diskon:   'Diskon diatur di harga SP, bukan di invoice.',
+  days:     'Kolom ini tidak dipakai. Jumlah tagihan dihitung dari Qty.',
 };
 
 /* Baris nilai yang terkunci: nilainya tampil, gemboknya tampil, alasannya
@@ -76,9 +80,12 @@ function Terkunci({ label, children, alasan }) {
 
 // Alasan tertulis di tombol yang akan ditolak server (aturan K-6). Teksnya
 // SENGAJA menyebut siapa yang boleh, bukan cuma "tidak diizinkan": orang yang
-// kena harus tahu ke siapa memintanya.
-const ALASAN_TERBIT = 'Server hanya menerima Finance Controller, manager ke atas, atau Super Admin.';
-const ALASAN_BAYAR  = 'Pencatatan pembayaran hanya diterima dari Finance Controller atau Super Admin.';
+// kena harus tahu ke siapa memintanya. Satu kalimat, tanpa kata "server".
+const ALASAN_TERBIT = 'Hanya Finance Controller, manager ke atas, atau Super Admin yang bisa menandai invoice sudah diupload.';
+const ALASAN_BAYAR  = 'Hanya Finance Controller atau Super Admin yang bisa mencatat pembayaran.';
+const ALASAN_TTF    = 'Hanya manager ke atas, Finance Controller, atau Super Admin yang bisa mencatat TTF.';
+const ALASAN_PAJAK  = 'Hanya Finance, Finance Controller, atau Super Admin yang bisa mengisi data pajak.';
+const ALASAN_UNGGAH = 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengunggah lampiran.';
 
 /* Grid isian yang menyesuaikan diri — kolom kanan halaman ini sempit, jadi
    jumlah kolomnya tidak boleh ditetapkan. */
@@ -279,7 +286,7 @@ export default function InvoiceDetailPage({
         <Terkunci label="Diskon" alasan={TERKUNCI.diskon}>{l.discount_pct}%</Terkunci>
         <Terkunci label="Hari (analytic)" alasan={TERKUNCI.days}>{l.days == null ? '—' : l.days}</Terkunci>
         <Hint>
-          Angka di panel ini SNAPSHOT saat invoice terbit, bukan master produk hari ini.
+          Angka di sini direkam saat invoice terbit, bukan harga produk hari ini.
         </Hint>
       </div>
     ),
@@ -400,8 +407,8 @@ export default function InvoiceDetailPage({
         <Crumbs items={[{ label: 'Daftar Invoice', onClick: onBack }, { label: 'Tidak ditemukan' }]}/>
         <Notice tone="attn" icon={AlertTriangle}>
           {error
-            ? <>Gagal membaca invoice: {error.message || 'unknown error'}</>
-            : <>Invoice tidak ditemukan, atau tidak bisa dibaca dengan peran kamu di entitas ini.</>}
+            ? <>Invoice gagal dimuat: {error.message || 'penyebab tidak diketahui'}</>
+            : <>Invoice tidak ditemukan, atau tidak bisa dibuka dengan peran kamu di entitas ini.</>}
         </Notice>
         <div><Btn variant="ghost" onClick={onBack}>Kembali ke Daftar Invoice</Btn></div>
       </div>
@@ -509,12 +516,12 @@ export default function InvoiceDetailPage({
           icon: Stamp,
           disabled: !wf.canMarkTtf || !wf.bisaTtfSekarang,
           title: !wf.canMarkTtf
-            ? 'Hanya manager ke atas, Finance Controller, atau Super Admin.'
+            ? ALASAN_TTF
             : !wf.bisaTtfSekarang ? 'TTF hanya bisa dicatat pada invoice yang sudah terbit.' : undefined,
           onClick: wf.mulaiEditTtf,
         }]}/>
         <span style={{ marginLeft: 'auto', fontSize: 12, color: C.inkFaint }}>
-          Invoice tidak bisa diubah setelah terbit — koreksi lewat void &amp; terbit ulang.
+          Invoice tidak bisa diubah setelah terbit.
         </span>
       </div>
 
@@ -563,11 +570,21 @@ export default function InvoiceDetailPage({
                     {fmtDate(inv.due_date)}
                   </span>
                 </MetaRow>
-                <MetaRow label="TTF">
+                {/* DUA baris, bukan satu. Digabung, "NOMOR - TANGGAL" membungkus
+                    di kolom meta selebar 280px (lebar layar 1000px) dan labelnya
+                    ikut melorot -- lihat komentar MetaRow di financeKit. Dipecah,
+                    tiap nilai muat satu baris dan tiap label punya labelnya
+                    sendiri. */}
+                <MetaRow label="No. TTF" mono>
+                  {wf.ttf?.no_ttf
+                    ? <Ref onClick={panelTtf} title="Lihat ringkas TTF">{wf.ttf.no_ttf}</Ref>
+                    : <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>
+                        {wf.ttf?.tanggal_menerima ? '—' : 'Belum ada'}
+                      </span>}
+                </MetaRow>
+                <MetaRow label="Tanggal TTF">
                   {wf.ttf?.tanggal_menerima
-                    ? <Ref onClick={panelTtf} title="Lihat ringkas TTF">
-                        {wf.ttf.no_ttf ? `${wf.ttf.no_ttf} - ` : ''}{fmtDate(wf.ttf.tanggal_menerima)}
-                      </Ref>
+                    ? <Ref mono={false} onClick={panelTtf} title="Lihat ringkas TTF">{fmtDate(wf.ttf.tanggal_menerima)}</Ref>
                     : <span style={{ color: C.inkFaint }}>Belum ada</span>}
                 </MetaRow>
               </div>
@@ -737,7 +754,7 @@ export default function InvoiceDetailPage({
                     {inv.is_reimbursement ? 'Ya' : 'Tidak'}
                   </MetaRow>
                   {inv.is_reimbursement && (
-                    <Hint>Penanda ini belum mengubah perhitungan pajak apa pun.</Hint>
+                    <Hint>Penanda saja. Tidak mengubah perhitungan pajak.</Hint>
                   )}
                   <MetaRow label="Sumber">{inv.source_type === 'sp_storbit' ? 'SP Storbit' : inv.source_type}</MetaRow>
                   <MetaRow label="NPWP customer" mono>
@@ -759,7 +776,7 @@ export default function InvoiceDetailPage({
                       : <span style={{ color: C.inkFaint }}>Belum pernah dikirim</span>}
                   </MetaRow>
                   {!inv.emailed_at && (
-                    <Hint>Pengiriman invoice lewat email belum dibangun; kolom ini penandanya saja.</Hint>
+                    <Hint>Pengiriman invoice lewat email belum tersedia.</Hint>
                   )}
                   <MetaRow label="Menggantikan">
                     {inv.replaces
@@ -793,23 +810,43 @@ export default function InvoiceDetailPage({
                   <>
                     <FormGrid min={200}>
                       <ModalField label="No. Faktur Pajak">
+                        {/* ⛔ SENGAJA TANPA validasi/contoh format. Format nomor di
+                            Coretax belum dikonfirmasi Finance (09_ROADMAP.md,
+                            Pertanyaan untuk Finance) — memasang pola sekarang
+                            berarti menolak nomor yang sah. Placeholder-nya
+                            netral, bukan contoh e-Faktur lama. */}
                         <ModalInp
                           value={ex.taxForm.fakturNo}
-                          placeholder="010.000-26.12345678"
+                          placeholder="Nomor faktur dari Coretax"
                           readOnly={!!inv.faktur_no && !ex.isSuperAdmin}
                           onChange={(e) => ex.setTaxForm((f) => ({ ...f, fakturNo: e.target.value }))}
                         />
                         {!!inv.faktur_no && !ex.isSuperAdmin && (
-                          <span style={{ fontSize: 11, color: C.inkFaint }}>Sudah terisi. Hanya Super Admin yang boleh mengubahnya.</span>
+                          <span style={{ fontSize: 11, color: C.inkFaint }}>Sudah diisi. Hanya Super Admin yang bisa mengubahnya.</span>
                         )}
                       </ModalField>
                       <ModalField label="Kode Transaksi Coretax">
-                        <ModalInp
+                        {/* Daftar tetap 01..10. Dropdown = kenyamanan; yang
+                            menjaga tetap RPC set_invoice_tax_info (berkas 11). */}
+                        <Sel
                           value={ex.taxForm.coretaxTxCode}
-                          placeholder="[05] 05 - Besaran tertentu"
-                          readOnly={!!inv.coretax_tx_code && !ex.isSuperAdmin}
+                          disabled={!!inv.coretax_tx_code && !ex.isSuperAdmin}
                           onChange={(e) => ex.setTaxForm((f) => ({ ...f, coretaxTxCode: e.target.value }))}
-                        />
+                        >
+                          <option value="">— Pilih kode —</option>
+                          {/* Nilai lama yang tidak ada di daftar tetap ditampilkan
+                              apa adanya, supaya tidak hilang dari layar. */}
+                          {ex.taxForm.coretaxTxCode
+                            && !CORETAX_TX_CODES.some((k) => k.label === ex.taxForm.coretaxTxCode) && (
+                            <option value={ex.taxForm.coretaxTxCode}>{ex.taxForm.coretaxTxCode}</option>
+                          )}
+                          {CORETAX_TX_CODES.map((k) => (
+                            <option key={k.code} value={k.label}>{k.label}</option>
+                          ))}
+                        </Sel>
+                        {!!inv.coretax_tx_code && !ex.isSuperAdmin && (
+                          <span style={{ fontSize: 11, color: C.inkFaint }}>Sudah diisi. Hanya Super Admin yang bisa mengubahnya.</span>
+                        )}
                       </ModalField>
                     </FormGrid>
                     <div style={{ marginTop: SP.s3 }}>
@@ -827,10 +864,7 @@ export default function InvoiceDetailPage({
                       {inv.coretax_tx_code || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Belum ada</span>}
                     </MetaRow>
                     <div style={{ marginTop: SP.s2 }}>
-                      <Notice tone="attn" icon={AlertTriangle}>
-                        Peran kamu boleh MELIHAT data pajak ini tapi belum boleh mengisinya —
-                        server hanya menerima <b>Finance</b>, <b>Finance Controller</b>, atau <b>Super Admin</b>.
-                      </Notice>
+                      <Notice tone="attn" icon={AlertTriangle}>{ALASAN_PAJAK}</Notice>
                     </div>
                   </>
                 )}
@@ -848,15 +882,16 @@ export default function InvoiceDetailPage({
                   </Terkunci>
                 </div>
 
+                {/* Kedua tombol sengaja TAMPIL nonaktif, bukan disembunyikan:
+                    jalurnya direncanakan, dan menyembunyikannya membuat orang
+                    mencarinya berulang kali. */}
                 <div style={{ marginTop: SP.s3, display: 'flex', gap: SP.s2, flexWrap: 'wrap' }}>
-                  <Btn icon={Download} disabled title="Integrasi Coretax belum tersambung">Unduh XLSX Coretax</Btn>
-                  <Btn icon={Download} disabled title="Integrasi Coretax belum tersambung">Unduh XML Coretax</Btn>
+                  <Btn icon={Download} disabled title="Belum tersedia.">Unduh XLSX Coretax</Btn>
+                  <Btn icon={Download} disabled title="Belum tersedia.">Unduh XML Coretax</Btn>
                 </div>
                 <div style={{ marginTop: SP.s2 }}>
                   <Notice tone="info" icon={Stamp}>
-                    <b>Coretax belum tersambung.</b> Kedua tombol unduh di atas sengaja tampil nonaktif,
-                    bukan disembunyikan: jalurnya direncanakan, dan menyembunyikannya membuat orang
-                    mencarinya berulang kali. Nomor Faktur Pajak hari ini diisi dari luar Nexus.
+                    Unduh Coretax belum tersedia. Nomor Faktur Pajak sementara diisi dari aplikasi Coretax.
                   </Notice>
                 </div>
               </div>
@@ -876,7 +911,7 @@ export default function InvoiceDetailPage({
                     <Btn
                       size="sm" icon={Upload} onClick={() => berkasRef.current?.click()}
                       disabled={!ex.bolehUnggah || ex.uploading || ex.attachments.length >= 10}
-                      title={ex.bolehUnggah ? undefined : 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengunggah.'}
+                      title={ex.bolehUnggah ? undefined : ALASAN_UNGGAH}
                     >
                       {ex.uploading ? 'Mengunggah…' : 'Unggah'}
                     </Btn>
@@ -918,10 +953,9 @@ export default function InvoiceDetailPage({
 
                 <div>
                   <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Catatan internal</div>
-                  <Hint>
-                    Catatan tidak bisa disunting setelah dikirim — jejak yang bisa ditulis ulang
-                    bukan jejak. Salah tulis: kirim catatan baru.
-                  </Hint>
+                  {/* Append-only DISENGAJA: jejak yang bisa ditulis ulang bukan
+                      jejak. Alasannya di 20260928000009; di layar cukup akibatnya. */}
+                  <Hint>Catatan tidak bisa diubah setelah dikirim. Kalau salah, kirim catatan baru.</Hint>
                   <div style={{ marginTop: SP.s2 }}>
                     <textarea
                       value={ex.noteDraft}
@@ -1111,7 +1145,7 @@ export default function InvoiceDetailPage({
             title="Tanda Terima Faktur" icon={Stamp}
             right={wf.ttf?.tanggal_menerima && !wf.ttfEditing ? (
               <Btn size="sm" variant="ghost" icon={Pencil} onClick={wf.mulaiEditTtf} disabled={!wf.canMarkTtf}
-                title={wf.canMarkTtf ? undefined : 'Hanya manager ke atas, Finance Controller, atau Super Admin.'}>
+                title={wf.canMarkTtf ? undefined : ALASAN_TTF}>
                 Ubah
               </Btn>
             ) : null}
@@ -1130,7 +1164,7 @@ export default function InvoiceDetailPage({
                 {!wf.canMarkTtf && (
                   <div style={{ marginBottom: SP.s2 }}>
                     <Notice tone="attn" icon={AlertTriangle}>
-                      Hanya manager ke atas, Finance Controller, atau Super Admin yang bisa menandai TTF.
+                      {ALASAN_TTF}
                     </Notice>
                   </div>
                 )}
@@ -1170,7 +1204,7 @@ export default function InvoiceDetailPage({
                 <div style={{ marginTop: SP.s2 }}>
                   <Btn
                     size="sm" icon={Stamp} onClick={wf.mulaiEditTtf} disabled={!wf.canMarkTtf}
-                    title={wf.canMarkTtf ? undefined : 'Hanya manager ke atas, Finance Controller, atau Super Admin.'}
+                    title={wf.canMarkTtf ? undefined : ALASAN_TTF}
                   >
                     Catat TTF
                   </Btn>

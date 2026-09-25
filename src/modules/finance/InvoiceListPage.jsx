@@ -139,7 +139,7 @@ export default function InvoiceListPage({ onOpenInvoice }) {
 
       {error && (
         <Notice tone="danger" icon={AlertTriangle}>
-          Gagal memuat daftar invoice: {error.message || 'unknown error'}
+          Daftar invoice gagal dimuat: {error.message || 'penyebab tidak diketahui'}
         </Notice>
       )}
 
