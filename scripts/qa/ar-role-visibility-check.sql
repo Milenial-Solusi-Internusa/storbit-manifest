@@ -40,6 +40,13 @@ BEGIN
     akun text, entitas text, siap int, siap_harapan int,
     daftar int, daftar_harapan int, hasil text
   ) ON COMMIT DROP;
+  -- Sejak 28 Sep 2026 tabel ini memuat TIGA jenis baris, bukan satu:
+  --   <entitas>              -> Siap Ditagih / Daftar Invoice (bagian 1)
+  --   <entitas> lampiran     -> invoice_attachments terlihat (bagian 2)
+  --   <entitas> catatan      -> invoice_notes terlihat       (bagian 2)
+  --   <entitas> helper=RLS   -> invoice_dapat_dibaca vs RLS  (bagian 3)
+  -- Kolom yang tidak relevan untuk sebuah baris sengaja NULL, bukan 0 --
+  -- supaya "tidak diukur" tidak terbaca sebagai "diukur dan nol".
 
   FOR r IN
     -- Tiap akun uji DI TIAP ENTITAS yang benar-benar bisa ia pilih di
@@ -88,6 +95,89 @@ BEGIN
     ELSE
       v_gagal := v_gagal + 1;
       INSERT INTO _hasil VALUES (r.email, r.entitas, v_siap, v_h_siap, v_daftar, v_h_daftar, 'GAGAL');
+    END IF;
+  END LOOP;
+
+  -- ===========================================================================
+  -- BAGIAN 2 -- dua TABEL BARU (invoice_attachments, invoice_notes) pada dua
+  -- akun Finance di SOA. Tanpa blok ini kedua tabel itu tidak pernah diuji
+  -- RLS-nya sama sekali; V12i cuma menghitungnya sebagai `postgres`, yang
+  -- melihat semuanya.
+  -- Harapan = jumlah fixture 07-fixture-invoice-v2.sql: 2 lampiran, 3 catatan.
+  -- ===========================================================================
+  FOR r IN
+    SELECT p.id AS uid, p.email, c.id AS company_id, c.code AS entitas
+      FROM profiles p
+      JOIN user_roles ur ON ur.user_id = p.id AND ur.is_active = true
+      JOIN companies c   ON c.id = ur.company_id
+     WHERE p.email IN ('zzztest.finance@msi.com','zzztest.controller@msi.com')
+       AND c.id = v_soa
+     GROUP BY p.id, p.email, c.id, c.code
+     ORDER BY p.email
+  LOOP
+    PERFORM set_config('request.jwt.claim.sub', r.uid::text, true);
+    PERFORM set_config('role', 'authenticated', true);
+    SELECT count(*) INTO v_siap   FROM invoice_attachments WHERE deleted_at IS NULL;
+    SELECT count(*) INTO v_daftar FROM invoice_notes       WHERE deleted_at IS NULL;
+    PERFORM set_config('role', 'postgres', true);
+
+    v_total := v_total + 1;
+    IF v_siap = 2 THEN
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' lampiran', v_siap, 2, NULL, NULL, 'LOLOS');
+    ELSE
+      v_gagal := v_gagal + 1;
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' lampiran', v_siap, 2, NULL, NULL, 'GAGAL');
+    END IF;
+
+    v_total := v_total + 1;
+    IF v_daftar = 3 THEN
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' catatan', NULL, NULL, v_daftar, 3, 'LOLOS');
+    ELSE
+      v_gagal := v_gagal + 1;
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' catatan', NULL, NULL, v_daftar, 3, 'GAGAL');
+    END IF;
+  END LOOP;
+
+  -- ===========================================================================
+  -- BAGIAN 3 -- invoice_dapat_dibaca() HARUS sepakat dengan policy
+  -- sp_invoices_read.
+  --
+  -- Fungsi itu adalah SALINAN syarat policy (berkas 7, 20260928000007), dibuat
+  -- karena fungsi SECURITY DEFINER tidak bisa menumpang RLS pemanggilnya.
+  -- Salinan yang tidak pernah dibandingkan dengan aslinya adalah divergensi
+  -- yang menunggu waktu -- kelas TD-233, dan gagalnya SENYAP: pemakai yang
+  -- seharusnya boleh menandai cetak / menulis catatan akan ditolak, atau
+  -- sebaliknya, tanpa satu pun error.
+  --
+  -- Dibandingkan sebagai ANGKA di sesi user asli: berapa invoice yang lolos
+  -- fungsi itu vs berapa yang sungguh terlihat lewat RLS.
+  -- ===========================================================================
+  FOR r IN
+    SELECT p.id AS uid, p.email, c.id AS company_id, c.code AS entitas
+      FROM profiles p
+      JOIN user_roles ur ON ur.user_id = p.id AND ur.is_active = true
+      JOIN companies c   ON c.id = ur.company_id
+     WHERE p.email LIKE 'zzztest.%@msi.com' OR p.email = 'test@msi.com'
+     GROUP BY p.id, p.email, c.id, c.code
+     ORDER BY p.email, c.code
+  LOOP
+    PERFORM set_config('request.jwt.claim.sub', r.uid::text, true);
+    PERFORM set_config('role', 'authenticated', true);
+    -- Terlihat lewat RLS.
+    SELECT count(*) INTO v_daftar FROM sp_invoices WHERE deleted_at IS NULL;
+    -- Lolos helper. Dihitung atas SELURUH invoice yang terlihat sesi ini --
+    -- helper-nya SECURITY DEFINER, jadi ia menjawab untuk id apa pun.
+    SELECT count(*) INTO v_siap
+      FROM (SELECT id FROM sp_invoices WHERE deleted_at IS NULL) z
+     WHERE invoice_dapat_dibaca(z.id);
+    PERFORM set_config('role', 'postgres', true);
+
+    v_total := v_total + 1;
+    IF v_siap = v_daftar THEN
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' helper=RLS', v_siap, v_daftar, NULL, NULL, 'LOLOS');
+    ELSE
+      v_gagal := v_gagal + 1;
+      INSERT INTO _hasil VALUES (r.email, r.entitas || ' helper=RLS', v_siap, v_daftar, NULL, NULL, 'GAGAL');
     END IF;
   END LOOP;
 

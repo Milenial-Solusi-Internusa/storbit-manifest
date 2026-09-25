@@ -75,6 +75,30 @@ const DIKETAHUI = [
     cocok: (kat, kunci) => kat === 'fungsi' && /^(seed_uat_build|seed_uat_bill|derive_status)\(/.test(kunci),
     alasan: 'fungsi bantu seed data dummy UAT (scripts/seed/uat/) -- staging saja, dan dihapus oleh 99-purge',
   },
+  {
+    // ENTRI TERPISAH dari entri AR Tahap 1/2 di atas, dan itu disengaja: dua
+    // gelombang dengan alasan berbeda harus bisa dibedakan. Kalau keduanya
+    // digabung, hari launching tidak bisa lagi menjawab "yang mana yang sudah
+    // naik" tanpa membaca doc 12 baris per baris.
+    //
+    // Invoice lengkap (20260928000001..10), doc 12 butir 16-24. LIVE staging,
+    // produksi belum, urutannya mengikat.
+    cocok: (kat, kunci) =>
+      (kat === 'kolom' && /^(sp_invoice_lines|invoice_attachments|invoice_notes)$/.test(kunci))
+      || (kat === 'fungsi' && /^(invoice_journal_projection|post_invoice_journal|invoice_dapat_dibaca|set_invoice_tax_info|mark_invoice_printed|mark_invoice_emailed|link_replacement_invoice|add_invoice_attachment|delete_invoice_attachment|add_invoice_note|delete_invoice_note)\(/.test(kunci))
+      || (kat === 'policy' && /^(invoice_attachments|invoice_notes)\./.test(kunci)),
+    alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..10, doc 12 butir 16-24) -- LIVE staging, produksi belum, urutannya mengikat',
+  },
+  {
+    // !! sp_invoices sudah tercakup entri AR Tahap 1/2 di atas untuk kategori
+    // `kolom`, jadi 20 kolom baru berkas 1 tidak butuh entri sendiri. Yang
+    // TIDAK tercakup adalah perubahan HAK-nya, dan sidik jari skrip ini tidak
+    // membaca relacl/attacl tabel sama sekali -- pencabutan INSERT/UPDATE
+    // (berkas 1 dan 4) karena itu TIDAK akan muncul sebagai drift. Itu batas
+    // alat ini, bukan tanda tidak ada perbedaan: periksa lewat doc 12 butir 19.
+    cocok: () => false,
+    alasan: '(penanda dokumentasi, tidak mencocokkan apa pun)',
+  },
 ];
 
 function klasifikasi(kat, kunci) {
