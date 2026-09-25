@@ -1,7 +1,8 @@
 -- =============================================================================
 -- 02-scenario-1.sql -- 12 SP BELUM DITAGIH
 --
--- Prasyarat: 00-guards.sql + 01-stock.sql + 01b-helper.sql di sesi yang SAMA.
+-- Prasyarat: 01-stock.sql + 01b-helper.sql sudah dijalankan (berkas terpisah,
+--   sesi terpisah -- keduanya sudah commit saat berkas ini mulai).
 --
 -- !! Status akhir SP TIDAK dipaksa. Ia diturunkan sp_recompute_status dari
 -- keadaan nyata (qty terkirim, status Surat Jalan, ada/tidak BTB). Kalau hasil
@@ -20,6 +21,13 @@
 --             POPA6       6faf3425-d43d-4bd2-b47a-8ec3c5ac2ac3
 --             RAILCARD    91f42e88-de59-49ef-b894-ab166819834e
 -- =============================================================================
+
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
 
 -- 9100001, 9100002 : MENUNGGU_KONFIRMASI_DC
 --   Kirim PENUH (pct 100) tapi Surat Jalan dibiarkan in_transit (deliver=false).

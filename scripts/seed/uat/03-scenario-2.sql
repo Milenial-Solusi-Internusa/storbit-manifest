@@ -10,8 +10,16 @@
 -- entry_date = signed_date masing-masing. Tanpa SP seperti ini, pemecahan jurnal
 -- dan proporsi ongkos kirim per Surat Jalan tidak pernah teruji.
 --
--- Prasyarat: 00-guards.sql + 01-stock.sql + 01b-helper.sql di sesi yang SAMA.
+-- Prasyarat: 01-stock.sql + 01b-helper.sql sudah dijalankan (berkas terpisah,
+--   sesi terpisah -- keduanya sudah commit saat berkas ini mulai).
 -- =============================================================================
+
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
 
 -- 9100013 : satu Surat Jalan, satu item (bentuk paling umum di produksi)
 SELECT seed_uat_build('9100013','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661',

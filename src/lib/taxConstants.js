@@ -59,3 +59,33 @@ export const PPN_LABEL_PCT = 12;
  * (kolom DB, beda definisi) dan TIDAK ikut dijumlahkan ke Grand Total.
  */
 export const DPP_NILAI_LAIN_RATIO = 11 / 12;
+
+/**
+ * Kode Transaksi Faktur Pajak (Coretax) — daftar tetap 01..10.
+ *
+ * Nilai yang DISIMPAN di `sp_invoices.coretax_tx_code` adalah `label` di bawah,
+ * apa adanya. RPC `set_invoice_tax_info` (20260928000011) memvalidasinya, tapi
+ * ⚠️ yang diperiksa server HANYA KODE-nya (dua digit di dalam kurung siku),
+ * BUKAN kata-kata keterangannya.
+ *
+ * Itu disengaja: keterangan tiap kode masih menunggu konfirmasi Finance
+ * (`09_ROADMAP.md` §Pertanyaan untuk Finance), dan memvalidasi kalimat berarti
+ * setiap koreksi kata akan menolak data yang sudah tersimpan. Yang benar-benar
+ * mengikat adalah kodenya; kalimatnya keterangan.
+ *
+ * ⛔ Kalau daftar ini berubah, daftar di RPC WAJIB ikut — kelas checklist
+ * TD-233. Yang mengikat di sana cuma himpunan kode, jadi menambah/menghapus
+ * BARIS berarti menyentuh keduanya; mengubah KALIMAT tidak.
+ */
+export const CORETAX_TX_CODES = [
+  { code: '01', label: '[01] 01 - Kepada Pihak yang Bukan Pemungut PPN' },
+  { code: '02', label: '[02] 02 - Kepada Pemungut PPN Instansi Pemerintah' },
+  { code: '03', label: '[03] 03 - Kepada Pemungut PPN Selain Instansi Pemerintah' },
+  { code: '04', label: '[04] 04 - DPP Nilai Lain' },
+  { code: '05', label: '[05] 05 - Besaran Tertentu' },
+  { code: '06', label: '[06] 06 - Penyerahan Lainnya' },
+  { code: '07', label: '[07] 07 - Penyerahan yang PPN atau PPnBM Tidak Dipungut' },
+  { code: '08', label: '[08] 08 - Penyerahan yang PPN atau PPnBM Dibebaskan' },
+  { code: '09', label: '[09] 09 - Penyerahan Aktiva Pasal 16D' },
+  { code: '10', label: '[10] 10 - Penyerahan yang PPN-nya Dipungut oleh Pihak Lain' },
+];

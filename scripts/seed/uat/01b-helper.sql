@@ -9,9 +9,16 @@
 -- dan menuliskannya tiga kali akan melahirkan tiga salinan yang pasti melenceng.
 -- Dinomori 01b supaya urutan berkas rencana lainnya tidak bergeser.
 --
--- Prasyarat: 00-guards.sql sudah dijalankan di sesi yang SAMA (GUC impersonasi),
--- dan 01-stock.sql sudah mengisi stok.
+-- Prasyarat: nol untuk berkas ini (palangnya dipanggil sendiri di bawah).
+-- Yang memakai fungsinya (02/03/04) butuh 01-stock.sql sudah mengisi stok.
 -- =============================================================================
+
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
 
 -- =============================================================================
 -- derive_status -- cermin derivePickingItemStatus (src/lib/db.js:658)

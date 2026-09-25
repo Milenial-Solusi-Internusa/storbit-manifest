@@ -130,3 +130,28 @@ export function isManagerOrAbove(erpRoles, { companyId } = {}) {
 // isSalesOnly — flag RESTRIKTIF, dievaluasi terhadap role UTAMA (string kode),
 // bukan erpRoles. Lihat catatan SALES_ONLY_ROLES.
 export const isSalesOnly = (erpRole) => SALES_ONLY_ROLES.includes(erpRole);
+
+// ─── AR / Invoice (AR Tahap 2) ────────────────────────────────────────────
+// CERMIN guard RPC, bukan kebijakan baru. Tiga permukaan tombol di modul
+// Finance memakainya untuk memutuskan tombolnya NONAKTIF atau tidak — bukan
+// untuk MENYEMBUNYIKANNYA (keputusan Den K-6: kalau DB akan menolak, tombolnya
+// tetap tampil dengan alasan tertulis).
+//
+// ⛔ Kalau daftar role di RPC-nya berubah, ubah DI SINI juga — dua tempat yang
+// wajib bergerak bersama (kelas checklist TD-233).
+//
+//   create_invoice_for_sp / submit_invoice :
+//       is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')
+//   record_payment :
+//       is_super_admin() OR has_role('finance_controller')
+//
+// Perhatikan: role `finance` polos TIDAK lolos keduanya. Itu keadaan hari ini,
+// dan melonggarkannya = pekerjaan AR Tahap 3, bukan tambalan FE.
+export function canIssueInvoice(erpRoles, opt) {
+  return isSuperAdmin(erpRoles, opt)
+      || isManagerOrAbove(erpRoles, opt)
+      || hasAnyRole(erpRoles, ['finance_controller'], opt);
+}
+export function canRecordInvoicePayment(erpRoles, opt) {
+  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller'], opt);
+}

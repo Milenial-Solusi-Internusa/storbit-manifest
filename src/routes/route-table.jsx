@@ -25,6 +25,7 @@
 import ContextHeader from './ContextHeader.jsx';
 import { crmRoutes } from './crm.routes.jsx';
 import { logisticsWarehouseRoutes } from './logistics-warehouse.routes.jsx';
+import { financeRoutes } from './finance.routes.jsx';
 import { skeletonRoutes } from './skeleton.routes.jsx';
 import { redirectRoutes } from './redirects.routes.jsx';
 import { legacyMenuRoutes } from './legacy.routes.jsx';
@@ -40,6 +41,7 @@ export const childRoutes = [
     children: [
       ...crmRoutes,
       ...logisticsWarehouseRoutes,
+      ...financeRoutes,
       ...skeletonRoutes,
       ...legacyMenuRoutes,
     ],

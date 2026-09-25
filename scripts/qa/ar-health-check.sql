@@ -10,6 +10,10 @@
 --   psql "$DB_URL" -f scripts/qa/ar-health-check.sql
 --   salin BAGIAN A ke Supabase SQL Editor (satu query, tanpa perintah psql)
 --
+-- !! Baris \set dan \echo di berkas ini adalah perintah psql, BUKAN SQL. Kalau
+-- disalin ke SQL Editor, salin BAGIAN A saja -- seperti tertulis di atas --
+-- bukan seluruh berkas.
+--
 -- -----------------------------------------------------------------------------
 -- KENAPA ADA
 -- -----------------------------------------------------------------------------
@@ -66,9 +70,19 @@
 -- Terkait: TD-275 - 12_ANTREAN_MIGRASI_PRODUCTION.md butir 6 dan 9.
 -- =============================================================================
 
+-- ON_ERROR_STOP: query yang error harus MENGHENTIKAN berkas ini dan membuat
+-- psql keluar dengan kode != 0, bukan dicetak lalu dilewati.
+--
+-- Pelajarannya sudah dibayar: B3 di bawah menyebut kolom `je.entry_no` yang
+-- TIDAK PERNAH ADA di journal_entries. Tanpa bendera ini psql mencetak ERROR-nya
+-- lalu melanjutkan, jadi berkas ini tampak "jalan" sambil satu pemeriksaannya
+-- tidak pernah dijalankan sekali pun. Cek kesehatan yang diam-diam melewati
+-- pemeriksaannya sendiri lebih buruk daripada tidak ada cek sama sekali.
+\set ON_ERROR_STOP on
+
 
 -- =============================================================================
--- BAGIAN A -- RINGKASAN. Satu query, enam baris.
+-- BAGIAN A -- RINGKASAN. Satu query, TUJUH baris (H7 ditambahkan 28 Sep 2026).
 -- =============================================================================
 WITH inv AS (
   SELECT i.id,
@@ -158,6 +172,36 @@ SELECT 'H6',
  WHERE dni.sp_order_item_id IS NULL
    AND dn.status <> 'cancelled'
 
+UNION ALL
+-- H7 -- invariant BARU, lahir bersama kolom uang di baris invoice
+-- (20260928000002). Sebelum itu ia mustahil ada: baris invoice tidak punya
+-- kolom nilai sama sekali, jadi tidak ada yang bisa dibandingkan ke kepala.
+--
+-- Tiga identitas sekaligus, dihitung per invoice hidup:
+--     SUM(line_amount) + SUM(ppn) = total_amount
+--     SUM(dpp)                    = total_dpp
+--     SUM(ppn)                    = total_ppn
+--
+-- !! TANPA TOLERANSI, dan itu disengaja -- beda dari H2. Toleransi H2 ada
+-- karena jurnal dipecah per Surat Jalan dan tiap pecahan dibulatkan sendiri
+-- (n_jurnal x Rp1). Di sini tidak ada pemecahan: kepala diturunkan dari
+-- penjumlahan baris oleh create_invoice_for_sp, jadi selisih satu rupiah pun
+-- berarti ada yang menulis salah satu sisinya di luar jalur itu.
+--
+-- Invoice VOID ikut diperiksa: void membatalkan jurnalnya, bukan barisnya.
+SELECT 'H7',
+       'baris invoice <> kepala (line_amount/dpp/ppn vs total_*)',
+       count(*)::text, '0',
+       CASE WHEN count(*) = 0 THEN 'BERSIH' ELSE 'PERIKSA' END
+  FROM (SELECT i.id
+          FROM sp_invoices i
+          LEFT JOIN sp_invoice_lines sl ON sl.invoice_id = i.id
+         WHERE i.deleted_at IS NULL
+         GROUP BY i.id, i.total_amount, i.total_dpp, i.total_ppn
+        HAVING COALESCE(SUM(sl.line_amount), 0) + COALESCE(SUM(sl.ppn), 0) <> i.total_amount
+            OR COALESCE(SUM(sl.dpp), 0) <> i.total_dpp
+            OR COALESCE(SUM(sl.ppn), 0) <> i.total_ppn) t7
+
 ORDER BY 1;
 
 
@@ -165,6 +209,24 @@ ORDER BY 1;
 -- BAGIAN B -- RINCIAN. Jalankan hanya kalau BAGIAN A berbunyi PERIKSA.
 -- Keempatnya baca-saja dan tidak saling bergantung.
 -- =============================================================================
+
+-- B5 untuk H7 -- selisih per invoice, beserta ketiga sisinya. Kolom
+-- n_baris_ongkir memisahkan dua sebab yang tampak sama: invoice yang baris
+-- ongkirnya HILANG (SUM(line_amount) kurang) dari invoice yang baris ongkirnya
+-- ADA tapi nilainya meleset.
+SELECT i.invoice_no, i.status,
+       i.total_amount, COALESCE(SUM(sl.line_amount),0) + COALESCE(SUM(sl.ppn),0) AS baris_amount,
+       i.total_dpp,    COALESCE(SUM(sl.dpp),0) AS baris_dpp,
+       i.total_ppn,    COALESCE(SUM(sl.ppn),0) AS baris_ppn,
+       count(*) FILTER (WHERE sl.line_type = 'shipping') AS n_baris_ongkir
+  FROM sp_invoices i
+  LEFT JOIN sp_invoice_lines sl ON sl.invoice_id = i.id
+ WHERE i.deleted_at IS NULL
+ GROUP BY i.id, i.invoice_no, i.status, i.total_amount, i.total_dpp, i.total_ppn
+HAVING COALESCE(SUM(sl.line_amount),0) + COALESCE(SUM(sl.ppn),0) <> i.total_amount
+    OR COALESCE(SUM(sl.dpp),0) <> i.total_dpp
+    OR COALESCE(SUM(sl.ppn),0) <> i.total_ppn
+ ORDER BY abs(i.total_amount - (COALESCE(SUM(sl.line_amount),0) + COALESCE(SUM(sl.ppn),0))) DESC;
 
 -- B1 untuk H1 -- invoice non-void tanpa jurnal, beserta bahan diagnosanya.
 -- Kolom n_sj_bertandatangan menjelaskan SEBABNYA: create_invoice_for_sp
@@ -221,7 +283,11 @@ SELECT i.invoice_no, i.status, i.total_amount,
  LIMIT 50;
 
 -- B3 untuk H4 -- invoice void yang jurnal penerbitannya belum dicabut.
-SELECT i.invoice_no, i.status, i.total_amount, je.entry_no, je.entry_date
+-- Kolom jurnal yang dipakai SENGAJA hanya yang benar-benar ada di
+-- journal_entries: id, entry_date, description, created_at. Tabel itu TIDAK
+-- punya nomor dokumen -- jangan menambahkan `entry_no` lagi.
+SELECT i.invoice_no, i.status, i.total_amount,
+       je.id AS journal_entry_id, je.entry_date, je.description, je.created_at
   FROM sp_invoices i
   JOIN journal_entries je ON je.reference_type = 'invoice_issued' AND je.reference_id = i.id
  WHERE i.deleted_at IS NULL AND i.status = 'void'
@@ -249,3 +315,9 @@ SELECT o.sp_no, dn.do_no, dn.status, dn.signed_date,
  GROUP BY o.sp_no, dn.do_no, dn.status, dn.signed_date, dn.sp_order_id
 HAVING count(*) FILTER (WHERE dni.sp_order_item_id IS NULL) > 0
  ORDER BY o.sp_no, dn.do_no;
+
+-- Penanda SELESAI. Dengan ON_ERROR_STOP di atas, baris ini hanya tercetak kalau
+-- SELURUH query di berkas ini jalan. Skrip gerbang memeriksa keberadaannya,
+-- sehingga keluaran yang berhenti di tengah terlihat sebagai GAGAL, bukan
+-- tersamar sebagai lolos karena tabel-tabel sebelumnya tercetak rapi.
+\echo '=== ar-health-check SELESAI: seluruh query jalan ==='

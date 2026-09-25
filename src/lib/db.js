@@ -1609,3 +1609,414 @@ export async function getStorbitTopOutstandingProducts({ companyId = null, limit
   });
   return { data: data || [], error };
 }
+
+// ============================================================
+// AR TAHAP 2 — Invoice Management (modul Finance)
+// ============================================================
+
+/**
+ * Kesiapan tagih seluruh SP terkirim penuh yang belum ber-invoice.
+ *
+ * Alasannya TIDAK dihitung di JavaScript: RPC `sp_invoice_readiness_all`
+ * memanggil `sp_invoice_readiness`, fungsi yang SAMA dengan yang dipakai guard
+ * `create_invoice_for_sp` untuk menolak. Jadi apa yang halaman tampilkan sebagai
+ * alasan selalu = alasan yang sungguh menolak di DB (AR Tahap 2, keputusan K-2).
+ * ⛔ Jangan menambahkan penyaringan alasan di sisi FE — tambahkan di fungsi DB-nya
+ * supaya guard dan tampilan tetap satu kode.
+ *
+ * `sp_invoice_readiness_all` SECURITY INVOKER → RLS yang menentukan SP mana yang
+ * terlihat; `sp_invoice_readiness` di dalamnya SECURITY DEFINER → alasannya
+ * dihitung dari seluruh baris, bukan dari yang kebetulan terlihat pemakai.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getInvoiceReadinessAll(companyId = null) {
+  const { data, error } = await supabase.rpc('sp_invoice_readiness_all', {
+    p_company_id: companyId || null,
+  });
+  return { data: data || [], error };
+}
+
+/** Kesiapan tagih SATU SP. Dipakai saat halaman perlu menyegarkan satu baris. */
+export async function getInvoiceReadiness(spOrderId) {
+  const { data, error } = await supabase.rpc('sp_invoice_readiness', {
+    p_sp_order_id: spOrderId,
+  });
+  // RETURNS TABLE → PostgREST mengembalikan array; yang dipakai baris pertama.
+  return { data: Array.isArray(data) ? (data[0] || null) : (data || null), error };
+}
+
+/**
+ * Daftar invoice untuk InvoiceListPage.
+ *
+ * `.limit(1000)` WAJIB (default PostgREST 10). Nama customer diambil lewat embed
+ * dua tingkat sp_orders → accounts; kalau RLS menyembunyikan account-nya, yang
+ * hilang cuma namanya, barisnya tetap tampil — invoice yang ada tapi tak bisa
+ * dibaca namanya lebih baik terlihat daripada hilang tanpa penjelasan.
+ */
+export async function listInvoices({ companyId = null } = {}) {
+  let q = supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, invoice_date, due_date, status,
+      total_dpp, total_ppn, total_amount, sp_order_id,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, customer_id, company_id,
+        accounts:accounts!sp_orders_customer_id_fkey ( name ) )
+    `)
+    .is('deleted_at', null)
+    .order('invoice_date', { ascending: false })
+    .limit(1000);
+  if (companyId) q = q.eq('company_id', companyId);
+  const { data, error } = await q;
+  return { data: data || [], error };
+}
+
+/** Satu invoice beserta SP-nya — dipakai InvoiceDetailPage untuk resolve sp_order_id. */
+export async function getInvoiceById(invoiceId) {
+  const { data, error } = await supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, invoice_date, due_date, status,
+      total_dpp, total_ppn, total_amount, sp_order_id, company_id,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, customer_id,
+        accounts:accounts!sp_orders_customer_id_fkey ( name ) )
+    `)
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  return { data, error };
+}
+
+/**
+ * Sigma (amount + pph) per invoice untuk SEKUMPULAN invoice — dipakai kolom
+ * "Sisa" di Daftar Invoice.
+ *
+ * ⚠️ Pemanggilnya WAJIB mengirim daftar yang PENDEK. Hanya invoice berstatus
+ * `partial` yang sungguh perlu dihitung: `issued`/`submitted` menurut definisi
+ * belum punya pembayaran (record_payment yang memindahkannya ke partial/paid),
+ * dan `paid`/`void` sisanya nol. Mengirim seluruh 1000 id = rantai `.in()`
+ * puluhan KB di URL — kelas masalah yang justru dicabut Gelombang 2 (9 Sep
+ * 2026); jangan dihidupkan lagi lewat pintu ini.
+ *
+ * @returns {Promise<{data: Record<string, number>, error: object|null}>}
+ */
+export async function getPaymentTotalsByInvoice(invoiceIds = []) {
+  const ids = (invoiceIds || []).filter(Boolean);
+  if (ids.length === 0) return { data: {}, error: null };
+  const { data, error } = await supabase
+    .from('sp_payments')
+    .select('invoice_id, amount, pph')
+    .in('invoice_id', ids)
+    .limit(1000);
+  const map = {};
+  (data || []).forEach((p) => {
+    map[p.invoice_id] = (map[p.invoice_id] || 0) + (Number(p.amount) || 0) + (Number(p.pph) || 0);
+  });
+  return { data: map, error };
+}
+
+/**
+ * Semua yang dibutuhkan LAYAR Detail Invoice dalam satu panggilan — kartu
+ * dokumen (Ditagihkan ke, DC tujuan, baris invoice), blok pajak, dan riwayat.
+ *
+ * ⛔ SENGAJA TERPISAH dari `getInvoicePdfData`, dan JANGAN digabung. PDF-nya
+ * adalah dokumen yang dipegang CUSTOMER: ia sengaja tidak memuat DC sama sekali
+ * (keputusan Den 10 Sep 2026) dan sengaja sudah tidak membawa SKU (11 Sep 2026).
+ * Layar internal butuh keduanya. Menambahkan kolom ke fungsi PDF supaya layar
+ * kebagian = mengubah dokumen customer demi tampilan internal.
+ *
+ * 100% BACA — nol RPC, nol tulis. Tiap sub-query berdiri sendiri: kalau salah
+ * satunya ditolak RLS, yang hilang cuma bagian itu (tampil '—'), halamannya
+ * tetap terbuka. Hanya kegagalan membaca BARIS INVOICE-nya sendiri yang
+ * dilaporkan sebagai error — sisanya tidak boleh menjatuhkan halaman.
+ */
+export async function getInvoiceViewData(invoiceId) {
+  const { data: inv, error: invErr } = await supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, faktur_no, invoice_date, due_date, status, submitted_at,
+      total_dpp, total_ppn, total_amount, created_at, created_by,
+      sp_order_id, company_id,
+      source_type, customer_tax_id, payment_term_days, payment_term_label,
+      salesperson_id, sales_team, is_reimbursement, print_to, replaces_invoice_id,
+      printed_at, printed_by, print_count, emailed_at, emailed_by, coretax_tx_code,
+      use_dpp_nilai_lain, rounding_method, currency_code, fx_rate, total_amount_currency,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, sp_date, customer_id, company_id, dc_id )
+    `)
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (invErr) return { data: null, error: invErr };
+  if (!inv)   return { data: null, error: null };
+
+  const sp = inv.sp_orders || {};
+
+  const [linesRes, custRes, dcRes, creatorRes, salesRes, gantiRes, digantiRes] = await Promise.all([
+    supabase
+      .from('sp_invoice_lines')
+      // `sku` IKUT di sini (beda dari jalur PDF) — layar internal memakainya
+      // untuk mencocokkan baris dengan master produk. Satuan lewat
+      // sp_order_items.product_id -> products, sama seperti jalur PDF: kedua
+      // tabel snapshot tak punya kolom unit/uom.
+      // Sejak 20260928000002 baris invoice membawa snapshot-nya SENDIRI
+      // (produk, satuan, harga, akun, pajak). Embed ke sp_order_items/products
+      // DIPERTAHANKAN hanya sebagai cadangan untuk baris LAMA yang terbit
+      // sebelum migrasi itu -- bukan sebagai sumber utama lagi.
+      .select(`
+        id, position, qty, dpp, ppn, line_type, product_id, product_name, sku, uom,
+        description, unit_price, line_amount, account_id, tax_id, tax_rate,
+        discount_pct, analytic_ref, analytic_label, days,
+        chart_of_accounts:chart_of_accounts!sp_invoice_lines_account_id_fkey ( code, name ),
+        taxes:taxes!sp_invoice_lines_tax_id_fkey ( code, name, rate ),
+        sp_order_items(product_name, sku, unit_price, products(unit, uom))
+      `)
+      .eq('invoice_id', invoiceId)
+      .order('position', { ascending: true })
+      .limit(1000),
+    sp.customer_id
+      ? supabase.from('accounts').select('name, address').eq('id', sp.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    sp.dc_id
+      ? supabase.from('dc_master').select('kode, nama, wilayah, alamat').eq('id', sp.dc_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    inv.created_by
+      ? supabase.from('profiles').select('full_name').eq('id', inv.created_by).maybeSingle()
+      : Promise.resolve({ data: null }),
+    inv.salesperson_id
+      ? supabase.from('profiles').select('full_name').eq('id', inv.salesperson_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // Invoice yang DIGANTIKAN oleh yang ini.
+    inv.replaces_invoice_id
+      ? supabase.from('sp_invoices').select('id, invoice_no, status')
+          .eq('id', inv.replaces_invoice_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // Arah sebaliknya: yang MENGGANTIKAN invoice ini. Turunan, bukan kolom --
+    // dua kolom yang harus saling cocok pasti melenceng.
+    supabase.from('sp_invoices').select('id, invoice_no, status')
+      .eq('replaces_invoice_id', invoiceId).is('deleted_at', null).maybeSingle(),
+  ]);
+
+  return {
+    data: {
+      ...inv,
+      sp_no:       sp.sp_no || '',
+      sp_date:     sp.sp_date || null,
+      customer_id: sp.customer_id || null,
+      customer_name:    custRes.data?.name || '',
+      customer_address: (custRes.data?.address || '').trim(),
+      dc:          dcRes.data || null,
+      created_by_name:  creatorRes.data?.full_name || '',
+      salesperson_name: salesRes.data?.full_name || '',
+      replaces:     gantiRes.data || null,
+      replaced_by:  digantiRes.data || null,
+      // `||` bertingkat, bukan `??`: snapshot baris yang kosong-string harus
+      // ikut jatuh ke cadangan, bukan cuma yang NULL. Baris LAMA (sebelum
+      // 20260928000002) tidak punya snapshot sama sekali.
+      lines: (linesRes.data || []).map((l) => ({
+        id:           l.id,
+        line_type:    l.line_type || 'item',
+        product_id:   l.product_id || null,
+        product_name: l.product_name || l.sp_order_items?.product_name || '',
+        sku:          (l.sku || l.sp_order_items?.sku || '').trim(),
+        uom: ((l.uom || '').trim()
+           || (l.sp_order_items?.products?.unit || '').trim()
+           || (l.sp_order_items?.products?.uom  || '').trim()),
+        description:  l.description || '',
+        unit_price:   Number(l.unit_price) || Number(l.sp_order_items?.unit_price) || 0,
+        qty:          Number(l.qty) || 0,
+        line_amount:  Number(l.line_amount) || 0,
+        dpp:          Number(l.dpp) || 0,
+        ppn:          Number(l.ppn) || 0,
+        discount_pct: Number(l.discount_pct) || 0,
+        tax_rate:     Number(l.tax_rate) || 0,
+        tax_code:     l.taxes?.code || '',
+        tax_name:     l.taxes?.name || '',
+        account_code: l.chart_of_accounts?.code || '',
+        account_name: l.chart_of_accounts?.name || '',
+        analytic_ref: l.analytic_ref || '',
+        days:         l.days,
+      })),
+    },
+    error: null,
+  };
+}
+
+/**
+ * Sigma qty & Sigma shipped_qty satu SP — dipakai alur invoice untuk gate
+ * "Terbitkan Invoice" saat ia dirender DI LUAR halaman Detail SP (yang punya
+ * angkanya dari props).
+ */
+export async function getSpOrderQtySummary(spOrderId) {
+  const { data, error } = await supabase
+    .from('sp_order_items')
+    .select('qty, shipped_qty')
+    .eq('sp_order_id', spOrderId)
+    .limit(1000);
+  const rows = data || [];
+  return {
+    data: {
+      totalQty:   rows.reduce((s, r) => s + (Number(r.qty) || 0), 0),
+      shippedQty: rows.reduce((s, r) => s + (Number(r.shipped_qty) || 0), 0),
+    },
+    error,
+  };
+}
+
+// ============================================================================
+// Invoice lengkap (20260928000001..10) -- catatan, lampiran, dan empat RPC
+// pasca-terbit. SELURUH penulisan lewat RPC SECURITY DEFINER: sejak
+// 20260928000004, `authenticated` tidak punya hak tulis langsung ke
+// sp_invoice_lines maupun INSERT ke sp_invoices, jadi tidak ada jalur lain.
+// ============================================================================
+
+/** Catatan internal satu invoice, TERMASUK yang sudah dihapus.
+ *  Yang dihapus ikut dibawa supaya Riwayat bisa menampilkannya sebagai
+ *  "catatan dihapus" -- lini masa yang berlubang tanpa penjelasan lebih buruk
+ *  daripada satu baris yang menyatakan sesuatu pernah ada di situ. */
+/** Nama penulis untuk sekumpulan uuid. SATU query untuk seluruh daftar.
+ *  `invoice_notes.created_by` / `invoice_attachments.uploaded_by` SENGAJA tanpa
+ *  FK ke profiles (pola yang sama dengan `signed_date_filled_by`), jadi embed
+ *  PostgREST tidak tersedia dan penamaannya memang harus dua langkah. */
+async function namaPelaku(ids) {
+  const unik = [...new Set(ids.filter(Boolean))];
+  if (unik.length === 0) return {};
+  const { data } = await supabase.from('profiles').select('id, full_name').in('id', unik).limit(1000);
+  return Object.fromEntries((data || []).map((r) => [r.id, r.full_name || '']));
+}
+
+export async function listInvoiceNotes(invoiceId) {
+  const { data, error } = await supabase
+    .from('invoice_notes')
+    .select('id, body, created_by, created_at, deleted_at')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: false })
+    .limit(1000);
+  if (error) return { data: [], error };
+  const nama = await namaPelaku((data || []).map((n) => n.created_by));
+  return { data: (data || []).map((n) => ({ ...n, penulis: nama[n.created_by] || '' })), error: null };
+}
+
+/** Tulis catatan internal. Gate-nya BACA (siapa pun yang boleh membaca
+ *  invoice), ditegakkan di dalam RPC -- bukan daftar peran di FE. */
+export async function addInvoiceNote(invoiceId, body) {
+  const { data, error } = await supabase.rpc('add_invoice_note', {
+    p_invoice_id: invoiceId, p_body: body,
+  });
+  return { data, error };
+}
+
+/** Hapus catatan (soft delete; hanya penulis atau super_admin). */
+export async function deleteInvoiceNote(noteId) {
+  const { error } = await supabase.rpc('delete_invoice_note', { p_note_id: noteId });
+  return { error };
+}
+
+/** Lampiran hidup satu invoice (metadata). Byte-nya di bucket privat. */
+export async function listInvoiceAttachments(invoiceId) {
+  const { data, error } = await supabase
+    .from('invoice_attachments')
+    .select('id, storage_path, file_name, mime_type, size_bytes, uploaded_by, uploaded_at')
+    .eq('invoice_id', invoiceId)
+    .is('deleted_at', null)
+    .order('uploaded_at', { ascending: false })
+    .limit(1000);
+  if (error) return { data: [], error };
+  const nama = await namaPelaku((data || []).map((a) => a.uploaded_by));
+  return { data: (data || []).map((a) => ({ ...a, pengunggah: nama[a.uploaded_by] || '' })), error: null };
+}
+
+// Bucket + batas, dicerminkan dari 20260928000008. FE memvalidasi lebih dulu
+// supaya pemakai dapat pesan yang bisa dibaca; DB dan bucket tetap batas yang
+// sesungguhnya (tiga lapis, dan FE bukan salah satunya yang mengikat).
+export const INVOICE_DOC_BUCKET = 'invoice-docs';
+export const INVOICE_DOC_MAX_BYTES = 10 * 1024 * 1024;
+export const INVOICE_DOC_MIME = [
+  'application/pdf', 'image/jpeg', 'image/png',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/xml', 'application/xml',
+];
+
+/**
+ * Unggah lampiran: byte ke Storage, lalu metadata lewat RPC.
+ *
+ * Urutannya SENGAJA byte-dulu: kalau metadata ditulis lebih dulu lalu
+ * unggahannya gagal, daftar lampiran menunjuk berkas yang tidak ada. Kalau
+ * byte-nya yang lebih dulu dan metadata gagal, yang tertinggal adalah berkas
+ * yatim di bucket -- tidak terlihat siapa pun, dan tidak berbohong.
+ *
+ * Path WAJIB <company_id>/<invoice_id>/<uuid>.<ext>; RPC-nya menolak bentuk
+ * lain, dan policy storage menggerbang segmen pertamanya.
+ */
+export async function uploadInvoiceAttachment({ invoiceId, companyId, file }) {
+  if (!file) return { data: null, error: { message: 'Tidak ada berkas yang dipilih.' } };
+  if (file.size > INVOICE_DOC_MAX_BYTES) {
+    return { data: null, error: { message: `Berkas ${file.name} lebih dari 10 MB.` } };
+  }
+  if (!INVOICE_DOC_MIME.includes(file.type)) {
+    return { data: null, error: { message: `Jenis berkas ${file.type || '(tidak dikenali)'} tidak diterima. Hanya PDF, JPG, PNG, XLSX, dan XML.` } };
+  }
+  const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const path = `${companyId}/${invoiceId}/${crypto.randomUUID()}.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from(INVOICE_DOC_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (upErr) return { data: null, error: upErr };
+
+  const { data, error } = await supabase.rpc('add_invoice_attachment', {
+    p_invoice_id: invoiceId, p_storage_path: path, p_file_name: file.name,
+    p_mime_type: file.type, p_size_bytes: file.size,
+  });
+  return { data, error };
+}
+
+/** Hapus lampiran (soft delete metadata; byte-nya sengaja TIDAK dihapus --
+ *  dokumen pajak tidak dimusnahkan oleh satu klik). */
+export async function deleteInvoiceAttachment(attachmentId) {
+  const { error } = await supabase.rpc('delete_invoice_attachment', { p_attachment_id: attachmentId });
+  return { error };
+}
+
+/** URL bertanda tangan untuk mengunduh satu lampiran (bucket PRIVAT).
+ *  Berlaku 60 menit dan dibuat saat diklik, bukan disimpan. */
+export async function signInvoiceAttachment(storagePath) {
+  const { data, error } = await supabase.storage
+    .from(INVOICE_DOC_BUCKET).createSignedUrl(storagePath, 3600);
+  return { data: data?.signedUrl || null, error };
+}
+
+/** Isi nomor Faktur Pajak dan/atau kode transaksi Coretax. Isi SEKALI;
+ *  mengubah yang sudah terisi hanya super_admin. Berjejak di audit_logs. */
+export async function setInvoiceTaxInfo({ invoiceId, fakturNo = null, coretaxTxCode = null }) {
+  const { error } = await supabase.rpc('set_invoice_tax_info', {
+    p_invoice_id: invoiceId,
+    p_faktur_no: fakturNo || null,
+    p_coretax_tx_code: coretaxTxCode || null,
+  });
+  return { error };
+}
+
+/** Tandai invoice sudah dicetak. Dipanggil SESUDAH blob PDF jadi, bukan
+ *  sebelum -- jejaknya harus mencatat cetakan yang sungguh terbentuk. */
+export async function markInvoicePrinted(invoiceId, variant = 'download') {
+  const { error } = await supabase.rpc('mark_invoice_printed', {
+    p_invoice_id: invoiceId, p_variant: variant,
+  });
+  return { error };
+}
+
+/** Tandai invoice sudah dikirim lewat email. ⚠️ Pengirimannya sendiri BELUM
+ *  dibangun; fungsi ini hanya penandanya. */
+export async function markInvoiceEmailed(invoiceId) {
+  const { error } = await supabase.rpc('mark_invoice_emailed', { p_invoice_id: invoiceId });
+  return { error };
+}
+
+/** Tautkan invoice pengganti ke invoice yang digantikan (harus VOID, satu
+ *  entitas, isi sekali). Jalur void + terbit ulang sendiri BELUM ada. */
+export async function linkReplacementInvoice(newInvoiceId, replacedInvoiceId) {
+  const { error } = await supabase.rpc('link_replacement_invoice', {
+    p_new_invoice_id: newInvoiceId, p_replaced_invoice_id: replacedInvoiceId,
+  });
+  return { error };
+}

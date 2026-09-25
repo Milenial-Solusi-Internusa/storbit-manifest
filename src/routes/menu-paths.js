@@ -150,8 +150,10 @@ export const PLANNED_MENU_IDS = Object.freeze([
   'ref-crm-customers-pointer',
   // Procurement placeholder
   'vendors', 'vendors-daftar', 'vendors-evaluasi', 'vendors-kontrak', 'vendors-blacklist',
-  // Finance placeholder
-  'billing',                                             // 'ap' → tab 6.3.1, 'accounting' → 6.4.1, 'cashBank' → 6.1.1
+  // Finance placeholder — 'billing' KELUAR dari daftar ini pada AR Tahap 2
+  // (25 Sep 2026): ia kini dipasang di tab 6.2.1 dan path-nya datang dari
+  // SKELETON_MENU_PATHS. 'ap' → tab 6.3.1, 'accounting' → 6.4.1,
+  // 'cashBank' → 6.1.1.
   // IT / Service placeholder
   'it-tickets', 'it-buat', 'it-semua', 'it-pending', 'it-arsip', 'it-sla', 'it-kategori',   // 'it' kini tab 8.1.1
   // Workflow / approvals placeholder

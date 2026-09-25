@@ -29,6 +29,7 @@ import {
 } from './menu-skeleton.js';
 import { CRM_MENU_IDS } from './crm.routes.jsx';
 import { LOGISTICS_WAREHOUSE_MENU_IDS } from './logistics-warehouse.routes.jsx';
+import { FINANCE_MENU_IDS } from './finance.routes.jsx';
 
 const DcMasterPage = lazy(() => import('@/modules/admin/pages/DcMasterPage'));
 
@@ -37,7 +38,7 @@ const DcMasterPage = lazy(() => import('@/modules/admin/pages/DcMasterPage'));
 const LEGACY_OUTLET = <LegacyMenuOutlet />;
 
 /** Id yang rutenya sudah dimiliki file rute modul (G2/G3). */
-const ALREADY_ROUTED = new Set([...CRM_MENU_IDS, ...LOGISTICS_WAREHOUSE_MENU_IDS]);
+const ALREADY_ROUTED = new Set([...CRM_MENU_IDS, ...LOGISTICS_WAREHOUSE_MENU_IDS, ...FINANCE_MENU_IDS]);
 
 function DcMasterRoute() {
   const navigate = useNavigate();

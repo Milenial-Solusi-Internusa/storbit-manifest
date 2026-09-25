@@ -30,6 +30,13 @@
 -- (dibaca dari pg_proc), jadi keduanya wajib digeser sesudahnya.
 -- =============================================================================
 
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
+
 DO $$
 DECLARE
   v_rec record;
