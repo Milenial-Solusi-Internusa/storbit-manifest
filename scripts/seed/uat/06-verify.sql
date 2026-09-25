@@ -274,6 +274,215 @@ FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
 WHERE o.sp_no LIKE '91%' AND i.status <> 'void' AND i.deleted_at IS NULL
 ORDER BY i.invoice_no;
 
+\echo '=============== V12 baris invoice <-> kepala (invoice lengkap) ==============='
+-- Tiga identitas yang dijaga 20260928000002. Dua yang pertama LAMA dan wajib
+-- tidak bergerak; yang ketiga BARU dan sebelumnya mustahil ada, karena baris
+-- invoice dulu tidak punya kolom uang sama sekali.
+SELECT 'V12a SUM(line_amount)+SUM(ppn) <> total_amount' AS uji, count(*)::text AS diukur, '0' AS harapan,
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil
+FROM (SELECT i.id FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+       LEFT JOIN sp_invoice_lines sl ON sl.invoice_id=i.id
+       WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL
+       GROUP BY i.id, i.total_amount
+      HAVING COALESCE(SUM(sl.line_amount),0)+COALESCE(SUM(sl.ppn),0) <> i.total_amount) z
+UNION ALL
+SELECT 'V12b SUM(dpp) <> total_dpp', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM (SELECT i.id FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+       LEFT JOIN sp_invoice_lines sl ON sl.invoice_id=i.id
+       WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL
+       GROUP BY i.id, i.total_dpp HAVING COALESCE(SUM(sl.dpp),0) <> i.total_dpp) z
+UNION ALL
+SELECT 'V12c SUM(ppn) <> total_ppn', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM (SELECT i.id FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+       LEFT JOIN sp_invoice_lines sl ON sl.invoice_id=i.id
+       WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL
+       GROUP BY i.id, i.total_ppn HAVING COALESCE(SUM(sl.ppn),0) <> i.total_ppn) z;
+
+\echo '--- V12d jalur BARIS ONGKIR saat terbit ---'
+-- SP berongkir di seed ada DUA. Kalau angkanya berubah jadi 0, jalur baris
+-- ongkir di create_invoice_for_sp tidak pernah dijalankan dan V12a "lolos"
+-- tanpa menguji apa pun -- kelas hijau-palsu "lolos karena prasyaratnya tak
+-- pernah terpenuhi".
+SELECT 'V12d invoice punya baris ongkir' AS uji, count(*)::text AS diukur, '2' AS harapan,
+       CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil
+FROM (SELECT DISTINCT sl.invoice_id FROM sp_invoice_lines sl
+        JOIN sp_invoices i ON i.id=sl.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+       WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL AND sl.line_type='shipping') z
+UNION ALL
+SELECT 'V12e baris ongkir <> SUM(shipping_price) SP-nya', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoice_lines sl
+  JOIN sp_invoices i ON i.id=sl.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL AND sl.line_type='shipping'
+  AND (sl.line_amount <> (SELECT COALESCE(SUM(shipping_price),0) FROM sp_order_items
+                           WHERE sp_order_id=i.sp_order_id)
+       OR sl.dpp <> 0 OR sl.ppn <> 0);
+
+\echo '--- V12f snapshot baris + kolom kepala terisi SAAT TERBIT ---'
+SELECT 'V12f baris item tanpa snapshot produk/harga/akun' AS uji, count(*)::text AS diukur, '0' AS harapan,
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil
+FROM sp_invoice_lines sl JOIN sp_invoices i ON i.id=sl.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL AND sl.line_type='item'
+  AND (sl.product_name='' OR sl.unit_price=0 OR sl.account_id IS NULL)
+UNION ALL
+SELECT 'V12g invoice tanpa payment_term_days', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL AND i.payment_term_days IS NULL
+UNION ALL
+SELECT 'V12h baris tanpa tax_id (VAT_FULL)', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoice_lines sl JOIN sp_invoices i ON i.id=sl.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL AND sl.tax_id IS NULL;
+
+\echo '--- V12i fixture kolom kelas (c) ---'
+SELECT 'V12i invoice ber-faktur_no' AS uji, count(*)::text AS diukur, '1' AS harapan,
+       CASE WHEN count(*)=1 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.faktur_no IS NOT NULL
+UNION ALL
+SELECT 'V12i invoice ber-coretax_tx_code', count(*)::text, '2',
+       CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.coretax_tx_code IS NOT NULL
+UNION ALL
+SELECT 'V12i invoice ber-print_count 2', count(*)::text, '1',
+       CASE WHEN count(*)=1 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.print_count = 2
+UNION ALL
+SELECT 'V12i catatan internal', count(*)::text, '3',
+       CASE WHEN count(*)=3 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM invoice_notes n JOIN sp_invoices i ON i.id=n.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND n.deleted_at IS NULL
+UNION ALL
+SELECT 'V12i lampiran', count(*)::text, '2',
+       CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM invoice_attachments a JOIN sp_invoices i ON i.id=a.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND a.deleted_at IS NULL
+UNION ALL
+SELECT 'V12i tautan invoice pengganti', count(*)::text, '1',
+       CASE WHEN count(*)=1 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.replaces_invoice_id IS NOT NULL;
+
+\echo '=============== V13 kolom terkunci benar-benar MENOLAK ==============='
+-- Uji ini menulis, lalu MEMBATALKAN sendiri: tiap percobaan hidup di sub-blok
+-- ber-EXCEPTION, dan baris yang terlanjur diterima langsung dihapus. Net nol.
+--
+-- PEMBANDING WAJIB (V13a): satu baris yang SAH harus DITERIMA. Tanpa itu,
+-- "semua ditolak" bisa berarti constraint-nya terlalu ketat dan ujinya lolos
+-- karena alasan yang salah -- pelajaran tiga asersi hijau-palsu, 25 Sep 2026.
+DROP TABLE IF EXISTS _v13;
+CREATE TEMP TABLE _v13 (urut int, uji text, diukur text, harapan text, hasil text);
+
+DO $v13$
+DECLARE
+  v_inv uuid; v_id uuid;
+BEGIN
+  SELECT i.id INTO v_inv FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+   WHERE o.sp_no LIKE '91%' AND i.deleted_at IS NULL ORDER BY i.invoice_no LIMIT 1;
+  IF v_inv IS NULL THEN RAISE EXCEPTION 'V13 BATAL: nol invoice seed.'; END IF;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate, discount_pct)
+    VALUES (v_inv, 1000, 110, 2, 9001, 'item', 'V13', 500, 1000, 0.11, 0) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (1,'V13a PEMBANDING baris sah','DITERIMA','DITERIMA','LOLOS');
+  EXCEPTION WHEN others THEN
+    INSERT INTO _v13 VALUES (1,'V13a PEMBANDING baris sah','DITOLAK: '||SQLERRM,'DITERIMA','GAGAL');
+  END;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate, discount_pct)
+    VALUES (v_inv, 1000, 110, 2, 9002, 'item', 'V13', 500, 950, 0.11, 5) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (2,'V13b diskon 5 persen','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (2,'V13b diskon 5 persen','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate, days)
+    VALUES (v_inv, 1000, 110, 2, 9003, 'item', 'V13', 500, 1000, 0.11, 30) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (3,'V13c days terisi','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (3,'V13c days terisi','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate)
+    VALUES (v_inv, 1000, 120, 2, 9004, 'item', 'V13', 500, 1000, 0.12) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (4,'V13d tarif pajak 0.12','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (4,'V13d tarif pajak 0.12','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate)
+    VALUES (v_inv, 500, 55, 2, 9005, 'shipping', 'V13', 500, 1000, 0.11) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (5,'V13e baris ongkir ber-dpp/ppn','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (5,'V13e baris ongkir ber-dpp/ppn','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    INSERT INTO sp_invoice_lines (invoice_id, dpp, ppn, qty, "position", line_type,
+      product_name, unit_price, line_amount, tax_rate)
+    VALUES (v_inv, 1000, 110, 2, 9006, 'item', 'V13', 500, 777, 0.11) RETURNING id INTO v_id;
+    DELETE FROM sp_invoice_lines WHERE id=v_id;
+    INSERT INTO _v13 VALUES (6,'V13f line_amount tak sesuai rumus','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (6,'V13f line_amount tak sesuai rumus','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    UPDATE sp_invoices SET currency_code='USD' WHERE id=v_inv;
+    INSERT INTO _v13 VALUES (7,'V13g mata uang USD','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (7,'V13g mata uang USD','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    UPDATE sp_invoices SET rounding_method='round' WHERE id=v_inv;
+    INSERT INTO _v13 VALUES (8,'V13h rounding round','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (8,'V13h rounding round','DITOLAK','DITOLAK','LOLOS');
+  END;
+
+  BEGIN
+    UPDATE sp_invoices SET use_dpp_nilai_lain=true WHERE id=v_inv;
+    INSERT INTO _v13 VALUES (9,'V13i DPP nilai lain true','DITERIMA','DITOLAK','GAGAL');
+  EXCEPTION WHEN check_violation THEN
+    INSERT INTO _v13 VALUES (9,'V13i DPP nilai lain true','DITOLAK','DITOLAK','LOLOS');
+  END;
+END
+$v13$;
+
+SELECT uji, diukur, harapan, hasil FROM _v13 ORDER BY urut;
+
+\echo '--- V13j nol residu dari V13 ---'
+SELECT 'V13j baris V13 tersisa' AS uji, count(*)::text AS diukur, '0' AS harapan,
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil
+FROM sp_invoice_lines WHERE product_name='V13'
+UNION ALL
+SELECT 'V13j invoice bergeser dari IDR/none/false', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices
+WHERE currency_code<>'IDR' OR fx_rate<>1 OR rounding_method<>'none' OR use_dpp_nilai_lain;
+
+DROP TABLE _v13;
+
 \echo '=============== SISA (untuk menguji purge) ==============='
 SELECT 'sp_orders 91%'        AS objek, count(*)::text AS n FROM sp_orders WHERE sp_no LIKE '91%'
 UNION ALL SELECT 'sp_items 91%',        count(*)::text FROM sp_items WHERE sp_no LIKE '91%'
@@ -283,4 +492,6 @@ UNION ALL SELECT 'sp_btb 91%',          count(*)::text FROM sp_btb b JOIN sp_ord
 UNION ALL SELECT 'sp_invoices 91%',     count(*)::text FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%'
 UNION ALL SELECT 'sp_payments 91%',     count(*)::text FROM sp_payments p JOIN sp_invoices i ON i.id=p.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%'
 UNION ALL SELECT 'ar_ttfs 91%',         count(*)::text FROM ar_ttfs WHERE no_sp LIKE '91%'
-UNION ALL SELECT 'goods_receipts dummy',count(*)::text FROM goods_receipts WHERE reference_no LIKE 'GR-DUMMY-UAT-%';
+UNION ALL SELECT 'goods_receipts dummy',count(*)::text FROM goods_receipts WHERE reference_no LIKE 'GR-DUMMY-UAT-%'
+UNION ALL SELECT 'invoice_notes 91%',    count(*)::text FROM invoice_notes n JOIN sp_invoices i ON i.id=n.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%'
+UNION ALL SELECT 'invoice_attachments 91%', count(*)::text FROM invoice_attachments a JOIN sp_invoices i ON i.id=a.invoice_id JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%';

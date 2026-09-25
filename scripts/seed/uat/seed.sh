@@ -64,12 +64,15 @@ case "$MODE" in
     #  - 01-stock  sebelum skenario apa pun (tanpa stok, SP jatuh ke MENUNGGU_STOK)
     #  - 01b-helper sebelum 02/03/04 (ketiganya memanggil fungsinya)
     #  - 04 sebelum 05 (TTF menempel pada invoice yang dibuat 04)
+    #  - 07 sesudah 04 (fixture kolom kelas (c) menempel pada invoice yang sama)
+    #    dan sebelum 06-verify, karena V12i menghitung hasilnya
     jalankan 01-stock.sql
     jalankan 01b-helper.sql
     jalankan 02-scenario-1.sql
     jalankan 03-scenario-2.sql
     jalankan 04-scenario-3.sql
     jalankan 05-ttf.sql
+    jalankan 07-fixture-invoice-v2.sql
     jalankan 06-verify.sql
     echo ""
     echo "SELESAI. Periksa kolom hasil di atas: setiap baris harus LOLOS."

@@ -46,6 +46,12 @@ BEGIN
                                 OR reference_id IN (SELECT id FROM _pay);
   DELETE FROM ar_ttfs         WHERE invoice_id IN (SELECT id FROM _inv) OR no_sp LIKE '91%';
   DELETE FROM sp_payments     WHERE invoice_id IN (SELECT id FROM _inv);
+  -- Catatan + lampiran invoice. CASCADE dari sp_invoices sebenarnya sudah
+  -- menanganinya, tapi ditulis eksplisit mengikuti gaya berkas ini: tiap anak
+  -- dihapus dengan namanya sendiri, supaya purge tetap benar kalau kelak ada
+  -- yang mencabut ON DELETE CASCADE-nya.
+  DELETE FROM invoice_notes       WHERE invoice_id IN (SELECT id FROM _inv);
+  DELETE FROM invoice_attachments WHERE invoice_id IN (SELECT id FROM _inv);
   DELETE FROM sp_invoice_lines WHERE invoice_id IN (SELECT id FROM _inv);
   DELETE FROM sp_invoices     WHERE id IN (SELECT id FROM _inv);
 
@@ -82,6 +88,10 @@ SELECT (SELECT count(*) FROM sp_orders      WHERE sp_no LIKE '91%')             
        (SELECT count(*) FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
          WHERE o.sp_no LIKE '91%')                                                    AS invoice_sisa,
        (SELECT count(*) FROM ar_ttfs WHERE no_sp LIKE '91%')                          AS ttf_sisa,
+       (SELECT count(*) FROM invoice_notes n JOIN sp_invoices i ON i.id=n.invoice_id
+         JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%')               AS catatan_sisa,
+       (SELECT count(*) FROM invoice_attachments a JOIN sp_invoices i ON i.id=a.invoice_id
+         JOIN sp_orders o ON o.id=i.sp_order_id WHERE o.sp_no LIKE '91%')               AS lampiran_sisa,
        (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
          WHERE n.nspname='public' AND p.proname IN ('seed_uat_build','seed_uat_bill','derive_status'))
                                                                                       AS fungsi_sisa;
