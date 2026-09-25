@@ -52,9 +52,17 @@ export const STATUS_TAG = {
 // Stepper menghitung tahap aktif lewat indexOf pada array ini, bukan lewat
 // angka hardcode, jadi nol tempat lain yang perlu disentuh. Contoh:
 //   { id: 'pending_approval', label: 'Menunggu Persetujuan' },
+/* Tahapnya TIDAK berubah: id, urutan, dan `stepIndexOf` sama persis. Yang
+   berbeda hanya TULISAN tahap 2 -- 'Upload Portal', bukan 'Sudah Upload ke
+   Portal' seperti di badge dan tombol.
+   Sengaja: stepper hidup di kolom sempit (~345px pada layar 1280), dan label
+   penuh membuatnya 380px = tidak muat satu baris. Label pendek 324px, muat
+   dengan sisa 21px. Kata lengkapnya tetap ada di badge status dan di tombol
+   aksi, jadi tidak ada informasi yang hilang -- yang dipendekkan hanya
+   ribbon-nya. Ukuran + alasan lengkap: Stepper di financeKit.jsx. */
 export const INVOICE_STEPS = [
   { id: 'issued',    label: 'Terbit' },
-  { id: 'submitted', label: 'Sudah Upload ke Portal' },
+  { id: 'submitted', label: 'Upload Portal' },
   { id: 'partial',   label: 'Bayar Sebagian' },
   { id: 'paid',      label: 'Lunas' },
 ];

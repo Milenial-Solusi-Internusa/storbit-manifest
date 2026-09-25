@@ -181,11 +181,43 @@ export function RecordNav({ index, total, onPrev, onNext }) {
 /* `closedLabel` hidup BERDAMPINGAN dengan segmen, bukan menggantikannya --    */
 /* aturan yang sama dengan StatusBar (perubahan 4 Sep 2026, jangan dibalik).   */
 /* ========================================================================== */
-const NOTCH = 15;
+/* ⛔ SELALU SATU BARIS. Stepper ini hidup di kolom KANAN kepala halaman, yang
+   lebarnya ~345px pada layar 1280 dan ~405px pada 1440 (grid 1.7fr/1fr di
+   dalam konten minus sidebar 248px). Dengan `flexWrap: 'wrap'` tahap terakhir
+   turun sendirian ke baris kedua dan ribbon-nya berhenti terbaca sebagai satu
+   alur.
+
+   ⭐ Yang membuat bug ini SULIT ditebak: font tampilannya `'Storbit Display'`
+   (@font-face di logistics/salesOrderDetail.module.css) TIDAK dimuat halaman
+   ini, dan 'Cormorant Garamond' tidak dimuat global -- jadi normalnya ia jatuh
+   ke GEORGIA, yang jauh lebih lebar. Tapi @font-face itu at-rule global begitu
+   chunk Storbit termuat, jadi siapa pun yang membuka Detail SP lebih dulu akan
+   melihat stepper ini dalam Cormorant yang lebih sempit. Diukur: label penuh
+   membungkus di Georgia pada 345 DAN 405, tapi muat satu baris di Cormorant --
+   artinya "pecah dua baris atau tidak" bergantung pada halaman mana yang
+   dibuka sebelumnya. Jangan mengandalkan pengukuran dari satu sesi saja.
+
+   Tiga lapis, dan lapis terakhir yang menjadikannya jaminan:
+     1. geometri dirapatkan (takik 12, tinggi 30, font 11, padding lebih tipis)
+     2. label tahap 2 dipendekkan di `INVOICE_STEPS` (alasannya di sana)
+     3. `nowrap` + `overflowX: 'auto'` -- kalau toh tidak muat, ia BERGULIR,
+        tidak pernah membungkus.
+
+   Angka intrinsik yang diukur (Georgia, geometri di bawah): label penuh 380px,
+   label pendek 324px, label pendek + VOID 392px. Jadi 324 muat di 345 dengan
+   sisa 21px, dan kasus VOID (jarang) bergulir di 1280. */
+const NOTCH = 12;
 
 export function Stepper({ steps = [], currentIndex = -1, closedLabel = null, allDone = false }) {
   return (
-    <div role="status" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 6 }}>
+    <div
+      role="status"
+      style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'nowrap',
+        maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
+        scrollbarWidth: 'thin',
+      }}
+    >
       {steps.map((s, i) => {
         const past  = allDone || (currentIndex > -1 && i < currentIndex);
         const now   = !allDone && i === currentIndex;
@@ -204,12 +236,12 @@ export function Stepper({ steps = [], currentIndex = -1, closedLabel = null, all
             style={{
               background: tone.background, color: tone.color, boxSizing: 'border-box',
               clipPath: clip, WebkitClipPath: clip, marginLeft: first ? 0 : -NOTCH,
-              zIndex: steps.length - i, height: 34,
+              zIndex: steps.length - i, height: 30, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: `0 ${NOTCH + 9}px 0 ${first ? 11 : NOTCH + 9}px`,
+              padding: `0 ${NOTCH + 4}px 0 ${first ? 8 : NOTCH + 4}px`,
             }}
           >
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11.5, fontWeight: tone.weight, letterSpacing: '.03em', whiteSpace: 'nowrap' }}>
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: tone.weight, letterSpacing: '.01em', whiteSpace: 'nowrap' }}>
               {s.label}
             </span>
           </div>
@@ -217,7 +249,7 @@ export function Stepper({ steps = [], currentIndex = -1, closedLabel = null, all
       })}
       {closedLabel && (
         <span style={{
-          marginLeft: SP.s3, display: 'inline-flex', alignItems: 'center', padding: '5px 11px',
+          marginLeft: SP.s3, flexShrink: 0, display: 'inline-flex', alignItems: 'center', padding: '4px 10px',
           background: C.dangerBg, color: C.danger, border: `1px solid ${C.dangerBd}`, borderRadius: RADIUS.md,
           fontFamily: FONT_DISPLAY, fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', whiteSpace: 'nowrap',
         }}>
