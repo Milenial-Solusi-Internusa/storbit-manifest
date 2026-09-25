@@ -10,29 +10,24 @@
 -- (dibaca dari pg_proc), jadi keduanya wajib digeser sesudahnya.
 --
 -- =============================================================================
--- !! BATAS STRUKTURAL: ember umur "di atas 90 hari" TIDAK TERJANGKAU
+-- Sebaran umur: 2 / 2 / 2 / 2 di empat ember (0-30, 31-60, 61-90, di atas 90).
 --
--- Rencana meminta sebaran 2/2/2/2 di empat ember umur (0-30, 31-60, 61-90,
--- di atas 90 hari). Ember keempat mustahil diisi dengan data yang masuk akal:
+-- !! Ember "di atas 90 hari" menuntut tanggal_ttf sebelum 2026-06-27, dan TTF
+-- tidak boleh mendahului invoice-nya. Karena itu DUA SP belum-lunas (9100019,
+-- 9100020) digeser ke Mei dan Juni 2026 di 04-scenario-3.sql -- bukan tanggal
+-- TTF-nya yang dipaksa mendahului SP.
 --
---   * sp_date dibatasi Juli-September 2026 (spesifikasi skenario).
---   * invoice_date = MAX(signed_date), dan signed_date paling awal yang bisa
---     ada = 2026-07-07 (SP 9100019, sp_date 2026-07-01).
---   * Umur TTF dihitung dari hari ini (25 Sep 2026), jadi umur maksimum yang
---     bisa dicapai = 80 hari.
---   * TTF terbit SESUDAH invoice. Menaruh tanggal_ttf sebelum 2026-06-27
---     (syarat umur > 90) berarti TTF terbit sebelum SP-nya ada.
+-- Versi pertama berkas ini memakai sebaran 2/2/4 karena seluruh sp_date masih
+-- dibatasi Juli-September, yang membuat umur TTF maksimum 80 hari. Batas itu
+-- nyata; yang berubah adalah rentang tanggal SP-nya, bukan cara menghitung umur.
 --
--- Jadi sebarannya dibuat 2 / 2 / 4, bukan 2 / 2 / 2 / 2, dan V7 menilai angka
--- itu. Kalau ember di atas 90 hari memang dibutuhkan, yang harus berubah adalah
--- RENTANG TANGGAL SP (sebagian digeser ke Mei-Juni 2026) -- itu keputusan Den,
--- bukan sesuatu yang pantas diakali di sini dengan tanggal TTF yang mendahului
--- SP-nya.
+-- !! Ember dihitung dari CURRENT_DATE, jadi angkanya BERGESER seiring waktu.
+-- Sebaran 2/2/2/2 benar pada 25 September 2026. Sebulan kemudian isinya pindah
+-- ke ember yang lebih tua tanpa ada yang berubah di data -- itu sifat umur,
+-- bukan cacat seed. Jangan membaca V7 sebagai invarian abadi.
 --
--- !! Ember umur bergeser sendiri seiring waktu karena dihitung dari CURRENT_DATE.
--- Angka 2/2/4 benar pada 25 Sep 2026. Sebulan kemudian isinya bergeser ke ember
--- yang lebih tua tanpa ada yang berubah di data. Itu sifat umur, bukan cacat
--- seed -- tapi jangan membaca V7 sebagai invarian abadi.
+-- mark_ttf_received mengisi tanggal_ttf DAN tanggal_menerima dengan CURRENT_DATE
+-- (dibaca dari pg_proc), jadi keduanya wajib digeser sesudahnya.
 -- =============================================================================
 
 DO $$
@@ -48,10 +43,10 @@ DECLARE
     {"sp":"9100027","ttf":"2026-09-16"},
     {"sp":"9100021","ttf":"2026-08-18"},
     {"sp":"9100031","ttf":"2026-08-14"},
-    {"sp":"9100019","ttf":"2026-07-12"},
     {"sp":"9100024","ttf":"2026-07-14"},
     {"sp":"9100028","ttf":"2026-07-15"},
-    {"sp":"9100020","ttf":"2026-07-20"}
+    {"sp":"9100019","ttf":"2026-05-22"},
+    {"sp":"9100020","ttf":"2026-06-19"}
   ]'::jsonb;
   v_it jsonb;
 BEGIN

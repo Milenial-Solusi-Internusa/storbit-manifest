@@ -21,8 +21,13 @@ BEGIN
 
   -- LIMA produk. TROLLY HAND SENGAJA TIDAK diisi: ia yang membuat satu SP
   -- jatuh ke MENUNGGU_STOK lewat sp_recompute_status, bukan dipaksa UPDATE.
+  -- receipt_date 20 April 2026: SENGAJA mendahului SP paling awal (9100019,
+  -- sp_date 11 Mei 2026). Kalau stok "diterima" sesudah barangnya dikirim,
+  -- datanya jadi tidak masuk akal untuk dibaca penguji UAT -- walaupun secara
+  -- fungsional tidak menghalangi apa pun, karena stock_summary menjumlah
+  -- seluruh baris ledger tanpa memandang tanggal.
   v_id := public.create_goods_receipt(
-    'GR-DUMMY-UAT-01'::varchar, DATE '2026-06-15', v_wh, 'adjustment'::varchar,
+    'GR-DUMMY-UAT-01'::varchar, DATE '2026-04-20', v_wh, 'adjustment'::varchar,
     NULL::uuid, NULL::varchar, 'DATA DUMMY UAT',
     jsonb_build_array(
       jsonb_build_object('product_id','9777af85-08de-48fc-9a11-ad53d2f702a5','qty',30000),

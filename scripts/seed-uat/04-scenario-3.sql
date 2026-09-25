@@ -18,16 +18,22 @@
 
 -- ---------------------------------------------------------------- 5 x ISSUED
 -- 9100019, 9100020 di atas Rp5jt; tiga sisanya kecil.
+-- !! 9100019 dan 9100020 SENGAJA di MEI dan JUNI 2026, di luar rentang
+-- Juli-September skenario lainnya. Sebabnya tunggal: ember umur TTF "di atas 90
+-- hari" hanya terjangkau kalau tanggal_ttf sebelum 2026-06-27, dan TTF tidak
+-- boleh mendahului invoice-nya. Menggeser SP-nya adalah satu-satunya cara yang
+-- tidak memalsukan urutan dokumen. Keduanya dipilih karena BELUM LUNAS (status
+-- issued), jadi ia memang bahan uji AR Aging.
 SELECT seed_uat_build('9100019','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661',
-  '5d69f78d-ddb2-4517-850c-2ca3f4627896', DATE '2026-07-01',
+  '5d69f78d-ddb2-4517-850c-2ca3f4627896', DATE '2026-05-11',
   '[{"p":"9777af85-08de-48fc-9a11-ad53d2f702a5","q":1820,"u":27500,"s":0}]'::jsonb,
-  'LEGS', '[{"pct":100,"disp":"2026-07-04","sign":"2026-07-07","btb":"2026-07-08","deliver":true}]'::jsonb);
+  'LEGS', '[{"pct":100,"disp":"2026-05-14","sign":"2026-05-18","btb":"2026-05-19","deliver":true}]'::jsonb);
 SELECT seed_uat_bill('9100019','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661', NULL, 'ISSUED');
 
 SELECT seed_uat_build('9100020','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661',
-  '1b0a6638-d6c9-4c92-80c8-dc9bee419e0e', DATE '2026-07-08',
+  '1b0a6638-d6c9-4c92-80c8-dc9bee419e0e', DATE '2026-06-08',
   '[{"p":"a48fe3ea-182f-4239-ae14-a6bd36b27e09","q":5580,"u":8900,"s":0}]'::jsonb,
-  'LEGS', '[{"pct":100,"disp":"2026-07-11","sign":"2026-07-14","btb":"2026-07-15","deliver":true}]'::jsonb);
+  'LEGS', '[{"pct":100,"disp":"2026-06-11","sign":"2026-06-15","btb":"2026-06-16","deliver":true}]'::jsonb);
 SELECT seed_uat_bill('9100020','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661', NULL, 'ISSUED');
 
 SELECT seed_uat_build('9100021','a18fad3c-75ee-4fc6-b3d2-5c5dfa810661',

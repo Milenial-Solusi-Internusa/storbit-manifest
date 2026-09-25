@@ -175,14 +175,22 @@ JOIN sp_orders o ON o.id = i.sp_order_id
 WHERE je.reference_type='payment_received' AND o.sp_no LIKE '91%'
   AND je.entry_date <> p.payment_date
 UNION ALL
-SELECT 'V6f sp_date di luar Jul-Sep 2026', count(*)::text, '0',
+-- Rentangnya Mei-September, BUKAN Juli-September: 9100019 dan 9100020 sengaja
+-- di Mei dan Juni supaya ember umur TTF di atas 90 hari terjangkau.
+SELECT 'V6f sp_date di luar Mei-Sep 2026', count(*)::text, '0',
        CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
 FROM sp_orders o WHERE o.sp_no LIKE '91%' AND o.deleted_at IS NULL
+  AND (o.sp_date < DATE '2026-05-01' OR o.sp_date > DATE '2026-09-30')
+UNION ALL
+SELECT 'V6g SP di luar Jul-Sep selain 19 dan 20', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_orders o WHERE o.sp_no LIKE '91%' AND o.deleted_at IS NULL
+  AND o.sp_no NOT IN ('9100019','9100020')
   AND (o.sp_date < DATE '2026-07-01' OR o.sp_date > DATE '2026-09-30');
 
 \echo '=============== V7  TTF ==============='
--- !! Sebaran 2/2/4, BUKAN 2/2/2/2. Ember "di atas 90 hari" tidak terjangkau
--- selama sp_date dibatasi Juli-September 2026 -- alasannya di kepala 05-ttf.sql.
+-- Sebaran 2/2/2/2. Ember "di atas 90 hari" terjangkau karena 9100019 dan
+-- 9100020 digeser ke Mei/Juni 2026 -- alasannya di kepala 05-ttf.sql.
 -- !! Ember dihitung dari CURRENT_DATE, jadi angkanya BERGESER seiring waktu.
 WITH t AS (
   SELECT tf.id, tf.tanggal_ttf, (CURRENT_DATE - tf.tanggal_ttf) AS umur
@@ -192,8 +200,8 @@ SELECT 'V7 jumlah TTF' AS uji, count(*)::text AS diukur, '8' AS harapan,
        CASE WHEN count(*)=8 THEN 'LOLOS' ELSE 'GAGAL' END AS hasil FROM t
 UNION ALL SELECT 'V7 umur 0-30',  count(*)::text, '2', CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur BETWEEN 0 AND 30
 UNION ALL SELECT 'V7 umur 31-60', count(*)::text, '2', CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur BETWEEN 31 AND 60
-UNION ALL SELECT 'V7 umur 61-90', count(*)::text, '4', CASE WHEN count(*)=4 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur BETWEEN 61 AND 90
-UNION ALL SELECT 'V7 umur di atas 90', count(*)::text, '0', CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur > 90
+UNION ALL SELECT 'V7 umur 61-90', count(*)::text, '2', CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur BETWEEN 61 AND 90
+UNION ALL SELECT 'V7 umur di atas 90', count(*)::text, '2', CASE WHEN count(*)=2 THEN 'LOLOS' ELSE 'GAGAL' END FROM t WHERE umur > 90
 UNION ALL
 SELECT 'V7 invoice belum lunas tanpa TTF', count(*)::text, '5',
        CASE WHEN count(*)=5 THEN 'LOLOS' ELSE 'GAGAL' END

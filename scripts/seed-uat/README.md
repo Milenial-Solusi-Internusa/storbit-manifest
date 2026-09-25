@@ -9,8 +9,9 @@ disentuh oleh berkas mana pun di folder ini** -- `seed.sh` menolak jalan kalau
 | Target | `oovmlhilhqzejnawqkvt` (`nexus-staging`) SAJA |
 | Entitas | SOA (`d2e5e565-5f67-4954-b8d9-5979a2a0c697`) |
 | Penanda | nomor SP `91xxxxx` - `notes = 'DATA DUMMY UAT'` - `goods_receipts.reference_no LIKE 'GR-DUMMY-UAT-%'` |
-| Cakupan | 40 SP, Juli-September 2026: 12 belum ditagih - 6 siap ditagih - 22 sudah invoice - 8 TTF |
-| Dijalankan | 25 September 2026, dua putaran (seed, purge, seed ulang). Verifikasi 30/30 LOLOS di kedua putaran |
+| Cakupan | 40 SP: 12 belum ditagih - 6 siap ditagih - 22 sudah invoice - 8 TTF |
+| Rentang tanggal | Juli-September 2026, KECUALI 9100019 (Mei) dan 9100020 (Juni) -- lihat "Dua SP di Mei/Juni" |
+| Dijalankan | 25 September 2026, tiga putaran (seed, purge, seed ulang, lalu seed ulang dengan tanggal direvisi). Verifikasi LOLOS penuh di ketiganya; putaran terakhir 32/32 |
 
 ## Cara jalan
 
@@ -125,11 +126,29 @@ Empat hal terungkap justru karena seed ini dijalankan, bukan dibaca:
    NULL sehingga jatuh ke hardcode 30 (tingkat 3). Keduanya menghasilkan 30,
    jadi `due_date = invoice_date + 30` berlaku untuk semuanya -- tapi lewat dua
    jalur yang berbeda.
-4. **Ember umur TTF "di atas 90 hari" tidak terjangkau.** `sp_date` dibatasi
-   Juli-September 2026, `invoice_date` paling awal 2026-07-07, jadi umur TTF
-   maksimum 80 hari. Sebarannya 2/2/4, bukan 2/2/2/2. Kalau ember itu
-   dibutuhkan, yang harus berubah adalah rentang tanggal SP -- bukan tanggal
-   TTF yang mendahului SP-nya. Lihat kepala `05-ttf.sql`.
+4. **Ember umur TTF "di atas 90 hari" menuntut sp_date di luar Juli-September.**
+   Dengan `sp_date` dibatasi Juli-September 2026, `invoice_date` paling awal
+   2026-07-07 dan umur TTF maksimum 80 hari -- ember keempat mustahil diisi
+   tanpa menaruh TTF sebelum SP-nya ada. **Diselesaikan dengan menggeser SP-nya**
+   (lihat bagian berikutnya), bukan dengan memalsukan tanggal TTF.
+
+## Dua SP di Mei/Juni
+
+`9100019` (`sp_date` 2026-05-11) dan `9100020` (2026-06-08) sengaja di luar
+rentang Juli-September. Alasannya tunggal: ember umur TTF **di atas 90 hari**
+hanya terjangkau kalau `tanggal_ttf` sebelum 2026-06-27, dan TTF tidak boleh
+mendahului invoice-nya.
+
+Keduanya dipilih karena **belum lunas** (status `issued`), jadi memang bahan uji
+AR Aging. `receipt_date` stok ikut digeser ke 2026-04-20 supaya stok tidak
+"diterima" sesudah barangnya dikirim -- tidak menghalangi apa pun secara
+fungsional (`stock_summary` menjumlah seluruh ledger tanpa memandang tanggal),
+tapi datanya jadi masuk akal untuk dibaca penguji.
+
+Verifikasi memisahkan keduanya: **V6f** menilai rentang Mei-September untuk semua
+SP, **V6g** menilai Juli-September untuk semua SP **kecuali** dua ini, dan
+**V6h** memastikan `receipt_date` stok mendahului `sp_date` paling awal. Jadi
+pengecualiannya tercatat sebagai uji, bukan sebagai pelonggaran.
 
 ## Hal yang TIDAK dibalik oleh purge
 
