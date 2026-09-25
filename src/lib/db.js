@@ -1688,8 +1688,116 @@ export async function getInvoiceById(invoiceId) {
 }
 
 /**
- * Sigma qty & Sigma shipped_qty satu SP — dipakai InvoicePanel untuk gate
- * "Terbitkan Invoice" saat panel dirender DI LUAR halaman Detail SP (yang punya
+ * Sigma (amount + pph) per invoice untuk SEKUMPULAN invoice — dipakai kolom
+ * "Sisa" di Daftar Invoice.
+ *
+ * ⚠️ Pemanggilnya WAJIB mengirim daftar yang PENDEK. Hanya invoice berstatus
+ * `partial` yang sungguh perlu dihitung: `issued`/`submitted` menurut definisi
+ * belum punya pembayaran (record_payment yang memindahkannya ke partial/paid),
+ * dan `paid`/`void` sisanya nol. Mengirim seluruh 1000 id = rantai `.in()`
+ * puluhan KB di URL — kelas masalah yang justru dicabut Gelombang 2 (9 Sep
+ * 2026); jangan dihidupkan lagi lewat pintu ini.
+ *
+ * @returns {Promise<{data: Record<string, number>, error: object|null}>}
+ */
+export async function getPaymentTotalsByInvoice(invoiceIds = []) {
+  const ids = (invoiceIds || []).filter(Boolean);
+  if (ids.length === 0) return { data: {}, error: null };
+  const { data, error } = await supabase
+    .from('sp_payments')
+    .select('invoice_id, amount, pph')
+    .in('invoice_id', ids)
+    .limit(1000);
+  const map = {};
+  (data || []).forEach((p) => {
+    map[p.invoice_id] = (map[p.invoice_id] || 0) + (Number(p.amount) || 0) + (Number(p.pph) || 0);
+  });
+  return { data: map, error };
+}
+
+/**
+ * Semua yang dibutuhkan LAYAR Detail Invoice dalam satu panggilan — kartu
+ * dokumen (Ditagihkan ke, DC tujuan, baris invoice), blok pajak, dan riwayat.
+ *
+ * ⛔ SENGAJA TERPISAH dari `getInvoicePdfData`, dan JANGAN digabung. PDF-nya
+ * adalah dokumen yang dipegang CUSTOMER: ia sengaja tidak memuat DC sama sekali
+ * (keputusan Den 10 Sep 2026) dan sengaja sudah tidak membawa SKU (11 Sep 2026).
+ * Layar internal butuh keduanya. Menambahkan kolom ke fungsi PDF supaya layar
+ * kebagian = mengubah dokumen customer demi tampilan internal.
+ *
+ * 100% BACA — nol RPC, nol tulis. Tiap sub-query berdiri sendiri: kalau salah
+ * satunya ditolak RLS, yang hilang cuma bagian itu (tampil '—'), halamannya
+ * tetap terbuka. Hanya kegagalan membaca BARIS INVOICE-nya sendiri yang
+ * dilaporkan sebagai error — sisanya tidak boleh menjatuhkan halaman.
+ */
+export async function getInvoiceViewData(invoiceId) {
+  const { data: inv, error: invErr } = await supabase
+    .from('sp_invoices')
+    .select(`
+      id, invoice_no, faktur_no, invoice_date, due_date, status, submitted_at,
+      total_dpp, total_ppn, total_amount, created_at, created_by,
+      sp_order_id, company_id,
+      sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, sp_date, customer_id, company_id, dc_id )
+    `)
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (invErr) return { data: null, error: invErr };
+  if (!inv)   return { data: null, error: null };
+
+  const sp = inv.sp_orders || {};
+
+  const [linesRes, custRes, dcRes, creatorRes] = await Promise.all([
+    supabase
+      .from('sp_invoice_lines')
+      // `sku` IKUT di sini (beda dari jalur PDF) — layar internal memakainya
+      // untuk mencocokkan baris dengan master produk. Satuan lewat
+      // sp_order_items.product_id -> products, sama seperti jalur PDF: kedua
+      // tabel snapshot tak punya kolom unit/uom.
+      .select('id, position, qty, dpp, ppn, sp_order_items(product_name, sku, unit_price, products(unit, uom))')
+      .eq('invoice_id', invoiceId)
+      .order('position', { ascending: true })
+      .limit(1000),
+    sp.customer_id
+      ? supabase.from('accounts').select('name, address').eq('id', sp.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    sp.dc_id
+      ? supabase.from('dc_master').select('kode, nama, wilayah, alamat').eq('id', sp.dc_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    inv.created_by
+      ? supabase.from('profiles').select('full_name').eq('id', inv.created_by).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  return {
+    data: {
+      ...inv,
+      sp_no:       sp.sp_no || '',
+      sp_date:     sp.sp_date || null,
+      customer_id: sp.customer_id || null,
+      customer_name:    custRes.data?.name || '',
+      customer_address: (custRes.data?.address || '').trim(),
+      dc:          dcRes.data || null,
+      created_by_name: creatorRes.data?.full_name || '',
+      lines: (linesRes.data || []).map((l) => ({
+        id:           l.id,
+        product_name: l.sp_order_items?.product_name || '',
+        sku:          (l.sp_order_items?.sku || '').trim(),
+        uom: ((l.sp_order_items?.products?.unit || '').trim()
+           || (l.sp_order_items?.products?.uom  || '').trim()),
+        unit_price: Number(l.sp_order_items?.unit_price) || 0,
+        qty:  Number(l.qty) || 0,
+        dpp:  Number(l.dpp) || 0,
+        ppn:  Number(l.ppn) || 0,
+      })),
+    },
+    error: null,
+  };
+}
+
+/**
+ * Sigma qty & Sigma shipped_qty satu SP — dipakai alur invoice untuk gate
+ * "Terbitkan Invoice" saat ia dirender DI LUAR halaman Detail SP (yang punya
  * angkanya dari props).
  */
 export async function getSpOrderQtySummary(spOrderId) {

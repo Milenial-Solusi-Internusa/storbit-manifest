@@ -29,8 +29,10 @@
 // menampilkan "Invoice tidak ditemukan" untuk path yang sah.
 // ============================================================================
 import { lazy } from 'react';
-import { Navigate, Outlet, useNavigate, useParams } from 'react-router';
+import { Navigate, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAppShell } from '@/contexts/useAppShell';
+import { parseListQuery } from '@/modules/finance/invoiceStatus.js';
+import { C, FONT_DISPLAY, RADIUS } from '@/modules/logistics/spDetailTokens.js';
 import { MENU_PATHS } from './menu-paths.js';
 import Boundary from './Boundary.jsx';
 import ModuleShell from './ModuleShell.jsx';
@@ -42,12 +44,20 @@ const InvoiceDetailPage  = lazy(() => import('@/modules/finance/InvoiceDetailPag
 const BASE       = MENU_PATHS.billing;
 const PATH_READY = `${BASE}/ready`;
 const PATH_LIST  = `${BASE}/list`;
-const invoicePath = (id) => `${BASE}/${encodeURIComponent(id)}`;
+// `query` = keadaan filter/pencarian Daftar Invoice, dibawa ke URL detail
+// supaya navigasi rekaman "3 / 22" di sana mengikuti urutan yang sama dan tetap
+// benar sesudah refresh (lihat invoiceStatus.js).
+const invoicePath = (id, query = '') => `${BASE}/${encodeURIComponent(id)}${query}`;
+const listPath    = (query = '') => `${PATH_LIST}${query}`;
 
 /** Path Detail SP — dibentuk dari kontrak URL yang sama dengan modul gudang,
  *  supaya tautan lintas-modul tidak punya salinan bentuk path sendiri. */
 const spDetailPath = (customerId, spNo) =>
   `${MENU_PATHS.manifest}/${encodeURIComponent(customerId)}/${encodeURIComponent(spNo)}`;
+
+/** Path Detail Surat Jalan — sumber bentuk yang sama, dipakai tab
+ *  "Dokumen Terkait" di Detail Invoice. */
+const deliveryPath = (id) => `${MENU_PATHS['surat-jalan']}/${encodeURIComponent(id)}`;
 
 // Pilihan sekunder di dalam halaman (keputusan K-1). Dirender di kedua halaman
 // daftar, bukan di ContextHeader: ContextHeader menarik pilihannya dari
@@ -60,22 +70,25 @@ function SubTabs({ aktif }) {
   ];
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-      {item.map(([kunci, label, path]) => (
-        <button
-          key={kunci}
-          onClick={() => navigate(path)}
-          style={{
-            padding: '7px 14px', borderRadius: 4, cursor: 'pointer',
-            border: `1px solid ${aktif === kunci ? '#5b3fa0' : '#C2C4C6'}`,
-            background: aktif === kunci ? '#EFECF6' : 'transparent',
-            color: aktif === kunci ? '#4a3585' : '#6B7686',
-            fontSize: 14, fontWeight: 600,
-            fontFamily: "'Storbit Display', 'Cormorant Garamond', Georgia, serif",
-          }}
-        >
-          {label}
-        </button>
-      ))}
+      {item.map(([kunci, label, path]) => {
+        const on = aktif === kunci;
+        return (
+          <button
+            key={kunci}
+            onClick={() => navigate(path)}
+            aria-pressed={on}
+            style={{
+              padding: '7px 14px', borderRadius: RADIUS.md, cursor: 'pointer',
+              border: `1px solid ${on ? C.accent : C.line}`,
+              background: on ? C.accentSoft : 'transparent',
+              color: on ? C.accentDeep : C.inkSoft,
+              fontSize: 14, fontWeight: 600, fontFamily: FONT_DISPLAY,
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -102,7 +115,7 @@ function ListRoute() {
     <ModuleShell>
       <Boundary title="Daftar Invoice tidak tersedia">
         <SubTabs aktif="list"/>
-        <InvoiceListPage onOpenInvoice={(id) => navigate(invoicePath(id))} />
+        <InvoiceListPage onOpenInvoice={(id, query) => navigate(invoicePath(id, query))} />
       </Boundary>
     </ModuleShell>
   );
@@ -111,7 +124,12 @@ function ListRoute() {
 function DetailRoute() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { showToast } = useAppShell();
+  // Keadaan daftar dibaca dari URL, BUKAN dari location.state: pelajaran G3 --
+  // begitu asal-usul dititipkan ke state, janji "tetap benar setelah refresh"
+  // gugur persis di kasus yang jadi alasannya ada.
+  const query = `?${searchParams.toString()}`.replace(/^\?$/, '');
   return (
     <ModuleShell>
       <Boundary title="Detail Invoice tidak tersedia">
@@ -119,8 +137,11 @@ function DetailRoute() {
           key={invoiceId}
           invoiceId={invoiceId}
           showToast={showToast}
-          onBack={() => navigate(PATH_LIST)}
+          listQuery={parseListQuery(searchParams)}
+          onBack={() => navigate(listPath(query))}
+          onOpenInvoice={(id) => navigate(invoicePath(id, query))}
           onOpenSp={(customerId, spNo) => navigate(spDetailPath(customerId, spNo))}
+          onOpenDelivery={(id) => navigate(deliveryPath(id))}
         />
       </Boundary>
     </ModuleShell>
