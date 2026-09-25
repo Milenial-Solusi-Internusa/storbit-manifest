@@ -10,6 +10,10 @@
 --   psql "$DB_URL" -f scripts/qa/ar-health-check.sql
 --   salin BAGIAN A ke Supabase SQL Editor (satu query, tanpa perintah psql)
 --
+-- !! Baris \set dan \echo di berkas ini adalah perintah psql, BUKAN SQL. Kalau
+-- disalin ke SQL Editor, salin BAGIAN A saja -- seperti tertulis di atas --
+-- bukan seluruh berkas.
+--
 -- -----------------------------------------------------------------------------
 -- KENAPA ADA
 -- -----------------------------------------------------------------------------
@@ -65,6 +69,16 @@
 --         dilihat manusia, bukan dipakai sebagai gate otomatis).
 -- Terkait: TD-275 - 12_ANTREAN_MIGRASI_PRODUCTION.md butir 6 dan 9.
 -- =============================================================================
+
+-- ON_ERROR_STOP: query yang error harus MENGHENTIKAN berkas ini dan membuat
+-- psql keluar dengan kode != 0, bukan dicetak lalu dilewati.
+--
+-- Pelajarannya sudah dibayar: B3 di bawah menyebut kolom `je.entry_no` yang
+-- TIDAK PERNAH ADA di journal_entries. Tanpa bendera ini psql mencetak ERROR-nya
+-- lalu melanjutkan, jadi berkas ini tampak "jalan" sambil satu pemeriksaannya
+-- tidak pernah dijalankan sekali pun. Cek kesehatan yang diam-diam melewati
+-- pemeriksaannya sendiri lebih buruk daripada tidak ada cek sama sekali.
+\set ON_ERROR_STOP on
 
 
 -- =============================================================================
@@ -269,7 +283,11 @@ SELECT i.invoice_no, i.status, i.total_amount,
  LIMIT 50;
 
 -- B3 untuk H4 -- invoice void yang jurnal penerbitannya belum dicabut.
-SELECT i.invoice_no, i.status, i.total_amount, je.entry_no, je.entry_date
+-- Kolom jurnal yang dipakai SENGAJA hanya yang benar-benar ada di
+-- journal_entries: id, entry_date, description, created_at. Tabel itu TIDAK
+-- punya nomor dokumen -- jangan menambahkan `entry_no` lagi.
+SELECT i.invoice_no, i.status, i.total_amount,
+       je.id AS journal_entry_id, je.entry_date, je.description, je.created_at
   FROM sp_invoices i
   JOIN journal_entries je ON je.reference_type = 'invoice_issued' AND je.reference_id = i.id
  WHERE i.deleted_at IS NULL AND i.status = 'void'
@@ -297,3 +315,9 @@ SELECT o.sp_no, dn.do_no, dn.status, dn.signed_date,
  GROUP BY o.sp_no, dn.do_no, dn.status, dn.signed_date, dn.sp_order_id
 HAVING count(*) FILTER (WHERE dni.sp_order_item_id IS NULL) > 0
  ORDER BY o.sp_no, dn.do_no;
+
+-- Penanda SELESAI. Dengan ON_ERROR_STOP di atas, baris ini hanya tercetak kalau
+-- SELURUH query di berkas ini jalan. Skrip gerbang memeriksa keberadaannya,
+-- sehingga keluaran yang berhenti di tengah terlihat sebagai GAGAL, bukan
+-- tersamar sebagai lolos karena tabel-tabel sebelumnya tercetak rapi.
+\echo '=== ar-health-check SELESAI: seluruh query jalan ==='
