@@ -585,7 +585,10 @@ export async function getSpFulfillmentDocs(customerId, spNo) {
       .limit(1000),
     supabase
       .from('delivery_notes')
-      .select('id, do_no, status, picking_list_id, ship_date, driver_name, vehicle_no, total_koli, dispatched_at, delivered_at, cancelled_at, delivery_note_items(qty)')
+      // signed_date IKUT: tanpa kolom ini Detail SP tidak bisa membedakan Surat
+      // Jalan delivered yang tanggalnya sudah diisi dari yang belum, sehingga
+      // tombol Lengkapi Tanggal tidak punya dasar untuk tampil (AR Tahap 1).
+      .select('id, do_no, status, picking_list_id, ship_date, driver_name, vehicle_no, total_koli, dispatched_at, delivered_at, cancelled_at, signed_date, delivery_note_items(qty)')
       .eq('customer_id', customerId)
       .eq('sp_no', spNo)
       .order('created_at', { ascending: true })
@@ -834,6 +837,27 @@ export async function setDeliveryStatus(deliveryNoteId, status, signedDate) {
   // status lain (tak dipakai saat ini) → plain update sebagai fallback.
   const { error } = await supabase
     .from('delivery_notes').update({ status }).eq('id', deliveryNoteId);
+  return { error };
+}
+
+/** Lengkapi signed_date pada Surat Jalan yang SUDAH delivered tetapi tanggalnya
+ *  kosong — RPC set_delivery_signed_date (AR Tahap 1, migrasi 20260926000001).
+ *
+ *  ⚠️ BUKAN pengganti setDeliveryStatus('delivered'). Jalur normal mengisi
+ *  signed_date saat menandai terkirim; fungsi ini HANYA untuk Surat Jalan yang
+ *  sudah delivered lebih dulu tanpa tanggal — keadaan yang nyata ada (106 dari
+ *  698 SJ delivered di produksi per 25 Sep 2026, semuanya sebelum kolomnya jadi
+ *  wajib pada 17 Sep).
+ *
+ *  Tanggalnya hanya bisa diisi SEKALI; RPC menolak menimpa. Guard peran,
+ *  masa depan (WIB), dan tidak-sebelum-berangkat ada di RPC — validasi FE di
+ *  pemanggil adalah lapis pertama, bukan satu-satunya.
+ */
+export async function setDeliverySignedDate(deliveryNoteId, signedDate) {
+  const { error } = await supabase.rpc('set_delivery_signed_date', {
+    p_delivery_note_id: deliveryNoteId,
+    p_signed_date:      signedDate || null,
+  });
   return { error };
 }
 
