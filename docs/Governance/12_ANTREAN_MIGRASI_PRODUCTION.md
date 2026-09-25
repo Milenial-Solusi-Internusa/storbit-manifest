@@ -31,10 +31,18 @@
 | 8 | `20260926000001_set_delivery_signed_date` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1 |
 | 9 | `20260926000002_ar_single_issue_path` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1, TERAKHIR |
 | 10 | `20260925000003` — `notify_sp_milestone` no-op | ✔ 25 Sep | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
+| 11 | `20260927000001_invoice_due_date_backfill` | ✔ 25 Sep (fixture) | ⛔ belum | ⛔ **WAJIB** — AR Tahap 2 |
+| 12 | `20260927000002_account_role_mapping` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 2, SEBELUM butir 13 |
+| 13 | `20260927000003_journal_account_roles_and_readiness` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9 DAN butir 12 |
+| 14 | Grant menu `fin_invoice` (`20260927000004`) | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — tanpa ini halaman baru super_admin-only |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
 ⛔ Urutan itu bukan kerapian. Butir 9 punya palang yang **menolak jalan** kalau butir 6 dan 7 belum terpasang, karena invariant piutang di dalamnya menuntut setiap Surat Jalan punya `sp_order_item_id`; tanpa butir 6, setiap invoice baru nol jurnal dan invariant gagal untuk **semuanya**. Butir 8 sebelum 9 karena butir 9 menyempitkan apa yang boleh ditagih, dan butir 8 adalah satu-satunya jalan membuka 9 SP yang tertahan hanya karena tanggal tanda tangan kosong.
+
+**Butir 11 sampai 14 = AR Tahap 2, dan urutannya MENGIKAT pada dua titik:** butir **12 sebelum 13** (butir 13 menolak jalan tanpa tabel pemetaan — periksa palangnya), dan butir **13 sesudah butir 9**. Yang kedua mudah terlewat: butir 13 menulis ulang `create_invoice_for_sp`, dan palangnya menolak jalan kalau yang hidup belum versi AR Tahap 1 — kalau palang itu tidak ada, menjalankan butir 13 di produksi hari ini akan **memasang guard AR Tahap 1 di luar urutan antrean**, tanpa satu pun butir 6-9 dijalankan.
+
+Butir **11** dan **14** berdiri sendiri: yang pertama cuma menyentuh `sp_invoices.due_date`, yang kedua cuma baris izin menu.
 
 **Butir 10 arahnya bukan "staging menyusul produksi", melainkan "staging sengaja BERBEDA dari produksi, selamanya".** Ia ada di daftar ini justru supaya tidak ikut terbawa naik saat butir lain dijalankan.
 
@@ -274,6 +282,102 @@ SET nexus.izin_staging_only = 'ya-ini-staging';
 Tanpa baris itu berkas ini berhenti dan tidak mengubah apa pun — diuji 25 Sep 2026: dijalankan tanpa `SET`, ditolak `P0001`; dijalankan dengan `SET`, lolos dan V1 hijau. Palang kedua menolak kalau tanda tangan fungsinya berubah, supaya `CREATE OR REPLACE` tidak diam-diam melahirkan **overload baru** yang hidup berdampingan dengan badan produksi (kelas gotcha #37/#39).
 
 **Rollback.** "Rollback" di sini berarti mengembalikan badan produksi ke staging, dan itu hampir selalu salah. Badan produksi **sengaja tidak disalin** ke dalam berkas migrasi ini — menaruhnya di sana membuatnya mudah ter-copy-paste ke staging, persis hal yang berkas ini cegah. Sumbernya hidup di produksi (`pg_proc.prosrc`) dan hanya di sana ia perlu ada.
+
+---
+
+## 11. ⛔ `20260927000001_invoice_due_date_backfill` — WAJIB (AR Tahap 2)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260927000001_invoice_due_date_backfill.sql` (208 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — menyentuh **0 baris** di sana (seluruh invoice seed sudah ber-`due_date` karena diterbitkan jalur AR Tahap 1). Yang MENGUJI isinya = fixture: 21 invoice seed di-NULL-kan lalu di-backfill → **21/21 hasilnya IDENTIK** dengan nilai yang dihitung `create_invoice_for_sp` saat terbit |
+| Production | ⛔ **belum** — di sanalah pekerjaan sesungguhnya: **508** invoice non-void ber-`due_date` NULL |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** |
+
+**Apa isinya.** Mengisi `due_date` invoice **non-void** yang NULL, memakai rantai termin tiga tingkat yang **sama persis** dengan `create_invoice_for_sp`: override akun → `entity_finance_settings` → `default_payment_terms` → cadangan 30.
+
+**Invoice VOID sengaja TIDAK diisi** (keputusan Den K-3): `due_date` pada invoice yang dibatalkan tidak punya arti. Di produksi itu **30 baris** yang akan tetap NULL, dan itu benar — jangan "dirapikan" belakangan.
+
+**Cadangan dibuat SEBELUM UPDATE**, di tabel `sp_invoices_due_date_backfill_20260927`, lengkap dengan `term_days` dan `sumber_term` per baris. UPDATE-nya membaca angkanya **dari tabel cadangan itu**, bukan menghitung ulang — dengan begitu yang tersimpan sebagai jejak dan yang mendarat di `sp_invoices` dijamin sama.
+
+⚠️ **Yang teruji di produksi hanya TINGKAT 1 rantai termin.** 538 dari 538 invoice NULL di sana terjawab oleh `accounts.invoice_payment_terms_days` (satu customer, Indomarco). Tingkat 2 dan 3 hanya tersentuh di staging (tiga customer ber-NULL → cadangan 30). Jangan baca "backfill lolos di produksi" sebagai "rantai terminnya teruji".
+
+⚠️ Bentuk rantainya di sini `COALESCE` berantai, bukan IF/ELSE seperti di PL/pgSQL — ekuivalen untuk keempat kasus, KECUALI kalau satu company punya lebih dari satu baris `entity_finance_settings` (subquery skalar akan gagal). V0 memeriksanya lebih dulu.
+
+**Rollback.** Ada di ekor berkasnya, dan syaratnya disengaja: ia hanya mengembalikan baris yang `due_date`-nya **masih sama** dengan yang ditulis backfill. Kalau seseorang sudah mengoreksi sebuah invoice sesudahnya, rollback tidak menimpanya.
+
+---
+
+## 12. ⛔ `20260927000002_account_role_mapping` — WAJIB, SEBELUM butir 13
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260927000002_account_role_mapping.sql` (290 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — 6 baris pemetaan untuk entitas **SOA**; V1 (bukti identitas) **0 selisih** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, SEBELUM butir 13** |
+
+**Apa isinya.** Tabel `account_role_mappings` (per entitas: peran akun → `account_id`) + helper `get_mapped_account(uuid, text)`. **Aditif sepenuhnya:** nol fungsi jurnal disentuh, jadi menjalankan butir ini saja **tidak mengubah satu pun jurnal**.
+
+**Enam peran:** `piutang_usaha` · `ppn_keluaran` · `pendapatan_barang` · `pendapatan_jasa_kirim` · `kas_bank` · `pph23_dibayar_dimuka`. Seed-nya diambil dari kode yang dipakai hari ini (`1-1200`, `2-1200`, `4-1000`, `4-1100`, `1-1101`, `1-1300`).
+
+**Kenapa ada.** Draft CoA baru Finance mengubah **arti** kode yang sama (mis. `1-1200` jadi Bank Rupiah). Begitu CoA itu naik, fungsi jurnal yang mencari akun lewat kode akan tetap berjalan **tanpa error** dan menjurnal ke akun yang SALAH — kegagalan yang tidak berbunyi, cuma menghasilkan pembukuan yang rapi dan keliru.
+
+⭐ **V1-nya bukan hitungan baris, melainkan BUKTI IDENTITAS:** untuk setiap baris pemetaan, `get_mapped_account()` harus mengembalikan akun yang **sama** dengan lookup kode lama. Kalau ada selisih, migrasi berhenti dan butir 13 **tidak boleh** dijalankan — karena bukti itulah yang membuat "jurnalnya identik" jadi klaim terukur, bukan harapan.
+
+⚠️ Di produksi hari ini **hanya SOA punya `chart_of_accounts`**, jadi seed-nya 6 baris dan entitas lain akan kosong. Itu BENAR — mereka belum punya CoA sama sekali, bukan "lupa dipetakan".
+
+**Rollback.** `DROP FUNCTION get_mapped_account` + `DROP TABLE account_role_mappings` — tapi **hanya** kalau butir 13 belum jalan atau sudah dibalik. Urutan membalikkan: 13 dulu, baru 12.
+
+---
+
+## 13. ⛔ `20260927000003_journal_account_roles_and_readiness` — WAJIB, sesudah butir 9 DAN 12
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260927000003_journal_account_roles_and_readiness.sql` (660 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026**; V1 hijau; proyeksi jurnal **identik sebelum vs sesudah** (104 baris, 0 selisih dua arah) |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** sesudah butir 9 dan butir 12 |
+
+**DUA perubahan, satu berkas** — karena keduanya menulis ulang fungsi yang sama, dan memecahnya berarti `create_invoice_for_sp` ditranskripsi dua kali berturut-turut:
+
+**(A) Jurnal berhenti mencari akun lewat kode.** Enam lookup `chart_of_accounts WHERE code = '...'` di `create_invoice_for_sp` dan `record_payment` diganti `get_mapped_account()`.
+
+**(B) Alasan "belum bisa ditagih" punya SATU implementasi.** Fungsi baru `sp_invoice_readiness(uuid)` memegang aturannya, dan `create_invoice_for_sp` **memanggilnya** — bukan menyalinnya. Halaman Siap Ditagih memakai fungsi yang sama lewat `sp_invoice_readiness_all(uuid)`, jadi alasan yang ditampilkan FE tidak bisa menyimpang dari guard yang menolak.
+
+⭐ **Palangnya menjaga URUTAN, bukan cuma prasyarat.** Ia menolak jalan kalau `create_invoice_for_sp` yang hidup **belum versi AR Tahap 1** (penanda: pesan invariant piutang). Tanpa palang itu, menjalankan butir ini di produksi hari ini akan diam-diam **memasang guard Tahap 1** — BTB wajib, SJ harus `delivered`, invariant piutang — padahal butir 6-9 belum dijalankan dan radius dampaknya belum diumumkan ke gudang.
+
+**Urutan guard DIPERTAHANKAN PERSIS** (keputusan Den K-2): invoice aktif → terkirim penuh → BTB → SJ belum selesai → SJ tanpa tanggal tanda tangan. Teks pesannya disalin verbatim; yang berpindah hanya **tempat teks itu dirakit**.
+
+⭐ **Terbukti setara, bukan diasumsikan:** untuk **40 SP seed**, `sp_invoice_readiness` dibandingkan dengan hasil `create_invoice_for_sp` yang sungguh dijalankan lalu dibatalkan — **40/40 cocok**, dan untuk 33 yang ditolak pesannya **sama karakter per karakter**. Kelima kode alasan terbukti (dua di antaranya lewat fixture yang dibatalkan).
+
+⚠️ `sp_invoice_readiness` **SECURITY DEFINER**, `sp_invoice_readiness_all` **SECURITY INVOKER** — perbedaannya disengaja: *SP mana yang boleh dilihat* = urusan RLS; *kenapa sebuah SP tertahan* = urusan guard. Kalau readiness dibuat INVOKER, FE bisa melewatkan Surat Jalan yang RLS sembunyikan lalu melaporkan "siap" untuk SP yang sebenarnya ditolak — persis divergensi yang fungsi ini ada untuk mencegahnya.
+
+**Rollback.** Pulihkan badan `create_invoice_for_sp` + `record_payment` dari cadangan yang diambil **sebelum** butir ini jalan, dan pakai cadangan yang cocok dengan LINGKUNGANNYA — staging dan produksi BERBEDA (Tahap 1 sudah jalan di staging, belum di produksi). ⛔ Memakai cadangan produksi untuk memulihkan staging akan mencabut guard Tahap 1 tanpa ada yang memberi tahu. Rollback FE-nya sekalian: readiness yang hidup tanpa `create_invoice_for_sp` yang memanggilnya bisa menyimpang.
+
+---
+
+## 14. ⛔ Grant menu `fin_invoice` (`20260927000004`) — WAJIB (AR Tahap 2)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260927000004_menu_grant_fin_invoice.sql` (157 baris) |
+| Staging | ✔ **dijalankan 25 Sep 2026** — 3 baris: `finance`, `finance_controller`, `ceo` (aksi `view`) |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** — tanpa ini halaman Invoice Management hanya terlihat `super_admin` |
+
+**100% DATA.** Nol DDL, nol policy, nol RPC, nol baris dihapus. Idempoten.
+
+**Tidak ada key menu baru.** `fin_invoice` ("Billing / Invoice", modul `finance`) sudah ada di katalog; sebelum ini ia punya **nol grant role** karena id menu `billing` terparkir di `PLANNED_MENU_IDS` dan tidak dipasang di tab mana pun. AR Tahap 2 memasangnya di tab **6.2.1**, jadi gate-nya cuma soal grant.
+
+⚠️ **IZIN MENU BUKAN IZIN AKSI.** Role `finance` akan MELIHAT halaman ini, tapi DB tetap menolaknya menerbitkan invoice, submit, dan mencatat pembayaran. Itu DISENGAJA (keputusan Den K-6): FE menampilkan tombolnya **nonaktif beserta alasannya**, bukan menyembunyikannya — supaya orang tahu jalurnya ada dan siapa yang bisa memakainya. Terbukti runtime di staging: `zzztest.finance` ditolak peran untuk terbit DAN bayar, `zzztest.controller` diterima keduanya, dan tebakan FE cocok dengan hasil DB **8 dari 8**.
+
+⚠️ **Tidak menggeser baseline sweep QA.** Kelima akun sweep memegang `bd_sales_executive` / `operations` / `hcga_personel` / `proc_staff` / `viewer` — diukur 25 Sep 2026, nol di antaranya `finance`, `finance_controller`, atau `ceo`.
+
+⚠️ **Berkas `20260924000001` ikut disunting** (keputusan Den K-8): key `skel_6_2_1` dicabut dari seed katalog, karena tab 6.2.1 berhenti jadi placeholder. Angka di dalamnya turun **157 → 156**. Migrasi itu sendiri masih **belum dijalankan di mana pun**.
+
+**Rollback.** DELETE ber-batas: hanya aksi `view` dan ketiga role itu. Menghapus SEMUA grant `fin_invoice` akan ikut mencabut grant per-user yang mungkin sudah diberikan lewat Admin Settings.
 
 ---
 

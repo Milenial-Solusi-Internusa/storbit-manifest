@@ -1,7 +1,9 @@
 -- =============================================================================
 -- Migration: 20260924000001_menu_skeleton_catalog
 -- Phase:     Kerangka menu Grand Design Bagian 1 — pendaftaran KATALOG untuk
---            157 menu key tab placeholder (`skel_*`).
+--            156 menu key tab placeholder (`skel_*`).
+--            (semula 157 -- `skel_6_2_1` dicabut AR Tahap 2, lihat catatan di
+--            blok VALUES.)
 -- Depends:   tabel modules / module_menus / menu_actions (RBAC 3-tingkat).
 --
 -- Status:    BELUM DIJALANKAN — di staging maupun produksi.
@@ -9,7 +11,7 @@
 -- TIDAK WAJIB untuk membuat kerangka menunya bekerja. Kode sudah benar tanpa
 --    migrasi ini: hasMenuPermission default-deny, dan key yang TIDAK ada di
 --    katalog otomatis berarti "hanya super_admin" (bypass tier 1). Migrasi ini
---    hanya membuat ke-157 key itu MUNCUL di matriks RoleDefaultsPage /
+--    hanya membuat ke-156 key itu MUNCUL di matriks RoleDefaultsPage /
 --    UserEditPage, supaya kelak bisa di-grant lewat UI tanpa SQL lagi.
 --
 -- SIFAT: 3 INSERT idempoten (ON CONFLICT DO NOTHING), 100% DATA.
@@ -63,7 +65,7 @@ FROM (VALUES
 ) AS v(key, label, sort_order)
 ON CONFLICT (key) DO NOTHING;
 
--- 2. 157 menu key tab placeholder. Label = "<kode Bagian 1> <nama Level 3>"
+-- 2. 156 menu key tab placeholder. Label = "<kode Bagian 1> <nama Level 3>"
 --    supaya tiap baris di matriks izin bisa dicocokkan langsung ke dokumennya.
 INSERT INTO public.module_menus (module_id, key, label, sort_order, is_active)
 SELECT m.id, v.key, v.label, v.sort_order, true
@@ -171,7 +173,11 @@ FROM (VALUES
   ('finance', 'skel_6_1_2', '6.1.2 Cash Flow Projection', 901),
   ('finance', 'skel_6_1_3', '6.1.3 Bank Reconciliation', 902),
   ('finance', 'skel_6_1_4', '6.1.4 Payroll Disbursement', 903),
-  ('finance', 'skel_6_2_1', '6.2.1 Invoice Management', 904),
+  -- 'skel_6_2_1' DICABUT pada AR Tahap 2 (25 Sep 2026, keputusan Den K-8):
+  -- tab 6.2.1 berhenti jadi placeholder dan kini dipasang ke menu id
+  -- `billing` -> key `fin_invoice` yang SUDAH ada di katalog. Menyeed key
+  -- `skel_6_2_1` sekarang cuma melahirkan baris yang tak pernah menggerbang
+  -- apa pun, lalu muncul di matriks izin sebagai pilihan yang tidak berarti.
   ('finance', 'skel_6_3_2', '6.3.2 3-Way Matching (PO vs Goods Receiving vs Vendor Bill)', 905),
   ('finance', 'skel_6_3_3', '6.3.3 Payment Scheduling & Approval', 906),
   ('finance', 'skel_6_3_4', '6.3.4 AP Aging', 907),
@@ -243,10 +249,10 @@ COMMIT;
 -- VERIFIKASI -- jalankan TERPISAH sesudah COMMIT.
 -- =============================================================================
 
--- V1 -- DIHARAPKAN 157 baris.
+-- V1 -- DIHARAPKAN 156 baris.
 SELECT count(*) AS menu_skeleton FROM public.module_menus WHERE key LIKE 'skel\_%';
 
--- V2 -- DIHARAPKAN 157 baris (satu aksi 'view' per menu).
+-- V2 -- DIHARAPKAN 156 baris (satu aksi 'view' per menu).
 SELECT count(*) AS aksi_view
 FROM   public.menu_actions ma
 JOIN   public.module_menus mm ON mm.id = ma.menu_id
