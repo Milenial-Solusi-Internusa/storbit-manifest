@@ -6,7 +6,8 @@
 -- ongkir, akun per baris) sudah terisi tanpa berkas ini -- dan V12 mengujinya.
 --
 -- Yang DIISI DI SINI hanya kolom kelas (c): yang memang baru ada SESUDAH
--- invoice terbit, dan hanya lewat RPC berjejak. Tanpa fixture ini kolom-kolom
+-- invoice terbit, dan hanya lewat RPC berjejak. KECUALI kejadian "dikirim
+-- lewat email", yang sengaja TIDAK diisi -- lihat blok (2). Tanpa fixture ini kolom-kolom
 -- itu nol baris di seluruh seed, dan tab "Info Lain" / "Pajak & Coretax" /
 -- "Lampiran & Catatan" tidak punya apa pun untuk ditampilkan saat UAT.
 --
@@ -67,14 +68,28 @@ BEGIN
     PERFORM set_invoice_tax_info(v_c, NULL, '[01] 01 - Kepada Pihak yang Bukan Pemungut PPN');
   END IF;
 
-  -- (2) Jejak cetak (dua kali, supaya print_count > 1) dan kirim email.
+  -- (2) Jejak cetak, dua kali supaya print_count > 1.
   IF (SELECT print_count FROM sp_invoices WHERE id=v_b) = 0 THEN
     PERFORM mark_invoice_printed(v_b, 'download');
     PERFORM mark_invoice_printed(v_b, 'print');
   END IF;
-  IF (SELECT emailed_at FROM sp_invoices WHERE id=v_b) IS NULL THEN
-    PERFORM mark_invoice_emailed(v_b);
-  END IF;
+
+  -- !! KEJADIAN "dikirim lewat email" SENGAJA TIDAK DIISI (keputusan Den,
+  -- 25 Sep 2026). Storbit mengirim invoice lewat UPLOAD PORTAL, bukan email,
+  -- jadi seed yang mengisinya akan menaruh kejadian yang tidak pernah terjadi
+  -- di Riwayat -- dan penguji UAT tidak punya cara membedakannya dari yang
+  -- nyata. Kolom `emailed_at` sendiri TETAP ADA di skema; yang dicabut cuma
+  -- pengisinya di sini.
+  --
+  -- UPDATE di bawah membersihkan sisa fixture LAMA: sampai 25 Sep fixture ini
+  -- memanggil mark_invoice_emailed, jadi staging yang sudah pernah di-seed
+  -- tanpa purge masih menyimpan jejaknya. Idempoten, dan pada staging yang
+  -- baru di-purge ia menyentuh 0 baris.
+  UPDATE sp_invoices i
+     SET emailed_at = NULL, emailed_by = NULL
+    FROM sp_orders o
+   WHERE o.id = i.sp_order_id AND o.sp_no LIKE '91%'
+     AND i.emailed_at IS NOT NULL;
 
   -- (3) Catatan internal -- tiga, supaya Riwayat punya lebih dari satu baris
   -- manusia di antara kejadian sistem.
@@ -104,6 +119,6 @@ BEGIN
     PERFORM link_replacement_invoice(v_e, v_void);
   END IF;
 
-  RAISE NOTICE 'FIXTURE v2 SELESAI: pajak 2 invoice, cetak+email 1, catatan 3, lampiran 2, pengganti 1.';
+  RAISE NOTICE 'FIXTURE v2 SELESAI: pajak 2 invoice, cetak 1 (2x), catatan 3, lampiran 2, pengganti 1. Nol kejadian email -- disengaja.';
 END
 $fx$;

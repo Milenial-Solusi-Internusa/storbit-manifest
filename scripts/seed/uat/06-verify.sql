@@ -10,6 +10,13 @@
 -- gagal, BERHENTI dan laporkan -- jangan UPDATE sp_orders.status (aturan R2).
 -- =============================================================================
 
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
+
 \echo '=============== V1  jumlah per skenario ==============='
 WITH sp AS (
   SELECT o.sp_no, o.status,
@@ -352,6 +359,14 @@ SELECT 'V12i invoice ber-print_count 2', count(*)::text, '1',
        CASE WHEN count(*)=1 THEN 'LOLOS' ELSE 'GAGAL' END
 FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
 WHERE o.sp_no LIKE '91%' AND i.print_count = 2
+UNION ALL
+-- Storbit memakai upload portal, bukan email: fixture sengaja tidak mengisi
+-- emailed_at, dan asersi ini yang menjaganya tetap begitu. Kalau kelak ada
+-- yang menghidupkan lagi mark_invoice_emailed di seed, baris ini berbunyi.
+SELECT 'V12i invoice ber-kejadian email', count(*)::text, '0',
+       CASE WHEN count(*)=0 THEN 'LOLOS' ELSE 'GAGAL' END
+FROM sp_invoices i JOIN sp_orders o ON o.id=i.sp_order_id
+WHERE o.sp_no LIKE '91%' AND i.emailed_at IS NOT NULL
 UNION ALL
 SELECT 'V12i catatan internal', count(*)::text, '3',
        CASE WHEN count(*)=3 THEN 'LOLOS' ELSE 'GAGAL' END

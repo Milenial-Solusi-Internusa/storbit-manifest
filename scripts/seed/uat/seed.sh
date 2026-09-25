@@ -48,9 +48,28 @@ command -v psql >/dev/null 2>&1 || { echo "PALANG: psql tidak ditemukan di PATH.
 
 cd "$(dirname "$0")"
 
+# PALANG STRUKTUR: tiap berkas yang dijalankan harus memanggil palangnya sendiri.
+./cek-guards.sh
+
 # ON_ERROR_STOP=1 -- berhenti di kesalahan pertama, bukan melanjutkan dan
 # meninggalkan data separuh jadi.
-PSQL="psql --no-psqlrc --set=ON_ERROR_STOP=1 --quiet"
+#
+# --single-transaction WAJIB, dan bukan sekadar kerapian. 00-guards.sql memasang
+# impersonasi lewat set_config(..., true) yang berlaku SATU TRANSAKSI. Tanpa
+# bendera ini psql autocommit: tiap pernyataan jadi transaksinya sendiri, GUC-nya
+# hilang begitu blok palang selesai, dan pernyataan berikutnya berjalan dengan
+# auth.uid() NULL -- guard RPC menolak dengan pesan yang terdengar seperti bug
+# izin ("Tidak berhak membuat picking list untuk SP ini"), padahal sebabnya
+# transaksi.
+#
+# Efek keduanya diinginkan: tiap berkas jadi ATOMIK. Gagal di tengah berarti
+# berkas itu dibatalkan seluruhnya, bukan meninggalkan staging separuh jadi.
+#
+# !! Tiap berkas memanggil \i 00-guards.sql sendiri. Jangan dicabut dengan alasan
+# "sudah dipanggil di berkas sebelumnya" -- tiap berkas di sini adalah proses
+# psql SENDIRI, jadi SESI sendiri, dan tidak mewarisi GUC dari siapa pun.
+# Dijaga mekanis oleh cek-guards.sh.
+PSQL="psql --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction --quiet"
 
 jalankan() {
   echo ""

@@ -13,8 +13,16 @@
 --
 -- payment_date = invoice_date + sebaran ber-median 48 hari (pola produksi).
 --
--- Prasyarat: 00-guards.sql + 01-stock.sql + 01b-helper.sql di sesi yang SAMA.
+-- Prasyarat: 01-stock.sql + 01b-helper.sql sudah dijalankan (berkas terpisah,
+--   sesi terpisah -- keduanya sudah commit saat berkas ini mulai).
 -- =============================================================================
+
+-- Palang + impersonasi. DI SETIAP BERKAS, bukan sekali di awal rangkaian:
+-- seed.sh menjalankan tiap berkas sebagai proses psql SENDIRI, jadi tiap berkas
+-- adalah SESI sendiri dan tidak mewarisi GUC dari berkas sebelumnya.
+-- Berpasangan dengan --single-transaction di seed.sh -- lihat README, bagian
+-- "seed.sh wajib bisa jalan lewat psql".
+\i 00-guards.sql
 
 -- ---------------------------------------------------------------- 5 x ISSUED
 -- 9100019, 9100020 di atas Rp5jt; tiga sisanya kecil.

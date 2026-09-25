@@ -24,6 +24,11 @@ STG_DB_URL='...' ./seed.sh purge
 Env var yang dibutuhkan hanya **`STG_DB_URL`**. **Nol password akun** -- lihat
 "Impersonasi" di bawah.
 
+`seed.sh` menjalankan `./cek-guards.sh` lebih dulu (100% baca berkas, nol
+koneksi) dan memakai `psql --single-transaction` untuk tiap berkas. Keduanya
+bukan hiasan -- alasannya di bagian
+"`seed.sh` wajib bisa jalan lewat psql, bukan hanya lewat MCP".
+
 ## Urutan berkas (mengikat)
 
 | Berkas | Isi |
@@ -59,6 +64,62 @@ PERFORM set_config('request.jwt.claim.sub', '<uid test@msi.com>', true);
 Guard RPC lolos, sementara sesi tetap role `postgres` sehingga RLS tidak
 menghalangi UPDATE tanggal historis. Dua sifat yang dibutuhkan sekaligus, dan
 **tanpa satu pun password**.
+
+⚠️ Argumen ketiga `true` berarti **transaction-scoped** — itu penting, dan
+konsekuensinya ada di bagian berikutnya.
+
+## `seed.sh` wajib bisa jalan lewat psql, bukan hanya lewat MCP
+
+**Pelajaran 25 September 2026, dan biayanya satu staging setengah jadi.**
+
+Seluruh rangkaian ini lahir dan diuji lewat MCP Supabase, yang mengeksekusi
+satu berkas sebagai **satu batch = satu transaksi**. Pertama kali ia dijalankan
+lewat `psql`, ia gagal di `02-scenario-1.sql`:
+
+```
+ERROR:  Tidak berhak membuat picking list untuk SP ini
+```
+
+Pesannya terdengar seperti bug izin. Bukan. Ada **dua** cacat, dan keduanya
+hanya muncul lewat psql:
+
+1. **`set_config(..., true)` itu transaction-scoped.** Di bawah autocommit psql,
+   tiap pernyataan adalah transaksinya sendiri: GUC impersonasi hilang begitu
+   blok palang selesai, dan `SELECT seed_uat_build(...)` berikutnya berjalan
+   dengan `auth.uid()` NULL.
+2. **Tiap berkas adalah proses `psql` SENDIRI**, jadi **sesi** sendiri. Enam
+   berkas menulis prasyarat *"00-guards.sql sudah dijalankan di sesi yang
+   SAMA"* — kalimat yang **tidak pernah benar untuk `seed.sh`**, karena
+   `seed.sh` tidak pernah menjalankan mereka dalam satu sesi.
+
+⭐ Yang layak dibawa keluar: *prasyarat yang ditulis di komentar bukan prasyarat
+yang ditegakkan*. Kalimat itu bertahan berhari-hari sambil salah, karena jalur
+yang dipakai untuk mengujinya kebetulan memenuhinya.
+
+**Perbaikannya dua lapis, dan tidak satu pun melemahkan palang:**
+
+- **Tiap berkas memanggil `\i 00-guards.sql` sendiri.** Palangnya jadi berjalan
+  9x, bukan sekali — termasuk palang `notify_sp_milestone` no-op. Lebih ketat
+  dari sebelumnya, bukan lebih longgar.
+- **`seed.sh` memakai `--single-transaction`.** Satu berkas = satu transaksi,
+  jadi `set_config(..., true)` berlaku untuk seluruh isinya. `true` sengaja
+  **tidak** diganti `false`: scope transaksi adalah sifat yang diinginkan, yang
+  salah cuma transaksinya yang terlalu pendek.
+
+Efek keduanya yang ikut didapat: **tiap berkas jadi atomik**. Gagal di tengah
+berarti berkas itu dibatalkan seluruhnya, bukan meninggalkan staging separuh
+jadi — persis keadaan yang harus dibereskan tangan pada 25 Sep.
+
+⛔ **Jangan cabut satu pun `\i 00-guards.sql` dengan alasan "sudah dipanggil di
+berkas sebelumnya".** Aturannya dijaga mekanis oleh `cek-guards.sh`, yang
+dijalankan `seed.sh` sebelum menyentuh database, dan yang juga menolak berkas
+seed baru yang belum terdaftar — daftar yang diam-diam ketinggalan adalah cara
+aturan ini mati pelan-pelan.
+
+⚠️ **Konsekuensi untuk siapa pun yang menambah berkas seed:** berkas baru wajib
+(a) memanggil `\i 00-guards.sql` di kepalanya, (b) aman dijalankan di dalam
+SATU transaksi (nol `VACUUM`, nol `CREATE INDEX CONCURRENTLY`, nol prosedur
+ber-`COMMIT`), dan (c) terdaftar di `cek-guards.sh`.
 
 ## Tanggal historis: satu urutan yang mengikat
 
