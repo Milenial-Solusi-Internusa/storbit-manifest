@@ -198,6 +198,24 @@ function ambilLewatPsql(url, label) {
     console.error('PALANG: PRD_DB_URL tidak menunjuk produksi (atau memuat ref staging).');
     process.exit(3);
   }
+  // Tolak host "direct connection": tidak bisa di-resolve dari jaringan ini,
+  // dan kegagalannya dulu terbaca sebagai temuan, bukan sebagai salah URL.
+  if (/db\.[^/]*\.supabase\.co/.test(url)) {
+    console.error(`PALANG: ${label} memakai DIRECT CONNECTION (db.<ref>.supabase.co).`);
+    console.error('  Pakai SESSION POOLER: host <region>.pooler.supabase.com,');
+    console.error('  user postgres.<ref>, port 5432 (Project Settings > Database).');
+    process.exit(4);
+  }
+  // Buktikan koneksinya hidup SEBELUM mengangkut inventaris. Tanpa ini, URL
+  // yang tidak bisa dipakai baru berbunyi sesudah separuh pekerjaan berjalan.
+  try {
+    execFileSync('psql', [url, '--no-psqlrc', '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PGCONNECT_TIMEOUT: '15' } });
+  } catch (e) {
+    console.error(`PALANG: ${label} tidak bisa dipakai menyambung.`);
+    console.error(`  ${String(e.stderr || e.message).trim()}`);
+    process.exit(6);
+  }
   const out = execFileSync('psql', [url, '--no-psqlrc', '-At', '-c', INVENTARIS_SQL], {
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   });

@@ -27,26 +27,20 @@ if [ -z "${STG_DB_URL:-}" ]; then
   exit 2
 fi
 
-# ---------------------------------------------------------------------------
-# PALANG TARGET -- dua arah, bukan satu.
-# Menuntut ref staging ADA, dan menolak kalau ref produksi MUNCUL. Hanya
-# memeriksa satu di antaranya akan meloloskan URL yang memuat keduanya.
-# ---------------------------------------------------------------------------
-case "$STG_DB_URL" in
-  *untmpqceexwxzuhlmyrg*)
-    echo "PALANG: STG_DB_URL memuat ref PRODUKSI (untmpqceexwxzuhlmyrg). DITOLAK." >&2
-    exit 3 ;;
-esac
-case "$STG_DB_URL" in
-  *oovmlhilhqzejnawqkvt*) : ;;
-  *)
-    echo "PALANG: STG_DB_URL tidak memuat ref staging (oovmlhilhqzejnawqkvt). DITOLAK." >&2
-    exit 3 ;;
-esac
-
-command -v psql >/dev/null 2>&1 || { echo "PALANG: psql tidak ditemukan di PATH." >&2; exit 4; }
-
 cd "$(dirname "$0")"
+
+# ---------------------------------------------------------------------------
+# PALANG TARGET -- dipusatkan di scripts/qa/cek-dburl.sh sejak 27 Sep 2026.
+# Tiga aturan sekaligus: tolak host direct connection (db.<ref>.supabase.co),
+# palang ref DUA ARAH, dan BUKTIKAN koneksinya hidup lewat SELECT 1.
+#
+# Aturan ketiga yang baru, dan ia bukan kerapian: sebelum ini URL yang tidak
+# bisa dipakai baru ketahuan di tengah rangkaian, sesudah purge terlanjur
+# jalan. Yang dioper NAMA variabelnya, bukan isinya -- URL memuat password dan
+# argumen perintah terlihat lewat `ps`.
+# ---------------------------------------------------------------------------
+export STG_DB_URL
+../../qa/cek-dburl.sh STG_DB_URL staging
 
 # PALANG STRUKTUR: tiap berkas yang dijalankan harus memanggil palangnya sendiri.
 ./cek-guards.sh

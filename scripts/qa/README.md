@@ -87,6 +87,19 @@ Alat ujinya **di-commit** sejak 23 Sep 2026 (keputusan Den): `scripts/qa/butir5.
 - **Asersi identitas harus menyebut yang spesifik** (heading halaman yang dituju), bukan sekadar "tidak error / ada isinya".
 - **Kalau asersi PRASYARAT gagal, asersi turunannya JANGAN dijalankan** — berhenti dengan exit code gagal + petunjuk apa yang harus dicek. Lebih baik nol angka daripada angka yang terbaca seperti keberhasilan.
 
+**[27 Sep 2026 — instance KETIGA, dan yang paling murah dicegah: URL yang tidak bisa menyambung.]** `baca-drift-a.sh` dijalankan dengan URL *direct connection* (`db.<ref>.supabase.co`) yang tidak bisa di-resolve. Setiap `psql` gagal — tapi skripnya menutup tiap panggilan dengan `|| true` lalu mem-`diff` keluarannya, sehingga ia **membandingkan dua pesan error** dan melaporkan **setiap objek "BERBEDA"**. Laporannya terlihat berwibawa: enam objek, semuanya berbeda, lengkap dengan diff.
+
+⭐ Yang berbahaya bukan koneksi yang gagal — itu jelas dan cepat ketahuan. Yang berbahaya **laporan yang tetap dicetak sesudahnya**, karena bentuknya sama persis dengan temuan nyata.
+
+**Palang dipusatkan di `scripts/qa/cek-dburl.sh`** dan dipakai setiap skrip yang menerima URL (`seed.sh`, `env-drift-check.mjs`, dan skrip `out/` yang meminta URL). Tiga aturan, dan ketiganya perlu:
+1. **tolak host `db.<ref>.supabase.co` sejak awal** — nol koneksi, pesan + petunjuk Session pooler (`<region>.pooler.supabase.com`, user `postgres.<ref>`, port 5432);
+2. **palang ref DUA ARAH** (ref yang benar wajib ADA, ref lawan wajib TIDAK);
+3. **buktikan koneksinya hidup lewat `SELECT 1`** sebelum skrip pemanggil mulai.
+
+Aturan 1 saja tidak cukup: URL bisa salah karena password, port, atau nama user, bukan cuma host. **Aturan 3 yang membuat "berhasil" berarti sesuatu.** Ditambah: `|| true` dicabut dari pemanggilan `psql` mana pun yang hasilnya dibandingkan — `psql` yang gagal menghentikan skrip, keluarannya tidak pernah sampai ke `diff`.
+
+⚠️ Nama variabel yang dioper ke `cek-dburl.sh`, **bukan isinya**: URL memuat password, dan argumen perintah terlihat oleh siapa pun yang menjalankan `ps` di mesin yang sama.
+
 Jejak: `PROGRESS.md` 2026-09-22 butir 12a/12b (butir 5 G2, LOLOS 4/4) & butir 13b (pengerasan `menu-sweep.mjs`). Ini **pelajaran proses, sengaja bukan TD** (keputusan Den).
 
 Akun uji staging & pola aksesnya: `PROGRESS.md` 2026-09-21 (password bersama — tanya Den, tidak ditulis di repo).
