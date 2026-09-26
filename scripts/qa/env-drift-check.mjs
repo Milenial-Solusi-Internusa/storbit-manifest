@@ -16,6 +16,28 @@
 //   trigger  tabel.trigger      -> md5(pg_get_triggerdef)
 //   kolom    tabel              -> md5 atas SELURUH daftar kolomnya
 //                                 (nama|tipe|nullable|default, urut nama)
+//   hak      tabel:<t>          -> hak TABEL dari relacl
+//            kolom:<t>.<k>      -> hak KOLOM dari attacl
+//            fungsi:<f(args)>   -> proacl
+//
+// -- KENAPA `hak` JADI KATEGORI SENDIRI (27 Sep 2026) ------------------------
+// Preflight Kelompok A menemukan `authenticated` MASIH punya DELETE pada
+// sp_items di staging sementara production sudah mencabutnya -- staging lebih
+// longgar, dan skrip ini BUTA terhadapnya. Policy-nya sendiri sudah dilaporkan
+// berbeda, tapi menyamakan policy tanpa hak tabelnya hanya menutup lapis kedua
+// sambil meninggalkan lapis pertama terbuka.
+//
+// ** proacl DIPINDAH dari sidik jari `fungsi` ke sini. Dulu ia ikut di-md5
+// bersama badan, sehingga fungsi yang badannya IDENTIK tapi ACL-nya berbeda
+// dilaporkan "BEDA ISI" -- kalimat yang mengirim orang membaca badan fungsi
+// untuk mencari perbedaan yang tidak ada di sana. Sekarang `fungsi` berarti
+// definisi, `hak` berarti izin, dan laporannya menyebut yang sebenarnya beda.
+//
+// Untuk TABEL dan KOLOM yang dibandingkan hanya hak untuk `anon`,
+// `authenticated`, dan `PUBLIC` -- tiga yang benar-benar terpapar PostgREST.
+// PUBLIC WAJIB ikut: hak yang diberikan ke PUBLIC sampai ke anon maupun
+// authenticated tanpa disebut namanya. Hak untuk postgres/service_role
+// sengaja diabaikan (artefak lingkungan, bukan permukaan aplikasi).
 //
 // Hasilnya dikelompokkan: HANYA DI STAGING, HANYA DI PRODUCTION, BEDA ISI.
 //
@@ -32,8 +54,10 @@
 //              satu-satunya yang membuat exit code != 0.
 //
 // ── YANG TIDAK DILIHAT ALAT INI (batas, bukan jaminan) ──────────────────────
-//   index, constraint, sequence, extension, hak tabel/kolom (relacl/attacl),
-//   dan ISI DATA. Contoh nyata: 20260925000002 hanya membuat index unik
+//   index, constraint, sequence, extension, dan ISI DATA.
+//   (hak tabel/kolom/fungsi TIDAK lagi di daftar ini sejak kategori `hak`
+//   ditambahkan 27 Sep 2026.)
+//   Contoh nyata: 20260925000002 hanya membuat index unik
 //   parsial, jadi ia TIDAK akan pernah muncul di sini -- bukan karena ia sudah
 //   sama, melainkan karena index tidak dibandingkan. Untuk kelas itu, doc 12
 //   yang jadi daftarnya, bukan skrip ini.
@@ -65,6 +89,11 @@
 //     --sql-kolom  <tabel>
 //     --sql-policy <tabel.policy.cmd>   (kunci persis seperti yang dicetak)
 //     --sql-fungsi <nama>               (tanpa argumen; semua overload dicetak)
+//     --sql-hak    <tabel>              (relacl tabel + attacl tiap kolomnya)
+//
+//   --hak-detail  (bendera tambahan, bukan mode sendiri) mencetak tiap
+//   perbedaan kategori hak BERPASANGAN staging vs production. Bisa digabung
+//   dengan --from-json.
 //
 //   ⭐ Drill-down sengaja MENCETAK SQL, bukan menjalankannya. Sidik jari di
 //   skrip ini md5 -- ia bisa bilang "berbeda", tidak pernah "berbeda di mana".
@@ -85,7 +114,8 @@ import { readFileSync } from 'node:fs';
 const DIKETAHUI = [
   {
     kelas: 'selamanya',
-    cocok: (kat, kunci) => kat === 'fungsi' && kunci.startsWith('notify_sp_milestone('),
+    cocok: (kat, kunci) => (kat === 'fungsi' && kunci.startsWith('notify_sp_milestone('))
+      || (hakFungsi(kat, kunci) || '').startsWith('notify_sp_milestone('),
     alasan: 'no-op KHUSUS staging (20260925000003, doc 12 butir 10) -- badan produksi memanggil Edge Function produksi lewat URL hardcode, jadi staging sengaja BERBEDA selamanya',
   },
   {
@@ -98,14 +128,19 @@ const DIKETAHUI = [
       // panjang badan fungsi justru alasan proacl disertakan.
       (kat === 'fungsi' && /^(create_invoice_for_sp|create_invoice|record_payment|submit_invoice|generate_delivery_from_picking|set_delivery_signed_date|sp_invoice_readiness|sp_invoice_readiness_all|get_mapped_account|mark_delivery_delivered)\(/.test(kunci))
       || (kat === 'kolom' && /^(delivery_notes|account_role_mappings|sp_invoices_due_date_backfill_20260927|sp_invoices)$/.test(kunci))
-      || (kat === 'policy' && kunci.startsWith('account_role_mappings.')),
+      || (kat === 'policy' && kunci.startsWith('account_role_mappings.'))
+      // Hak: ACL tiga fungsi invoice diperketat AR Tahap 1 butir (e), dan
+      // tabel barunya belum ada di produksi.
+      || /^(create_invoice_for_sp|create_invoice|record_payment|submit_invoice|generate_delivery_from_picking|set_delivery_signed_date|sp_invoice_readiness|sp_invoice_readiness_all|get_mapped_account|mark_delivery_delivered)\(/.test(hakFungsi(kat, kunci) || '')
+      || /^(account_role_mappings|sp_invoices_due_date_backfill_20260927)$/.test(hakTabel(kat, kunci) || ''),
     kelas: 'antre',
     butir: '6-9, 11-14',
     alasan: 'AR Tahap 1/2 menunggu hari launching -- LIVE staging, produksi belum, dan urutannya mengikat',
   },
   {
     kelas: 'selamanya',
-    cocok: (kat, kunci) => kat === 'fungsi' && /^(seed_uat_build|seed_uat_bill|derive_status)\(/.test(kunci),
+    cocok: (kat, kunci) => /^(seed_uat_build|seed_uat_bill|derive_status)\(/.test(
+      kat === 'fungsi' ? kunci : (hakFungsi(kat, kunci) || '')),
     alasan: 'fungsi bantu seed data dummy UAT (scripts/seed/uat/) -- staging saja, dan dihapus oleh 99-purge',
   },
   {
@@ -119,23 +154,40 @@ const DIKETAHUI = [
     cocok: (kat, kunci) =>
       (kat === 'kolom' && /^(sp_invoice_lines|invoice_attachments|invoice_notes)$/.test(kunci))
       || (kat === 'fungsi' && /^(invoice_journal_projection|post_invoice_journal|invoice_dapat_dibaca|set_invoice_tax_info|mark_invoice_printed|mark_invoice_emailed|link_replacement_invoice|add_invoice_attachment|delete_invoice_attachment|add_invoice_note|delete_invoice_note)\(/.test(kunci))
-      || (kat === 'policy' && /^(invoice_attachments|invoice_notes)\./.test(kunci)),
+      || (kat === 'policy' && /^(invoice_attachments|invoice_notes)\./.test(kunci))
+      // Hak: berkas 1 mencabut UPDATE(faktur_no) dan berkas 4 mencabut
+      // INSERT/UPDATE/DELETE sp_invoice_lines + INSERT sp_invoices dari
+      // authenticated -- SEMUA staging-only, doc 12 butir 16 dan 19. Inilah
+      // yang dulu tidak bisa dilihat alat ini sama sekali.
+      || /^(sp_invoices|sp_invoice_lines|invoice_attachments|invoice_notes)$/.test(hakTabel(kat, kunci) || '')
+      || /^(invoice_journal_projection|post_invoice_journal|invoice_dapat_dibaca|set_invoice_tax_info|mark_invoice_printed|mark_invoice_emailed|link_replacement_invoice|add_invoice_attachment|delete_invoice_attachment|add_invoice_note|delete_invoice_note)\(/.test(hakFungsi(kat, kunci) || ''),
     kelas: 'antre',
     butir: '16-26',
     alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..11) -- LIVE staging, produksi belum, urutannya mengikat',
   },
   {
-    // !! sp_invoices sudah tercakup entri AR Tahap 1/2 di atas untuk kategori
-    // `kolom`, jadi 20 kolom baru berkas 1 tidak butuh entri sendiri. Yang
-    // TIDAK tercakup adalah perubahan HAK-nya, dan sidik jari skrip ini tidak
-    // membaca relacl/attacl tabel sama sekali -- pencabutan INSERT/UPDATE
-    // (berkas 1 dan 4) karena itu TIDAK akan muncul sebagai drift. Itu batas
-    // alat ini, bukan tanda tidak ada perbedaan: periksa lewat doc 12 butir 19.
+    // [KOREKSI 27 Sep 2026] Penanda ini dulu berbunyi "skrip ini tidak membaca
+    // relacl/attacl sama sekali, jadi pencabutan hak berkas 1 dan 4 TIDAK akan
+    // muncul sebagai drift". Batas itu SUDAH DICABUT: kategori `hak` kini
+    // membandingkan relacl, attacl, dan proacl, dan pencabutan itu muncul
+    // sebagai ANTRE lewat entri invoice lengkap di atas.
     kelas: 'selamanya',
     cocok: () => false,
     alasan: '(penanda dokumentasi, tidak mencocokkan apa pun)',
   },
 ];
+
+/** Kunci kategori `hak` berawalan tabel:/kolom:/fungsi:. Helper ini membuat
+ *  satu matcher bisa menjawab untuk kategori aslinya SEKALIGUS untuk haknya --
+ *  tanpa itu tiap entri DIKETAHUI harus ditulis dua kali, dan yang ditulis dua
+ *  kali akan berbeda satu hari nanti. */
+const hakFungsi = (kat, kunci) => (kat === 'hak' && kunci.startsWith('fungsi:')) ? kunci.slice(7) : null;
+const hakTabel  = (kat, kunci) => {
+  if (kat !== 'hak') return null;
+  if (kunci.startsWith('tabel:')) return kunci.slice(6);
+  if (kunci.startsWith('kolom:')) return kunci.slice(6).split('.')[0];
+  return null;
+};
 
 function klasifikasi(kat, kunci) {
   for (const d of DIKETAHUI) if (d.cocok(kat, kunci)) return d;
@@ -151,9 +203,10 @@ WITH fn AS (
          -- dalam template literal, jadi satu backtick memutusnya.
          -- Ketahuan saat skrip ini
          -- dijalankan pertama kali, 25 Sep 2026.
+         -- proacl SENGAJA TIDAK di sini sejak 27 Sep 2026: ia pindah ke
+         -- kategori hak, supaya "fungsi beda" berarti definisinya yang beda.
          md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
-             || '|' || COALESCE(array_to_string(p.proconfig, ','), '')
-             || '|' || COALESCE(array_to_string(p.proacl::text[], ','), '(null)')) AS sidik
+             || '|' || COALESCE(array_to_string(p.proconfig, ','), '')) AS sidik
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
 ), pol AS (
@@ -167,6 +220,46 @@ WITH fn AS (
     FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'public' AND NOT t.tgisinternal
+), hak AS (
+  -- Hak TABEL. grantee 0 = PUBLIC, dan pg_get_userbyid(0) tidak
+  -- mengembalikan 'PUBLIC' -- harus ditangani sendiri, kalau tidak hak PUBLIC
+  -- hilang dari perbandingan justru pada kategori yang tujuannya izin.
+  SELECT 'tabel:' || c.relname AS kunci,
+         COALESCE((
+           SELECT string_agg(g.nama || '=' || g.priv, ',' ORDER BY g.nama, g.priv)
+             FROM (SELECT DISTINCT
+                          CASE WHEN x.grantee = 0 THEN 'PUBLIC'
+                               ELSE pg_get_userbyid(x.grantee) END AS nama,
+                          x.privilege_type AS priv
+                     FROM aclexplode(c.relacl) x) g
+            WHERE g.nama IN ('anon','authenticated','PUBLIC')), '(nol)') AS sidik
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+  UNION ALL
+  -- Hak KOLOM. Hanya kolom yang PUNYA attacl jadi kunci: kolom tanpa attacl
+  -- mewarisi hak tabelnya, dan mencantumkan ~2.400 kolom kosong akan
+  -- menenggelamkan yang benar-benar berbeda.
+  SELECT 'kolom:' || c.relname || '.' || a.attname AS kunci,
+         COALESCE((
+           SELECT string_agg(g.nama || '=' || g.priv, ',' ORDER BY g.nama, g.priv)
+             FROM (SELECT DISTINCT
+                          CASE WHEN x.grantee = 0 THEN 'PUBLIC'
+                               ELSE pg_get_userbyid(x.grantee) END AS nama,
+                          x.privilege_type AS priv
+                     FROM aclexplode(a.attacl) x) g
+            WHERE g.nama IN ('anon','authenticated','PUBLIC')), '(nol)') AS sidik
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+     AND a.attnum > 0 AND NOT a.attisdropped AND a.attacl IS NOT NULL
+  UNION ALL
+  -- ACL FUNGSI. proacl NULL = bawaan = PUBLIC EXECUTE, dan itu BUKAN sama
+  -- dengan "tidak ada hak" -- karena itu ia dieja, bukan dijadikan '(nol)'.
+  SELECT 'fungsi:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS kunci,
+         COALESCE(array_to_string(p.proacl::text[], ','), '(null = PUBLIC EXECUTE)') AS sidik
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
 ), col AS (
   SELECT table_name AS kunci,
          md5(string_agg(column_name || '|' || data_type || '|' || is_nullable
@@ -178,7 +271,8 @@ SELECT json_build_object(
   'fungsi',  (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM fn),
   'policy',  (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM pol),
   'trigger', (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM trg),
-  'kolom',   (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM col)
+  'kolom',   (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM col),
+  'hak',     (SELECT json_agg(json_build_array(kunci, sidik) ORDER BY kunci) FROM hak)
 ) AS inventaris;
 `;
 
@@ -224,7 +318,7 @@ function ambilLewatPsql(url, label) {
 
 /** Bandingkan dua inventaris. Dipakai kedua mode -- satu logika, bukan dua. */
 export function bandingkan(stg, prd) {
-  const kategori = ['fungsi', 'policy', 'trigger', 'kolom'];
+  const kategori = ['fungsi', 'policy', 'trigger', 'kolom', 'hak'];
   const hasil = {};
   for (const kat of kategori) {
     const a = new Map((stg[kat] || []).map(([k, v]) => [k, v]));
@@ -338,6 +432,28 @@ SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS k
  ORDER BY kunci;
 `;
 
+/** Rincian hak SATU tabel: relacl tabelnya + attacl tiap kolom yang punya.
+ *  Dipakai untuk menjawab "beda di mana" sesudah kategori hak bilang "beda". */
+export const HAK_SQL = (tabel) => `
+SELECT 'TABEL' AS lingkup, NULL::text AS kolom,
+       CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END AS grantee,
+       x.privilege_type AS hak
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
+       LATERAL aclexplode(c.relacl) x
+ WHERE n.nspname = 'public' AND c.relname = ${lit(tabel)}
+UNION ALL
+SELECT 'KOLOM', a.attname,
+       CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,
+       x.privilege_type
+  FROM pg_attribute a
+  JOIN pg_class c ON c.oid = a.attrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace,
+       LATERAL aclexplode(a.attacl) x
+ WHERE n.nspname = 'public' AND c.relname = ${lit(tabel)}
+   AND a.attnum > 0 AND NOT a.attisdropped
+ ORDER BY 1, 2, 3, 4;
+`;
+
 export const KOLOM_SQL = (tabel) => `
 SELECT column_name, data_type, is_nullable, COALESCE(column_default,'(null)') AS bawaan
   FROM information_schema.columns
@@ -350,6 +466,11 @@ if (arg[0] === '--sql') { console.log(INVENTARIS_SQL); process.exit(0); }
 if (arg[0] === '--sql-policy') {
   if (!arg[1]) { console.error('Pemakaian: --sql-policy <tabel.policy.cmd>'); process.exit(2); }
   console.log(POLICY_SQL(arg[1]));
+  process.exit(0);
+}
+if (arg[0] === '--sql-hak') {
+  if (!arg[1]) { console.error('Pemakaian: --sql-hak <nama tabel>'); process.exit(2); }
+  console.log(HAK_SQL(arg[1]));
   process.exit(0);
 }
 if (arg[0] === '--sql-fungsi') {
@@ -372,5 +493,27 @@ if (arg[0] === '--from-json') {
   stg = ambilLewatPsql(process.env.STG_DB_URL, 'STG_DB_URL');
   prd = ambilLewatPsql(process.env.PRD_DB_URL, 'PRD_DB_URL');
 }
-const drift = laporkan(bandingkan(stg, prd));
+const hasil = bandingkan(stg, prd);
+const drift = laporkan(hasil);
+
+// --hak-detail: untuk kategori `hak`, sidik jarinya BUKAN md5 melainkan daftar
+// haknya sendiri -- jadi "beda di mana" bisa dijawab tanpa query tambahan.
+// Dicetak berpasangan supaya arah perbedaannya terbaca sekali lihat, bukan
+// disimpulkan dari dua daftar terpisah.
+if (arg.includes('--hak-detail')) {
+  const a = new Map((stg.hak || []).map(([k, v]) => [k, v]));
+  const b = new Map((prd.hak || []).map(([k, v]) => [k, v]));
+  const h = hasil.hak || { hanyaStg: [], hanyaPrd: [], bedaIsi: [] };
+  const semua = [...h.hanyaStg, ...h.hanyaPrd, ...h.bedaIsi].sort();
+  console.log(`\n=== RINCIAN HAK (${semua.length} perbedaan) ===`);
+  for (const k of semua) {
+    const d = klasifikasi('hak', k);
+    const tag = d ? (d.kelas === 'antre' ? `ANTRE butir ${d.butir}` : 'selamanya') : 'DRIFT';
+    console.log(`\n[${tag}] ${k}`);
+    console.log(`  staging    : ${a.has(k) ? a.get(k) : '(objek tidak ada)'}`);
+    console.log(`  production : ${b.has(k) ? b.get(k) : '(objek tidak ada)'}`);
+  }
+  if (!semua.length) console.log('  (nol perbedaan hak)');
+}
+
 process.exit(drift ? 1 : 0);
