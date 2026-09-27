@@ -194,19 +194,35 @@ function klasifikasi(kat, kunci) {
   return null;
 }
 
+/** RUMUS SIDIK JARI FUNGSI -- SATU tempat, dipakai INVENTARIS_SQL dan FUNGSI_SQL.
+ *
+ *  Dulu rumus ini ditulis dua kali. Menyalinnya berarti dua salinan yang suatu
+ *  hari berbeda tanpa ada yang tahu -- persis kelas TD-233. Sekarang keduanya
+ *  membaca konstanta ini, jadi "rumusnya identik" bukan lagi sesuatu yang harus
+ *  dipercaya, melainkan sesuatu yang tidak bisa tidak benar.
+ *
+ *  !! prosecdef::text menghasilkan 'true'/'false', BUKAN 't'/'f'. Huruf t/f itu
+ *     cara psql MENAMPILKAN boolean, bukan hasil cast-nya ke text. Salah di titik
+ *     ini melahirkan sidik jari yang tampak masuk akal tapi tidak pernah cocok
+ *     dengan apa pun -- dan itulah sebab enam konstanta di berkas parity sempat
+ *     salah seluruhnya (28 Sep 2026).
+ *  !! provolatile WAJIB di-cast ke text: bertipe "char", dan concat text dengan
+ *     "char" ambigu di PostgreSQL (42725 operator is not unique). Ketahuan saat
+ *     skrip ini dijalankan pertama kali, 25 Sep 2026.
+ *  !! proconfig NULL dan array kosong sama-sama jadi '' lewat COALESCE. Itu
+ *     disengaja: keduanya berarti "tidak ada SET", dan membedakannya akan
+ *     melaporkan drift untuk sesuatu yang perilakunya sama.
+ *  !! proacl SENGAJA TIDAK di sini sejak 27 Sep 2026: ia pindah ke kategori hak,
+ *     supaya "fungsi beda" berarti definisinya yang beda.
+ *  Alias tabelnya HARUS p. -- pemakainya menyediakan FROM pg_proc p. */
+export const EKSPRESI_SIDIK_FUNGSI =
+  "md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text"
+  + " || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))";
+
 export const INVENTARIS_SQL = `
 WITH fn AS (
   SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS kunci,
-         -- provolatile WAJIB di-cast ke text: bertipe "char", dan concat text dengan
-         -- "char" ambigu di PostgreSQL (42725 operator is not unique). Backtick
-         -- SENGAJA tidak dipakai di komentar ini: seluruh SQL di bawah hidup di
-         -- dalam template literal, jadi satu backtick memutusnya.
-         -- Ketahuan saat skrip ini
-         -- dijalankan pertama kali, 25 Sep 2026.
-         -- proacl SENGAJA TIDAK di sini sejak 27 Sep 2026: ia pindah ke
-         -- kategori hak, supaya "fungsi beda" berarti definisinya yang beda.
-         md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
-             || '|' || COALESCE(array_to_string(p.proconfig, ','), '')) AS sidik
+         ${EKSPRESI_SIDIK_FUNGSI} AS sidik
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
 ), pol AS (
@@ -420,14 +436,37 @@ SELECT tablename, policyname, cmd, permissive,
  *  dan itu persis kasus get_table_columns. */
 export const FUNGSI_SQL = (nama) => `
 SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS kunci,
-       p.prosecdef AS security_definer,
+       -- sidik jari PENUH, dihitung dengan rumus yang SAMA dengan INVENTARIS_SQL.
+       -- Inilah satu-satunya angka yang boleh dipakai sebagai harapan di blok V
+       -- berkas parity. Angka yang dihitung di luar SQL adalah tebakan, dan
+       -- tebakan yang berbentuk md5 tetap tebakan.
+       ${EKSPRESI_SIDIK_FUNGSI} AS sidik_penuh,
+       md5(p.prosrc) AS md5_badan,
+       -- prosecdef ditampilkan DUA kali: apa adanya (psql mencetak t/f) dan
+       -- hasil cast ke text (true/false) -- karena rumus sidik memakai yang
+       -- KEDUA, dan mengira keduanya sama adalah kekeliruan yang sudah terjadi.
+       p.prosecdef AS secdef, p.prosecdef::text AS secdef_text,
        p.provolatile::text AS volatile,
-       COALESCE(array_to_string(p.proconfig, ','), '(null)') AS config,
+       -- proconfig dalam tiga bentuk: mentah, hasil array_to_string, dan
+       -- pembeda NULL vs array kosong -- dua keadaan yang rumus sidik sengaja
+       -- anggap sama, jadi bedanya harus terlihat di sini kalau tidak di sana.
+       COALESCE(p.proconfig::text, '(NULL)') AS config_mentah,
+       COALESCE(array_to_string(p.proconfig, ','), '(null)') AS config_gabung,
+       CASE WHEN p.proconfig IS NULL THEN 'NULL'
+            WHEN cardinality(p.proconfig) = 0 THEN 'array kosong'
+            ELSE cardinality(p.proconfig)::text || ' entri' END AS config_bentuk,
        COALESCE(array_to_string(p.proacl::text[], ','), '(null -- PUBLIC EXECUTE)') AS acl,
        length(p.prosrc) AS panjang_badan,
-       md5(p.prosrc) AS md5_badan,
+       -- Byte terakhir badan, dibuat KELIHATAN: baris baru jadi \\n dan spasi
+       -- jadi titik. Tanpa ini, badan yang bedanya cuma spasi di ekor tampak
+       -- identik di layar sementara md5-nya berbeda.
+       replace(replace(right(p.prosrc, 16), chr(10), '\\n'), ' ', '.') AS ekor_badan,
+       pg_get_userbyid(p.proowner) AS pemilik,
+       p.pronargs, format_type(p.prorettype, NULL) AS tipe_kembali,
+       l.lanname AS bahasa,
        p.prosrc AS badan
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  JOIN pg_language l ON l.oid = p.prolang
  WHERE n.nspname = 'public' AND p.proname = ${lit(nama)}
  ORDER BY kunci;
 `;
@@ -463,6 +502,10 @@ SELECT column_name, data_type, is_nullable, COALESCE(column_default,'(null)') AS
 
 const arg = process.argv.slice(2);
 if (arg[0] === '--sql') { console.log(INVENTARIS_SQL); process.exit(0); }
+// Rumus sidik jari fungsi, apa adanya. Ada supaya skrip lain memakai rumus
+// YANG SAMA alih-alih menyalinnya -- salinan rumus adalah salinan yang suatu
+// hari berbeda, dan bedanya cuma terlihat sebagai md5 yang tidak cocok.
+if (arg[0] === '--ekspresi-sidik') { console.log(EKSPRESI_SIDIK_FUNGSI); process.exit(0); }
 if (arg[0] === '--sql-policy') {
   if (!arg[1]) { console.error('Pemakaian: --sql-policy <tabel.policy.cmd>'); process.exit(2); }
   console.log(POLICY_SQL(arg[1]));

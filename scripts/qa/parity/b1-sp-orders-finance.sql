@@ -143,6 +143,10 @@ END; $fn$;
 -- alat drift tetap melaporkan BEDA ISI karena SECURITY DEFINER-nya tertinggal.
 -- Blok verifikasi yang lebih longgar daripada alat yang memeriksanya bukan
 -- verifikasi, melainkan jaminan palsu.
+-- !! Angkanya DIUKUR dari production (inventaris 27 Sep), bukan dihitung di
+-- sini. Hitungan sendiri sempat salah untuk keenam fungsi parity karena
+-- prosecdef::text disangka 't' padahal 'true'. Penjaganya
+-- scripts/qa/cek-sidik-parity.mjs.
 DO $v1$
 DECLARE v_sidik text; v_acl text; v_n int;
 BEGIN
@@ -165,7 +169,7 @@ BEGIN
              || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
     INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='set_sp_finance_docs';
-  IF v_sidik IS DISTINCT FROM '07e0866e91278ab923447cefc33f52ed' THEN
+  IF v_sidik IS DISTINCT FROM '1c1de283d15d8934fe16004496b61951' THEN
     RAISE EXCEPTION 'V1c GAGAL: sidik jari set_sp_finance_docs = %, harusnya sama dengan production.', v_sidik;
   END IF;
 
@@ -180,7 +184,7 @@ BEGIN
              || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
     INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='update_sp_item_dual';
-  IF v_sidik IS DISTINCT FROM '948d1e1d3d2fecc850ccbaf20f2056d0' THEN
+  IF v_sidik IS DISTINCT FROM '7fc7bdc63997c3f3dbff53fbedd24bd8' THEN
     RAISE EXCEPTION 'V1e GAGAL: sidik jari update_sp_item_dual = %, harusnya sama dengan production.', v_sidik;
   END IF;
 

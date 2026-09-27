@@ -79,8 +79,20 @@ CREATE TRIGGER trg_set_sql_on_quotation_sent AFTER INSERT OR UPDATE ON public.qu
 --    melaporkan BEDA ISI karena ia juga menimbang prosecdef, provolatile, dan
 --    proconfig.
 --    ** Blok verifikasi yang lebih longgar daripada alat yang memeriksanya
---    bukan verifikasi; ia jaminan palsu. Rumus di bawah disalin dari
---    INVENTARIS_SQL supaya keduanya tidak bisa berbeda tanpa ketahuan.
+--    bukan verifikasi; ia jaminan palsu.
+--
+-- !! DAN SEKALI LAGI, DENGAN CARA YANG BERLAWANAN (28 Sep 2026). Versi KEDUA V1
+--    ini memeriksa sidik jari penuh -- rumusnya benar, tapi angka harapannya
+--    DIHITUNG DI LUAR SQL dengan anggapan prosecdef::text menghasilkan 't'.
+--    Ia menghasilkan 'true'; 't' cuma cara psql MENAMPILKAN boolean. Akibatnya
+--    V1a2 berbunyi atas keadaan yang SUDAH BENAR, dan pesan gagalnya mencetak
+--    sidik jari production sendiri sebagai angka "yang salah".
+--    ** Angka harapan tidak boleh dihitung; ia harus diukur. Yang dipakai di
+--    bawah sekarang berasal dari inventaris production yang diukur 27 Sep
+--    (scripts/qa/parity/inventaris-production-20260927.json), dan penjaganya
+--    scripts/qa/cek-sidik-parity.mjs menolak angka yang bukan angka ukur.
+--    Rumusnya sendiri kini satu konstanta bersama di env-drift-check.mjs
+--    (EKSPRESI_SIDIK_FUNGSI), jadi ia tidak bisa lagi berbeda tanpa ketahuan.
 DO $v1$
 DECLARE v_sidik text; v_acl text; v_def text; v_md5 text;
 BEGIN
@@ -94,8 +106,8 @@ BEGIN
   IF v_md5 IS DISTINCT FROM '6f28f42a8b597ec35eac6df37356285a' THEN
     RAISE EXCEPTION 'V1a GAGAL: badan set_sql_on_quotation_sent tidak sama dengan production (md5 %).', v_md5;
   END IF;
-  IF v_sidik IS DISTINCT FROM '18fcb2e5f275ed7c4970aa45d73d664d' THEN
-    RAISE EXCEPTION 'V1a2 GAGAL: sidik jari fungsi (badan+secdef+volatile+config) = %, harusnya 18fcb2e5f275ed7c4970aa45d73d664d seperti production.', v_sidik;
+  IF v_sidik IS DISTINCT FROM 'cca33b7ddc056b9992103c092d17da39' THEN
+    RAISE EXCEPTION 'V1a2 GAGAL: sidik jari fungsi (badan+secdef+volatile+config) = %, harusnya cca33b7ddc056b9992103c092d17da39 seperti production.', v_sidik;
   END IF;
   -- proacl WAJIB tetap NULL: itulah bentuk production. Kalau ia sudah tidak
   -- NULL, ada GRANT/REVOKE yang tidak diminta dan staging jadi berbeda lagi.

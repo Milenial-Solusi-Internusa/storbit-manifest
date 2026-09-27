@@ -95,12 +95,16 @@ BEGIN
   -- drift tetap melaporkan BEDA ISI, karena SECURITY DEFINER-nya tertinggal dan
   -- prosecdef ikut ditimbang. Blok verifikasi yang lebih longgar daripada alat
   -- yang memeriksanya bukan verifikasi, melainkan jaminan palsu.
+  -- !! Angkanya DIUKUR dari production (inventaris 27 Sep), bukan dihitung di
+  -- sini. Hitungan sendiri sempat salah untuk keenam fungsi parity karena
+  -- prosecdef::text disangka 't' padahal 'true'. Penjaganya
+  -- scripts/qa/cek-sidik-parity.mjs.
   SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
              || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
     INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='prf_mark_quoted';
-  IF v_sidik IS DISTINCT FROM 'b51a9a2f6a81c1993104dd951b570ae2' THEN
-    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari prf_mark_quoted (badan+secdef+volatile+config) = %, harusnya b51a9a2f6a81c1993104dd951b570ae2.', v_sidik;
+  IF v_sidik IS DISTINCT FROM '207fc0900249c7c262fe899b47834cca' THEN
+    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari prf_mark_quoted (badan+secdef+volatile+config) = %, harusnya 207fc0900249c7c262fe899b47834cca.', v_sidik;
   END IF;
 
   -- ACL diperiksa TETAP SAMA, bukan diperketat: kalau entri PUBLIC hilang,

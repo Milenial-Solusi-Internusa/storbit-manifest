@@ -122,20 +122,24 @@ BEGIN
   -- drift tetap melaporkan BEDA ISI, karena SECURITY DEFINER-nya tertinggal dan
   -- prosecdef ikut ditimbang. Blok verifikasi yang lebih longgar daripada alat
   -- yang memeriksanya bukan verifikasi, melainkan jaminan palsu.
+  -- !! Angkanya DIUKUR dari production (inventaris 27 Sep), bukan dihitung di
+  -- sini. Hitungan sendiri sempat salah untuk keenam fungsi parity karena
+  -- prosecdef::text disangka 't' padahal 'true'. Penjaganya
+  -- scripts/qa/cek-sidik-parity.mjs.
   SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
              || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
     INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='is_sp_item_writer';
-  IF v_sidik IS DISTINCT FROM '07234b3c59c81eeb43bbec49d6bbe74b' THEN
-    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari is_sp_item_writer (badan+secdef+volatile+config) = %, harusnya 07234b3c59c81eeb43bbec49d6bbe74b.', v_sidik;
+  IF v_sidik IS DISTINCT FROM '9aa242a0e10291c085fc310cecb667a6' THEN
+    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari is_sp_item_writer (badan+secdef+volatile+config) = %, harusnya 9aa242a0e10291c085fc310cecb667a6.', v_sidik;
   END IF;
 
   SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
              || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
     INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='delete_sp_item_dual';
-  IF v_sidik IS DISTINCT FROM '2127f437bd8491a0ddf10d1625e0858a' THEN
-    RAISE EXCEPTION 'V1b2 GAGAL: sidik jari delete_sp_item_dual (badan+secdef+volatile+config) = %, harusnya 2127f437bd8491a0ddf10d1625e0858a.', v_sidik;
+  IF v_sidik IS DISTINCT FROM 'c5cd6c1d1efa513c38f04752e75acea8' THEN
+    RAISE EXCEPTION 'V1b2 GAGAL: sidik jari delete_sp_item_dual (badan+secdef+volatile+config) = %, harusnya c5cd6c1d1efa513c38f04752e75acea8.', v_sidik;
   END IF;
 
   -- Grantee KOSONG berawalan '=' berarti PUBLIC, dan proacl NULL juga berarti
