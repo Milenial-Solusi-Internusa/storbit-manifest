@@ -80,12 +80,27 @@ $fn$;
 
 -- --- V1: BUKTI badan staging = badan production -----------------------------
 DO $v1$
-DECLARE v_md5 text; v_acl text;
+DECLARE v_md5 text; v_sidik text; v_acl text;
 BEGIN
   SELECT md5(prosrc) INTO v_md5 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='prf_mark_quoted';
   IF v_md5 IS DISTINCT FROM 'e37ee35b051b7bdd9a88184ebfb267e4' THEN
     RAISE EXCEPTION 'V1a GAGAL: badan prf_mark_quoted tidak sama dengan production (md5 %).', v_md5;
+  END IF;
+
+
+  -- !! Sidik jari yang dibandingkan = sidik jari env-drift-check, bukan
+  -- md5(prosrc) saja. Pelajaran 28 Sep 2026: V1 20260918000001 memeriksa badan
+  -- + ACL + trigger, ketiganya cocok, dan ia melaporkan LOLOS -- sementara alat
+  -- drift tetap melaporkan BEDA ISI, karena SECURITY DEFINER-nya tertinggal dan
+  -- prosecdef ikut ditimbang. Blok verifikasi yang lebih longgar daripada alat
+  -- yang memeriksanya bukan verifikasi, melainkan jaminan palsu.
+  SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
+             || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
+    INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='prf_mark_quoted';
+  IF v_sidik IS DISTINCT FROM 'b51a9a2f6a81c1993104dd951b570ae2' THEN
+    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari prf_mark_quoted (badan+secdef+volatile+config) = %, harusnya b51a9a2f6a81c1993104dd951b570ae2.', v_sidik;
   END IF;
 
   -- ACL diperiksa TETAP SAMA, bukan diperketat: kalau entri PUBLIC hilang,

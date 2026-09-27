@@ -101,7 +101,7 @@ CREATE POLICY sp_items_delete ON public.sp_items FOR DELETE TO authenticated
 
 -- --- V1: BUKTI, bukan harapan -----------------------------------------------
 DO $v1$
-DECLARE v_md5 text; v_nama text; v_qual text; v_roles text;
+DECLARE v_md5 text; v_sidik text; v_nama text; v_qual text; v_roles text;
 BEGIN
   SELECT md5(prosrc) INTO v_md5 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='is_sp_item_writer';
@@ -113,6 +113,29 @@ BEGIN
    WHERE n.nspname='public' AND p.proname='delete_sp_item_dual';
   IF v_md5 IS DISTINCT FROM 'd8f2a428ac396512ef5056fbe4c5936f' THEN
     RAISE EXCEPTION 'V1b GAGAL: badan delete_sp_item_dual tidak sama dengan production (md5 %).', v_md5;
+  END IF;
+
+
+  -- !! Sidik jari yang dibandingkan = sidik jari env-drift-check, bukan
+  -- md5(prosrc) saja. Pelajaran 28 Sep 2026: V1 20260918000001 memeriksa badan
+  -- + ACL + trigger, ketiganya cocok, dan ia melaporkan LOLOS -- sementara alat
+  -- drift tetap melaporkan BEDA ISI, karena SECURITY DEFINER-nya tertinggal dan
+  -- prosecdef ikut ditimbang. Blok verifikasi yang lebih longgar daripada alat
+  -- yang memeriksanya bukan verifikasi, melainkan jaminan palsu.
+  SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
+             || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
+    INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='is_sp_item_writer';
+  IF v_sidik IS DISTINCT FROM '07234b3c59c81eeb43bbec49d6bbe74b' THEN
+    RAISE EXCEPTION 'V1a1 GAGAL: sidik jari is_sp_item_writer (badan+secdef+volatile+config) = %, harusnya 07234b3c59c81eeb43bbec49d6bbe74b.', v_sidik;
+  END IF;
+
+  SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
+             || '|' || COALESCE(array_to_string(p.proconfig, ','), ''))
+    INTO v_sidik FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='delete_sp_item_dual';
+  IF v_sidik IS DISTINCT FROM '2127f437bd8491a0ddf10d1625e0858a' THEN
+    RAISE EXCEPTION 'V1b2 GAGAL: sidik jari delete_sp_item_dual (badan+secdef+volatile+config) = %, harusnya 2127f437bd8491a0ddf10d1625e0858a.', v_sidik;
   END IF;
 
   -- Grantee KOSONG berawalan '=' berarti PUBLIC, dan proacl NULL juga berarti

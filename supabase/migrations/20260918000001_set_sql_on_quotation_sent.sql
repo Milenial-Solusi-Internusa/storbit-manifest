@@ -44,8 +44,16 @@
 
 BEGIN;
 
+-- !! SECURITY DEFINER WAJIB ADA. Versi pertama berkas ini melewatkannya, dan
+--    A4a tetap melaporkan "sama persis" karena blok V-nya hanya memeriksa
+--    md5(prosrc) + ACL + definisi trigger -- tiga hal yang memang sama.
+--    Yang berbeda prosecdef, dan itu BUKAN kosmetik: fungsi trigger ini
+--    meng-UPDATE public.accounts. Sebagai SECURITY DEFINER ia berjalan sebagai
+--    pemiliknya dan menembus RLS; sebagai INVOKER ia berjalan sebagai pemanggil
+--    dan bisa GAGAL MENAIKKAN TAHAP AKUN tanpa satu pun error -- UPDATE yang
+--    tersaring RLS mengembalikan nol baris, bukan exception.
 CREATE OR REPLACE FUNCTION public.set_sql_on_quotation_sent() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $fn$
 BEGIN
@@ -65,15 +73,29 @@ DROP TRIGGER IF EXISTS trg_set_sql_on_quotation_sent ON public.quotations;
 CREATE TRIGGER trg_set_sql_on_quotation_sent AFTER INSERT OR UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION set_sql_on_quotation_sent();
 
 -- -- V1: badan + ACL + trigger sama dengan production ------------------------
+-- !! SIDIK JARI YANG DIPERIKSA = SIDIK JARI env-drift-check, bukan md5(prosrc)
+--    saja. Versi pertama V1 ini memeriksa badan + ACL + trigger, ketiganya
+--    cocok, dan ia melaporkan LOLOS -- sementara env-drift-check tetap
+--    melaporkan BEDA ISI karena ia juga menimbang prosecdef, provolatile, dan
+--    proconfig.
+--    ** Blok verifikasi yang lebih longgar daripada alat yang memeriksanya
+--    bukan verifikasi; ia jaminan palsu. Rumus di bawah disalin dari
+--    INVENTARIS_SQL supaya keduanya tidak bisa berbeda tanpa ketahuan.
 DO $v1$
-DECLARE v_md5 text; v_acl text; v_def text;
+DECLARE v_sidik text; v_acl text; v_def text; v_md5 text;
 BEGIN
-  SELECT md5(prosrc), COALESCE(array_to_string(proacl::text[], ','), '(null)')
-    INTO v_md5, v_acl
+  SELECT md5(p.prosrc || '|' || p.prosecdef::text || '|' || p.provolatile::text
+             || '|' || COALESCE(array_to_string(p.proconfig, ','), '')),
+         md5(p.prosrc),
+         COALESCE(array_to_string(p.proacl::text[], ','), '(null)')
+    INTO v_sidik, v_md5, v_acl
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='public' AND p.proname='set_sql_on_quotation_sent';
   IF v_md5 IS DISTINCT FROM '6f28f42a8b597ec35eac6df37356285a' THEN
     RAISE EXCEPTION 'V1a GAGAL: badan set_sql_on_quotation_sent tidak sama dengan production (md5 %).', v_md5;
+  END IF;
+  IF v_sidik IS DISTINCT FROM '18fcb2e5f275ed7c4970aa45d73d664d' THEN
+    RAISE EXCEPTION 'V1a2 GAGAL: sidik jari fungsi (badan+secdef+volatile+config) = %, harusnya 18fcb2e5f275ed7c4970aa45d73d664d seperti production.', v_sidik;
   END IF;
   -- proacl WAJIB tetap NULL: itulah bentuk production. Kalau ia sudah tidak
   -- NULL, ada GRANT/REVOKE yang tidak diminta dan staging jadi berbeda lagi.
