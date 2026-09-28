@@ -47,6 +47,9 @@
 | 24 | `20260928000009_invoice_notes` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
 | 25 | `20260928000010_invoice_issue_tax_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18 dan 21 |
 | 26 | `20260928000011_invoice_coretax_code_whitelist` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 22 |
+| 27 | `20260928000012_td281_h1_revoke_public_execute` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, production dulu |
+| 28 | `20260928000013_td281_h1_lapis2_guard_dan_jejak` | ✔ 28 Sep (**hasilnya CACAT**) | ⛔ belum | ⛔ **WAJIB bersama butir 29** — jangan naik sendirian |
+| 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 28, **di transaksi/sesi yang sama** |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -765,9 +768,9 @@ SUM(line_amount) + SUM(ppn) = total_amount
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260928000013_td281_h1_lapis2_guard_dan_jejak.sql` — hidup di branch **`hotfix/td281-h1-lapis2`** (dari `main`) |
-| Staging | ⛔ **belum** — dijalankan sebagai **UJI** |
-| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
-| Urutan | uji staging → **PRODUCTION** → samakan staging |
+| Staging | ✔ **28 Sep 2026** — dijalankan sebagai **UJI**, dan ujinya **MENEMUKAN CACAT** (lihat blok di bawah) |
+| Production | ⛔ **belum** — ⚠️ **inilah targetnya**, tapi ⛔ **JANGAN naik sendirian**: tanpa butir 29, `check_similar_accounts` mati untuk semua orang |
+| Urutan | uji staging → **butir 29** → uji ulang staging → **PRODUCTION (butir 28 lalu 29, satu sesi)** → samakan staging |
 | Catatan rollback | `scripts/qa/out/badan-lapis2-20260928-130907/def-*.sql` — teks badan **LAMA** dari produksi. ⚠️ folder `out/` **ter-gitignore**, berkasnya hidup di mesin Den saja |
 
 **Apa yang ditambahkan.** Lapis 1 (butir 27) menjawab *"siapa boleh MEMANGGIL"*. Lapis 2 menjawab pertanyaan berikutnya: *"di antara yang boleh memanggil, siapa boleh MELAKUKAN"*. Tanpanya, **setiap user yang login** bisa menyelesaikan picking mana pun dan menomori dokumen untuk entitas mana pun.
@@ -795,7 +798,58 @@ SUM(line_amount) + SUM(ppn) = total_amount
 
 ⭐ **V-POST memeriksa empat hal, dan yang keempat paling mudah terlewat: ACL keempat fungsi harus TETAP.** `CREATE OR REPLACE` mempertahankan hak; `DROP`+`CREATE` **tidak**. Kalau ACL bergeser, **butir 27 baru saja dibatalkan tanpa ada yang menyadarinya**.
 
+⛔⛔ **HASIL UJI STAGING 28 Sep 2026: SATU DARI EMPAT FUNGSI RUSAK — dan itu ditemukan oleh uji, bukan oleh pembacaan.**
+
+`check_similar_accounts` menjawab **HTTP 400 SQLSTATE 42702** (*ambiguous column reference*) untuk **setiap** pemanggil. Sebabnya keputusan nomor 1 di atas: `RETURNS TABLE(id, name, similarity)` pada fungsi **plpgsql** melahirkan tiga **variabel OUT** bernama sama dengan kolom di dalam query, dan plpgsql menolak menebak. Versi `LANGUAGE sql` sebelumnya tidak punya variabel sama sekali — **cacat ini lahir bersama konversinya**, ia tidak pernah ada sebelumnya.
+
+⭐ **Yang lebih perlu diingat daripada cacatnya: uji runtime MELIHAT galat itu dan menilainya LULUS.** Pengklasifikasi di `uji-td281-h1.sh` menganggap *"4xx yang membawa kode SQLSTATE"* sebagai TERIMA — karena itulah bentuk penolakan bisnis (`P0001`). Tapi `42702` **bukan penolakan, ia kerusakan**: fungsinya tidak menolak siapa pun, ia gagal untuk **semua orang**.
+>> **Uji yang tidak bisa membedakan *ditolak* dari *rusak* akan meloloskan fungsi yang mati, dan terlihat hijau saat melakukannya.**
+Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 = RUSAK**; hanya **`P0001`** (penolakan yang memang kita tetapkan) dan **2xx** yang TERIMA; `42501` tetap TOLAK (diperiksa lebih dulu, karena ia *juga* kelas 42 tapi artinya "tidak punya EXECUTE"); kode yang tidak dikenal jadi **RAGU**, bukan lulus tebakan. Kasus `42702` masuk uji sintetis keduanya.
+
+**Perbaikannya butir 29** — berkas **BARU**. ⛔ **`20260928000013` sengaja TIDAK disunting**: ia sudah tercatat jalan di staging, dan mengubah isinya membuat repo berhenti menggambarkan apa yang benar-benar dijalankan (pola yang sama dipakai saat berkas 3 AR Tahap 2 cacat — `PROGRESS.md` 2026-09-25).
+
 **Dampak ke drift.** Berkas ini mengubah `prosrc` **empat fungsi** + menambah **satu kolom** → menggeser sidik `fungsi` dan `kolom`. Selama jendela produksi→staging, `env-drift-check` akan melaporkannya sebagai DRIFT. **Itu diharapkan**; samakan staging segera sesudah produksi.
+
+---
+
+## 29. ⛔ `20260928000014_td281_l2_fix_check_similar_accounts` — WAJIB, sesudah butir 28, **satu sesi dengannya**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000014_td281_l2_fix_check_similar_accounts.sql` — hidup di branch **`hotfix/td281-h1-lapis2`** (dari `main`) |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Urutan | **butir 28 lebih dulu, lalu berkas ini, di sesi yang sama** — di staging maupun di produksi |
+| Catatan rollback | badan `LANGUAGE sql` lama: `scripts/qa/out/badan-lapis2-20260928-130907/def-check_similar_accounts.sql`. ⚠️ versi itu **NOL guard entitas** — memulihkannya berarti mencabut guard butir 28 |
+
+**Apa yang diperbaiki.** SQLSTATE **42702** yang lahir dari konversi `check_similar_accounts` ke plpgsql di butir 28. Uraian lengkap sebabnya ada di butir 28; yang perlu diketahui di sini: **tanpa berkas ini, butir 28 mematikan fungsi itu untuk semua orang.**
+
+⛔ **Karena itu butir 28 dan 29 adalah SATU langkah, bukan dua.** Menjalankan 28 saja di produksi = memasang guard sekaligus mematahkan pemeriksaan nama akun di form pembuatan akun. Jarak antara keduanya harus sependek mungkin — idealnya dua `-f` berurutan dalam satu sesi psql.
+
+**Perbaikannya dua lapis, dan itu disengaja** — sebabnya jujur: saya tidak bisa menjalankan SQL untuk memastikan identifier mana persisnya yang ambigu, jadi perbaikannya menutup dua kemungkinan sekaligus.
+
+1. `#variable_conflict use_column` — acuan tak berkualifikasi yang terlewat diselesaikan sebagai **KOLOM**, bukan sebagai variabel OUT.
+2. Alias keluaran diganti jadi `akun_id` / `akun_nama` / `skor` — **tabrakannya dihapus**, bukan sekadar diatur cara menyelesaikannya.
+
+⭐ **Nama kolom yang diterima pemanggil TIDAK berubah** — tetap `id` / `name` / `similarity`. Itu datang dari `RETURNS TABLE`, dan `RETURN QUERY` memetakan kolom **per POSISI**, bukan per nama. FE membaca `d.name` dan itu tetap bekerja. Kalau ada yang kelak "merapikan" alias di dalam query menjadi sama dengan nama OUT-nya, 42702 kembali.
+
+**Palangnya menjawab urutan, bukan sekadar mengecek keberadaan.** V-PRA **menolak jalan** kalau fungsi yang hidup masih `LANGUAGE sql` — artinya butir 28 belum jalan di DB itu, dan menjalankan berkas ini sendirian akan memasang versi perbaikan **tanpa guard**, yaitu persis kebalikan dari tujuan seluruh lapis 2. Ia juga berhenti kalau `get_user_company_ids` tidak ditemukan di badan yang hidup.
+
+**V-POST mengasersi ACL lapis 1 (butir 27) utuh** — nol PUBLIC, nol `anon`, `authenticated` ada. Alasannya sama dengan di butir 28: `CREATE OR REPLACE` mempertahankan hak, `DROP`+`CREATE` tidak.
+
+⭐⭐ **Yang membuktikan berkas ini benar BUKAN penalaran di atas, melainkan uji kesetaraan di staging.** `scripts/qa/out/uji-kesetaraan-csa.sh` menyalin badan **LAMA verbatim dari dump produksi** menjadi fungsi bernama lain di dalam satu transaksi, mengimpersonasi `super_admin` lewat GUC `request.jwt.claim.sub` (tanpa itu guard menolak, dan kita akan salah membaca *ditolak* sebagai *rusak*), menjalankan **keduanya berdampingan** atas nama uji yang diambil dari data nyata, membandingkan keluarannya, lalu **`ROLLBACK`** — nol perubahan permanen, apa pun hasilnya.
+
+⚠️ Ujinya **GAGAL kalau nol nama uji mengembalikan hasil**. Nol perbedaan dari nol hasil bukan bukti; itu kelas asersi yang lolos karena prasyaratnya tak pernah terpenuhi — kelas yang sama dengan tiga asersi hijau-palsu 25 Sep (`PROGRESS.md` 2026-09-25).
+
+**Urutan penuh yang harus diikuti:**
+
+1. Staging: jalankan butir 28 (sudah ✔), lalu berkas ini.
+2. Staging: `./scripts/qa/out/uji-kesetaraan-csa.sh` — harus **IDENTIK** dan **ber-hasil > 0**.
+3. Staging: `./scripts/qa/out/uji-td281-l2.sh` **dan** `./scripts/qa/out/uji-td281-h1.sh` — keduanya lolos, dan ⛔ **nol SQLSTATE kelas 42 di mana pun**.
+4. Baru **PRODUCTION**: butir 28 lalu butir 29, satu sesi.
+5. `env-drift-check` — lima fungsi + satu kolom akan bergerak; samakan staging kalau masih berbeda.
+
+**Dampak ke drift.** Berkas ini mengubah `prosrc` **satu fungsi**. Selama jendela antara staging dan produksi, `env-drift-check` melaporkannya sebagai DRIFT — **itu diharapkan**.
 
 ---
 
