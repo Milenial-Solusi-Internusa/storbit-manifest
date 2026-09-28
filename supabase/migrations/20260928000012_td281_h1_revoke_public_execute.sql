@@ -58,6 +58,13 @@
 --     dipakai sebagai asumsi -- ia dijadikan GERBANG yang diperiksa LIVE di
 --     V-PRA-2 dan V-PRA-3 di bawah. Kalau ternyata ada, migrasi ini BERHENTI.
 --
+--     >> DAN GERBANG ITU MEMANG BERBUNYI, run pertama di staging 28 Sep 2026:
+--        `seed_uat_build` (SECURITY INVOKER) memanggil complete_picking.
+--        Fungsi itu STAGING-ONLY -- lahir dari seed UAT, tidak pernah ada di
+--        schema_snapshot.sql, jadi survei repo mustahil menemukannya. Nol
+--        perubahan terjadi; transaksinya batal utuh. Pengecualian berawalan
+--        `seed_uat_` kemudian dipasang di V-PRA-2, DENGAN nama yang dicetak.
+--
 -- -- YANG SUDAH DIUKUR DAN MENJADI DASAR MATRIKS DI BAWAH ---------------------
 --   pemanggil FE (grep src/): increment_document_sequence 8 berkas ·
 --     check_similar_accounts 3 · complete_picking 2 · attach_price_contract_info 1 ·
@@ -95,6 +102,7 @@ DECLARE
   r        record;
   v_sig    text;
   v_n      int;
+  v_daftar text;
   v_nama   text[] := ARRAY['increment_document_sequence','check_similar_accounts',
                            'complete_picking','attach_price_contract_info',
                            'is_admin_tier_role','notify_sp_milestone'];
@@ -120,15 +128,51 @@ BEGIN
   -- Fungsi INVOKER menjalankan pemeriksaan hak SEBAGAI PEMANGGIL, jadi kalau ada
   -- yang memanggil keenam fungsi ini, pencabutan akan mematahkannya untuk
   -- authenticated. Fungsi DEFINER aman: ia berjalan sebagai pemiliknya.
-  SELECT count(*) INTO v_n
+  --
+  -- ** SATU PENGECUALIAN: fungsi berawalan `seed_uat_`. ** Pola pengecualian yang
+  -- sama sudah dipakai untuk `seed_uat_bill` di berkas 4 AR Tahap 2, dan
+  -- alasannya sama:
+  --   * ia STAGING-ONLY -- lahir dari scripts/seed/uat/01b-helper.sql, dan seed
+  --     itu punya palang dua arah yang MENOLAK jalan kalau ref produksi muncul;
+  --   * ia selalu dijalankan sebagai `postgres` oleh runner seed, jadi
+  --     pemeriksaan EXECUTE di dalamnya lolos lewat kepemilikan, bukan lewat
+  --     hak yang dicabut berkas ini;
+  --   * ia dihapus 99-purge.sql.
+  -- Gerbang ini berbunyi pertama kali 28 Sep 2026 atas `seed_uat_build`, yang
+  -- memanggil complete_picking -- dan itu BENAR: survei pemanggil dari repo
+  -- tidak akan pernah menemukannya, karena fungsi itu tidak pernah ada di
+  -- schema_snapshot.sql.
+  --
+  -- !! Yang dikecualikan DICETAK namanya, bukan disembunyikan. Pengecualian yang
+  --    tidak terlihat akan tumbuh sampai ia menjadi aturannya sendiri.
+  -- !! Kalau NOTICE pengecualian ini muncul saat berkas dijalankan di
+  --    PRODUCTION, itu TEMUAN TERSENDIRI: helper seed tidak boleh ada di sana.
+  --    Berhenti dan periksa, jangan diteruskan sebagai hal biasa.
+  SELECT count(*), COALESCE(string_agg(p.proname, ', ' ORDER BY p.proname), '')
+    INTO v_n, v_daftar
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND NOT p.prosecdef
      AND p.proname <> ALL (v_nama)
+     AND p.proname LIKE 'seed\_uat\_%'
      AND p.prosrc ~ v_pola;
   IF v_n > 0 THEN
-    RAISE EXCEPTION 'V-PRA-2 GAGAL: % fungsi SECURITY INVOKER memanggil salah satu dari keenam fungsi. Pencabutan akan mematahkannya -- BERHENTI dan lapor.', v_n;
+    RAISE NOTICE 'V-PRA-2 pengecualian (staging-only, dijalankan sebagai postgres): % fungsi -- %', v_n, v_daftar;
+    RAISE NOTICE '  >> kalau ini PRODUCTION, BERHENTI: helper seed tidak boleh ada di production.';
   END IF;
-  RAISE NOTICE 'V-PRA-2 LOLOS: nol pemanggil SECURITY INVOKER.';
+
+  -- Sisanya tetap KERAS. Pengecualian di atas menyempit ke satu awalan nama;
+  -- pemanggil INVOKER lain apa pun menghentikan migrasi ini.
+  SELECT count(*), COALESCE(string_agg(p.proname, ', ' ORDER BY p.proname), '')
+    INTO v_n, v_daftar
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND NOT p.prosecdef
+     AND p.proname <> ALL (v_nama)
+     AND p.proname NOT LIKE 'seed\_uat\_%'
+     AND p.prosrc ~ v_pola;
+  IF v_n > 0 THEN
+    RAISE EXCEPTION 'V-PRA-2 GAGAL: % fungsi SECURITY INVOKER memanggil salah satu dari keenam fungsi (%). Pencabutan akan mematahkannya -- BERHENTI dan lapor.', v_n, v_daftar;
+  END IF;
+  RAISE NOTICE 'V-PRA-2 LOLOS: nol pemanggil SECURITY INVOKER di luar pengecualian seed_uat_.';
 
   -- ---- V-PRA-3: pemakaian di RLS policy hanya yang sudah diketahui ---------
   -- Ekspresi policy dievaluasi sebagai pemanggil -> hak EXECUTE ikut diperiksa.
