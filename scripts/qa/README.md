@@ -35,6 +35,28 @@ QA_PASSWORD='<password bersama akun uji>' node scripts/qa/menu-sweep.mjs \
 - ⚠️ **Baca kata "identik" bersama CAKUPANNYA (skrip diperkeras 22 Sep 2026, G2).** Pemicunya: satu run G2 gagal login **kelima** akun, dan skrip versi lama tetap mencetak `✔ identik dengan baseline` padahal **nol data terkumpul** — kesimpulan terbalik dari kenyataan. Sekarang: **nol akun berdata → `✖ pembandingan DIBATALKAN — nol data` + exit 1** (nol data = *tidak ada pembanding*, bukan nol perbedaan); hasil jalur sweep **selalu menyebut cakupan** — `✔ identik dengan baseline (5/5 akun)` atau `✖ … (HANYA 3/5 akun)` — dan **exit code gagal juga ketika nol perbedaan tapi akun tak lengkap**. ⚠️ Baris cakupan itu **hanya** dicetak jalur sweep (`--compare`); jalur **`--diff <dirA> <dirB>`** tetap mencetak `✔ identik` polos, jadi kalau memakai `--diff`, hitung sendiri berapa akun yang ada di kedua folder.
 - 💡 **Jangan saring output sweep lewat `| tail -N`.** Di G2 outputnya disalurkan begitu dan progres tak terlihat ±15 menit — sulit membedakan "masih jalan" dari "menggantung". Pakai `tee` penuh (mis. `… | tee scripts/qa/out/<label>.log`) supaya log lengkap tersimpan **dan** progres terlihat; kalau sweep diam tanpa kemajuan, periksa `ps -o %cpu,time` alih-alih menunggu.
 
+## `env-drift-check` — RUTINITAS SEBELUM UAT (Tahap 3 TD-279, berlaku 28 Sep 2026)
+
+```bash
+STG_DB_URL='postgresql://postgres.oovmlhilhqzejnawqkvt:...@<region>.pooler.supabase.com:5432/postgres' \
+PRD_DB_URL='postgresql://postgres.untmpqceexwxzuhlmyrg:...@<region>.pooler.supabase.com:5432/postgres' \
+node scripts/qa/env-drift-check.mjs
+```
+
+⛔ **Jalankan SEBELUM setiap putaran UAT di staging, dan sebelum tiap `develop` → `main`.** Ia membandingkan staging vs produksi untuk **fungsi, policy, trigger, kolom, dan HAK** (`relacl` / `attacl` / `proacl`), lalu memilah: **ANTRE** (menunggu naik, nomor butir `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` ikut dicetak) · **SELAMANYA** (sengaja beda) · **DRIFT** (tanpa penjelasan → **berhenti, selidiki**).
+
+⭐ **Kenapa rutinitas, bukan pemeriksaan sesekali.** Butir 15 doc 12 lahir dari UAT yang menampilkan **Siap Ditagih 0 / Tertahan 0** — bukan error, bukan layar putih, hanya angka nol yang tampak masuk akal. Akarnya lima policy staging yang tertinggal jamak. *Drift skema gagal SENYAP: nol baris, bukan exception.* **UAT di atas staging yang berbeda dari produksi menguji aplikasi yang tidak akan pernah dipakai siapa pun.**
+
+Riwayat TD-279, supaya angkanya punya arti: **61** (27 Sep) → 56 → **16** (Kelompok A) → **11** (B) → **0** (C, 28 Sep). Laporan yang sehat sesudah itu: **0 DRIFT**, ANTRE + SELAMANYA saja.
+
+**Bendera yang berguna:** `--hak-detail` (rincian hak berpasangan) · `--sql-policy <tabel.policy.cmd>` / `--sql-fungsi <nama>` / `--sql-hak <tabel>` (cetak SQL drill-down, nol koneksi) · `--ekspresi-sidik` (rumus sidik jari fungsi, supaya skrip lain memakainya alih-alih menyalinnya) · `--from-json a b` (bandingkan dua inventaris tersimpan, nol koneksi).
+
+⚠️ **Angka DRIFT dibaca dari baris ringkasan, BUKAN `grep -c '[DRIFT]'`** — dengan `--hak-detail` tiap perbedaan hak tercetak dua kali dan grep polos menghitungnya dobel (61 pernah terbaca **100**).
+
+⚠️ **Satu koneksi per DB, dan ke produksi SELECT saja.** Probe `SELECT 1` terpisah sudah dicabut 28 Sep (ia biaya satu koneksi tanpa menambah keterangan); query inventarisnya sendiri yang ber-retry 3x untuk kegagalan **koneksi** dan menolak mengulang untuk URL salah / `ERROR` SQL. Organisasi Supabase ini **Free Plan dengan kuota Log Ingestion terlampaui** — tiap koneksi ada harganya, jadi skrip QA mengambil semua objek dalam **satu** query, bukan satu query per objek (pelajaran 28 Sep: `baca-komponen-fungsi.sh` mati di objek kedua karena timeout pooler, sesudah palang `SELECT 1` lolos).
+
+⚠️ **Angka harapan di berkas parity WAJIB angka UKUR.** Penjaganya `node scripts/qa/cek-sidik-parity.mjs` (nol DB) + PREFLIGHT di skrip apply yang mengukur produksi di run yang sama. Sebabnya: 28 Sep enam konstanta salah **seluruhnya** karena `prosecdef::text` disangka menghasilkan `t` — ia menghasilkan `true`; `t`/`f` cuma cara psql **menampilkan** boolean. Akibatnya blok V berbunyi atas keadaan yang **sudah benar**, dan pesan gagalnya mencetak sidik jari produksi sendiri sebagai angka "yang salah".
+
 ## Checklist manual per giliran (di luar sweep otomatis)
 
 Sweep hanya membuktikan "buka langsung + identitas halaman". Per giliran, uji manual dengan ≥2 akun (satu yang boleh, satu yang ditolak):
