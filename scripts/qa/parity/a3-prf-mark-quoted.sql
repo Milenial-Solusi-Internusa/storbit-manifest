@@ -79,6 +79,27 @@ END;
 $fn$;
 
 -- --- V1: BUKTI badan staging = badan production -----------------------------
+-- -- ASAL ANGKA HARAPAN DI BAWAH ----------------------------------------
+-- SELURUHNYA DIUKUR DARI PRODUCTION, bukan dihitung dan bukan disalin
+-- dari staging. Sumbernya satu berkas yang ikut di repo:
+--   scripts/qa/parity/inventaris-production-20260927.json
+--   (env-drift-check.mjs INVENTARIS_SQL, SELECT saja, 27 Sep 2026,
+--    ref untmpqceexwxzuhlmyrg)
+--
+-- Yang dipakai berkas ini:
+--   e37ee35b051b7bdd9a88184ebfb267e4  prf_mark_quoted(uuid,text)        md5(prosrc)
+--   207fc0900249c7c262fe899b47834cca  prf_mark_quoted(uuid,text)        sidik penuh
+--
+-- DUA penjaga, dan keduanya perlu karena menjaga hal berbeda:
+--   scripts/qa/cek-sidik-parity.mjs  -- nol DB: tiap angka di sini WAJIB
+--     ada di inventaris terukur itu. Menangkap angka hasil hitungan sendiri.
+--   PREFLIGHT 2 di skrip apply       -- mengukur production LANGSUNG di run
+--     yang sama lalu membandingkannya. Menangkap inventaris yang sudah BASI.
+--
+-- !! JANGAN menghitung angka ini di luar SQL. 28 Sep 2026 keenam konstanta
+--    salah seluruhnya karena prosecdef::text disangka menghasilkan "t";
+--    ia menghasilkan "true". t/f cuma cara psql MENAMPILKAN boolean.
+-- -----------------------------------------------------------------------
 DO $v1$
 DECLARE v_md5 text; v_sidik text; v_acl text;
 BEGIN

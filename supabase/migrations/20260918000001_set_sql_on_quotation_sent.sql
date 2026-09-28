@@ -93,6 +93,27 @@ CREATE TRIGGER trg_set_sql_on_quotation_sent AFTER INSERT OR UPDATE ON public.qu
 --    scripts/qa/cek-sidik-parity.mjs menolak angka yang bukan angka ukur.
 --    Rumusnya sendiri kini satu konstanta bersama di env-drift-check.mjs
 --    (EKSPRESI_SIDIK_FUNGSI), jadi ia tidak bisa lagi berbeda tanpa ketahuan.
+-- -- ASAL ANGKA HARAPAN DI BAWAH ----------------------------------------
+-- SELURUHNYA DIUKUR DARI PRODUCTION, bukan dihitung dan bukan disalin
+-- dari staging. Sumbernya satu berkas yang ikut di repo:
+--   scripts/qa/parity/inventaris-production-20260927.json
+--   (env-drift-check.mjs INVENTARIS_SQL, SELECT saja, 27 Sep 2026,
+--    ref untmpqceexwxzuhlmyrg)
+--
+-- Yang dipakai berkas ini:
+--   6f28f42a8b597ec35eac6df37356285a  set_sql_on_quotation_sent()       md5(prosrc)
+--   cca33b7ddc056b9992103c092d17da39  set_sql_on_quotation_sent()       sidik penuh
+--
+-- DUA penjaga, dan keduanya perlu karena menjaga hal berbeda:
+--   scripts/qa/cek-sidik-parity.mjs  -- nol DB: tiap angka di sini WAJIB
+--     ada di inventaris terukur itu. Menangkap angka hasil hitungan sendiri.
+--   PREFLIGHT 2 di skrip apply       -- mengukur production LANGSUNG di run
+--     yang sama lalu membandingkannya. Menangkap inventaris yang sudah BASI.
+--
+-- !! JANGAN menghitung angka ini di luar SQL. 28 Sep 2026 keenam konstanta
+--    salah seluruhnya karena prosecdef::text disangka menghasilkan "t";
+--    ia menghasilkan "true". t/f cuma cara psql MENAMPILKAN boolean.
+-- -----------------------------------------------------------------------
 DO $v1$
 DECLARE v_sidik text; v_acl text; v_def text; v_md5 text;
 BEGIN

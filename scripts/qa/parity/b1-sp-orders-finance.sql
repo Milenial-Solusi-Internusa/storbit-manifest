@@ -147,6 +147,27 @@ END; $fn$;
 -- sini. Hitungan sendiri sempat salah untuk keenam fungsi parity karena
 -- prosecdef::text disangka 't' padahal 'true'. Penjaganya
 -- scripts/qa/cek-sidik-parity.mjs.
+-- -- ASAL ANGKA HARAPAN DI BAWAH ----------------------------------------
+-- SELURUHNYA DIUKUR DARI PRODUCTION, bukan dihitung dan bukan disalin
+-- dari staging. Sumbernya satu berkas yang ikut di repo:
+--   scripts/qa/parity/inventaris-production-20260927.json
+--   (env-drift-check.mjs INVENTARIS_SQL, SELECT saja, 27 Sep 2026,
+--    ref untmpqceexwxzuhlmyrg)
+--
+-- Yang dipakai berkas ini:
+--   1c1de283d15d8934fe16004496b61951  set_sp_finance_docs(...)          sidik penuh
+--   7fc7bdc63997c3f3dbff53fbedd24bd8  update_sp_item_dual(uuid,jsonb)   sidik penuh
+--
+-- DUA penjaga, dan keduanya perlu karena menjaga hal berbeda:
+--   scripts/qa/cek-sidik-parity.mjs  -- nol DB: tiap angka di sini WAJIB
+--     ada di inventaris terukur itu. Menangkap angka hasil hitungan sendiri.
+--   PREFLIGHT 2 di skrip apply       -- mengukur production LANGSUNG di run
+--     yang sama lalu membandingkannya. Menangkap inventaris yang sudah BASI.
+--
+-- !! JANGAN menghitung angka ini di luar SQL. 28 Sep 2026 keenam konstanta
+--    salah seluruhnya karena prosecdef::text disangka menghasilkan "t";
+--    ia menghasilkan "true". t/f cuma cara psql MENAMPILKAN boolean.
+-- -----------------------------------------------------------------------
 DO $v1$
 DECLARE v_sidik text; v_acl text; v_n int;
 BEGIN

@@ -100,6 +100,29 @@ CREATE POLICY sp_items_delete ON public.sp_items FOR DELETE TO authenticated
   USING (is_super_admin() OR is_sp_item_writer());
 
 -- --- V1: BUKTI, bukan harapan -----------------------------------------------
+-- -- ASAL ANGKA HARAPAN DI BAWAH ----------------------------------------
+-- SELURUHNYA DIUKUR DARI PRODUCTION, bukan dihitung dan bukan disalin
+-- dari staging. Sumbernya satu berkas yang ikut di repo:
+--   scripts/qa/parity/inventaris-production-20260927.json
+--   (env-drift-check.mjs INVENTARIS_SQL, SELECT saja, 27 Sep 2026,
+--    ref untmpqceexwxzuhlmyrg)
+--
+-- Yang dipakai berkas ini:
+--   384132b93cf287b82c5d9d4ba2a61489  is_sp_item_writer()               md5(prosrc)
+--   d8f2a428ac396512ef5056fbe4c5936f  delete_sp_item_dual(uuid)         md5(prosrc)
+--   9aa242a0e10291c085fc310cecb667a6  is_sp_item_writer()               sidik penuh
+--   c5cd6c1d1efa513c38f04752e75acea8  delete_sp_item_dual(uuid)         sidik penuh
+--
+-- DUA penjaga, dan keduanya perlu karena menjaga hal berbeda:
+--   scripts/qa/cek-sidik-parity.mjs  -- nol DB: tiap angka di sini WAJIB
+--     ada di inventaris terukur itu. Menangkap angka hasil hitungan sendiri.
+--   PREFLIGHT 2 di skrip apply       -- mengukur production LANGSUNG di run
+--     yang sama lalu membandingkannya. Menangkap inventaris yang sudah BASI.
+--
+-- !! JANGAN menghitung angka ini di luar SQL. 28 Sep 2026 keenam konstanta
+--    salah seluruhnya karena prosecdef::text disangka menghasilkan "t";
+--    ia menghasilkan "true". t/f cuma cara psql MENAMPILKAN boolean.
+-- -----------------------------------------------------------------------
 DO $v1$
 DECLARE v_md5 text; v_sidik text; v_nama text; v_qual text; v_roles text;
 BEGIN
