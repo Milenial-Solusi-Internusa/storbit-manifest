@@ -702,6 +702,49 @@ SUM(line_amount) + SUM(ppn) = total_amount
 
 ---
 
+## 27. ⛔ `20260928000012_td281_h1_revoke_public_execute` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000012_td281_h1_revoke_public_execute.sql` (~200 baris) — ⛔ hidup di branch **`hotfix/td281-h1`** (bercabang dari `main`), **bukan** di `develop` |
+| Staging | ⛔ **belum** — dijalankan sebagai **UJI**, bukan sebagai gerbang |
+| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Tindakan saat launching | **nol** kalau urutan di bawah sudah dijalankan; butir ini menutup sendiri |
+| Urutan | uji staging → **PRODUCTION** → samakan staging → verifikasi notifikasi milestone SP |
+
+⛔ **ARAHNYA TERBALIK dari seluruh butir lain di dokumen ini, dan itu disengaja.** Paparannya **ADA DI PRODUCTION**; staging di sini berperan sebagai **tempat uji**, bukan sebagai gerbang rilis. Membacanya sebagai butir "staging → production" biasa akan membuat orang menunggu hal yang salah.
+
+**Apa yang ditutup.** Enam fungsi `SECURITY DEFINER` ter-`EXECUTE` **PUBLIC** — sebagian lewat `proacl NULL`, yang artinya PUBLIC EXECUTE (gotcha #40). PUBLIC mencakup `anon`, dan **kunci `anon` memang publik: ia ikut ter-bundle ke browser**. Jadi keenamnya bisa dipanggil **siapa pun di internet** lewat `POST /rest/v1/rpc/<nama>`, dan karena `SECURITY DEFINER` berjalan sebagai pemiliknya, **RLS tidak melindungi apa pun di dalamnya**.
+
+⭐ **Yang paling mudah dieksploitasi bukan yang namanya paling menakutkan:** `increment_document_sequence` — seluruh parameternya bisa ditebak (UUID entitas ada di `CLAUDE.md` **dan** di bundle FE), jadi penomoran dokumen bisa dibakar tanpa batas, **permanen** (preseden: nomor invoice 0012 & 0013 terpakai permanen, `PROGRESS.md` 2026-09-07).
+
+**Matriks ACL:**
+
+| fungsi | REVOKE | GRANT | dasar |
+|---|---|---|---|
+| `increment_document_sequence` | PUBLIC, anon | `authenticated` | 8 pemanggil FE |
+| `check_similar_accounts` | PUBLIC, anon | `authenticated` | 3 pemanggil FE |
+| `complete_picking` | PUBLIC, anon | `authenticated` | 2 pemanggil FE |
+| `attach_price_contract_info` | PUBLIC, anon | `authenticated` | 1 pemanggil FE |
+| `is_admin_tier_role` | PUBLIC, anon | `authenticated` | ⛔ dipakai **2 RLS policy** |
+| `notify_sp_milestone` | PUBLIC, anon | **— nol** | nol FE, nol policy, pemanggil `SECURITY DEFINER` |
+
+⛔ **`is_admin_tier_role` WAJIB tetap di-GRANT, dan alasannya mudah terlewat.** Ia dipakai **di dalam** `user_roles_insert` dan `user_roles_update` (keduanya `TO authenticated`). Ekspresi policy dievaluasi **sebagai pemanggil**, dan hak `EXECUTE` fungsi **ikut diperiksa di sana** — mencabutnya tanpa GRANT membuat **admin gagal menetapkan role**, dan kedua policy itu justru yang menutup privilege escalation **TD-170**. ⭐ *"Nol pemanggil FE" BUKAN "nol pemanggil": sebuah fungsi bisa terjangkau lewat RLS policy tanpa satu baris frontend menyebutnya.*
+
+**Nol sentuhan badan.** `md5(prosrc)` dibandingkan sebelum/sesudah **dua kali** — di dalam migrasi (V-POST-1) dan sekali lagi **di luar database** oleh runner-nya. Guard peran di dalam badan adalah **lapis 2**, berkas terpisah.
+
+⭐ **Tiga gerbang diperiksa LIVE, bukan diasumsikan dari repo.** Survei pemanggil dari `schema_snapshot.sql` hanya berhasil membaca **83 dari 106** `CREATE FUNCTION`, dan snapshot itu tertanggal 18 Sep — menyimpulkan darinya berarti menyimpulkan dari 78% data yang sudah basi. Karena itu: **V-PRA-1** tepat satu tanda tangan per nama (overload → `REVOKE` bisa mengenai tanda tangan yang salah) · **V-PRA-2** nol fungsi `SECURITY INVOKER` memanggil keenamnya · **V-PRA-3** pemakaian di policy hanya kedua policy `user_roles`. Satu gagal → migrasi berhenti, nol perubahan.
+
+⚠️ **`service_role` sengaja TIDAK diberi GRANT.** Diukur: nol Edge Function memanggil keenamnya (EF hanya memakai `is_super_admin` dan `exec_sql`). Konsekuensi yang diterima: otomasi masa depan yang memakai service key untuk keenam RPC ini **akan ditolak**.
+
+⚠️ **Satu hal yang TIDAK BISA dibuktikan di staging:** jalur pemanggil **internal** `notify_sp_milestone`. Badannya di staging sudah **no-op sejak 25 Sep** (butir 10), jadi staging tidak bisa membuktikan apa pun tentang perilakunya di produksi. Dasarnya logis — pemanggilnya `SECURITY DEFINER` milik `postgres`, berjalan sebagai pemilik. **Buktinya baru ada SESUDAH produksi:** pastikan satu notifikasi milestone SP benar-benar terkirim.
+
+**Rollback.** Runner menyimpan `proacl` sebelum perubahan ke berkas **sebelum** migrasi jalan — pulihkan dari berkas itu, bukan dari ingatan. ⚠️ Memberi kembali ke PUBLIC berarti **membuka kembali paparannya**; lakukan hanya kalau ada yang benar-benar patah, dan **catat apa yang patah** — itulah pemanggil yang tidak terdaftar, dan ia temuan tersendiri.
+
+**Sesudah butir ini:** H1 lapis 2 (guard peran), lalu H2 (`pg_default_acl`), H3 (`SET search_path` 8 fungsi), H4, H5 — seluruhnya **TD-281**.
+
+---
+
 ## Cara merawat dokumen ini
 
 1. **Setiap SQL manual di staging masuk ke sini**, di hari yang sama. Perubahan tanpa berkas migrasi adalah perubahan yang paling mudah hilang.
