@@ -418,7 +418,7 @@ Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_rea
 
 ## RUTINITAS SEBELUM UAT — `env-drift-check` (Tahap 3 TD-279, berlaku 28 Sep 2026)
 
-⛔ **Jalankan `node scripts/qa/env-drift-check.mjs` SEBELUM setiap putaran UAT di staging, dan sebelum tiap `develop` → `main`.** Ia membandingkan staging dengan produksi untuk **fungsi, policy, trigger, kolom, dan HAK** (`relacl`/`attacl`/`proacl`), lalu memilah hasilnya jadi tiga:
+⛔ **WAJIB: jalankan `node scripts/qa/env-drift-check.mjs` SEBELUM setiap putaran UAT di staging, DAN sebelum hari launching (`develop` → `main`).** Ia membandingkan staging dengan produksi untuk **fungsi, policy, trigger, kolom, dan HAK** (`relacl`/`attacl`/`proacl`), lalu memilah hasilnya jadi tiga:
 
 | kelas | artinya | tindakan |
 |---|---|---|
@@ -433,6 +433,15 @@ Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_rea
 **Riwayat TD-279, supaya angkanya punya arti:** 61 DRIFT (27 Sep) → 56 → **16** (Kelompok A) → **11** (Kelompok B) → **0** (Kelompok C, 28 Sep). Sesudah itu laporan yang sehat berbunyi **0 DRIFT** dengan ANTRE + SELAMANYA saja.
 
 ⚠️ **Arah default: staging mengikuti produksi.** Satu-satunya pengecualian kelas ANTRE. Kalau suatu hari DRIFT muncul lagi, jangan "perbaiki" dengan mengubah produksi.
+
+**Empat pelajaran 28 Sep 2026 yang mengikat cara menyamakan lingkungan:**
+
+1. **Samakan ke teks PRODUKSI, bukan ke berkas repo.** Berkas migrasi tidak selalu mencerminkan produksi — diukur, bukan dikira (**TD-282**): enam RPC Storbit berbeda badannya, dua di antaranya nol berkas. Menjalankan berkas repo bisa menyamakan staging ke sesuatu yang bukan produksi, lalu melaporkannya sebagai parity.
+2. **Keluaran deparse alat BACA, bukan sumber SALIN.** `pg_policies.qual` adalah pencetakan ekspresi; memberikannya kembali ke `ALTER POLICY` menghasilkan bentuk berbeda lagi. Cari migrasi asalnya.
+3. **Blok verifikasi wajib memakai sidik jari yang sama dengan alat ukurnya.** Verifikasi yang lebih longgar dari alat pemeriksanya adalah jaminan palsu — dan angka harapannya wajib **diukur**, bukan dihitung (`prosecdef::text` = `true`, bukan `t`).
+4. **Hak tabel/kolom/fungsi ikut dibandingkan** (`relacl`/`attacl`/`proacl`). `proacl` **NULL = PUBLIC EXECUTE**, bukan "tanpa hak".
+
+⛔ **WAJIB juga sebelum HARI LAUNCHING (`develop` → `main`), bukan cuma sebelum UAT.** Dokumen ini mendaftar apa yang harus dinaikkan; `env-drift-check` yang membuktikan tidak ada yang lain ikut berbeda diam-diam.
 
 ⚠️ **Alatnya butuh `STG_DB_URL` + `PRD_DB_URL` (Session pooler), dan ke produksi ia SELECT saja.** Satu koneksi per DB. Palang ref dua arah aktif: URL yang tertukar ditolak sebelum satu byte dikirim.
 
