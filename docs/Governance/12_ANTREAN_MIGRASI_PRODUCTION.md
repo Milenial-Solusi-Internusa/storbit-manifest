@@ -760,6 +760,45 @@ SUM(line_amount) + SUM(ppn) = total_amount
 
 ---
 
+## 28. ⛔ `20260928000013_td281_h1_lapis2_guard_dan_jejak` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260928000013_td281_h1_lapis2_guard_dan_jejak.sql` — hidup di branch **`hotfix/td281-h1-lapis2`** (dari `main`) |
+| Staging | ⛔ **belum** — dijalankan sebagai **UJI** |
+| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Urutan | uji staging → **PRODUCTION** → samakan staging |
+| Catatan rollback | `scripts/qa/out/badan-lapis2-20260928-130907/def-*.sql` — teks badan **LAMA** dari produksi. ⚠️ folder `out/` **ter-gitignore**, berkasnya hidup di mesin Den saja |
+
+**Apa yang ditambahkan.** Lapis 1 (butir 27) menjawab *"siapa boleh MEMANGGIL"*. Lapis 2 menjawab pertanyaan berikutnya: *"di antara yang boleh memanggil, siapa boleh MELAKUKAN"*. Tanpanya, **setiap user yang login** bisa menyelesaikan picking mana pun dan menomori dokumen untuk entitas mana pun.
+
+| fungsi | guard | jejak |
+|---|---|---|
+| `complete_picking` | `is_super_admin() OR is_sp_item_writer()` | `audit_logs` + kolom `picking_lists.completed_by` |
+| `attach_price_contract_info` | `is_super_admin() OR is_manager_or_above()` | `audit_logs` |
+| `increment_document_sequence` | `is_super_admin() OR p_company_id IN (SELECT get_user_company_ids())` | — |
+| `check_similar_accounts` | sama | — |
+
+⚠️ **`has_role('operations')` sengaja DICABUT** dari rancangan awal: diukur, `is_sp_item_writer()` sudah memuat `super_admin, admin, manager, operations`. Ia nol menambah user, tapi akan jadi **tempat kedelapan** daftar peran hidup (TD-233 di tujuh).
+
+⚠️ **`is_super_admin()` tetap eksplisit di keempatnya** walau `super_admin` (level 0) sudah lolos `is_manager_or_above()` (level ≤ 6) — diukur 28 Sep. `level` adalah **data**; kalau ia berubah, hak ini tidak boleh ikut hilang diam-diam.
+
+**Badan diambil dari PRODUCTION** (`pg_get_functiondef`, dump 28 Sep), bukan dari repo — **TD-282**. ⭐ **V-PRA-2 memeriksa `md5(prosrc)` SEBELUM mengganti**: kalau produksi sudah bergerak sejak dump, migrasi **berhenti** dan tidak menimpa apa pun.
+
+⛔ **TIGA keputusan yang harus terbaca, bukan ditemukan belakangan:**
+
+1. **`check_similar_accounts` diubah dari `LANGUAGE sql` ke `plpgsql`.** Fungsi SQL murni **tidak bisa** `RAISE EXCEPTION`, sementara syaratnya pesan tolak yang jelas. Alternatifnya — guard di `WHERE` — membuat penolakan tampak seperti **"nol hasil"**, dan penolakan senyap adalah yang paling mahal didiagnosis. Biayanya kehilangan inlining planner; dampaknya nol (ia pre-check form saat membuat akun, bukan jalur panas).
+2. **Penolakan guard memakai ERRCODE bawaan `P0001`, BUKAN `42501`.** Kalau ikut `42501`, *"ditolak guard"* dan *"tidak punya hak EXECUTE"* jadi **tidak bisa dibedakan**, dan uji lapis 1 akan melaporkan TOLAK palsu. Satu kode galat, satu arti.
+3. **`completed_by` TIDAK di-backfill.** 151 picking lama tetap NULL — datanya memang tidak pernah direkam. Mengisinya dari `created_by` akan membuat kolom itu **berbohong dengan rapi**. ⭐ **TD-283 karena itu tertutup MULAI SEKARANG, bukan surut ke belakang** — jangan tulis "TD-283 selesai" tanpa kalimat itu.
+
+⚠️ **Satu risiko diukur dan diterima:** guard entitas memakai `get_user_company_ids()` (entitas tempat user punya role **aktif**) sementara FE mengirim `profile.company_id` (entitas **HOME**) — **himpunan yang berbeda**. User ber-home MSI yang role-nya hanya di SOA akan ditolak. Populasi itu di produksi hari ini **NOL** (butir 15). Pesan tolaknya **menyebut nama entitas** supaya sebabnya langsung terbaca kalau kelak ada.
+
+⭐ **V-POST memeriksa empat hal, dan yang keempat paling mudah terlewat: ACL keempat fungsi harus TETAP.** `CREATE OR REPLACE` mempertahankan hak; `DROP`+`CREATE` **tidak**. Kalau ACL bergeser, **butir 27 baru saja dibatalkan tanpa ada yang menyadarinya**.
+
+**Dampak ke drift.** Berkas ini mengubah `prosrc` **empat fungsi** + menambah **satu kolom** → menggeser sidik `fungsi` dan `kolom`. Selama jendela produksi→staging, `env-drift-check` akan melaporkannya sebagai DRIFT. **Itu diharapkan**; samakan staging segera sesudah produksi.
+
+---
+
 ## Cara merawat dokumen ini
 
 1. **Setiap SQL manual di staging masuk ke sini**, di hari yang sama. Perubahan tanpa berkas migrasi adalah perubahan yang paling mudah hilang.
