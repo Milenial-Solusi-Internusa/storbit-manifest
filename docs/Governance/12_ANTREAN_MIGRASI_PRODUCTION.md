@@ -48,8 +48,8 @@
 | 25 | `20260928000010_invoice_issue_tax_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18 dan 21 |
 | 26 | `20260928000011_invoice_coretax_code_whitelist` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 22 |
 | 27 | `20260928000012_td281_h1_revoke_public_execute` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, production dulu |
-| 28 | `20260928000013_td281_h1_lapis2_guard_dan_jejak` | ✔ 28 Sep (**hasilnya CACAT**) | ⛔ belum | ⛔ **WAJIB bersama butir 29** — jangan naik sendirian |
-| 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 28, **di transaksi/sesi yang sama** |
+| 28 | `20260928000013_td281_h1_lapis2_guard_dan_jejak` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ naik BERSAMA butir 29, satu sesi |
+| 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik + satu sesi dengan butir 28 |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -763,14 +763,14 @@ SUM(line_amount) + SUM(ppn) = total_amount
 
 ---
 
-## 28. ⛔ `20260928000013_td281_h1_lapis2_guard_dan_jejak` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+## 28. ✔ `20260928000013_td281_h1_lapis2_guard_dan_jejak` — SELESAI 28 Sep 2026 (⚠️ ARAH TERBALIK + naik bersama butir 29)
 
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260928000013_td281_h1_lapis2_guard_dan_jejak.sql` — hidup di branch **`hotfix/td281-h1-lapis2`** (dari `main`) |
-| Staging | ✔ **28 Sep 2026** — dijalankan sebagai **UJI**, dan ujinya **MENEMUKAN CACAT** (lihat blok di bawah) |
-| Production | ⛔ **belum** — ⚠️ **inilah targetnya**, tapi ⛔ **JANGAN naik sendirian**: tanpa butir 29, `check_similar_accounts` mati untuk semua orang |
-| Urutan | uji staging → **butir 29** → uji ulang staging → **PRODUCTION (butir 28 lalu 29, satu sesi)** → samakan staging |
+| Staging | ✔ **28 Sep 2026** — dijalankan sebagai **UJI**, dan ujinya **MENEMUKAN CACAT** (lihat blok di bawah), lalu ditutup butir 29 |
+| Production | ✔ **28 Sep 2026** — dijalankan **bersama butir 29 dalam satu sesi**, butir 28 lebih dulu |
+| Urutan | ✔ terlaksana: uji staging → butir 29 → uji ulang staging → PRODUCTION (28 lalu 29, satu sesi) |
 | Catatan rollback | `scripts/qa/out/badan-lapis2-20260928-130907/def-*.sql` — teks badan **LAMA** dari produksi. ⚠️ folder `out/` **ter-gitignore**, berkasnya hidup di mesin Den saja |
 
 **Apa yang ditambahkan.** Lapis 1 (butir 27) menjawab *"siapa boleh MEMANGGIL"*. Lapis 2 menjawab pertanyaan berikutnya: *"di antara yang boleh memanggil, siapa boleh MELAKUKAN"*. Tanpanya, **setiap user yang login** bisa menyelesaikan picking mana pun dan menomori dokumen untuk entitas mana pun.
@@ -808,18 +808,24 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 
 **Perbaikannya butir 29** — berkas **BARU**. ⛔ **`20260928000013` sengaja TIDAK disunting**: ia sudah tercatat jalan di staging, dan mengubah isinya membuat repo berhenti menggambarkan apa yang benar-benar dijalankan (pola yang sama dipakai saat berkas 3 AR Tahap 2 cacat — `PROGRESS.md` 2026-09-25).
 
+✔ **HASIL 28 Sep 2026 — LIVE di staging DAN production.** Dijalankan berurutan dalam satu sesi, butir 28 lalu butir 29. Seluruh gerbang lolos: V-PRA-2 (`md5(prosrc)` keempat fungsi cocok dengan dump) dan V-POST (badan berubah, **ACL butir 27 tetap** — nol PUBLIC, nol `anon`, `authenticated` ada).
+
+**Bukti yang diambil sesudahnya, bukan diasumsikan** *(dijalankan Den, read-only, impersonasi `super_admin`)*: `md5(prosrc)` `check_similar_accounts` di production = **`8a97edf6…`** = versi yang lolos uji kesetaraan di staging, dan `check_similar_accounts('PT Indomarco Prismatama', <SOA>)` mengembalikan **1 hasil** — guard dilewati, fungsi bekerja. ⭐ Dua pemeriksaan itu menjawab hal yang berbeda: md5 membuktikan **teks yang naik benar**, panggilan membuktikan **teksnya benar-benar jalan**. Yang pertama saja tidak cukup — 42702 pun punya md5 yang konsisten.
+
+**Catatan rollback:** `scripts/qa/out/badan-lapis2-20260928-130907/def-*.sql` (teks badan **LAMA** dari produksi, empat berkas + `info.txt`). ⚠️ folder `out/` **ter-gitignore**, berkasnya hidup di mesin Den saja — kalau mesin itu hilang, badan lama hanya bisa diambil ulang dari lingkungan yang belum di-upgrade, dan hari ini **tidak ada lagi**.
+
 **Dampak ke drift.** Berkas ini mengubah `prosrc` **empat fungsi** + menambah **satu kolom** → menggeser sidik `fungsi` dan `kolom`. Selama jendela produksi→staging, `env-drift-check` akan melaporkannya sebagai DRIFT. **Itu diharapkan**; samakan staging segera sesudah produksi.
 
 ---
 
-## 29. ⛔ `20260928000014_td281_l2_fix_check_similar_accounts` — WAJIB, sesudah butir 28, **satu sesi dengannya**
+## 29. ✔ `20260928000014_td281_l2_fix_check_similar_accounts` — SELESAI 28 Sep 2026 (satu sesi dengan butir 28)
 
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260928000014_td281_l2_fix_check_similar_accounts.sql` — hidup di branch **`hotfix/td281-h1-lapis2`** (dari `main`) |
-| Staging | ⛔ **belum** |
-| Production | ⛔ **belum** |
-| Urutan | **butir 28 lebih dulu, lalu berkas ini, di sesi yang sama** — di staging maupun di produksi |
+| Staging | ✔ **28 Sep 2026** |
+| Production | ✔ **28 Sep 2026** — sesudah butir 28, sesi yang sama |
+| Urutan | ✔ terlaksana: butir 28 lebih dulu, lalu berkas ini, satu sesi — di staging maupun di produksi |
 | Catatan rollback | badan `LANGUAGE sql` lama: `scripts/qa/out/badan-lapis2-20260928-130907/def-check_similar_accounts.sql`. ⚠️ versi itu **NOL guard entitas** — memulihkannya berarti mencabut guard butir 28 |
 
 **Apa yang diperbaiki.** SQLSTATE **42702** yang lahir dari konversi `check_similar_accounts` ke plpgsql di butir 28. Uraian lengkap sebabnya ada di butir 28; yang perlu diketahui di sini: **tanpa berkas ini, butir 28 mematikan fungsi itu untuk semua orang.**
@@ -848,6 +854,10 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 3. Staging: `./scripts/qa/out/uji-td281-l2.sh` **dan** `./scripts/qa/out/uji-td281-h1.sh` — keduanya lolos, dan ⛔ **nol SQLSTATE kelas 42 di mana pun**.
 4. Baru **PRODUCTION**: butir 28 lalu butir 29, satu sesi.
 5. `env-drift-check` — lima fungsi + satu kolom akan bergerak; samakan staging kalau masih berbeda.
+
+✔ **HASIL 28 Sep 2026 — LIVE di staging DAN production**, kelima langkah urutan di bawah terlaksana. Uji kesetaraan staging LOLOS (keluaran versi baru **identik** dengan versi produksi lama, dan jumlah nama uji ber-hasil **> 0**, sehingga bukan lolos karena kosong), kedua uji runtime lolos **tanpa satu pun SQLSTATE kelas 42**, lalu production. `md5(prosrc)` di production **sama dengan versi yang diuji itu** — diperiksa, bukan diandaikan.
+
+**Catatan rollback:** `scripts/qa/out/badan-lapis2-20260928-130907/def-check_similar_accounts.sql` (versi `LANGUAGE sql` lama). ⚠️ versi itu **NOL guard entitas** — memulihkannya berarti mencabut guard butir 28, jadi ia rollback untuk *kerusakan*, bukan untuk *ketidaksukaan*.
 
 **Dampak ke drift.** Berkas ini mengubah `prosrc` **satu fungsi**. Selama jendela antara staging dan produksi, `env-drift-check` melaporkannya sebagai DRIFT — **itu diharapkan**.
 
