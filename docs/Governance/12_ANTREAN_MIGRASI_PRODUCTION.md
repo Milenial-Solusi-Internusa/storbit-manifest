@@ -702,15 +702,16 @@ SUM(line_amount) + SUM(ppn) = total_amount
 
 ---
 
-## 27. ⛔ `20260928000012_td281_h1_revoke_public_execute` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+## 27. ✔ `20260928000012_td281_h1_revoke_public_execute` — SELESAI 28 Sep 2026 (⚠️ ARAH TERBALIK: production dulu)
 
 | | |
 |---|---|
-| Berkas | `supabase/migrations/20260928000012_td281_h1_revoke_public_execute.sql` (~200 baris) — ⛔ hidup di branch **`hotfix/td281-h1`** (bercabang dari `main`), **bukan** di `develop` |
-| Staging | ⛔ **belum** — dijalankan sebagai **UJI**, bukan sebagai gerbang |
-| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
-| Tindakan saat launching | **nol** kalau urutan di bawah sudah dijalankan; butir ini menutup sendiri |
-| Urutan | uji staging → **PRODUCTION** → samakan staging → verifikasi notifikasi milestone SP |
+| Berkas | `supabase/migrations/20260928000012_td281_h1_revoke_public_execute.sql` (306 baris) — lahir di `hotfix/td281-h1`, kini **sudah merge ke `main` DAN `develop`** |
+| Staging | ✔ **dijalankan 28 Sep 2026** sebagai **UJI** — uji runtime lewat PostgREST **LOLOS 11/0** |
+| Production | ✔ **LIVE 28 Sep 2026** — V-PRA 1-3 LOLOS, ACL sesuai matriks, `md5(prosrc)` identik |
+| Tindakan saat launching | **nol** — butir ini sudah menutup sendiri |
+| Catatan rollback | `scripts/qa/out/td281-h1-production-20260928-125318/acl-sebelum.txt` (produksi) · `…-staging-20260928-124000/…` (staging) — ⚠️ folder `out/` **ter-gitignore**, jadi berkas ini hidup **di mesin Den saja** |
+| Sisa | ⏳ verifikasi **satu notifikasi milestone SP produksi** benar-benar terkirim (menunggu SP berikutnya berubah status) |
 
 ⛔ **ARAHNYA TERBALIK dari seluruh butir lain di dokumen ini, dan itu disengaja.** Paparannya **ADA DI PRODUCTION**; staging di sini berperan sebagai **tempat uji**, bukan sebagai gerbang rilis. Membacanya sebagai butir "staging → production" biasa akan membuat orang menunggu hal yang salah.
 
@@ -738,6 +739,20 @@ SUM(line_amount) + SUM(ppn) = total_amount
 ⚠️ **`service_role` sengaja TIDAK diberi GRANT.** Diukur: nol Edge Function memanggil keenamnya (EF hanya memakai `is_super_admin` dan `exec_sql`). Konsekuensi yang diterima: otomasi masa depan yang memakai service key untuk keenam RPC ini **akan ditolak**.
 
 ⚠️ **Satu hal yang TIDAK BISA dibuktikan di staging:** jalur pemanggil **internal** `notify_sp_milestone`. Badannya di staging sudah **no-op sejak 25 Sep** (butir 10), jadi staging tidak bisa membuktikan apa pun tentang perilakunya di produksi. Dasarnya logis — pemanggilnya `SECURITY DEFINER` milik `postgres`, berjalan sebagai pemilik. **Buktinya baru ada SESUDAH produksi:** pastikan satu notifikasi milestone SP benar-benar terkirim.
+
+**Hasil eksekusi (28 Sep 2026).**
+
+⭐ **Gerbang V-PRA-2 BERBUNYI di run staging pertama dan menolak melanjutkan** — `seed_uat_build` (`SECURITY INVOKER`) memanggil `complete_picking`. **Nol perubahan terjadi**, transaksinya batal utuh. ⚠️ Fungsi itu **tidak pernah ada di `schema_snapshot.sql`** — ia lahir dari seed UAT, hanya di staging — jadi **survei pemanggil dari repo mustahil menemukannya**. Gerbang yang membaca database hidup menangkap apa yang pembacaan berkas tidak bisa. Pengecualian berawalan `seed_uat_` kemudian dipasang, **dengan nama yang dicetak sebagai NOTICE**, dan pemanggil INVOKER lain apa pun tetap menghentikan migrasi.
+
+⭐ **Di PRODUCTION gerbang itu lolos TANPA pengecualian sama sekali** — helper seed memang tidak ada di sana, persis seperti yang diharapkan. Itu sekaligus membuktikan palang dua arah `seed.sh` bekerja.
+
+**ACL sesudah, kedua lingkungan:** nol entri berawalan `=` (PUBLIC), nol `anon=`, `authenticated=X` di lima fungsi, `notify_sp_milestone` hanya `postgres=X/postgres`.
+
+⚠️ **Dua bentuk awal yang berbeda, dan keduanya sama-sama terbuka:** tiga fungsi ber-`=X/postgres` **eksplisit**, tiga lagi `proacl NULL`. Yang kedua adalah gotcha #40 — *"tanpa ACL" terbaca seperti "tanpa hak", padahal artinya terbuka untuk semua*.
+
+⚠️ **Catatan yang berguna untuk pembacaan drift:** `notify_sp_milestone` di produksi **745 byte** (`f82b70bc…`), di staging **465** (`1fc558be…`) — itu no-op staging butir 10, bukan temuan baru.
+
+**Uji runtime staging (PostgREST, bukan psql):** 6 panggilan dengan anon key ditolak `42501`; 4 fungsi ber-grant lolos sebagai user asli; `notify_sp_milestone` **tetap** ditolak. ⚠️ Skrip ujinya sempat **keluar diam-diam** pada versi pertama — `grep` keluar 1 saat tidak menemukan `"code"`, dan itu terjadi persis saat panggilannya **BERHASIL** (respons 2xx tidak punya field itu). *Skripnya mati di jalur sukses.* Kini ada `trap EXIT` yang mencetak ringkasan di setiap jalur keluar beserta peringatan "jangan baca GAGAL 0 sebagai lulus".
 
 **Rollback.** Runner menyimpan `proacl` sebelum perubahan ke berkas **sebelum** migrasi jalan — pulihkan dari berkas itu, bukan dari ingatan. ⚠️ Memberi kembali ke PUBLIC berarti **membuka kembali paparannya**; lakukan hanya kalau ada yang benar-benar patah, dan **catat apa yang patah** — itulah pemanggil yang tidak terdaftar, dan ia temuan tersendiri.
 
