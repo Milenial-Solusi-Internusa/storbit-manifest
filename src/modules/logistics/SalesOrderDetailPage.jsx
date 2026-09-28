@@ -27,6 +27,7 @@ import { isManagerOrAbove, canWriteSpItem as canWriteSpItemRole } from '../../li
 import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
+import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
 import InvoicePDF from './InvoicePDF';
@@ -395,6 +396,32 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
 
   const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
 
+  // Buffer TEKS field ongkir. `draft.shippingPrice` tetap ANGKA kanonik — kalau
+  // teks berformat disimpan di sana, `Number(draft.shippingPrice)` di handleSave
+  // (dan spToDb di db.js) jadi NaN → 0. Buffer lokal = blast radius satu <input>.
+  const [shipText, setShipText] = useState(() => formatIdNumber(item.shippingPrice ?? 0));
+  const [shipBad,  setShipBad]  = useState(false);
+
+  const handleShipChange = (e) => {
+    const raw = e.target.value;
+    setShipText(raw);
+    const { value, unrecognized } = readMoneyInput(raw);
+    setShipBad(unrecognized);
+    set('shippingPrice', value);
+  };
+  // Teks tak dikenali SENGAJA DIBIARKAN di field (keputusan Den) — mengosongkannya
+  // diam-diam menyembunyikan bahwa yang tersimpan 0. Pesan inline yang memberi tahu.
+  const handleShipBlur = () => {
+    const { value, unrecognized } = readMoneyInput(shipText);
+    if (unrecognized) return;
+    setShipText(shipText.trim() === '' ? '' : formatIdNumber(value));
+  };
+
+  // Ongkir > 0 tapi < seribu = bentuk khas nominal yang kehilangan pemisah
+  // ribuannya (1.766.050 → 1,77). PERINGATAN saja, tidak memblokir Save.
+  const shipValue = Number(draft.shippingPrice) || 0;
+  const shipOdd   = shipValue > 0 && shipValue < 1000;
+
   // Dropdown-only: item yang SUDAH tertaut wajib tetap tertaut (cegah unlink tak sengaja).
   // Item legacy (product_id null) boleh disimpan tanpa memilih (lenient) — keputusan user.
   const wasLinked = !!item.productId;
@@ -411,9 +438,13 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
 
   // Auto-calculated fields
   const outstanding = Math.max(0, Number(draft.qty) - Number(draft.shippedQty));
-  const subtotal    = Number(draft.qty) * Number(draft.unitPrice);
-  const ppn         = Math.round(subtotal * PPN_RATE);
-  const grandTotal  = subtotal + ppn + Number(draft.shippingPrice);
+  // Subtotal/PPN/Grand Total lewat calcItem() — SATU rumus untuk seluruh aplikasi,
+  // dan dasar PPN-nya subtotal + ONGKIR seperti create_invoice
+  // (ROUND((unit_price*qty + shipping_price)*0.11)). Sebelum ini ringkasan modal
+  // ini menghitung PPN dari subtotal SAJA, jadi PPN & Grand Total yang ditampilkan
+  // lebih kecil dari yang nanti ditagih invoice.
+  // `outstanding` di atas TETAP lokal: calcItem tidak meng-clamp ke nol.
+  const { subtotal, ppn, grandTotal } = calcItem(draft);
 
   function autoStatus() {
     const q = Number(draft.qty), s = Number(draft.shippedQty), out = Math.max(0, q - s);
@@ -568,9 +599,20 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
             <ModalField label="Shipping Price (Rp)">
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.inkFaint, pointerEvents: 'none' }}>Rp</span>
-                <input type="number" value={draft.shippingPrice} onFocus={selectOnFocus} onChange={e => set('shippingPrice', e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
+                {/* type=text, BUKAN number: <input type="number"> tak bisa menerima
+                    pemisah ribuan id-ID — "1.766.050" terbaca 1,766 lalu dibulatkan
+                    kolom numeric(18,2) jadi 1.77. onFocus pakai select() langsung
+                    karena selectOnFocus ber-guard `type === 'number'` (jadi no-op). */}
+                <input type="text" inputMode="decimal" value={shipText}
+                  onFocus={e => e.target.select()} onChange={handleShipChange} onBlur={handleShipBlur}
                   style={{ height: 38, paddingLeft: 32, paddingRight: 11, border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: "'IBM Plex Mono',monospace", width: '100%', boxSizing: 'border-box' }}/>
               </div>
+              {shipBad && (
+                <div style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</div>
+              )}
+              {!shipBad && shipOdd && (
+                <div style={{ fontSize: 11, color: C.warn }}>Ongkir di bawah Rp 1.000, pastikan angka sesuai SP</div>
+              )}
             </ModalField>
           </div>
           {/* Calc row */}
@@ -1070,6 +1112,45 @@ export default function SalesOrderDetailPage({
   const [ttfSaving,   setTtfSaving]   = useState(false);
   const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
   const [pphTouched,  setPphTouched]  = useState(false);
+  // Buffer TEKS dua field uang form Pembayaran. `payForm.amount`/`payForm.pph`
+  // tetap STRING NUMERIK kanonik ('1766050'), jadi kelima pembaca
+  // `Number(payForm.amount)` (handleRecordPayment + disabled/style tombol) dan
+  // `Number(payForm.pph)` di payload RPC tidak perlu disentuh sama sekali.
+  const [payAmountText, setPayAmountText] = useState('');
+  const [payAmountBad,  setPayAmountBad]  = useState(false);
+  const [payPphText,    setPayPphText]    = useState('');
+  const [payPphBad,     setPayPphBad]     = useState(false);
+
+  // Satu pola untuk kedua field: teks mentah saat mengetik, format saat blur,
+  // teks tak dikenali DIBIARKAN + pesan inline (nilai kanonik 0).
+  // onBlur membaca BUFFER, bukan e.target.value — bedanya penting untuk field PPh:
+  // saat belum disentuh, yang tampil di DOM adalah teks saran (pphSuggestion)
+  // sementara buffernya masih ''. Kalau blur membaca DOM, focus+blur tanpa
+  // mengetik akan memaku saran itu ke buffer, sehingga ia berhenti mengikuti
+  // pphSuggestion kalau data invoice ter-refresh. Lewat buffer, '' tetap ''.
+  const makeMoneyHandlers = (text, setText, setBad, key) => ({
+    onChange: (e) => {
+      const raw = e.target.value;
+      setText(raw);
+      const { value, unrecognized } = readMoneyInput(raw);
+      setBad(unrecognized);
+      setPayForm(f => ({ ...f, [key]: raw.trim() === '' ? '' : String(value) }));
+    },
+    onBlur: () => {
+      const { value, unrecognized } = readMoneyInput(text);
+      if (unrecognized) return;
+      setText(text.trim() === '' ? '' : formatIdNumber(value));
+    },
+    onFocus: (e) => e.target.select(),
+  });
+  const payAmountHandlers = makeMoneyHandlers(payAmountText, setPayAmountText, setPayAmountBad, 'amount');
+  const payPphBase        = makeMoneyHandlers(payPphText,    setPayPphText,    setPayPphBad,    'pph');
+  // `pphTouched` DIPERTAHANKAN persis perilaku lama: prefill saran tampil sampai
+  // user mengetik, lalu tak ditimpa lagi.
+  const payPphHandlers    = {
+    ...payPphBase,
+    onChange: (e) => { setPphTouched(true); payPphBase.onChange(e); },
+  };
   const [ttfForm,     setTtfForm]     = useState({ receivedBy: '', ttfNo: '', notes: '' });
   const [ttfEditing,  setTtfEditing]  = useState(false);
 
@@ -1276,6 +1357,10 @@ export default function SalesOrderDetailPage({
     }
     setPayForm({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
     setPphTouched(false);
+    // Buffer teks kedua field uang ikut direset — kalau tidak, angka pembayaran
+    // sebelumnya tetap terbaca di field walau payForm sudah kosong.
+    setPayAmountText(''); setPayAmountBad(false);
+    setPayPphText('');    setPayPphBad(false);
     setPaySaving(false);
     showToast?.('Pembayaran dicatat', 'success');
   };
@@ -2091,8 +2176,12 @@ export default function SalesOrderDetailPage({
 
                         <ModalGrid cols={3}>
                           <ModalField label="Nominal Pembayaran (Rp)" req>
-                            <ModalInp type="number" value={payForm.amount} onFocus={selectOnFocus}
-                              onChange={e => setPayForm(f => ({ ...f, amount: e.target.value.replace(/^0+(?=\d)/, '') }))}/>
+                            {/* type=text: menerima "1.766.050" / "1.766.050,00" apa adanya.
+                                Sebagai number, pemisah ribuan id-ID tak terbaca. */}
+                            <ModalInp type="text" inputMode="decimal" value={payAmountText} {...payAmountHandlers}/>
+                            {payAmountBad && (
+                              <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+                            )}
                           </ModalField>
                           <ModalField label="Tanggal Bayar">
                             <ModalInp type="date" value={payForm.paymentDate}
@@ -2107,11 +2196,15 @@ export default function SalesOrderDetailPage({
                         <div style={{ marginTop: SP.s2 }}>
                           <ModalGrid cols={3}>
                             <ModalField label="PPh 23 (Rp)">
-                              {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi. */}
-                              <ModalInp type="number"
-                                value={pphTouched ? payForm.pph : (payForm.pph || String(pphSuggestion))}
-                                onFocus={selectOnFocus}
-                                onChange={e => { setPphTouched(true); setPayForm(f => ({ ...f, pph: e.target.value })); }}/>
+                              {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi.
+                                  Bentuk ternary-nya DIPERTAHANKAN persis — yang berubah hanya
+                                  sumbernya (buffer teks) dan saran diformat id-ID. */}
+                              <ModalInp type="text" inputMode="decimal"
+                                value={pphTouched ? payPphText : (payPphText || formatIdNumber(pphSuggestion))}
+                                {...payPphHandlers}/>
+                              {payPphBad && (
+                                <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+                              )}
                               <span style={{ fontSize: 11, color: C.inkFaint }}>
                                 Saran otomatis, sesuaikan dengan bukti potong asli.
                               </span>

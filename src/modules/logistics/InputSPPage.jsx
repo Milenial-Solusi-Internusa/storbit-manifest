@@ -12,7 +12,11 @@
 //       Upgrade to increment_document_sequence RPC in Phase 2.0D.
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { PPN_RATE } from '../../lib/taxConstants';
+// PPN tidak lagi dihitung di file ini — calcItem() (spCalc.js) adalah satu-satunya
+// rumus, dan ia sudah memasukkan ongkir ke dasar PPN seperti RPC create_invoice.
+// Impor PPN_RATE DICABUT bersamaan; menyisakannya = error no-unused-vars.
+import { calcItem } from '../../lib/spCalc';
+import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 import {
   ChevronRight, ChevronLeft, Plus, Trash2,
   Receipt, Check, Save, Package, AlertTriangle,
@@ -209,7 +213,11 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
     const qty      = items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
     const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
     const shipping = items.reduce((s, i) => s + (Number(i.shippingPrice) || 0), 0);
-    const ppn      = Math.round(subtotal * PPN_RATE);
+    // PPN lewat calcItem() — dasarnya subtotal + ONGKIR, bukan subtotal saja.
+    // Dijumlahkan SETELAH dibulatkan per item (bukan round(Σ)) karena itulah yang
+    // dilakukan create_invoice: ROUND((unit_price*qty + shipping_price)*0.11) per
+    // baris, baru SUM. round(Σ) melenceng ±1 rupiah di SP multi-item.
+    const ppn      = items.reduce((s, i) => s + calcItem(i).ppn, 0);
     return { qty, subtotal, shipping, ppn, grand: subtotal + shipping + ppn };
   }, [items]);
 
@@ -679,6 +687,36 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
   const grand = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0) + (Number(item.shippingPrice) || 0);
   const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
+  // Buffer TEKS untuk field ongkir. `item.shippingPrice` tetap ANGKA kanonik —
+  // menyimpan teks berformat di sana akan membuat ketujuh `Number(item.shippingPrice)`
+  // di file ini & jalur simpan (dualItems / bulkInsertSpItems) jadi NaN → 0.
+  // Buffer-nya lokal supaya blast radius = satu <input>.
+  const [shipText, setShipText] = useState(() => formatIdNumber(item.shippingPrice ?? 0));
+  const [shipBad,  setShipBad]  = useState(false);
+
+  const handleShipChange = (e) => {
+    const raw = e.target.value;
+    setShipText(raw);
+    const { value, unrecognized } = readMoneyInput(raw);
+    setShipBad(unrecognized);
+    onChange(item.id, 'shippingPrice', value);
+  };
+  // Teks yang tidak dikenali SENGAJA DIBIARKAN apa adanya di field (keputusan Den):
+  // mengosongkannya diam-diam menyembunyikan bahwa yang tersimpan 0. Pesan inline
+  // di bawah yang memberi tahu; simpan tetap tidak diblokir.
+  const handleShipBlur = () => {
+    const { value, unrecognized } = readMoneyInput(shipText);
+    if (unrecognized) return;
+    setShipText(shipText.trim() === '' ? '' : formatIdNumber(value));
+  };
+
+  // Ongkir janggal: > 0 tapi di bawah seribu rupiah — bentuk khas nominal yang
+  // kehilangan pemisah ribuannya (1.766.050 → 1,77). PERINGATAN, bukan syarat:
+  // sengaja di luar itemsOk/isValid supaya ongkir kecil yang memang benar tetap
+  // bisa disimpan.
+  const shipValue = Number(item.shippingPrice) || 0;
+  const shipOdd   = shipValue > 0 && shipValue < 1000;
+
   // Kategori harga yang tersedia utk produk terpilih (hanya kolom harga non-null).
   const prod = products.find(p => p.id === item.productId) || null;
   const availCats = availCatsOf(prod);
@@ -692,7 +730,14 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
         selectOnFocus(e);
         props.onFocus?.(e);
       }}
-      onBlur={e  => { e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none'; }}
+      onBlur={e  => {
+        // Reset border (perilaku lama) + teruskan onBlur caller — SIMETRIS dengan
+        // onFocus di atas, yang sejak awal sudah merantai props.onFocus. Tanpa
+        // rantai ini, onBlur mana pun yang dikirim pemanggil tertimpa SENYAP
+        // (ketemu saat field ongkir butuh format-on-blur).
+        e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none';
+        props.onBlur?.(e);
+      }}
       style={{
         width: '100%', height: 38, borderRadius: 8,
         border: '1.5px solid #E5E7EB', background: '#FFFFFF',
@@ -870,13 +915,28 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
             {fieldLabel('Ongkos Kirim')}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <span style={{ position: 'absolute', left: 10, fontSize: 11.5, color: '#9CA3AF', pointerEvents: 'none', fontFamily: "'Inter',sans-serif" }}>Rp</span>
+              {/* type=text, BUKAN number: <input type="number"> tak bisa menerima
+                  pemisah ribuan id-ID — "1.766.050" terbaca 1,766 lalu dibulatkan
+                  kolom numeric(18,2) jadi 1.77. Parsing kini lewat readMoneyInput. */}
               {inp({
-                type: 'number', min: 0, value: item.shippingPrice,
-                onChange: e => onChange(item.id, 'shippingPrice', e.target.value.replace(/^0+(?=\d)/, '')),
-                onWheel: blurOnWheel,
+                type: 'text', inputMode: 'decimal', value: shipText,
+                onChange: handleShipChange,
+                onBlur: handleShipBlur,
+                // selectOnFocus di file ini ber-guard `type === 'number'` → jadi no-op
+                // begitu field ini text. Select-all dipasang eksplisit supaya ketikan
+                // tetap MENIMPA nilai lama, bukan ter-append.
+                onFocus: e => e.target.select(),
                 style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace" },
               })}
             </div>
+            {shipBad && (
+              <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+            )}
+            {!shipBad && shipOdd && (
+              <span style={{ fontSize: 11, color: C.warn }}>
+                Ongkir di bawah Rp 1.000, pastikan angka sesuai SP
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Exp Date')}
