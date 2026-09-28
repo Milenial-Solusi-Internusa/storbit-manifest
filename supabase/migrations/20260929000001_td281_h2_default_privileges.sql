@@ -29,6 +29,24 @@
 --    >> Pencabutan manual itulah yang berkas ini bakukan supaya tidak perlu
 --       diulang -- dan tidak perlu diingat -- di setiap tabel berikutnya.
 --
+-- ⭐ Dan itu BUKAN kejadian sekali. Diukur 28 Sep 2026, tiga tabel `public`
+--    TERBARU di staging lahir BERSIH (nol hak anon, authenticated seperlunya)
+--    -- bukan karena default-nya berbeda, melainkan karena tiga migrasi
+--    BERBEDA masing-masing mencabutnya DENGAN TANGAN, dan ketiganya menulis
+--    komentar sendiri untuk menjelaskan kenapa:
+--      20260927000002_account_role_mapping  : REVOKE ALL ... FROM PUBLIC, anon,
+--                                             authenticated  (+komentar)
+--      20260928000008_invoice_attachments   : REVOKE ALL ... FROM authenticated,
+--                                             anon           (+komentar)
+--      20260928000009_invoice_notes         : REVOKE ALL ... FROM authenticated,
+--                                             anon           (+komentar)
+--    Ditambah `20260914000002` (goods_receipts), itu ** empat kali dalam dua
+--    pekan **, empat penulis komentar yang menjelaskan hal yang sama.
+--    >> Sesuatu yang harus diingat empat kali adalah sesuatu yang akan
+--       terlupakan yang kelima. Itulah yang berkas ini tutup -- dan itu juga
+--       sebabnya production, yang tabel terbarunya TIDAK lewat migrasi-migrasi
+--       itu, masih membawa `anon=Dxtm` (mis. customers_backup_20260614).
+--
 -- -- YANG BERKAS INI TIDAK LAKUKAN, DAN ITU PENTING ---------------------------
 -- ⛔ `ALTER DEFAULT PRIVILEGES` TIDAK RETROAKTIF. Sesudah ini, 139+ tabel yang
 --    SUDAH ADA tetap memberi TRUNCATE kepada `authenticated` (TD-230) dan
