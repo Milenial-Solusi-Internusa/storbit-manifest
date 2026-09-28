@@ -35,6 +35,38 @@ QA_PASSWORD='<password bersama akun uji>' node scripts/qa/menu-sweep.mjs \
 - ⚠️ **Baca kata "identik" bersama CAKUPANNYA (skrip diperkeras 22 Sep 2026, G2).** Pemicunya: satu run G2 gagal login **kelima** akun, dan skrip versi lama tetap mencetak `✔ identik dengan baseline` padahal **nol data terkumpul** — kesimpulan terbalik dari kenyataan. Sekarang: **nol akun berdata → `✖ pembandingan DIBATALKAN — nol data` + exit 1** (nol data = *tidak ada pembanding*, bukan nol perbedaan); hasil jalur sweep **selalu menyebut cakupan** — `✔ identik dengan baseline (5/5 akun)` atau `✖ … (HANYA 3/5 akun)` — dan **exit code gagal juga ketika nol perbedaan tapi akun tak lengkap**. ⚠️ Baris cakupan itu **hanya** dicetak jalur sweep (`--compare`); jalur **`--diff <dirA> <dirB>`** tetap mencetak `✔ identik` polos, jadi kalau memakai `--diff`, hitung sendiri berapa akun yang ada di kedua folder.
 - 💡 **Jangan saring output sweep lewat `| tail -N`.** Di G2 outputnya disalurkan begitu dan progres tak terlihat ±15 menit — sulit membedakan "masih jalan" dari "menggantung". Pakai `tee` penuh (mis. `… | tee scripts/qa/out/<label>.log`) supaya log lengkap tersimpan **dan** progres terlihat; kalau sweep diam tanpa kemajuan, periksa `ps -o %cpu,time` alih-alih menunggu.
 
+## `env-drift-check` — RUTINITAS SEBELUM UAT (Tahap 3 TD-279, berlaku 28 Sep 2026)
+
+```bash
+STG_DB_URL='postgresql://postgres.oovmlhilhqzejnawqkvt:...@<region>.pooler.supabase.com:5432/postgres' \
+PRD_DB_URL='postgresql://postgres.untmpqceexwxzuhlmyrg:...@<region>.pooler.supabase.com:5432/postgres' \
+node scripts/qa/env-drift-check.mjs
+```
+
+⛔ **WAJIB dijalankan SEBELUM setiap putaran UAT di staging, DAN sebelum hari launching (`develop` → `main`).** Ia membandingkan staging vs produksi untuk **fungsi, policy, trigger, kolom, dan HAK** (`relacl` / `attacl` / `proacl`), lalu memilah: **ANTRE** (menunggu naik, nomor butir `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` ikut dicetak) · **SELAMANYA** (sengaja beda) · **DRIFT** (tanpa penjelasan → **berhenti, selidiki**).
+
+⭐ **Kenapa rutinitas, bukan pemeriksaan sesekali.** Butir 15 doc 12 lahir dari UAT yang menampilkan **Siap Ditagih 0 / Tertahan 0** — bukan error, bukan layar putih, hanya angka nol yang tampak masuk akal. Akarnya lima policy staging yang tertinggal jamak. *Drift skema gagal SENYAP: nol baris, bukan exception.* **UAT di atas staging yang berbeda dari produksi menguji aplikasi yang tidak akan pernah dipakai siapa pun.**
+
+Riwayat TD-279, supaya angkanya punya arti: **61** (27 Sep) → 56 → **16** (Kelompok A) → **11** (B) → **0** (C, 28 Sep). Laporan yang sehat sesudah itu: **0 DRIFT**, ANTRE + SELAMANYA saja.
+
+**Bendera yang berguna:** `--hak-detail` (rincian hak berpasangan) · `--sql-policy <tabel.policy.cmd>` / `--sql-fungsi <nama>` / `--sql-hak <tabel>` (cetak SQL drill-down, nol koneksi) · `--ekspresi-sidik` (rumus sidik jari fungsi, supaya skrip lain memakainya alih-alih menyalinnya) · `--from-json a b` (bandingkan dua inventaris tersimpan, nol koneksi).
+
+⚠️ **Angka DRIFT dibaca dari baris ringkasan, BUKAN `grep -c '[DRIFT]'`** — dengan `--hak-detail` tiap perbedaan hak tercetak dua kali dan grep polos menghitungnya dobel (61 pernah terbaca **100**).
+
+⚠️ **Satu koneksi per DB, dan ke produksi SELECT saja.** Probe `SELECT 1` terpisah sudah dicabut 28 Sep (ia biaya satu koneksi tanpa menambah keterangan); query inventarisnya sendiri yang ber-retry 3x untuk kegagalan **koneksi** dan menolak mengulang untuk URL salah / `ERROR` SQL. Organisasi Supabase ini **Free Plan dengan kuota Log Ingestion terlampaui** — tiap koneksi ada harganya, jadi skrip QA mengambil semua objek dalam **satu** query, bukan satu query per objek (pelajaran 28 Sep: `baca-komponen-fungsi.sh` mati di objek kedua karena timeout pooler, sesudah palang `SELECT 1` lolos).
+
+⚠️ **Angka harapan di berkas parity WAJIB angka UKUR.** Penjaganya `node scripts/qa/cek-sidik-parity.mjs` (nol DB) + PREFLIGHT di skrip apply yang mengukur produksi di run yang sama. Sebabnya: 28 Sep enam konstanta salah **seluruhnya** karena `prosecdef::text` disangka menghasilkan `t` — ia menghasilkan `true`; `t`/`f` cuma cara psql **menampilkan** boolean. Akibatnya blok V berbunyi atas keadaan yang **sudah benar**, dan pesan gagalnya mencetak sidik jari produksi sendiri sebagai angka "yang salah".
+
+### Empat pelajaran 28 Sep 2026 yang mengikat cara kerja berikutnya
+
+**(a) Staging disamakan ke teks PRODUKSI, bukan ke berkas repo.** Diukur: badan enam RPC Storbit di `supabase/migrations/` berbeda dari produksi (`get_storbit_outstanding_summary` **4.979 byte di repo vs 3.552 di produksi**), dan dua di antaranya tidak ada di berkas mana pun. Menjalankan berkas repo akan menyamakan staging ke sesuatu yang **bukan** produksi lalu melaporkannya sebagai parity — *lebih buruk daripada drift yang jujur*. Bentuk yang dipakai: produksi menulis DDL-nya sendiri lewat `pg_get_functiondef` (`scripts/qa/parity/c-generate-from-production.sql`). → **TD-282**.
+
+**(b) Keluaran deparse adalah alat BACA, bukan sumber SALIN.** `pg_policies.qual`/`with_check` adalah **pencetakan** sebuah ekspresi, bukan sumbernya. Memberi teks itu kembali ke `ALTER POLICY` menghasilkan bentuk yang **berbeda lagi** — A2 gagal di V1b persis karena itu. Probe membuktikan bentuk **sumber aslinya** (`r.status IN ('draft','submitted')`, dari `20260602000024`) mereproduksi teks produksi persis. Kalau sebuah policy perlu disamakan, cari **migrasi asalnya**; kalau tidak ketemu, buktikan dulu bentuk mana yang menghasilkan teks produksi sebelum memasangnya.
+
+**(c) Blok verifikasi WAJIB memakai sidik jari yang sama dengan alat ukurnya.** V1 `20260918000001` memeriksa `md5(prosrc)` + ACL + definisi trigger, ketiganya cocok, dan melaporkan LOLOS — sementara `env-drift-check` tetap berkata BEDA ISI karena ia juga menimbang `prosecdef`/`provolatile`/`proconfig`. Yang tertinggal `SECURITY DEFINER`, dan itu **bukan kosmetik**: fungsi trigger itu meng-`UPDATE public.accounts`, jadi sebagai INVOKER ia bisa gagal menaikkan tahap akun **tanpa satu pun error** (UPDATE tersaring RLS = nol baris, bukan exception). ⭐ *Blok verifikasi yang lebih longgar daripada alat yang memeriksanya bukan verifikasi; ia jaminan palsu.* Rumusnya kini satu konstanta bersama (`EKSPRESI_SIDIK_FUNGSI`, ambil lewat `--ekspresi-sidik`) supaya dua tempat tidak bisa berbeda tanpa ketahuan.
+
+**(d) HAK tabel/kolom ikut dibandingkan sejak 27 Sep 2026.** Kategori `hak` membandingkan `relacl` (tabel), `attacl` (kolom), dan `proacl` (fungsi) untuk `anon`/`authenticated`/`PUBLIC`. Ia langsung menemukan **29 perbedaan** yang tak terlihat kategori lain — termasuk `DELETE ON sp_items` yang masih dipegang `authenticated` di staging. ⚠️ Dua jebakan saat menulis ujinya: `proacl` **NULL berarti PUBLIC EXECUTE** (bukan "tanpa hak"), dan memeriksa pencabutan PUBLIC harus mencari grantee **KOSONG** berawalan `'='` — `LIKE '%=X/%'` juga kena `postgres=X/postgres` sehingga **selalu true** (gotcha #40).
+
 ## Checklist manual per giliran (di luar sweep otomatis)
 
 Sweep hanya membuktikan "buka langsung + identitas halaman". Per giliran, uji manual dengan ≥2 akun (satu yang boleh, satu yang ditolak):
@@ -86,6 +118,19 @@ Alat ujinya **di-commit** sejak 23 Sep 2026 (keputusan Den): `scripts/qa/butir5.
 
 - **Asersi identitas harus menyebut yang spesifik** (heading halaman yang dituju), bukan sekadar "tidak error / ada isinya".
 - **Kalau asersi PRASYARAT gagal, asersi turunannya JANGAN dijalankan** — berhenti dengan exit code gagal + petunjuk apa yang harus dicek. Lebih baik nol angka daripada angka yang terbaca seperti keberhasilan.
+
+**[27 Sep 2026 — instance KETIGA, dan yang paling murah dicegah: URL yang tidak bisa menyambung.]** `baca-drift-a.sh` dijalankan dengan URL *direct connection* (`db.<ref>.supabase.co`) yang tidak bisa di-resolve. Setiap `psql` gagal — tapi skripnya menutup tiap panggilan dengan `|| true` lalu mem-`diff` keluarannya, sehingga ia **membandingkan dua pesan error** dan melaporkan **setiap objek "BERBEDA"**. Laporannya terlihat berwibawa: enam objek, semuanya berbeda, lengkap dengan diff.
+
+⭐ Yang berbahaya bukan koneksi yang gagal — itu jelas dan cepat ketahuan. Yang berbahaya **laporan yang tetap dicetak sesudahnya**, karena bentuknya sama persis dengan temuan nyata.
+
+**Palang dipusatkan di `scripts/qa/cek-dburl.sh`** dan dipakai setiap skrip yang menerima URL (`seed.sh`, `env-drift-check.mjs`, dan skrip `out/` yang meminta URL). Tiga aturan, dan ketiganya perlu:
+1. **tolak host `db.<ref>.supabase.co` sejak awal** — nol koneksi, pesan + petunjuk Session pooler (`<region>.pooler.supabase.com`, user `postgres.<ref>`, port 5432);
+2. **palang ref DUA ARAH** (ref yang benar wajib ADA, ref lawan wajib TIDAK);
+3. **buktikan koneksinya hidup lewat `SELECT 1`** sebelum skrip pemanggil mulai.
+
+Aturan 1 saja tidak cukup: URL bisa salah karena password, port, atau nama user, bukan cuma host. **Aturan 3 yang membuat "berhasil" berarti sesuatu.** Ditambah: `|| true` dicabut dari pemanggilan `psql` mana pun yang hasilnya dibandingkan — `psql` yang gagal menghentikan skrip, keluarannya tidak pernah sampai ke `diff`.
+
+⚠️ Nama variabel yang dioper ke `cek-dburl.sh`, **bukan isinya**: URL memuat password, dan argumen perintah terlihat oleh siapa pun yang menjalankan `ps` di mesin yang sama.
 
 Jejak: `PROGRESS.md` 2026-09-22 butir 12a/12b (butir 5 G2, LOLOS 4/4) & butir 13b (pengerasan `menu-sweep.mjs`). Ini **pelajaran proses, sengaja bukan TD** (keputusan Den).
 

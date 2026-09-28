@@ -27,26 +27,29 @@ if [ -z "${STG_DB_URL:-}" ]; then
   exit 2
 fi
 
-# ---------------------------------------------------------------------------
-# PALANG TARGET -- dua arah, bukan satu.
-# Menuntut ref staging ADA, dan menolak kalau ref produksi MUNCUL. Hanya
-# memeriksa satu di antaranya akan meloloskan URL yang memuat keduanya.
-# ---------------------------------------------------------------------------
-case "$STG_DB_URL" in
-  *untmpqceexwxzuhlmyrg*)
-    echo "PALANG: STG_DB_URL memuat ref PRODUKSI (untmpqceexwxzuhlmyrg). DITOLAK." >&2
-    exit 3 ;;
-esac
-case "$STG_DB_URL" in
-  *oovmlhilhqzejnawqkvt*) : ;;
-  *)
-    echo "PALANG: STG_DB_URL tidak memuat ref staging (oovmlhilhqzejnawqkvt). DITOLAK." >&2
-    exit 3 ;;
-esac
-
-command -v psql >/dev/null 2>&1 || { echo "PALANG: psql tidak ditemukan di PATH." >&2; exit 4; }
-
 cd "$(dirname "$0")"
+
+# ---------------------------------------------------------------------------
+# PALANG TARGET -- dipusatkan di scripts/qa/cek-dburl.sh sejak 27 Sep 2026.
+# Tiga aturan sekaligus: tolak host direct connection (db.<ref>.supabase.co),
+# palang ref DUA ARAH, dan BUKTIKAN koneksinya hidup lewat SELECT 1.
+#
+# Aturan ketiga yang baru, dan ia bukan kerapian: sebelum ini URL yang tidak
+# bisa dipakai baru ketahuan di tengah rangkaian, sesudah purge terlanjur
+# jalan. Yang dioper NAMA variabelnya, bukan isinya -- URL memuat password dan
+# argumen perintah terlihat lewat `ps`.
+# ---------------------------------------------------------------------------
+export STG_DB_URL
+# --tanpa-probe untuk mode verify saja: pembacaannya lewat psql-retry.sh yang
+# sudah ber-retry dan sudah membedakan "URL salah" dari "koneksi putus", jadi
+# probe SELECT 1 terpisah cuma menambah satu koneksi. Mode seed/purge TETAP
+# memakai probe: keduanya menulis dan tidak ber-retry, jadi kegagalan koneksi
+# harus ketahuan SEBELUM berkas pertama, bukan di tengah delapan berkas.
+if [ "$MODE" = "verify" ]; then
+  ../../qa/cek-dburl.sh STG_DB_URL staging --tanpa-probe
+else
+  ../../qa/cek-dburl.sh STG_DB_URL staging
+fi
 
 # PALANG STRUKTUR: tiap berkas yang dijalankan harus memanggil palangnya sendiri.
 ./cek-guards.sh
@@ -103,6 +106,27 @@ case "$MODE" in
     echo "sebelum seed (30.000 per produk hilang; PVC POP A6 kembali ke 40)."
     ;;
   verify)
-    jalankan 06-verify.sql
+    # -- SATU-SATUNYA mode yang lewat helper ber-retry ------------------------
+    # verify 100% BACA, satu berkas, satu koneksi -- jadi mengulangnya sesudah
+    # koneksi putus tidak punya efek samping apa pun.
+    #
+    # ** Mode `seed` dan `purge` SENGAJA TIDAK ber-retry. ** Keduanya MENULIS,
+    # dan --single-transaction hanya membatalkan berkas yang sedang jalan --
+    # bukan berkas-berkas sebelumnya yang sudah commit. Retry di sana bisa
+    # menjalankan langkah yang sudah berhasil untuk kedua kalinya, dan itu
+    # bukan jenis kesalahan yang mau ditukar dengan kenyamanan.
+    #
+    # Berkas-berkasnya juga TIDAK digabung jadi satu sesi: --single-transaction
+    # yang membungkus delapan berkas sekaligus mengubah arti gagalnya dari
+    # "berkas ini dibatalkan" menjadi "semuanya dibatalkan", dan pipeline seed
+    # ini sudah terbukti 59/59 dengan arti yang sekarang.
+    RETRY=../../qa/psql-retry.sh
+    if [ -x "$RETRY" ]; then
+      /bin/bash -n "$RETRY"
+      ./"$RETRY" STG_DB_URL staging - -- --single-transaction --quiet -f 06-verify.sql
+    else
+      echo "(helper retry tidak ada, memakai psql langsung)" >&2
+      jalankan 06-verify.sql
+    fi
     ;;
 esac

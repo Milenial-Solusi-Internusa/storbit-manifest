@@ -416,6 +416,37 @@ Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_rea
 
 ---
 
+## RUTINITAS SEBELUM UAT — `env-drift-check` (Tahap 3 TD-279, berlaku 28 Sep 2026)
+
+⛔ **WAJIB: jalankan `node scripts/qa/env-drift-check.mjs` SEBELUM setiap putaran UAT di staging, DAN sebelum hari launching (`develop` → `main`).** Ia membandingkan staging dengan produksi untuk **fungsi, policy, trigger, kolom, dan HAK** (`relacl`/`attacl`/`proacl`), lalu memilah hasilnya jadi tiga:
+
+| kelas | artinya | tindakan |
+|---|---|---|
+| **ANTRE** | memang berbeda karena menunggu naik ke produksi; nomor butir dokumen ini ikut dicetak | nol — ini yang dijaga dokumen ini |
+| **SELAMANYA** | sengaja berbeda selamanya (mis. `notify_sp_milestone` no-op staging, butir 10) | nol |
+| **DRIFT** | **tidak ada penjelasannya** | ⛔ berhenti, selidiki sebelum UAT |
+
+**Kenapa ini rutinitas, bukan pemeriksaan sesekali.** Butir 15 lahir dari UAT yang menampilkan **Siap Ditagih 0 / Tertahan 0** — bukan error, bukan layar putih, hanya angka nol yang tampak masuk akal. Akarnya lima policy staging yang tertinggal. *Drift skema gagal SENYAP: nol baris, bukan exception.* UAT yang berjalan di atas staging yang berbeda dari produksi menguji aplikasi yang tidak akan pernah dipakai siapa pun.
+
+**Angkanya dibaca dari baris ringkasan**, bukan dari `grep '[DRIFT]'` — dengan `--hak-detail` tiap perbedaan hak tercetak dua kali dan grep polos menghitungnya dobel (61 pernah terbaca 100).
+
+**Riwayat TD-279, supaya angkanya punya arti:** 61 DRIFT (27 Sep) → 56 → **16** (Kelompok A) → **11** (Kelompok B) → **0** (Kelompok C, 28 Sep). Sesudah itu laporan yang sehat berbunyi **0 DRIFT** dengan ANTRE + SELAMANYA saja.
+
+⚠️ **Arah default: staging mengikuti produksi.** Satu-satunya pengecualian kelas ANTRE. Kalau suatu hari DRIFT muncul lagi, jangan "perbaiki" dengan mengubah produksi.
+
+**Empat pelajaran 28 Sep 2026 yang mengikat cara menyamakan lingkungan:**
+
+1. **Samakan ke teks PRODUKSI, bukan ke berkas repo.** Berkas migrasi tidak selalu mencerminkan produksi — diukur, bukan dikira (**TD-282**): enam RPC Storbit berbeda badannya, dua di antaranya nol berkas. Menjalankan berkas repo bisa menyamakan staging ke sesuatu yang bukan produksi, lalu melaporkannya sebagai parity.
+2. **Keluaran deparse alat BACA, bukan sumber SALIN.** `pg_policies.qual` adalah pencetakan ekspresi; memberikannya kembali ke `ALTER POLICY` menghasilkan bentuk berbeda lagi. Cari migrasi asalnya.
+3. **Blok verifikasi wajib memakai sidik jari yang sama dengan alat ukurnya.** Verifikasi yang lebih longgar dari alat pemeriksanya adalah jaminan palsu — dan angka harapannya wajib **diukur**, bukan dihitung (`prosecdef::text` = `true`, bukan `t`).
+4. **Hak tabel/kolom/fungsi ikut dibandingkan** (`relacl`/`attacl`/`proacl`). `proacl` **NULL = PUBLIC EXECUTE**, bukan "tanpa hak".
+
+⛔ **WAJIB juga sebelum HARI LAUNCHING (`develop` → `main`), bukan cuma sebelum UAT.** Dokumen ini mendaftar apa yang harus dinaikkan; `env-drift-check` yang membuktikan tidak ada yang lain ikut berbeda diam-diam.
+
+⚠️ **Alatnya butuh `STG_DB_URL` + `PRD_DB_URL` (Session pooler), dan ke produksi ia SELECT saja.** Satu koneksi per DB. Palang ref dua arah aktif: URL yang tertukar ditolak sebelum satu byte dikirim.
+
+---
+
 ## Invoice lengkap (butir 16-25) — satu gelombang, urutan MENGIKAT
 
 Sepuluh berkas `20260928*` lahir dari satu keputusan: **seluruh kolom form invoice Odoo ditambahkan sekarang**, sekaligus menanam seam untuk invoice MSI (forwarding) yang belum punya SP. Arsitekturnya **opsi C — generalisasi di tempat**: tabelnya tetap `sp_invoices`/`sp_invoice_lines`, yang ditambahkan adalah `source_type`, `sp_order_id` yang boleh NULL dengan CHECK per sumber, uang yang turun ke baris, dan penerbit per sumber di atas satu pemosting jurnal bersama. **Rename fisik sengaja ditunda** — butir 6-14 dokumen ini diuji terhadap nama yang sekarang dan belum satu pun naik ke produksi.
