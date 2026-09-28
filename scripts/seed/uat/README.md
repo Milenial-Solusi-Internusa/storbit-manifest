@@ -268,3 +268,47 @@ dan `submitted_at` bukan bagian dari kolom ber-UPDATE untuk role itu.
 ⛔ Kalau `seed_uat_bill` suatu saat dipanggil dari jalur lain (mis. dari FE atau
 dari fungsi yang berjalan sebagai `authenticated`), pengecualian ini **gugur** --
 jadikan ia SECURITY DEFINER ber-guard, jangan kembalikan hak tabelnya.
+
+## `seed_uat_build` -- pengecualian KEDUA, pada gerbang TD-281 H1
+
+Migrasi `20260928000012_td281_h1_revoke_public_execute.sql` (branch
+`hotfix/td281-h1`) mencabut `EXECUTE` dari `PUBLIC` dan `anon` untuk enam fungsi
+`SECURITY DEFINER` yang hari ini bisa dipanggil siapa pun di internet -- salah
+satunya **`complete_picking`**.
+
+Berkas itu punya gerbang **V-PRA-2**: kalau ada fungsi `SECURITY INVOKER` yang
+memanggil salah satu dari keenam fungsi itu, migrasinya **berhenti**, karena
+fungsi INVOKER memeriksa hak **sebagai pemanggil** dan pencabutan bisa
+mematahkannya.
+
+⭐ **Gerbang itu berbunyi pada run staging pertama, 28 September 2026, dan yang
+ditemukannya `seed_uat_build`** -- ia `SECURITY INVOKER` dan memanggil
+`complete_picking` (baris 135 `01b-helper.sql`). Nol perubahan terjadi;
+transaksinya batal utuh.
+
+⚠️ Yang paling layak diingat dari kejadian ini: **survei pemanggil dari repo
+mustahil menemukannya.** `seed_uat_build` tidak pernah ada di
+`supabase/schema_snapshot.sql` -- ia lahir dari seed, hanya di staging. Gerbang
+yang membaca database yang hidup menangkap apa yang pembacaan berkas tidak bisa.
+
+Ia **DIKECUALIKAN** (keputusan Den, 28 Sep 2026) lewat awalan nama
+`seed_uat_`, dengan alasan yang sama bentuknya dengan `seed_uat_bill` di atas:
+
+1. helper ini **khusus staging** -- `seed.sh` punya palang dua arah yang
+   **menolak jalan** kalau ref produksi muncul, jadi ia tidak bisa lahir di sana;
+2. ia selalu dijalankan **sebagai `postgres`**, sehingga pemeriksaan `EXECUTE`
+   di dalamnya lolos lewat **kepemilikan**, bukan lewat hak yang dicabut;
+3. ia **dihapus `99-purge.sql`**, jadi tidak hidup di luar masa seed.
+
+⚠️ **Pengecualiannya sempit dan TERLIHAT.** Ia hanya mengenai awalan
+`seed_uat_`, nama fungsi yang dikecualikan **dicetak sebagai NOTICE** saat
+migrasi berjalan, dan pemanggil `SECURITY INVOKER` lain apa pun **tetap
+menghentikan** migrasi (kini beserta nama fungsinya di pesan gagal).
+
+⛔ **Kalau NOTICE pengecualian itu muncul saat migrasi dijalankan di
+PRODUCTION, itu temuan tersendiri:** helper seed tidak boleh ada di produksi.
+Berhenti dan periksa, jangan diteruskan sebagai hal biasa.
+
+⛔ Kalau `seed_uat_build` suatu saat dipanggil dari jalur yang berjalan sebagai
+`authenticated` atau `anon`, pengecualian ini **gugur** -- jadikan ia
+`SECURITY DEFINER` ber-guard, jangan longgarkan gerbangnya.
