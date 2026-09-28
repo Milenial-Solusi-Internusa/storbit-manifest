@@ -50,8 +50,8 @@
 | 27 | `20260928000012_td281_h1_revoke_public_execute` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, production dulu |
 | 28 | `20260928000013_td281_h1_lapis2_guard_dan_jejak` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ naik BERSAMA butir 29, satu sesi |
 | 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik + satu sesi dengan butir 28 |
-| 30 | `20260929000001_td281_h2_default_privileges` | ✔ **28 Sep** | ⛔ belum | ⛔ **WAJIB** — ⚠️ arah terbalik, mandiri |
-| 31 | `20260929000002_td281_h3_search_path` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — ⚠️ arah terbalik, mandiri |
+| 30 | `20260929000001_td281_h2_default_privileges` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
+| 31 | `20260929000002_td281_h3_search_path` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -865,13 +865,13 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 
 ---
 
-## 30. ⛔ `20260929000001_td281_h2_default_privileges` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+## 30. ✔ `20260929000001_td281_h2_default_privileges` — SELESAI 28 Sep 2026 (⚠️ arah terbalik)
 
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000001_td281_h2_default_privileges.sql` (215 baris) — branch **`hotfix/td281-h2-default-privileges`** (dari `main`) |
 | Staging | ✔ **28 Sep 2026** — COMMIT, V-PRA + V-POST-1 + V-POST-2 LOLOS, probe bersih |
-| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Production | ✔ **28 Sep 2026** — V-PRA, V-POST-1, V-POST-2 lolos; probe bersih |
 | Urutan | **mandiri** — tidak bergantung pada butir mana pun, dan butir 31 tidak bergantung padanya. Urutan H2 → H3 adalah pilihan, bukan keharusan teknis |
 | Catatan rollback | ada di ekor berkas: `ALTER DEFAULT PRIVILEGES … GRANT …` |
 
@@ -896,17 +896,21 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 ⚠️ **Runner-nya sendiri sempat melaporkan KEGAGALAN palsu, dan bentuk cacatnya layak dicatat.** Bagian BUKTI di `jalankan-td281-h2.sh` menghitung `"| anon |"` di **seluruh** keluaran, padahal query-nya membaca `pg_default_acl` untuk **semua** peran pembuat — maka delapan hak entri `supabase_admin` ikut terhitung dan ia berteriak *"anon masih punya 8 hak default"* pada keadaan yang sebenarnya **benar**. **Migrasinya sendiri memfilter `defaclrole = postgres` dan lolos**; yang keliru hanya pemeriksa di shell.
 ⭐ Jadi: **satu pemeriksaan ditulis DUA kali, dan salinan kedua ditulis lebih longgar** — kelas TD-233, kali ini pada gerbang uji alih-alih pada daftar peran. Arahnya kebetulan aman (berteriak pada yang benar, bukan diam pada yang salah), **tapi alarm palsu memakan kepercayaan yang sama dengan alarm yang hilang.** Runner sudah diperbaiki (filter pembuat eksplisit) **dan diuji dua arah atas data sintetis** — termasuk uji negatif yang memastikan ia **masih** gagal kalau hak `postgres/anon` benar-benar tertinggal, karena perbaikan yang hanya menghentikan alarm palsu bisa dengan mudah menghentikan alarm sama sekali. Entri `supabase_admin` kini **dicetak terpisah sebagai sisa risiko diketahui**, bukan dinilai — *sisa risiko yang tidak pernah terlihat berhenti terasa sebagai risiko.*
 
+✔ **HASIL PRODUCTION 28 Sep 2026: LOLOS.** V-PRA, V-POST-1, V-POST-2 lolos; probe bersih. BUKTI runner (versi yang sudah diperbaiki): `postgres/anon` **0**, `postgres/authenticated` **0**, `postgres/service_role` **4** (sengaja dipertahankan), dan entri `supabase_admin` **tercetak terpisah sebagai sisa risiko diketahui**.
+
+⚠️ **Cara membuktikan butir ini sudah jalan BUKAN lewat `jalankan-drift.sh`** — alat itu membandingkan `relacl`/`attacl`/`proacl` dan **tidak menyentuh `pg_default_acl`**, jadi butir 30 tidak akan pernah muncul di sana, di lingkungan mana pun. Yang membuktikannya: keluaran runner di atas, atau `baca-h2-h3.sh`.
+
 **Dampak ke drift.** Kategori `hak` `env-drift-check` membandingkan `relacl`/`attacl`/`proacl` — **bukan** `pg_default_acl`. Jadi butir ini **tidak akan muncul sebagai drift sama sekali**, di lingkungan mana pun. ⚠️ Itu berarti **alat drift tidak bisa memberi tahu apakah butir ini sudah jalan di suatu lingkungan** — gunakan `baca-h2-h3.sh`, bukan `jalankan-drift.sh`.
 
 ---
 
-## 31. ⛔ `20260929000002_td281_h3_search_path` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+## 31. ✔ `20260929000002_td281_h3_search_path` — SELESAI 28 Sep 2026 (⚠️ arah terbalik)
 
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000002_td281_h3_search_path.sql` (245 baris) — branch **`hotfix/td281-h3-search-path`** (dari `main`) |
-| Staging | ⛔ **belum** — dijalankan sebagai **UJI**, dengan uji runtime |
-| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Staging | ✔ **28 Sep 2026** — dengan uji runtime lengkap |
+| Production | ✔ **28 Sep 2026** — V-PRA 1-3 + V-POST lolos; md5 identik 8/8, ACL tetap, proconfig 8/8 |
 | Urutan | **mandiri** terhadap butir 30 |
 | Catatan rollback | delapan `ALTER FUNCTION … RESET search_path` ada di ekor berkas |
 
@@ -931,6 +935,12 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 ✔ **Baseline uji runtime staging diambil 28 Sep 2026 SEBELUM migrasi: LOLOS 9/0** (`scripts/qa/out/uji-td281-h3-20260928-140217/hasil.txt`). Itu pembanding wajibnya — jalankan `uji-td281-h3.sh --banding <berkas itu>` sesudah migrasi, dan bandingkan **nilainya**, bukan hanya lulus/gagalnya.
 
 ⚠️ **Bagian A skrip uji itu sempat berjudul "Lima fungsi" sementara hanya empat yang diuji.** Itu **judulnya** yang salah, bukan uji yang hilang: fungsi nol-argumen memang **lima**, tetapi yang kelima (`handle_new_user`) mengembalikan `trigger` sehingga **PostgREST tidak mengeksposnya sama sekali**. Skripnya kini membawa **pembukuan eksplisit** — 8 fungsi = 4 (bagian A) + 2 (bagian B) + 2 yang tak terjangkau headless — supaya uji yang hilang kelak muncul sebagai **selisih angka**, bukan sebagai judul yang kebetulan tidak dibaca ulang.
+
+✔ **HASIL PRODUCTION 28 Sep 2026: LOLOS.** V-PRA-1, V-PRA-2, V-PRA-3 dan V-POST lolos: **`md5(prosrc)` identik 8/8** (nol badan berubah, persis janji berkasnya), **ACL tetap**, **`proconfig` 8/8 memuat `search_path=public`**.
+
+✅ **Uji runtime staging lengkap, dan dua di antaranya tidak bisa digantikan pembacaan kode:**
+• `handle_new_user` — user dummy dibuat lewat **User Access di beta** 28 Sep 14:13 WIB, **sesudah** migrasi (14:03), dan profilnya terbentuk otomatis dengan company MSI + branch Head Office. ⭐ **Branch yang ketemu itulah buktinya**: `public.branches` dan `public.departments` dibaca dengan bentuk query yang sama di skema yang sama — kalau penguncian merusak resolusi nama, branch ikut NULL dan `public.companies` sudah lebih dulu melempar exception.
+• `exec_sql` — diuji **DISKRIMINATIF**, bukan sekadar "masih jalan": sesi di-`SET search_path TO auth, public`, lalu `exec_sql` disuruh membaca `users` (tabel yang **hanya** ada di skema `auth`; ketiadaan `public.users` diperiksa sebagai prasyarat). Ia **tidak menemukannya** → penguncian **benar-benar berlaku**. ⭐ Tanpa uji berbentuk begini, *"exec_sql masih bekerja"* bisa benar **sekaligus** penguncian tidak terpasang — dan membaca `proconfig` pun tidak menutup celah itu, karena itu membaca **niat**, bukan **akibat**. Uji positifnya memakai bentuk persis yang dikirim EF `manage-schema`, lalu `ROLLBACK`, lalu diperiksa bersih **di luar** transaksi.
 
 **Dampak ke drift.** `proconfig` **ikut** sidik jari `fungsi` di `env-drift-check`, jadi selama jendela production→staging kedelapannya akan dilaporkan **BEDA ISI**. **Itu diharapkan**; samakan staging segera.
 
