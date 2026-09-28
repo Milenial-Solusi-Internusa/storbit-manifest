@@ -316,20 +316,61 @@ function ambilLewatPsql(url, label) {
     console.error('  user postgres.<ref>, port 5432 (Project Settings > Database).');
     process.exit(4);
   }
-  // Buktikan koneksinya hidup SEBELUM mengangkut inventaris. Tanpa ini, URL
-  // yang tidak bisa dipakai baru berbunyi sesudah separuh pekerjaan berjalan.
-  try {
-    execFileSync('psql', [url, '--no-psqlrc', '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PGCONNECT_TIMEOUT: '15' } });
-  } catch (e) {
-    console.error(`PALANG: ${label} tidak bisa dipakai menyambung.`);
-    console.error(`  ${String(e.stderr || e.message).trim()}`);
-    process.exit(6);
+  // SATU KONEKSI PER DB. Dulu ada dua: satu SELECT 1 sebagai bukti hidup, lalu
+  // satu lagi untuk inventarisnya. Probe itu sudah dicabut -- ia menambah satu
+  // koneksi tanpa menambah keterangan, karena query inventarisnya sendiri kini
+  // ber-retry DAN menggolongkan sebab kegagalannya. Organisasi Supabase ini
+  // Free Plan dengan kuota Log Ingestion yang sudah terlampaui; tiap koneksi
+  // ada harganya.
+  //
+  // ** Retry HANYA untuk kegagalan koneksi. ** Mengulang password yang salah
+  // membuang koneksi dan mengaburkan diagnosisnya; mengulang ERROR SQL
+  // mengulang kesalahan yang sama dengan hasil yang sama. Cermin shell-nya:
+  // scripts/qa/psql-retry.sh (aturan penggolongannya disengaja sama).
+  const MAKS = 3;
+  let jeda = 5000;
+  for (let percobaan = 1; ; percobaan++) {
+    try {
+      const out = execFileSync('psql',
+        [url, '--no-psqlrc', '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-c', INVENTARIS_SQL],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+          env: { ...process.env, PGCONNECT_TIMEOUT: '15' } });
+      if (percobaan > 1) console.error(`  ${label}: berhasil pada percobaan ke-${percobaan}.`);
+      return JSON.parse(out.trim());
+    } catch (e) {
+      const pesan = String(e.stderr || e.message).trim();
+      const sambungan = /Operation timed out|could not connect to server|connection timed out|timeout expired|Connection refused|server closed the connection unexpectedly|Connection reset by peer|SSL connection has been closed|terminating connection|the database system is starting up|too many clients|remaining connection slots/.test(pesan);
+      const urlSalah = /could not translate host name|nodename nor servname|Name or service not known|password authentication failed|no password supplied|Tenant or user not found/.test(pesan);
+
+      if (urlSalah) {
+        console.error(`PALANG: URL SALAH untuk ${label}. TIDAK diulang -- mengulang tidak mengubah hasilnya.`);
+        console.error(`  ${pesan}`);
+        console.error('  Pakai SESSION POOLER: host <region>.pooler.supabase.com,');
+        console.error('  user postgres.<ref>, port 5432 (Project Settings > Database).');
+        process.exit(6);
+      }
+      if (!sambungan) {
+        console.error(`PALANG: ${label} gagal, dan sebabnya BUKAN koneksi. TIDAK diulang.`);
+        console.error(`  ${pesan}`);
+        process.exit(8);
+      }
+      console.error(`KONEKSI PUTUS ke ${label} (percobaan ${percobaan} dari ${MAKS}).`);
+      console.error(`  ${pesan}`);
+      if (percobaan >= MAKS) {
+        console.error(`\nGAGAL: ${MAKS} percobaan habis dan penyebabnya KONEKSI, bukan URL.`);
+        console.error('  Jangan ketik ulang URL-nya; tunggu sebentar lalu jalankan lagi.');
+        process.exit(7);
+      }
+      console.error(`  menunggu ${jeda / 1000}s lalu mencoba lagi...`);
+      // Jeda sinkron lewat `sleep`, BUKAN busy-wait: alat ini berjalan
+      // berurutan dan tidak punya event loop yang perlu dijaga hidup, jadi
+      // menunggu di tempat lebih jujur daripada membuat seluruh jalur jadi
+      // async -- tapi menunggu dengan memutar CPU 10 detik bukan menunggu,
+      // itu memanaskan laptop untuk hasil yang sama.
+      execFileSync('sleep', [String(jeda / 1000)]);
+      jeda *= 2;
+    }
   }
-  const out = execFileSync('psql', [url, '--no-psqlrc', '-At', '-c', INVENTARIS_SQL], {
-    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
-  });
-  return JSON.parse(out.trim());
 }
 
 /** Bandingkan dua inventaris. Dipakai kedua mode -- satu logika, bukan dua. */

@@ -40,7 +40,16 @@ cd "$(dirname "$0")"
 # argumen perintah terlihat lewat `ps`.
 # ---------------------------------------------------------------------------
 export STG_DB_URL
-../../qa/cek-dburl.sh STG_DB_URL staging
+# --tanpa-probe untuk mode verify saja: pembacaannya lewat psql-retry.sh yang
+# sudah ber-retry dan sudah membedakan "URL salah" dari "koneksi putus", jadi
+# probe SELECT 1 terpisah cuma menambah satu koneksi. Mode seed/purge TETAP
+# memakai probe: keduanya menulis dan tidak ber-retry, jadi kegagalan koneksi
+# harus ketahuan SEBELUM berkas pertama, bukan di tengah delapan berkas.
+if [ "$MODE" = "verify" ]; then
+  ../../qa/cek-dburl.sh STG_DB_URL staging --tanpa-probe
+else
+  ../../qa/cek-dburl.sh STG_DB_URL staging
+fi
 
 # PALANG STRUKTUR: tiap berkas yang dijalankan harus memanggil palangnya sendiri.
 ./cek-guards.sh
@@ -97,6 +106,27 @@ case "$MODE" in
     echo "sebelum seed (30.000 per produk hilang; PVC POP A6 kembali ke 40)."
     ;;
   verify)
-    jalankan 06-verify.sql
+    # -- SATU-SATUNYA mode yang lewat helper ber-retry ------------------------
+    # verify 100% BACA, satu berkas, satu koneksi -- jadi mengulangnya sesudah
+    # koneksi putus tidak punya efek samping apa pun.
+    #
+    # ** Mode `seed` dan `purge` SENGAJA TIDAK ber-retry. ** Keduanya MENULIS,
+    # dan --single-transaction hanya membatalkan berkas yang sedang jalan --
+    # bukan berkas-berkas sebelumnya yang sudah commit. Retry di sana bisa
+    # menjalankan langkah yang sudah berhasil untuk kedua kalinya, dan itu
+    # bukan jenis kesalahan yang mau ditukar dengan kenyamanan.
+    #
+    # Berkas-berkasnya juga TIDAK digabung jadi satu sesi: --single-transaction
+    # yang membungkus delapan berkas sekaligus mengubah arti gagalnya dari
+    # "berkas ini dibatalkan" menjadi "semuanya dibatalkan", dan pipeline seed
+    # ini sudah terbukti 59/59 dengan arti yang sekarang.
+    RETRY=../../qa/psql-retry.sh
+    if [ -x "$RETRY" ]; then
+      /bin/bash -n "$RETRY"
+      ./"$RETRY" STG_DB_URL staging - -- --single-transaction --quiet -f 06-verify.sql
+    else
+      echo "(helper retry tidak ada, memakai psql langsung)" >&2
+      jalankan 06-verify.sql
+    fi
     ;;
 esac

@@ -7,7 +7,16 @@
 # bagian nama variabel, lalu gagal "unbound variable" di bawah set -u.
 #
 # -- PEMAKAIAN ---------------------------------------------------------------
-#   ./cek-dburl.sh <NAMA_VARIABEL> <staging|production>
+#   ./cek-dburl.sh <NAMA_VARIABEL> <staging|production> [--tanpa-probe]
+#
+#   --tanpa-probe MELEWATKAN aturan 3 (SELECT 1), jadi palang ini tidak membuka
+#   koneksi sama sekali. Dipakai skrip yang langsung menyambung sendiri sesudah
+#   ini DENGAN retry + penggolongan sebab (scripts/qa/psql-retry.sh): di sana
+#   probe terpisah cuma menambah satu koneksi tanpa menambah keterangan.
+#   ** Organisasi Supabase ini Free Plan dengan kuota Log Ingestion yang sudah
+#   terlampaui -- tiap koneksi ada harganya. ** Skrip yang TIDAK memakai
+#   psql-retry.sh harus tetap memakai probe: tanpa itu "berhasil" tidak berarti
+#   apa-apa sampai query pertamanya gagal.
 #
 #   Yang dioper NAMA variabelnya, BUKAN isinya:
 #       ./scripts/qa/cek-dburl.sh STG_DB_URL staging
@@ -41,10 +50,17 @@ set -euo pipefail
 
 NAMA="${1:-}"
 HARAP="${2:-}"
+OPSI="${3:-}"
 if [ -z "$NAMA" ] || [ -z "$HARAP" ]; then
-  echo "Pemakaian: $0 <NAMA_VARIABEL> <staging|production>" >&2
+  echo "Pemakaian: $0 <NAMA_VARIABEL> <staging|production> [--tanpa-probe]" >&2
   exit 2
 fi
+PROBE=1
+case "$OPSI" in
+  '')            : ;;
+  --tanpa-probe) PROBE=0 ;;
+  *) echo "PALANG: opsi ketiga hanya boleh --tanpa-probe, bukan '$OPSI'." >&2; exit 2 ;;
+esac
 
 # Ekspansi tak langsung: baca isi variabel yang namanya ada di $NAMA.
 URL="${!NAMA:-}"
@@ -94,19 +110,21 @@ esac
 
 command -v psql >/dev/null 2>&1 || { echo "PALANG: psql tidak ditemukan di PATH." >&2; exit 5; }
 
+if [ "$PROBE" = "0" ]; then
+  echo "PALANG LOLOS (bentuk + ref): $NAMA untuk $HARAP. Probe dilewati, nol koneksi."
+  exit 0
+fi
+
 # -- 3. Buktikan koneksinya hidup --------------------------------------------
-# ON_ERROR_STOP + exit code diperiksa. Keluarannya ditahan supaya URL tidak
-# ikut tercetak kalau psql mengutipnya di pesan error.
-GALAT=$(PGCONNECT_TIMEOUT=15 psql "$URL" --no-psqlrc -X -A -t \
-          -v ON_ERROR_STOP=1 -c 'SELECT 1' 2>&1 >/dev/null) && RC=0 || RC=$?
+# Retry 3x untuk kegagalan KONEKSI saja, lewat helper bersama. Timeout pooler
+# yang sesaat dulu membuat palang ini menolak URL yang sebenarnya benar --
+# dan itu menyesatkan ke arah yang paling mahal: mengetik ulang URL.
+GALAT=$("$(dirname "$0")/psql-retry.sh" "$NAMA" "$HARAP" /dev/null -- -A -t -c 'SELECT 1' 2>&1) \
+  && RC=0 || RC=$?
 if [ "$RC" != "0" ]; then
-  echo "PALANG: $NAMA tidak bisa dipakai menyambung ($HARAP). psql keluar dengan kode $RC." >&2
-  echo "  pesan: $GALAT" >&2
-  case "$GALAT" in
-    *"could not translate host name"*|*"Name or service not known"*|*"nodename nor servname"*)
-      petunjuk_pooler ;;
-  esac
-  exit 6
+  echo "PALANG: $NAMA tidak bisa dipakai menyambung ($HARAP)." >&2
+  printf '%s\n' "$GALAT" >&2
+  exit "$RC"
 fi
 
 echo "PALANG LOLOS: $NAMA menyambung ke $HARAP (SELECT 1 berhasil)."
