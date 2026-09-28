@@ -50,6 +50,8 @@
 | 27 | `20260928000012_td281_h1_revoke_public_execute` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, production dulu |
 | 28 | `20260928000013_td281_h1_lapis2_guard_dan_jejak` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ naik BERSAMA butir 29, satu sesi |
 | 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik + satu sesi dengan butir 28 |
+| 30 | `20260929000001_td281_h2_default_privileges` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — ⚠️ arah terbalik, mandiri |
+| 31 | `20260929000002_td281_h3_search_path` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — ⚠️ arah terbalik, mandiri |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
@@ -860,6 +862,68 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 **Catatan rollback:** `scripts/qa/out/badan-lapis2-20260928-130907/def-check_similar_accounts.sql` (versi `LANGUAGE sql` lama). ⚠️ versi itu **NOL guard entitas** — memulihkannya berarti mencabut guard butir 28, jadi ia rollback untuk *kerusakan*, bukan untuk *ketidaksukaan*.
 
 **Dampak ke drift.** Berkas ini mengubah `prosrc` **satu fungsi**. Selama jendela antara staging dan produksi, `env-drift-check` melaporkannya sebagai DRIFT — **itu diharapkan**.
+
+---
+
+## 30. ⛔ `20260929000001_td281_h2_default_privileges` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000001_td281_h2_default_privileges.sql` (215 baris) — branch **`hotfix/td281-h2-default-privileges`** (dari `main`) |
+| Staging | ⛔ **belum** — dijalankan sebagai **UJI** |
+| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Urutan | **mandiri** — tidak bergantung pada butir mana pun, dan butir 31 tidak bergantung padanya. Urutan H2 → H3 adalah pilihan, bukan keharusan teknis |
+| Catatan rollback | ada di ekor berkas: `ALTER DEFAULT PRIVILEGES … GRANT …` |
+
+**Apa yang berubah.** Default privileges `public/r/postgres` memberi **`Dxtm`** (TRUNCATE, REFERENCES, TRIGGER, MAINTAIN) kepada `anon` dan `authenticated`, jadi **setiap tabel baru di `public` LAHIR memberikannya** — termasuk kepada `anon`, peran untuk permintaan **tanpa login**. ⛔ `TRUNCATE` **tidak tunduk RLS**: policy seketat apa pun tidak menghalanginya; yang menahannya hanya hak tabel.
+
+⭐ **Buktinya ada sebagai tabel hidup di production, bukan sebagai dugaan:** `customers_backup_20260614` lahir tanpa GRANT eksplisit dan membawa `anon=Dxtm, authenticated=Dxtm`. Bandingkan `goods_receipts`, yang mencabutnya **dengan tangan** di `20260914000002`. Pencabutan manual itulah yang butir ini bakukan — supaya tidak perlu diulang, dan tidak perlu diingat, di setiap tabel berikutnya.
+
+**Sesudahnya tabel baru lahir dengan NOL hak untuk `anon`/`authenticated`.** Tidak ada DML yang "dipertahankan", karena default-nya memang **tidak pernah memberi DML** — aturan repo *"GRANT eksplisit setelah CREATE"* tidak berubah beratnya, ia sudah wajib hari ini.
+
+⛔ **BATAS YANG WAJIB TERBACA: `ALTER DEFAULT PRIVILEGES` TIDAK RETROAKTIF.** Sesudah butir ini, **139+ tabel yang sudah ada tetap** memberi TRUNCATE kepada `authenticated` (TD-230) dan kepada `anon` di 111 tabel. **Jangan baca "default privileges sudah dibereskan" sebagai "TRUNCATE ditutup"** — itu **H5**. Justru sifat tidak-retroaktif inilah yang membuat butir ini **nol risiko** terhadap data dan aplikasi yang hidup.
+
+⚠️ **`service_role` SENGAJA TIDAK dicabut** (keputusan Den 28 Sep). Ia sudah mem-bypass RLS dan memegang DML penuh; siapa pun yang memegang kuncinya bisa `DELETE` tanpa `WHERE`, jadi TRUNCATE bukan kelas kemampuan baru baginya, dan kuncinya tidak pernah dikirim ke browser. Yang tetap disebut apa adanya: **TRUNCATE melewati trigger `ON DELETE`**, jadi penghancuran lewatnya lebih senyap. Bedanya kecil tapi nyata. Reversibel, satu baris. V-POST mengasersi ia **masih utuh** supaya pergeseran diam-diam kelak ketahuan dari uji.
+
+⚠️⚠️ **Entri `supabase_admin` tidak disentuh (keputusan Den) — dan ukurannya ditulis di sini supaya tidak lewat sebagai "sisa risiko" tanpa angka:** `public | tabel | supabase_admin` memberi **`arwdDxtm` PENUH** kepada `anon` **dan** `authenticated`. Itu **jauh lebih longgar** daripada entri `postgres` yang butir ini tambal. Setiap tabel `public` yang lahir lewat jalur `supabase_admin` akan **terbuka sepenuhnya untuk anon**. Yang menahannya hari ini hanyalah kenyataan bahwa migrasi kita berjalan sebagai `postgres` — itu **keadaan, bukan jaminan**. Entrinya milik platform Supabase; mengubahnya keputusan terpisah.
+
+✅ **Dikonfirmasi sesuai permintaan:** `public | fungsi | postgres` = **`postgres=X/postgres` saja** — fungsi baru buatan `postgres` di `public` tidak lahir PUBLIC EXECUTE. (Yang ber-`proacl NULL` hari ini adalah fungsi **lama**, lahir sebelum entri itu ada.)
+
+⭐ **V-POST-2 adalah gerbang yang sebenarnya:** ia **membuat tabel sungguhan**, membaca hak yang ia **bawa**, mengasersi nol untuk anon/authenticated, lalu membuangnya (plus sabuk pengaman yang menolak COMMIT kalau probe tertinggal). V-POST-1 hanya membuktikan *perintahnya jalan*; probe membuktikan *tabel berikutnya benar-benar lahir sempit*. Menalar dari isi `pg_default_acl` bukan hal yang sama dengan melihat hasilnya.
+
+**Dampak ke drift.** Kategori `hak` `env-drift-check` membandingkan `relacl`/`attacl`/`proacl` — **bukan** `pg_default_acl`. Jadi butir ini **tidak akan muncul sebagai drift sama sekali**, di lingkungan mana pun. ⚠️ Itu berarti **alat drift tidak bisa memberi tahu apakah butir ini sudah jalan di suatu lingkungan** — gunakan `baca-h2-h3.sh`, bukan `jalankan-drift.sh`.
+
+---
+
+## 31. ⛔ `20260929000002_td281_h3_search_path` — ⚠️ **ARAH TERBALIK: PRODUCTION DULU**
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000002_td281_h3_search_path.sql` (245 baris) — branch **`hotfix/td281-h3-search-path`** (dari `main`) |
+| Staging | ⛔ **belum** — dijalankan sebagai **UJI**, dengan uji runtime |
+| Production | ⛔ **belum** — ⚠️ **inilah targetnya** |
+| Urutan | **mandiri** terhadap butir 30 |
+| Catatan rollback | delapan `ALTER FUNCTION … RESET search_path` ada di ekor berkas |
+
+**Apa yang berubah.** Delapan fungsi `SECURITY DEFINER` terakhir yang belum mengunci `search_path` dikunci ke `'public'`: `exec_sql` · `get_linked_bnf_status` · `get_table_columns` · `get_user_role_code` · `handle_new_user` · `is_admin_or_above` · `is_bnf_authorized` · `is_super_admin`. Dari **76** SECURITY DEFINER di `public`, **66 sudah mengunci** — ini menuntaskan kebiasaan yang sudah ada, bukan kebijakan baru.
+
+**Kenapa nyata:** fungsi DEFINER berjalan sebagai **pemiliknya**; tanpa `search_path` terkunci ia memakai search_path **si pemanggil**, sehingga acuan tak berkualifikasi di dalam badan bisa diarahkan ke objek milik pemanggil lalu dipakai dengan hak pemilik.
+
+⭐ **Bentuk buktinya adalah alasan mengerjakannya begini:** `ALTER FUNCTION … SET` **tidak menyentuh `prosrc`**, jadi **`md5(prosrc)` wajib identik sebelum/sesudah** untuk kedelapannya dan hanya `proconfig` yang bergerak. Klaim *"nol badan berubah"* di sini **bukan janji, ia diasersi** — bentuk yang sama dengan butir 27.
+
+⛔ **Kedelapan badan dibaca dari PRODUCTION lebih dulu** (bukan repo — TD-282) **dan disisir** untuk acuan tak berkualifikasi ke luar `public`, karena mengunci `search_path` **mengubah resolusi nama**, dan matinya muncul saat **runtime**, bukan saat `ALTER`. Itu persis kelas 42702: **cacat yang lahir dari perbaikannya**.
+
+⭐ **Hasil sisiran menjawab satu syarat bersyarat di rencana, dan jawabannya TIDAK:** `handle_new_user` ternyata sudah menulis **`public.companies` / `public.branches` / `public.departments` / `public.profiles`** — **keempatnya ber-skema** — dan `NEW` adalah record trigger, bukan acuan skema. Jadi **`'public, auth'` TIDAK diperlukan**; kedelapannya memakai nilai yang sama. `exec_sql` tidak punya acuan sendiri (badannya `EXECUTE sql`); yang terpengaruh adalah SQL **yang dikirim pemanggil**, dan satu-satunya pemanggil (EF `manage-schema`) mengirim `ALTER TABLE public.<t> ADD COLUMN …` yang **sudah ber-skema**, dengan tipe dari daftar bawaan yang resolve lewat `pg_catalog`. ⚠️ Kalau kelak lahir pemanggil `exec_sql` baru yang mengirim acuan tak berkualifikasi ke luar `public`, **ia akan patah** — dan itu konsekuensi yang diterima.
+
+⚠️ **Batas yang disengaja:** nilainya **`'public'` saja, bukan `'public, pg_temp'`**. Kalau `pg_temp` tidak disebut, PostgreSQL **tetap mencarinya lebih dulu** untuk nama **relasi**, jadi secara teori pemanggil yang bisa membuat tabel temporer masih bisa membayangi `user_roles`. Itu **tidak terjangkau lewat PostgREST** (ia tidak mengizinkan DDL), dan **66 fungsi lain memakai bentuk yang sama** — keseragaman punya harga nyata di sini karena `config_bentuk` ikut jadi sidik jari `env-drift-check`, sehingga bentuk yang berbeda akan tampil **drift selamanya**. Menyapu ke `'public, pg_temp'` = keputusan terpisah untuk **seluruh 74**, bukan untuk delapan ini sendirian.
+
+⛔ **Butir ini TIDAK menyentuh hak akses** — **enam dari delapan** masih `proacl NULL` = **PUBLIC EXECUTE** sesudahnya. Itu **H4**, dan salah satunya punya kebocoran yang sudah terukur (lihat TD-281).
+
+⚠️ **TD-231 tertutup bagian `search_path`-nya SAJA** oleh butir ini; bagian `company_id` singular-nya **tidak** — jangan tandai TD-231 selesai.
+
+**Uji runtime staging (wajib, sebelum production):** login + halaman ber-RLS (membuktikan `is_super_admin`/`is_admin_or_above` masih bekerja **di dalam policy**, bukan hanya sebagai RPC) · buat user lewat EF `create-user` (`handle_new_user`) · SchemaManager (`get_table_columns`) · halaman BNF (`is_bnf_authorized`, `get_linked_bnf_status`). ⚠️ Jalankan ujinya **sebelum DAN sesudah** migrasi — "sesudahnya jalan" tanpa pembanding tidak membuktikan migrasi ini tidak merusak apa pun yang memang sudah rusak.
+
+**Dampak ke drift.** `proconfig` **ikut** sidik jari `fungsi` di `env-drift-check`, jadi selama jendela production→staging kedelapannya akan dilaporkan **BEDA ISI**. **Itu diharapkan**; samakan staging segera.
 
 ---
 
