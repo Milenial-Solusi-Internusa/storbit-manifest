@@ -55,6 +55,8 @@
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
 
+⛔ **Pemblokir launching KEDUA, dan ia tidak punya nomor butir karena berkasnya belum ditulis: PAKET KEAMANAN TD-281 (H4 + H5 + H6).** Lihat §*Paket Keamanan TD-281* di bawah. Butir 27-31 menutup separuhnya; separuh sisanya **masih hidup di produksi hari ini**.
+
 ⛔ Urutan itu bukan kerapian. Butir 9 punya palang yang **menolak jalan** kalau butir 6 dan 7 belum terpasang, karena invariant piutang di dalamnya menuntut setiap Surat Jalan punya `sp_order_item_id`; tanpa butir 6, setiap invoice baru nol jurnal dan invariant gagal untuk **semuanya**. Butir 8 sebelum 9 karena butir 9 menyempitkan apa yang boleh ditagih, dan butir 8 adalah satu-satunya jalan membuka 9 SP yang tertahan hanya karena tanggal tanda tangan kosong.
 
 **Butir 11 sampai 14 = AR Tahap 2, dan urutannya MENGIKAT pada dua titik:** butir **12 sebelum 13** (butir 13 menolak jalan tanpa tabel pemetaan — periksa palangnya), dan butir **13 sesudah butir 9**. Yang kedua mudah terlewat: butir 13 menulis ulang `create_invoice_for_sp`, dan palangnya menolak jalan kalau yang hidup belum versi AR Tahap 1 — kalau palang itu tidak ada, menjalankan butir 13 di produksi hari ini akan **memasang guard AR Tahap 1 di luar urutan antrean**, tanpa satu pun butir 6-9 dijalankan.
@@ -436,6 +438,8 @@ Seluruh data seed milik **SOA**, home kedua akun finance **MSI**. `sp_orders_rea
 **Angkanya dibaca dari baris ringkasan**, bukan dari `grep '[DRIFT]'` — dengan `--hak-detail` tiap perbedaan hak tercetak dua kali dan grep polos menghitungnya dobel (61 pernah terbaca 100).
 
 **Riwayat TD-279, supaya angkanya punya arti:** 61 DRIFT (27 Sep) → 56 → **16** (Kelompok A) → **11** (Kelompok B) → **0** (Kelompok C, 28 Sep). Sesudah itu laporan yang sehat berbunyi **0 DRIFT** dengan ANTRE + SELAMANYA saja.
+
+✅ **Pengukuran terakhir 28 Sep 2026, sesudah butir 27-31 seluruhnya LIVE di kedua lingkungan: `59 ANTRE, 7 SELAMANYA, 0 DRIFT`** (`scripts/qa/out/drift-20260928-143832/drift.txt`). ⭐ Nol drift itu **bukan berarti butir 30 ikut terbukti**: `env-drift-check` membandingkan `relacl`/`attacl`/`proacl` dan **tidak menyentuh `pg_default_acl`**, jadi H2 tak akan pernah muncul di laporannya — yang membuktikannya keluaran runner-nya sendiri. Yang **memang** terbukti di sini: `proconfig` kedelapan fungsi H3 kini **sama di kedua sisi**, sehingga penguncian itu tidak melahirkan drift.
 
 ⚠️ **Arah default: staging mengikuti produksi.** Satu-satunya pengecualian kelas ANTRE. Kalau suatu hari DRIFT muncul lagi, jangan "perbaiki" dengan mengubah produksi.
 
@@ -943,6 +947,44 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 • `exec_sql` — diuji **DISKRIMINATIF**, bukan sekadar "masih jalan": sesi di-`SET search_path TO auth, public`, lalu `exec_sql` disuruh membaca `users` (tabel yang **hanya** ada di skema `auth`; ketiadaan `public.users` diperiksa sebagai prasyarat). Ia **tidak menemukannya** → penguncian **benar-benar berlaku**. ⭐ Tanpa uji berbentuk begini, *"exec_sql masih bekerja"* bisa benar **sekaligus** penguncian tidak terpasang — dan membaca `proconfig` pun tidak menutup celah itu, karena itu membaca **niat**, bukan **akibat**. Uji positifnya memakai bentuk persis yang dikirim EF `manage-schema`, lalu `ROLLBACK`, lalu diperiksa bersih **di luar** transaksi.
 
 **Dampak ke drift.** `proconfig` **ikut** sidik jari `fungsi` di `env-drift-check`, jadi selama jendela production→staging kedelapannya akan dilaporkan **BEDA ISI**. **Itu diharapkan**; samakan staging segera.
+
+---
+
+## Paket Keamanan TD-281 — ⛔ SYARAT LAUNCHING (H4 + H5 + H6)
+
+| | |
+|---|---|
+| Sumber | **TD-281** (`08_TECH_DEBT.md`) |
+| Berkas migrasi | ⛔ **belum ditulis** — karena itu ia tidak punya nomor butir di daftar atas |
+| Status | ⛔ **TERBUKA, dan ketiganya ada di PRODUCTION hari ini** |
+| Sifat | ⛔ **SYARAT LAUNCHING, bukan opsional dan bukan "kalau sempat"** |
+
+**Kenapa satu paket, bukan tiga pekerjaan terpisah.** Ketiganya menutup **satu kelas** yang sama: hal yang bisa dipanggil atau ditulis dari internet dengan anon key. Menyelesaikan sebagian saja meninggalkan pintu yang lain terbuka sambil membuat dokumen terbaca seolah keamanannya sudah beres — dan itu lebih berbahaya daripada tidak mengerjakannya sama sekali, karena yang membaca berikutnya akan berhenti memeriksa.
+
+### H4 — permukaan panggil yang masih PUBLIC EXECUTE
+
+**Tiga penerbit invoice di production:** `create_invoice` dan `create_invoice_for_sp` (`proacl NULL` = **PUBLIC EXECUTE**) dan `submit_invoice` (`=X/postgres` = PUBLIC). Staging sudah mengetatkannya lewat `20260926000002`, jadi `env-drift-check` melaporkannya sebagai **ANTRE** — ⚠️ dan **"ANTRE" berarti *sudah diperbaiki di staging*, BUKAN *tidak berbahaya di produksi*.** Arah longgarnya ada di produksi.
+
+⛔ **`get_linked_bnf_status(uuid)` — dan ini BUKAN sekadar soal ACL.** Ia PUBLIC EXECUTE, tapi guard di dalamnya juga **gagal untuk `anon`** lewat logika tiga nilai: `IF v_created_by != auth.uid() AND NOT is_bnf_authorized()` — untuk `anon`, `auth.uid()` NULL, maka `v_created_by != NULL` → **NULL**, `NULL AND true` → **NULL**, dan `IF NULL` **tidak diambil**, sehingga eksekusi jatuh terus dan **mengembalikan status**. `SECURITY DEFINER` mem-bypass RLS.
+>> **`REVOKE` saja menutup pintunya sambil membiarkan logikanya tetap keliru** untuk setiap pemanggil ber-`auth.uid()` NULL. **Keduanya wajib diperbaiki bersama**, dan itulah sebabnya fungsi ini masuk H4 alih-alih jadi pekerjaan ACL biasa.
+
+### H5 — hak TABEL yang SUDAH ADA
+
+`TRUNCATE`, `TRIGGER`, `REFERENCES`, `MAINTAIN` untuk `anon` **dan** `authenticated` pada tabel `public` yang sudah terlanjur ada (TD-230: `authenticated` menyeluruh, `anon` 111 dari 139), **ditambah DML `anon` di 11 tabel**. ⛔ **H2 TIDAK menyentuh satu pun dari ini** — `ALTER DEFAULT PRIVILEGES` **tidak retroaktif**, ia hanya menghentikan tabel **baru**. Di sini juga duduk `sp_invoices`/`sp_invoice_lines` yang di produksi masih ber-INSERT/UPDATE/DELETE untuk `authenticated` sementara staging sudah mencabutnya.
+
+⭐ **Inilah kelas yang membuat seluruh audit RLS sebelumnya memeriksa lapis yang salah:** *`TRUNCATE` tidak tunduk RLS*, jadi policy seketat apa pun tidak relevan terhadapnya. Yang menahannya hari ini hanyalah **PostgREST tidak mengekspos TRUNCATE** — itu sifat perkakas, bukan izin yang kita atur.
+
+⚠️ **Pengetatan di sini WAJIB diukur blast radius-nya lebih dulu.** `REFERENCES` dan `TRIGGER` bisa dipakai jalur yang sah; mencabutnya buta akan mematahkan sesuatu yang belum terdaftar — kelas pelajaran `20260821000004` (gotcha #26).
+
+### H6 — koreksi README bagian Security
+
+Klaim keamanannya belum diselaraskan dengan keadaan hari ini. Dokumentasi yang mengklaim lebih dari yang benar **bukan sekadar tidak rapi**: ia membuat peninjau berikutnya berhenti memeriksa.
+
+### Yang SUDAH tertutup (jangan dikerjakan ulang)
+
+**H1 lapis 1** (butir 27) · **H1 lapis 2** + perbaikan `check_similar_accounts` (butir 28 & 29) · **H2** (butir 30) · **H3** (butir 31) — **keempatnya LIVE di production DAN staging 28 Sep 2026**, masing-masing dengan gerbangnya sendiri.
+
+⭐ **Peta lapisnya, supaya sisa pekerjaannya tidak salah ditaksir:** H1 + H3 menutup **permukaan panggil fungsi** dan **resolusi nama di dalamnya**; H2 menutup **pabrik tabel baru**. Yang belum tersentuh adalah **hak tabel yang sudah terlanjur ada** — bagian yang paling luas, dan paling perlu diukur sebelum disentuh.
 
 ---
 
