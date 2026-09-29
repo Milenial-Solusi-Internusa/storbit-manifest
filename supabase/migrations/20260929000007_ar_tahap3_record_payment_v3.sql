@@ -32,7 +32,11 @@
 --      potongan_pelanggan (akun 4-1900, kontra-pendapatan -- 20260929000005)
 --      DAN keterangannya WAJIB diisi (guard di RPC, dicerminkan di form FE).
 --
--- Status: BELUM DIJALANKAN DI MANA PUN
+-- Status: LIVE DI STAGING 29 Sep 2026 -- dijalankan DENGAN perbaikan palang
+-- tanda tangan di bawah (oidvectortypes(proargtypes), bukan
+-- pg_get_function_identity_arguments(), yang ikut mencetak nama parameter --
+-- ditemukan saat berkas ini dijalankan pertama kali; lihat gotcha baru di
+-- CLAUDE.md/03_DATA_MODEL.md). PRODUCTION BELUM.
 -- =============================================================================
 
 BEGIN;
@@ -45,10 +49,15 @@ BEGIN;
 DO $prapalang$
 DECLARE v_def text;
 BEGIN
+  -- oidvectortypes(proargtypes), BUKAN pg_get_function_identity_arguments():
+  -- yang kedua ikut mencetak NAMA parameter ('p_invoice_id uuid, ...'), jadi
+  -- perbandingan string ke daftar tipe polos tidak akan pernah cocok --
+  -- ketahuan saat berkas ini dijalankan ke staging 29 Sep 2026. Gotcha baru,
+  -- lihat CLAUDE.md/03_DATA_MODEL.md.
   SELECT pg_get_functiondef(p.oid) INTO v_def
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'record_payment'
-     AND pg_get_function_identity_arguments(p.oid) = 'uuid, numeric, date, text, numeric, text, text';
+     AND oidvectortypes(p.proargtypes) = 'uuid, numeric, date, text, numeric, text, text';
 
   IF v_def IS NULL THEN
     RAISE EXCEPTION 'PALANG: record_payment(uuid, numeric, date, text, numeric, text, text) tidak ditemukan -- signature lama sudah berubah dari yang diharapkan.';
@@ -277,10 +286,12 @@ DECLARE
   v_lama_ada boolean;
   v_n_overload int;
 BEGIN
+  -- oidvectortypes(proargtypes), bukan pg_get_function_identity_arguments()
+  -- -- pola sama dengan V-PRA di atas (gotcha: nama parameter ikut tercetak).
   SELECT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public' AND p.proname = 'record_payment'
-       AND pg_get_function_identity_arguments(p.oid) = 'uuid, numeric, date, text, numeric, text, text'
+       AND oidvectortypes(p.proargtypes) = 'uuid, numeric, date, text, numeric, text, text'
   ) INTO v_lama_ada;
   IF v_lama_ada THEN
     RAISE EXCEPTION 'V-POST GAGAL: signature lama record_payment(7 argumen) masih ada -- DROP tidak berhasil, risiko ambigu (gotcha #37).';

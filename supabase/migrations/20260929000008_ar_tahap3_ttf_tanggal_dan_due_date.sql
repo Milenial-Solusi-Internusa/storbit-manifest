@@ -84,7 +84,11 @@
 -- berubah -- diverifikasi manual line-by-line terhadap sumbernya sebelum
 -- berkas ini ditulis.
 --
--- Status: BELUM DIJALANKAN DI MANA PUN
+-- Status: LIVE DI STAGING 29 Sep 2026 -- dijalankan DENGAN perbaikan palang
+-- tanda tangan di bawah (oidvectortypes(proargtypes), bukan
+-- pg_get_function_identity_arguments(), yang ikut mencetak nama parameter --
+-- ditemukan saat berkas ini dijalankan pertama kali; lihat gotcha baru di
+-- CLAUDE.md/03_DATA_MODEL.md). PRODUCTION BELUM.
 -- =============================================================================
 
 BEGIN;
@@ -98,11 +102,17 @@ DO $prapalang$
 DECLARE v_def text;
 BEGIN
   -- mark_ttf_received: signature lama (4 argumen) harus ada, versi baru
-  -- (p_ttf_date) belum.
+  -- (p_ttf_date) belum. oidvectortypes(proargtypes) untuk cocokkan TIPE --
+  -- pg_get_function_identity_arguments() ikut mencetak nama parameter
+  -- ('p_invoice_id uuid, ...'), jadi perbandingan ke daftar tipe polos tidak
+  -- akan pernah cocok (ketahuan saat berkas ini dijalankan ke staging 29 Sep
+  -- 2026 -- gotcha baru, lihat CLAUDE.md/03_DATA_MODEL.md). Baris di bawah
+  -- (LIKE '%p_ttf_date%') SENGAJA TETAP pg_get_function_identity_arguments()
+  -- -- di situ nama parameter memang yang dicari, bukan tipenya.
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname='public' AND p.proname='mark_ttf_received'
-       AND pg_get_function_identity_arguments(p.oid) = 'uuid, text, text, text'
+       AND oidvectortypes(p.proargtypes) = 'uuid, text, text, text'
   ) THEN
     RAISE EXCEPTION 'PALANG: mark_ttf_received(uuid, text, text, text) tidak ditemukan.';
   END IF;
@@ -490,10 +500,12 @@ DECLARE
   v_lama_ada boolean;
 BEGIN
   -- mark_ttf_received: signature lama hilang, ACL baru benar.
+  -- oidvectortypes(proargtypes), bukan pg_get_function_identity_arguments()
+  -- -- pola sama dengan V-PRA di atas (gotcha: nama parameter ikut tercetak).
   SELECT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname='public' AND p.proname='mark_ttf_received'
-       AND pg_get_function_identity_arguments(p.oid) = 'uuid, text, text, text'
+       AND oidvectortypes(p.proargtypes) = 'uuid, text, text, text'
   ) INTO v_lama_ada;
   IF v_lama_ada THEN
     RAISE EXCEPTION 'V-POST GAGAL: signature lama mark_ttf_received(4 argumen) masih ada.';
