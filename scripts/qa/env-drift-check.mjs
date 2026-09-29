@@ -178,7 +178,7 @@ const DIKETAHUI = [
     alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..11) -- LIVE staging, produksi belum, urutannya mengikat',
   },
   {
-    // AR Tahap 3 (20260929000004..09), doc 12 butir 32-37. Ditulis 29 Sep
+    // AR Tahap 3 (20260929000004..10), doc 12 butir 32-38. Ditulis 29 Sep
     // 2026, BELUM DIJALANKAN DI MANA PUN -- entri ini disiapkan supaya begitu
     // staging menjalankannya, drift-nya langsung terbaca ANTRE, bukan DRIFT
     // tak dikenal.
@@ -189,13 +189,18 @@ const DIKETAHUI = [
     // isi), jadi versi AR Tahap 3-nya otomatis ikut terklasifikasi ANTRE
     // lewat entri itu. Menambahkannya di sini hanya akan jadi baris mati
     // (klasifikasi() berhenti di kecocokan PERTAMA).
+    //
+    // mark_ttf_received DIREVISI LAGI oleh butir 38 (20260929000010, koreksi
+    // UAT -- tanggal_menerima isi sekali) -- signature TIDAK berubah, jadi
+    // regex nama fungsi di bawah ini otomatis ikut mencakup revisi itu juga,
+    // tanpa entri baru.
     cocok: (kat, kunci) =>
       (kat === 'fungsi' && /^(compute_payment_term_days|mark_ttf_received)\(/.test(kunci))
       || (kat === 'kolom' && kunci === 'sp_payments')
       || /^(compute_payment_term_days|mark_ttf_received)\(/.test(hakFungsi(kat, kunci) || ''),
     kelas: 'antre',
-    butir: '32-37',
-    alasan: 'AR Tahap 3 -- pengaman pembayaran (TD-285/286/287) + jatuh tempo dari TTF (20260929000004..09) -- BELUM DIJALANKAN DI MANA PUN per 29 Sep 2026; naik bersama Tahap 1/2 saat launching (UI-nya menumpang di sana)',
+    butir: '32-38',
+    alasan: 'AR Tahap 3 -- pengaman pembayaran (TD-285/286/287) + jatuh tempo dari TTF + koreksi UAT tanggal_menerima (20260929000004..10) -- BELUM DIJALANKAN DI MANA PUN per 29 Sep 2026; naik bersama Tahap 1/2 saat launching (UI-nya menumpang di sana)',
   },
   {
     // 12 tabel cadangan koreksi data ongkir/AR (tahap 2-8, 28-29 Sep 2026,

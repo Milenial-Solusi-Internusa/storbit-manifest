@@ -58,8 +58,9 @@
 | 35 | `20260929000007_ar_tahap3_record_payment_v3` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9, 13, 33, 34 |
 | 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
 | 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ⏸ **DITAHAN STOP KERAS** | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** — sesudah butir 36 |
+| 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 36 |
 
-**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 37 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
+**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
 ⛔ **Pemblokir launching KEDUA, dan ia tidak punya nomor butir karena berkasnya belum ditulis: PAKET KEAMANAN TD-281 (H4 + H5 + H6).** Lihat §*Paket Keamanan TD-281* di bawah. Butir 27-31 menutup separuhnya; separuh sisanya **masih hidup di produksi hari ini**.
 
@@ -1091,6 +1092,29 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 ⚠️ **Dampak produksi terukur di laporan sesi: 1 invoice** kehilangan `due_date` (sudah disetujui Den) — angka pasti untuk staging/production saat launching **wajib diukur ulang** lewat blok V0 sebelum backfill sungguhan dijalankan, karena data bergerak setiap hari.
 
 **Rollback.** Ada di ekor berkas — syarat: hanya mengembalikan baris yang `due_date`-nya masih sama dengan `due_date_baru` backfill ini (koreksi manual sesudahnya tidak ditimpa).
+
+---
+
+## 38. ⛔ `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` — WAJIB, sesudah butir 36
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 36** (`mark_ttf_received` harus sudah versi `20260929000008`) |
+
+**Apa isinya.** Koreksi hasil UAT `mark_ttf_received` (butir 36): cabang UPDATE-nya menulis `tanggal_menerima = CURRENT_DATE` **setiap kali** fungsi dipanggil, sehingga mengedit TTF (tanggal_ttf/No. TTF/nama penerima/catatan) menimpa kapan TTF **pertama kali** dicatat. Kasus nyata: `SOA-INV-VII-2026-0161`, TTF pertama dicatat 16 Jul, satu koreksi membuatnya berubah jadi 29 Sep. Perbaikan: `tanggal_menerima` kini diisi **SEKALI**, hanya di cabang INSERT — pola sama dengan `set_invoice_tax_info` dan `signed_date_filled_by`.
+
+**Tanda tangan TIDAK berubah** — `(uuid, text, text, text, date)`, sama dengan butir 36. `CREATE OR REPLACE`, **bukan** DROP+CREATE (gotcha #37 tidak berlaku, nol parameter berubah) — ACL diwarisi otomatis, tetap diasersi ulang di V-POST.
+
+⛔ **Berkas BARU, bukan mengedit `20260929000008`** — berkas itu sudah tercatat jalan di staging. **Diff terhadap `20260929000008` diverifikasi MEKANIS (`diff`) sebelum ditulis: HANYA satu baris kode hilang** (`tanggal_menerima = CURRENT_DATE,` di cabang UPDATE) — cabang INSERT dan blok hitung `due_date` (fungsi yang sama, `compute_payment_term_days`) **tidak disentuh**.
+
+**V-PRA menolak jalan** kalau badan yang hidup bukan versi butir 36 (tidak lagi menimpa `tanggal_menerima` di UPDATE, atau kehilangan blok `due_date`) — `oidvectortypes(proargtypes)` dipakai mencocokkan tipe (gotcha #44), bukan `pg_get_function_identity_arguments()`. **V-POST** memastikan pola penimpaan itu sungguh hilang, cabang INSERT + blok `due_date` utuh, dan ACL tetap `authenticated` saja.
+
+⚠️ **Jejak koreksi TTF (nilai lama vs baru) TIDAK dicatat di mana pun** — Nexus belum punya mekanisme audit yang bisa dipakai untuk `ar_ttfs` (lihat laporan sesi 29 Sep 2026 untuk temuan lengkap: `audit_logs` ada tapi skemanya per-record generik dan baru dipakai segelintir RPC lain, `mark_ttf_received` bukan salah satunya). Di luar scope unit kerja ini — dicatat sebagai temuan, bukan dikerjakan.
+
+**Rollback.** Ada di ekor berkas — tempel ulang badan `20260929000008` (mengembalikan penimpaan `tanggal_menerima` tiap edit).
 
 ---
 
