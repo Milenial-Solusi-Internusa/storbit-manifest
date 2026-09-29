@@ -553,7 +553,22 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 
 ⚠️ **Prasyarat yang tidak kelihatan dari daftar keputusan:** `create_invoice_for_sp` menjurnal lewat `delivery_note_items.sp_order_item_id`, dan kolom itu **tidak pernah diisi** oleh `generate_delivery_from_picking`. Tanpa `20260925000001`, **setiap invoice baru terbit dengan NOL jurnal tanpa error** dan invariant piutang gagal untuk semuanya. ⛔ **Urutan MENGIKAT: `20260925000001` → `20260925000002` → `20260926000001` → `20260926000002`** (yang terakhir punya palang yang menolak jalan tanpa dua yang pertama).
 
-⚠️ **Tahap 2 & 3 belum dipatok tanggalnya.** Yang sudah tercatat isinya: **Tahap 2** = AR Aging berbasis tanggal **TTF** (D-14) · **Tahap 3** = `submit_invoice` ditulis ulang, sekalian menyatukan perhitungan `due_date` (D-15). Sisanya belum diputuskan — jangan diasumsikan.
+⚠️ **Tahap 2 & 3 belum dipatok tanggalnya.** Yang sudah tercatat isinya: **Tahap 2** = AR Aging berbasis tanggal **TTF** (D-14) · **Tahap 3** = `submit_invoice` ditulis ulang, sekalian menyatukan perhitungan `due_date` (D-15). Sisanya belum diputuskan — jangan diasumsikan. ➕ **Masukan yang sudah terkumpul untuk PLAN Tahap 3 ada di sub-bagian di bawah ini** (dikumpulkan 29 Sep 2026; itu DAFTAR MASUKAN, bukan keputusan — bentuk akhirnya ditentukan saat PLAN Tahap 3 ditulis).
+
+### Masukan untuk PLAN AR Tahap 3 — dikumpulkan 29 Sep 2026
+
+> ⛔ **Ini DAFTAR MASUKAN, bukan keputusan dan bukan urutan kerja.** Dicatat di sini supaya tidak hilang sebelum PLAN Tahap 3 ditulis; tiap butir masih boleh ditolak, dipecah, atau dipindah ke tahap lain. Butir ber-TD sudah punya rumah sendiri di `08_TECH_DEBT.md` — yang ditambahkan di sini hanya bahwa ia **dipertimbangkan masuk Tahap 3**.
+
+1. **Approval penerbitan invoice:** Elvira menerbitkan, Rini menyetujui. Izin terbit dibuka ke role `finance` (hari ini hanya `finance_controller` yang bisa), dan filter entitas di daftar invoice default ke **"Semua"**.
+2. **TD-285 (HIGH)** — `record_payment` tidak membatasi total pembayaran terhadap `total_amount`, sehingga invoice bisa jadi `paid` dengan uang yang tak pernah masuk. Cap-nya milik RPC, bukan FE.
+3. **TD-286** — batas atas PPh terhadap **sisa tagihan**; hari ini nol validasi di FE maupun RPC.
+4. **TD-287** — kolom **potongan lain** di form pembayaran (biaya TTF Indomaret ±Rp 2.900 per TTF) + **jurnal biayanya**, supaya invoice tidak tertahan `partial` dengan sisa ±2.900. ⛔ Bukan dengan menaikkan `c_tolerance`.
+5. **Jatuh tempo dihitung dari tanggal TTF + termin pelanggan**, bukan dari tanggal invoice — Indomarco: **30 hari setelah tukar faktur**. Contoh staging **SP 9100024**: TTF 16 Jul, `due_date` tertulis **8 Agu**, seharusnya **15 Agu**; akibatnya invoice yang baru terbit bisa langsung tampil "lewat jatuh tempo". Bersinggungan dengan **D-15** (penyatuan perhitungan `due_date`) dan **D-14** (AR Aging berbasis TTF).
+6. **TD-289** — klik nomor SP di modul Finance melempar Finance Controller ke beranda. Usulan: **panel samping baca-saja** alih-alih membuka halaman SP — Grand Design Bagian 1 prinsip 4, *visibilitas lewat referensi, bukan akses menu*.
+7. **Kolom Referensi di riwayat pembayaran menampilkan TANGGAL saat referensi kosong.** Perlu konfirmasi apakah itu disengaja (fallback) atau keliru — belum diinvestigasi, dicatat apa adanya.
+8. **TD-296** — PDF invoice menghitung `Shipping` (dan lewat itu `DPP (Nilai Lain)`) dari data SP (`Σ sp_order_items.shipping_price`), bukan dari header invoice yang terkunci, sehingga PDF bisa berubah sesudah invoice terbit.
+9. **Rini perlu role `finance_controller` di SOA production** — prasyarat butir 1 bisa diuji dengan orang sungguhan, bukan hanya akun uji.
+
 
 ## Pertanyaan untuk Finance (Elvira) — invoice lengkap, per 25 Sep 2026
 
