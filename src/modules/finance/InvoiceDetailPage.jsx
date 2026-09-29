@@ -627,6 +627,7 @@ export default function InvoiceDetailPage({
             {/* Tab dokumen */}
             <TabBar style={{ margin: `${SP.s4}px 0 ${SP.s4}px` }}>
               <TabBtn active={tab === 'lines'} onClick={() => setTab('lines')} label="Baris Invoice" count={barisBarang.length}/>
+              <TabBtn active={tab === 'payments'} onClick={() => setTab('payments')} label="Pembayaran" count={wf.payments.length}/>
               <TabBtn active={tab === 'other'} onClick={() => setTab('other')} label="Info Lain"/>
               <TabBtn active={tab === 'tax'}   onClick={() => setTab('tax')}   label="Pajak & Coretax"/>
               <TabBtn active={tab === 'docs'}  onClick={() => setTab('docs')}  label="Dokumen Terkait" count={docs.deliveries.length + docs.btb.length}/>
@@ -705,6 +706,59 @@ export default function InvoiceDetailPage({
                   </div>
                 </div>
               </>
+            )}
+
+            {/* ── Tab: Pembayaran ── */}
+            {/* Dipindah dari panel kanan (sempit) ke sini -- enam kolom (Tanggal
+                Bayar, Diterima, PPh, Potongan Lain, Mengurangi Tagihan, Referensi)
+                kepotong di panel dan harus digeser ke samping. Isi & urutan kolom
+                TIDAK berubah dari sebelumnya, hanya lokasinya. Panel kanan kini
+                cuma menautkan ke sini lewat "Lihat riwayat (n)". */}
+            {tab === 'payments' && (
+              wf.showPaymentHistory && wf.payments.length === 0 ? (
+                <Hint>Belum ada pembayaran tercatat.</Hint>
+              ) : wf.showPaymentHistory ? (
+                <TableShell
+                  minWidth={720}
+                  head={[
+                    ['Tanggal Bayar'], ['Diterima', 'right'], ['PPh', 'right'],
+                    ['Potongan Lain', 'right'], ['Mengurangi Tagihan', 'right'], ['Referensi'],
+                  ]}
+                >
+                  {wf.payments.map((pm) => (
+                    <tr key={pm.id}>
+                      <Td nowrap style={{ fontSize: 12.5 }}>{fmtDate(pm.payment_date)}</Td>
+                      <Td align="right" mono nowrap style={{ fontSize: 12.5 }}>{rp(pm.amount)}</Td>
+                      <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>{rp(pm.pph)}</Td>
+                      <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>
+                        {Number(pm.potongan_lain) > 0 ? rp(pm.potongan_lain) : '—'}
+                      </Td>
+                      <Td align="right" mono nowrap style={{ fontSize: 12.5, fontWeight: 600 }}>
+                        {rp((Number(pm.amount) || 0) + (Number(pm.pph) || 0) + (Number(pm.potongan_lain) || 0))}
+                      </Td>
+                      {/* Referensi kosong -> strip, BUKAN tanggal. Info pendukung
+                          (nomor + tautan bukti potong, "Dicatat siapa, kapan") ada
+                          di panel ringkas lewat klik -- lihat panelBayar. */}
+                      <Td style={{ fontSize: 12.5 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
+                            {pm.reference || '—'}
+                          </Ref>
+                          {pm.bukti_potong_url && (
+                            <a
+                              href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
+                              title={pm.bukti_potong_no ? `Bukti potong ${pm.bukti_potong_no}` : 'Bukti potong'}
+                              style={{ color: C.accent, display: 'inline-flex', alignItems: 'center' }}
+                            >
+                              <Link2 size={13}/>
+                            </a>
+                          )}
+                        </span>
+                      </Td>
+                    </tr>
+                  ))}
+                </TableShell>
+              ) : null
             )}
 
             {/* ── Tab: Dokumen Terkait ── */}
@@ -1076,51 +1130,14 @@ export default function InvoiceDetailPage({
               </span>
             </MetaRow>
 
-            {wf.showPaymentHistory && (
+            {/* Tabelnya pindah ke tab "Pembayaran" (area utama) -- panel ini
+                sempit dan enam kolom (termasuk Mengurangi Tagihan + Referensi)
+                kepotong di sini. Tautan disembunyikan kalau nol pembayaran. */}
+            {wf.showPaymentHistory && wf.payments.length > 0 && (
               <div style={{ marginTop: SP.s3, borderTop: `1px solid ${C.lineSoft}`, paddingTop: SP.s2 }}>
-                {wf.payments.length === 0 ? (
-                  <Hint>Belum ada pembayaran tercatat.</Hint>
-                ) : (
-                  <TableShell head={[
-                    ['Tanggal Bayar'], ['Diterima', 'right'], ['PPh', 'right'],
-                    ['Potongan Lain', 'right'], ['Mengurangi Tagihan', 'right'], ['Referensi'],
-                  ]}>
-                    {wf.payments.map((pm) => (
-                      <tr key={pm.id}>
-                        <Td nowrap style={{ fontSize: 12.5 }}>{fmtDate(pm.payment_date)}</Td>
-                        <Td align="right" mono nowrap style={{ fontSize: 12.5 }}>{rp(pm.amount)}</Td>
-                        <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>{rp(pm.pph)}</Td>
-                        <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>
-                          {Number(pm.potongan_lain) > 0 ? rp(pm.potongan_lain) : '—'}
-                        </Td>
-                        <Td align="right" mono nowrap style={{ fontSize: 12.5, fontWeight: 600 }}>
-                          {rp((Number(pm.amount) || 0) + (Number(pm.pph) || 0) + (Number(pm.potongan_lain) || 0))}
-                        </Td>
-                        {/* Referensi kosong -> strip, BUKAN tanggal (dulu fallback ke
-                            fmtDate(pm.payment_date) di sini -- salah tempat, tanggal
-                            sudah punya kolomnya sendiri). Info pendukung (nomor +
-                            tautan bukti potong, "Dicatat siapa, kapan") ada di panel
-                            ringkas lewat klik -- lihat panelBayar. */}
-                        <Td style={{ fontSize: 12.5 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
-                              {pm.reference || '—'}
-                            </Ref>
-                            {pm.bukti_potong_url && (
-                              <a
-                                href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
-                                title={pm.bukti_potong_no ? `Bukti potong ${pm.bukti_potong_no}` : 'Bukti potong'}
-                                style={{ color: C.accent, display: 'inline-flex', alignItems: 'center' }}
-                              >
-                                <Link2 size={13}/>
-                              </a>
-                            )}
-                          </span>
-                        </Td>
-                      </tr>
-                    ))}
-                  </TableShell>
-                )}
+                <Ref mono={false} onClick={() => setTab('payments')} title="Buka tab Pembayaran">
+                  Lihat riwayat ({wf.payments.length})
+                </Ref>
               </div>
             )}
 
