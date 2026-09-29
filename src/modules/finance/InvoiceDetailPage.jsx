@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import {
   getInvoiceViewData, listInvoices, getSpFulfillmentDocs, listSpBtbNew,
+  isInvoiceItemLine,
 } from '../../lib/db';
 import useInvoiceExtras from './useInvoiceExtras';
 import { useAuth } from '../../contexts/useAuth';
@@ -337,7 +338,7 @@ export default function InvoiceDetailPage({
   // "Rp 0" dan dulu berdampingan dengan satu baris ongkir SINTETIS di bawahnya =
   // dua baris ongkir untuk satu angka, salah satunya nol. Ongkir kini muncul
   // TEPAT SEKALI, di ringkasan, sama seperti invoice PDF.
-  const barisBarang = inv?.lines?.filter((l) => l.line_type === 'item') ?? [];
+  const barisBarang = inv?.lines?.filter(isInvoiceItemLine) ?? [];
 
   // DPP Nilai Lain = (Subtotal + Shipping) x 11/12 -- rumus & konstanta SAMA
   // dengan blok totals InvoicePDF (`InvoicePDF.jsx:408`), bukan disalin ulang.

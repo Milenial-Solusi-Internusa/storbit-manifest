@@ -1283,6 +1283,34 @@ export async function getCompanyHeader(companyId) {
 // di sini biar InvoicePDF.jsx murni presentasi. company_id diambil dari baris
 // sp_orders yang bersangkutan (bukan hardcode SOA_COMPANY_ID di sini) supaya
 // tetap benar kalau modul ini kelak dipakai entitas lain.
+/**
+ * Baris invoice yang BOLEH muncul di tabel barang (layar maupun PDF).
+ *
+ * Sejak invoice v2 (`20260928000002_invoice_line_v2.sql`) `sp_invoice_lines`
+ * memuat satu baris ber-`line_type = 'shipping'` untuk ongkir, dengan
+ * `dpp`/`ppn` = 0 -- sengaja nol, karena PPN ongkir SUDAH termuat di baris
+ * barang. Baris itu BUKAN barang: ongkir ditampilkan sekali di ringkasan
+ * (`Shipping`), jadi ia harus dilewati di tabel. Tanpa ini ia tampil sebagai
+ * baris kosong (deskripsi strip, Rp 0).
+ *
+ * ⚠️ Baris LAMA (terbit sebelum migrasi itu, termasuk seluruh invoice produksi
+ * hari ini) TIDAK punya `line_type`. Kedua pembaca menormalkannya ke `'item'`
+ * lebih dulu (`l.line_type || 'item'`), jadi baris lama TETAP tampil sebagai
+ * barang biasa -- itu syarat keras, bukan efek samping.
+ *
+ * ⛔ Dipakai BERSAMA oleh `finance/InvoiceDetailPage.jsx` (tabel Baris Invoice)
+ * dan `logistics/InvoicePDF.jsx` (tabel barang) supaya keduanya mustahil
+ * berbeda. Kalau `line_type` kelak menerima nilai KETIGA (mis. `'stamp_fee'`,
+ * yang CHECK-nya hari ini masih menolak), predikat ini akan diam-diam
+ * MENYEMBUNYIKANNYA dari dokumen customer -- tinjau di sini, satu tempat.
+ *
+ * @param {{line_type?: string}} l baris invoice
+ * @returns {boolean}
+ */
+export function isInvoiceItemLine(l) {
+  return (l?.line_type || 'item') === 'item';
+}
+
 export async function getInvoicePdfData(invoiceId) {
   const { data: inv, error: invErr } = await supabase
     .from('sp_invoices')
@@ -1305,7 +1333,7 @@ export async function getInvoicePdfData(invoiceId) {
       // kalau master produk diubah, invoice lama ikut berubah waktu dicetak
       // ulang. Berbeda dari product_name/unit_price yang memang di-snapshot.
       // Membekukannya per-invoice butuh kolom baru + migrasi (belum diputuskan).
-      .select('id, dpp, ppn, qty, position, sp_order_items(product_name, unit_price, products(unit, uom))')
+      .select('id, dpp, ppn, qty, position, line_type, sp_order_items(product_name, unit_price, products(unit, uom))')
       .eq('invoice_id', invoiceId)
       .order('position', { ascending: true }),
     spOrder.customer_id
@@ -1359,6 +1387,10 @@ export async function getInvoicePdfData(invoiceId) {
       bank: bankRes.data || null,
       lines: (linesRes.data || []).map((l) => ({
         id: l.id,
+        // Dinormalkan di sini, pola SAMA dengan getInvoiceViewData: baris lama
+        // (seluruh invoice produksi hari ini) tak punya kolomnya, dan harus
+        // tetap terbaca sebagai barang. Dipakai isInvoiceItemLine di atas.
+        line_type: l.line_type || 'item',
         product_name: l.sp_order_items?.product_name || '',
         // `unit` primer, `uom` cadangan — dan keduanya di-trim dulu, karena
         // ada produk ber-`unit` string KOSONG (bukan NULL). Pola yang sama

@@ -18,6 +18,7 @@ import loraRegular from '../../assets/fonts/Lora-Regular.ttf';
 import loraSemiBold from '../../assets/fonts/Lora-SemiBold.ttf';
 import { DPP_NILAI_LAIN_RATIO, PPN_LABEL_PCT } from '../../lib/taxConstants';
 import { formatRp2 } from '../../lib/numberFormat';
+import { isInvoiceItemLine } from '../../lib/db';
 
 Font.register({
   family: 'Cormorant Garamond',
@@ -401,7 +402,14 @@ function MetaLine({ s, label, value }) {
 export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
   const isPrint = variant === 'print';
   const s = isPrint ? S_PRINT : S_DOWNLOAD;
-  const lines = invoice.lines || [];
+  // Baris BARANG saja. Ongkir disimpan sebagai baris tersendiri
+  // (`line_type = 'shipping'`) sejak invoice v2 dan sudah tampil sekali di
+  // ringkasan sebagai `Shipping`; tanpa filter ini ia ikut tercetak di tabel
+  // sebagai baris kosong (deskripsi strip, qty 1, Rp 0). Predikatnya DIPAKAI
+  // BERSAMA dengan tabel Baris Invoice di layar (`isInvoiceItemLine`, db.js)
+  // supaya dokumen dan layar mustahil menampilkan himpunan baris yang berbeda.
+  // Baris LAMA tanpa `line_type` tetap dihitung barang (dinormalkan di db.js).
+  const lines = (invoice.lines || []).filter(isInvoiceItemLine);
   const company = invoice.company || {};
   const bank = invoice.bank || null;
   // Informational-only — TIDAK dari kolom DB, TIDAK ikut dijumlahkan ke Grand
