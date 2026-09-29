@@ -1211,53 +1211,68 @@ export async function submitInvoiceRpc(invoiceId) {
 // error.message apa adanya ke toast (jangan dibungkus pesan generik).
 // ============================================================
 
-/** Catat pembayaran invoice via RPC record_payment. Returns { data: paymentId, error }. */
+/** Catat pembayaran invoice via RPC record_payment. Returns { data: paymentId, error }.
+ *  potonganLain/potonganKeterangan -- AR Tahap 3 (TD-287): potongan lain
+ *  (mis. biaya TTF Indomarco) di luar kas & PPh. Keterangan wajib diisi kalau
+ *  potonganLain > 0 -- ditegakkan RPC, dicerminkan di form (useInvoiceWorkflow). */
 export async function recordPayment({
   invoiceId, amount, paymentDate = null, reference = null,
   pph = 0, buktiPotongUrl = null, buktiPotongNo = null,
+  potonganLain = 0, potonganKeterangan = null,
 }) {
   const { data, error } = await supabase.rpc('record_payment', {
-    p_invoice_id:       invoiceId,
-    p_amount:           Number(amount) || 0,
-    p_payment_date:     paymentDate || null,
-    p_reference:        reference || null,
-    p_pph:              Number(pph) || 0,
-    p_bukti_potong_url: buktiPotongUrl || null,
-    p_bukti_potong_no:  buktiPotongNo || null,
+    p_invoice_id:          invoiceId,
+    p_amount:              Number(amount) || 0,
+    p_payment_date:        paymentDate || null,
+    p_reference:           reference || null,
+    p_pph:                 Number(pph) || 0,
+    p_bukti_potong_url:    buktiPotongUrl || null,
+    p_bukti_potong_no:     buktiPotongNo || null,
+    p_potongan_lain:       Number(potonganLain) || 0,
+    p_potongan_keterangan: potonganKeterangan || null,
   });
   return { data, error };
 }
 
-/** Tandai TTF diterima customer via RPC mark_ttf_received. Returns { data: ttfId, error }. */
-export async function markTtfReceived({ invoiceId, receivedBy, ttfNo = null, notes = null }) {
+/** Tandai TTF diterima customer via RPC mark_ttf_received. Returns { data: ttfId, error }.
+ *  ttfDate -- AR Tahap 3: tanggal TTF SUNGGUHAN (dasar due_date), terpisah
+ *  dari tanggal_menerima (kapan dicatat ke Nexus). RPC menolak kalau NULL. */
+export async function markTtfReceived({ invoiceId, receivedBy, ttfNo = null, notes = null, ttfDate = null }) {
   const { data, error } = await supabase.rpc('mark_ttf_received', {
     p_invoice_id:  invoiceId,
     p_received_by: receivedBy,
     p_ttf_no:      ttfNo || null,
     p_notes:       notes || null,
+    p_ttf_date:    ttfDate || null,
   });
   return { data, error };
 }
 
-/** Riwayat pembayaran satu invoice, terbaru dulu. */
+/** Riwayat pembayaran satu invoice, terbaru dulu. `created_by` TANPA FK ke
+ *  profiles (pola sama dengan invoice_notes/signed_date_filled_by) -- nama
+ *  penulis diresolusi lewat namaPelaku(), dua langkah, bukan embed PostgREST. */
 export async function getPaymentHistory(invoiceId) {
   const { data, error } = await supabase
     .from('sp_payments')
-    .select('id, payment_date, amount, pph, reference, bukti_potong_url, bukti_potong_no, created_at')
+    .select('id, payment_date, amount, pph, potongan_lain, potongan_keterangan, reference, bukti_potong_url, bukti_potong_no, created_by, created_at')
     .eq('invoice_id', invoiceId)
     .order('payment_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(1000);
-  return { data: data || [], error };
+  if (error) return { data: [], error };
+  const nama = await namaPelaku((data || []).map((p) => p.created_by));
+  return { data: (data || []).map((p) => ({ ...p, pencatat: nama[p.created_by] || '' })), error: null };
 }
 
 // Status TTF satu invoice. `ar_ttfs` TIDAK punya UNIQUE di invoice_id, jadi
 // secara teori bisa >1 baris — ambil yang tertua, PERSIS sama dengan baris yang
 // dipilih RPC mark_ttf_received di dalamnya (ORDER BY created_at LIMIT 1).
+// tanggal_ttf -- AR Tahap 3: tanggal TTF sungguhan (dasar due_date), beda
+// dari tanggal_menerima (kapan dicatat ke Nexus).
 export async function getTtfStatus(invoiceId) {
   const { data, error } = await supabase
     .from('ar_ttfs')
-    .select('id, no_ttf, tanggal_menerima, diterima_oleh, notes')
+    .select('id, no_ttf, tanggal_ttf, tanggal_menerima, diterima_oleh, notes')
     .eq('invoice_id', invoiceId)
     .order('created_at', { ascending: true })
     .limit(1)

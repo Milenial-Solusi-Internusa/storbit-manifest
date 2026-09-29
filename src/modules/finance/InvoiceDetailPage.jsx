@@ -33,7 +33,7 @@ import { getTodayWIB, fmtRelativeWIB, fmtDateTimeWIB } from '../../lib/dateUtils
 import useInvoiceWorkflow from './useInvoiceWorkflow';
 import {
   STATUS_LABEL, STATUS_TAG, INVOICE_STEPS, stepIndexOf,
-  filterInvoices, isOverdue,
+  filterInvoices, isOverdue, dueDateText,
 } from './invoiceStatus.js';
 import {
   Crumbs, Btn, MoreMenu, RecordNav, Stepper, Panel, MetaRow, TabBar, TabBtn,
@@ -267,7 +267,11 @@ export default function InvoiceDetailPage({
   const panelTtf = () => setPanel({
     kicker: 'Tanda Terima Faktur', title: wf.ttf?.no_ttf || '(tanpa nomor)',
     rows: [
-      ['Tanggal diterima', fmtDate(wf.ttf?.tanggal_menerima)],
+      // Tanggal TTF (dasar due_date, AR Tahap 3) DAN Tanggal diterima Nexus
+      // (kapan dicatat) -- DUA baris berbeda, jangan digabung: keduanya
+      // menjawab pertanyaan yang berbeda.
+      ['Tanggal TTF', fmtDate(wf.ttf?.tanggal_ttf)],
+      ['Tanggal diterima Nexus', fmtDate(wf.ttf?.tanggal_menerima)],
       ['Diterima oleh', wf.ttf?.diterima_oleh || '—'],
       ['Catatan', wf.ttf?.notes || '—'],
     ],
@@ -299,8 +303,15 @@ export default function InvoiceDetailPage({
       ['Tanggal', fmtDate(pm.payment_date)],
       ['Nominal', rp(pm.amount)],
       ['PPh dipotong', rp(pm.pph)],
+      // Potongan Lain (TD-287) -- baris hanya muncul kalau memang ada, sama
+      // pola dengan kolom lain yang bisa kosong di panel ringkas ini.
+      ...(Number(pm.potongan_lain) > 0
+        ? [['Potongan lain', `${rp(pm.potongan_lain)} — ${pm.potongan_keterangan || '(tanpa keterangan)'}`]]
+        : []),
       ['No. bukti potong', pm.bukti_potong_no || '—'],
       ['Metode', pm.method || '—'],
+      ['Dicatat oleh', pm.pencatat || '—'],
+      ['Dicatat pada', fmtDateTimeWIB(pm.created_at)],
     ],
     extra: pm.bukti_potong_url ? (
       <div style={{ marginTop: SP.s3 }}>
@@ -372,6 +383,7 @@ export default function InvoiceDetailPage({
         actor: null,
         detail: [p.payment_date ? `Tanggal bayar ${fmtDate(p.payment_date)}` : null,
                  Number(p.pph) ? `PPh ${rp(p.pph)}` : null,
+                 Number(p.potongan_lain) ? `Potongan ${rp(p.potongan_lain)}${p.potongan_keterangan ? ` (${p.potongan_keterangan})` : ''}` : null,
                  p.reference || null].filter(Boolean).join(' · ') || null,
       });
     });
@@ -496,7 +508,7 @@ export default function InvoiceDetailPage({
                 ? <>Lunas {fmtDate(wf.payments[0]?.payment_date || wf.payments[0]?.created_at)}</>
                 : inv.due_date
                   ? <>Jatuh tempo {fmtDate(inv.due_date)}{telat ? ' · lewat jatuh tempo' : ''}</>
-                  : <>Jatuh tempo belum diisi</>}
+                  : <>{dueDateText(inv)}</>}
             </span>
           </div>
         </div>
@@ -585,7 +597,7 @@ export default function InvoiceDetailPage({
                 <MetaRow label="Tanggal Invoice">{fmtDate(inv.invoice_date)}</MetaRow>
                 <MetaRow label="Jatuh Tempo">
                   <span style={{ color: telat ? C.danger : C.ink, fontWeight: telat ? 700 : 500 }}>
-                    {fmtDate(inv.due_date)}
+                    {dueDateText(inv)}
                   </span>
                 </MetaRow>
                 {/* DUA baris, bukan satu. Digabung, "NOMOR - TANGGAL" membungkus
@@ -597,12 +609,16 @@ export default function InvoiceDetailPage({
                   {wf.ttf?.no_ttf
                     ? <Ref onClick={panelTtf} title="Lihat ringkas TTF">{wf.ttf.no_ttf}</Ref>
                     : <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>
-                        {wf.ttf?.tanggal_menerima ? '—' : 'Belum ada'}
+                        {wf.ttf?.tanggal_ttf ? '—' : 'Belum ada'}
                       </span>}
                 </MetaRow>
+                {/* Tanggal TTF (dasar due_date, AR Tahap 3) -- BUKAN tanggal_menerima
+                    (kapan dicatat ke Nexus). Dua nilai berbeda sejak mark_ttf_received
+                    menerima p_ttf_date; sebelumnya keduanya kebetulan sama karena
+                    tanggal_ttf hardcode CURRENT_DATE. */}
                 <MetaRow label="Tanggal TTF">
-                  {wf.ttf?.tanggal_menerima
-                    ? <Ref mono={false} onClick={panelTtf} title="Lihat ringkas TTF">{fmtDate(wf.ttf.tanggal_menerima)}</Ref>
+                  {wf.ttf?.tanggal_ttf
+                    ? <Ref mono={false} onClick={panelTtf} title="Lihat ringkas TTF">{fmtDate(wf.ttf.tanggal_ttf)}</Ref>
                     : <span style={{ color: C.inkFaint }}>Belum ada</span>}
                 </MetaRow>
               </div>
@@ -1065,16 +1081,30 @@ export default function InvoiceDetailPage({
                 {wf.payments.length === 0 ? (
                   <Hint>Belum ada pembayaran tercatat.</Hint>
                 ) : (
-                  <TableShell head={[['Tanggal'], ['Nominal', 'right'], ['PPh', 'right'], ['Referensi']]}>
+                  <TableShell head={[
+                    ['Tanggal Bayar'], ['Diterima', 'right'], ['PPh', 'right'],
+                    ['Potongan Lain', 'right'], ['Mengurangi Tagihan', 'right'], ['Referensi'],
+                  ]}>
                     {wf.payments.map((pm) => (
                       <tr key={pm.id}>
                         <Td nowrap style={{ fontSize: 12.5 }}>{fmtDate(pm.payment_date)}</Td>
                         <Td align="right" mono nowrap style={{ fontSize: 12.5 }}>{rp(pm.amount)}</Td>
                         <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>{rp(pm.pph)}</Td>
+                        <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>
+                          {Number(pm.potongan_lain) > 0 ? rp(pm.potongan_lain) : '—'}
+                        </Td>
+                        <Td align="right" mono nowrap style={{ fontSize: 12.5, fontWeight: 600 }}>
+                          {rp((Number(pm.amount) || 0) + (Number(pm.pph) || 0) + (Number(pm.potongan_lain) || 0))}
+                        </Td>
+                        {/* Referensi kosong -> strip, BUKAN tanggal (dulu fallback ke
+                            fmtDate(pm.payment_date) di sini -- salah tempat, tanggal
+                            sudah punya kolomnya sendiri). Info pendukung (nomor +
+                            tautan bukti potong, "Dicatat siapa, kapan") ada di panel
+                            ringkas lewat klik -- lihat panelBayar. */}
                         <Td style={{ fontSize: 12.5 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
-                              {pm.reference || fmtDate(pm.payment_date)}
+                              {pm.reference || '—'}
                             </Ref>
                             {pm.bukti_potong_url && (
                               <a
@@ -1145,6 +1175,30 @@ export default function InvoiceDetailPage({
                     )}
                     <span style={{ fontSize: 11, color: C.inkFaint }}>Saran otomatis, sesuaikan dengan bukti potong asli.</span>
                   </ModalField>
+                  <ModalField label="Potongan Lain (Rp)">
+                    {/* TD-287 -- potongan di luar kas & PPh (mis. biaya TTF
+                        Indomarco ~Rp 2.900/TTF). Keterangan WAJIB kalau nilainya
+                        > 0, ditegakkan di sini DAN di record_payment (pengaman
+                        utama tetap di RPC). */}
+                    <ModalInp
+                      type="text" inputMode="decimal" value={wf.payPotonganText}
+                      disabled={!wf.canRecordPayment}
+                      {...wf.payPotonganHandlers}
+                    />
+                    {wf.payPotonganBad && (
+                      <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+                    )}
+                  </ModalField>
+                  <ModalField label="Keterangan Potongan" req={Number(wf.payForm.potonganLain) > 0}>
+                    <ModalInp
+                      placeholder="Contoh: Biaya TTF Indomarco"
+                      value={wf.payForm.potonganKeterangan} disabled={!wf.canRecordPayment}
+                      onChange={(e) => wf.setPayForm((f) => ({ ...f, potonganKeterangan: e.target.value }))}
+                    />
+                    {Number(wf.payForm.potonganLain) > 0 && !wf.payForm.potonganKeterangan.trim() && (
+                      <span style={{ fontSize: 11, color: C.danger }}>Wajib diisi kalau ada potongan lain</span>
+                    )}
+                  </ModalField>
                   <ModalField label="Link Bukti Potong">
                     <ModalInp
                       type="url" placeholder="https://drive.google.com/…" value={wf.payForm.buktiUrl}
@@ -1162,7 +1216,10 @@ export default function InvoiceDetailPage({
                 <div style={{ display: 'flex', gap: SP.s2, marginTop: SP.s3, flexWrap: 'wrap' }}>
                   <Btn
                     variant="primary" icon={Wallet} onClick={wf.handleRecordPayment}
-                    disabled={!wf.canRecordPayment || wf.paySaving || !(Number(wf.payForm.amount) > 0)}
+                    disabled={
+                      !wf.canRecordPayment || wf.paySaving || !(Number(wf.payForm.amount) > 0)
+                      || (Number(wf.payForm.potonganLain) > 0 && !wf.payForm.potonganKeterangan.trim())
+                    }
                     title={wf.canRecordPayment ? undefined : ALASAN_BAYAR}
                   >
                     {wf.paySaving ? 'Menyimpan…' : 'Catat Pembayaran'}
@@ -1188,7 +1245,8 @@ export default function InvoiceDetailPage({
             ) : (wf.ttf?.tanggal_menerima && !wf.ttfEditing) ? (
               <>
                 <MetaRow label="No. TTF" mono>{wf.ttf.no_ttf || '—'}</MetaRow>
-                <MetaRow label="Tanggal diterima">{fmtDate(wf.ttf.tanggal_menerima)}</MetaRow>
+                <MetaRow label="Tanggal TTF">{fmtDate(wf.ttf.tanggal_ttf)}</MetaRow>
+                <MetaRow label="Tanggal diterima Nexus">{fmtDate(wf.ttf.tanggal_menerima)}</MetaRow>
                 <MetaRow label="Diterima oleh">{wf.ttf.diterima_oleh || '—'}</MetaRow>
                 {wf.ttf.notes && <MetaRow label="Catatan">{wf.ttf.notes}</MetaRow>}
               </>
@@ -1208,6 +1266,16 @@ export default function InvoiceDetailPage({
                       onChange={(e) => wf.setTtfForm((f) => ({ ...f, receivedBy: e.target.value }))}
                     />
                   </ModalField>
+                  {/* Tanggal TTF (AR Tahap 3) -- dasar due_date, WAJIB diisi.
+                      Beda dari Tanggal Bayar: tanpa saran hari ini otomatis
+                      di RPC kecuali field ini dikosongkan (mulaiEditTtf sudah
+                      prefill hari ini untuk pencatatan pertama). */}
+                  <ModalField label="Tanggal TTF" req>
+                    <ModalInp
+                      type="date" value={wf.ttfForm.ttfDate} disabled={!wf.canMarkTtf}
+                      onChange={(e) => wf.setTtfForm((f) => ({ ...f, ttfDate: e.target.value }))}
+                    />
+                  </ModalField>
                   <ModalField label="No. TTF">
                     <ModalInp
                       value={wf.ttfForm.ttfNo} disabled={!wf.canMarkTtf}
@@ -1224,7 +1292,7 @@ export default function InvoiceDetailPage({
                 <div style={{ display: 'flex', gap: SP.s2, marginTop: SP.s3, flexWrap: 'wrap' }}>
                   <Btn
                     variant="primary" icon={Check} onClick={wf.handleMarkTtf}
-                    disabled={!wf.canMarkTtf || wf.ttfSaving || !wf.ttfForm.receivedBy.trim()}
+                    disabled={!wf.canMarkTtf || wf.ttfSaving || !wf.ttfForm.receivedBy.trim() || !wf.ttfForm.ttfDate}
                   >
                     {wf.ttfSaving ? 'Menyimpan…' : (wf.ttf?.tanggal_menerima ? 'Simpan Perubahan' : 'Tandai TTF Diterima')}
                   </Btn>

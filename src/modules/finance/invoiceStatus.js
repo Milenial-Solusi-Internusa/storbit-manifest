@@ -9,7 +9,7 @@
 //
 // Konstanta polos saja (nol JSX) supaya ramah Fast-Refresh -- pola yang sama
 // dengan spDetailTokens.js dan src/kit/tokens.js.
-import { TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN } from '../logistics/spDetailTokens.js';
+import { TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN, fmtDate } from '../logistics/spDetailTokens.js';
 
 // Label Indonesia yang dipakai SELURUH permukaan AR (keputusan Den 25 Sep 2026).
 // `submitted` sengaja panjang: "Submitted" tak memberi tahu siapa pun APA yang
@@ -130,4 +130,16 @@ export function isOverdue(row, todayIso) {
   if (!row?.due_date) return false;
   if (!OPEN_STATUSES.includes(row.status)) return false;
   return String(row.due_date) < String(todayIso);
+}
+
+// AR Tahap 3: due_date sekarang HANYA lahir dari mark_ttf_received (TTF +
+// termin), bukan lagi dari invoice_date saat submit/terbit -- jadi due_date
+// NULL di luar draft/void berarti "TTF belum dicatat", bukan "belum sempat
+// dihitung". draft/void TIDAK pernah relevan (invoice belum jadi/batal), jadi
+// keduanya tetap strip -- satu-satunya perubahan adalah status LAIN (issued,
+// submitted, partial, paid) yang due_date-nya NULL kini menyebut TTF secara
+// eksplisit, bukan "belum diisi" yang generik.
+export function dueDateText(row) {
+  if (row?.due_date) return fmtDate(row.due_date);
+  return ['draft', 'void'].includes(row?.status) ? '—' : 'Belum TTF';
 }

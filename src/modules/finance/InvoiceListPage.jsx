@@ -20,7 +20,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { getTodayWIB } from '../../lib/dateUtils';
 import {
   STATUS_LABEL, STATUS_LABEL_SHORT, STATUS_TAG,
-  buildListQuery, filterInvoices, isOverdue, OPEN_STATUSES,
+  buildListQuery, filterInvoices, isOverdue, OPEN_STATUSES, dueDateText,
 } from './invoiceStatus.js';
 import {
   PageHead, Btn, StatCard, TabBar, TabBtn, TableShell, Td, Notice, Hint, Empty,
@@ -223,7 +223,7 @@ export default function InvoiceListPage({ onOpenInvoice }) {
                     <Td mono nowrap style={{ color: C.inkSoft }}>{r.sp_orders?.sp_no || '—'}</Td>
                     <Td nowrap>{fmtDate(r.invoice_date)}</Td>
                     <Td nowrap style={telat ? { color: C.danger, fontWeight: 700 } : undefined}>
-                      {fmtDate(r.due_date)}
+                      {dueDateText(r)}
                     </Td>
                     <Td align="right" mono nowrap>{rp(r.total_amount)}</Td>
                     <Td align="right" mono nowrap style={{ color: sisa > 0 ? C.attn : C.inkFaint }}>

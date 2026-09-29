@@ -32,16 +32,23 @@ import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, canIssueInvoice, canRecordInvoicePayment } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
+import { rp } from '../logistics/spDetailTokens.js';
 import InvoicePDF from '../logistics/InvoicePDF';
 
 // `pph` SENGAJA TIDAK ADA di sini. Nilai PPh yang disimpan diturunkan dari
 // `pphField` di bawah -- satu sumber dengan yang TAMPIL di kolomnya. Menyimpannya
 // juga di payForm berarti dua penyimpan untuk satu angka, dan itu bentuk PERSIS
 // bug yang ditutup perubahan ini (saran tampil di layar, nol yang tercatat).
+// potonganLain/potonganKeterangan -- AR Tahap 3 (TD-287): potongan lain di
+// luar kas & PPh (mis. biaya TTF). Keduanya BOLEH langsung di payForm (beda
+// dari pph) karena nol saran otomatis yang perlu dijaga dari dobel-simpan.
 const PAY_FORM_KOSONG = () => ({
   amount: '', paymentDate: getTodayWIB(), reference: '', buktiUrl: '', buktiNo: '',
+  potonganLain: '', potonganKeterangan: '',
 });
-const TTF_FORM_KOSONG = { receivedBy: '', ttfNo: '', notes: '' };
+// ttfDate diisi ULANG saat mulaiEditTtf (prefill dari TTF yang ada, atau hari
+// ini untuk pencatatan pertama) -- '' di sini cuma nilai kosong awal render.
+const TTF_FORM_KOSONG = { receivedBy: '', ttfNo: '', notes: '', ttfDate: '' };
 
 /**
  * @param {object}   p
@@ -65,7 +72,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
   const [ttfForm,    setTtfForm]    = useState(TTF_FORM_KOSONG);
   const [ttfEditing, setTtfEditing] = useState(false);
 
-  // ── Buffer TEKS dua kolom uang + nilai PPh EFEKTIF ────────────────────────
+  // ── Buffer TEKS tiga kolom uang + nilai PPh EFEKTIF ───────────────────────
   // Buffer teks dipisah dari nilai kanonik: `payForm.amount` tetap STRING
   // NUMERIK ('1766050') supaya `Number(payForm.amount)` di handleRecordPayment
   // dan di gate tombol tidak perlu disentuh. Kalau teks berformat disimpan di
@@ -74,6 +81,10 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
   const [payAmountBad,  setPayAmountBad]  = useState(false);
   const [payPphText,    setPayPphText]    = useState('');
   const [payPphBad,     setPayPphBad]     = useState(false);
+  // Potongan lain (TD-287) -- pola SAMA dengan payAmountText, bukan dgn PPh:
+  // nol saran otomatis, jadi nol kebutuhan buffer "touched" terpisah.
+  const [payPotonganText, setPayPotonganText] = useState('');
+  const [payPotonganBad,  setPayPotonganBad]  = useState(false);
 
   // Saran PPh 23 = 2% x ongkir invoice, DIKURANGI PPh yang sudah tercatat.
   // Suku ongkir = total_amount - dpp - ppn (definisi v_total_amount di
@@ -103,7 +114,17 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     : { text: formatIdNumber(pphSuggestion), value: pphSuggestion }
   ), [pphTouched, payPphText, pphSuggestion]);
 
-  // Satu pola untuk kedua kolom: teks mentah saat mengetik, format saat blur,
+  // Sisa tagihan = total_amount - Sigma(amount + pph + potongan_lain). TIDAK
+  // di-clamp ke nol: kalau tercatat lebih bayar, angkanya sengaja tampil
+  // negatif. ⛔ WAJIB dideklarasikan DI ATAS handleRecordPayment (dipakai
+  // sebagai dependency-nya, dan sebagai basis guard pra-kirim TD-285/286) --
+  // pola yang SAMA dengan pphField di atas; menaruhnya di bawah adalah kelas
+  // TDZ yang sama yang pernah menabrak winRateDegraded (9 Sep 2026).
+  const paidSettled = payments.reduce((sum, p) =>
+    sum + (Number(p.amount) || 0) + (Number(p.pph) || 0) + (Number(p.potongan_lain) || 0), 0);
+  const sisaTagihan = (Number(invoice?.total_amount) || 0) - paidSettled;
+
+  // Satu pola untuk ketiga kolom: teks mentah saat mengetik, format saat blur,
   // teks tak dikenali DIBIARKAN di kolomnya + pesan inline (nilai kanonik 0).
   // onBlur membaca BUFFER, bukan e.target.value -- untuk kolom PPh yang belum
   // disentuh, DOM menampilkan teks saran sementara buffernya masih '', jadi
@@ -129,8 +150,9 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     // ketikan tetap MENIMPA nilai lama, bukan ter-append.
     onFocus: (e) => e.target.select(),
   });
-  const payAmountHandlers = buatHandlerUang(payAmountText, setPayAmountText, setPayAmountBad, 'amount');
-  const payPphBase        = buatHandlerUang(payPphText,    setPayPphText,    setPayPphBad,    null);
+  const payAmountHandlers   = buatHandlerUang(payAmountText,   setPayAmountText,   setPayAmountBad,   'amount');
+  const payPotonganHandlers = buatHandlerUang(payPotonganText, setPayPotonganText, setPayPotonganBad, 'potonganLain');
+  const payPphBase          = buatHandlerUang(payPphText,      setPayPphText,      setPayPphBad,      null);
   // `pphTouched` = penanda "user sudah mengambil alih kolom ini". Sebelum
   // disentuh, yang berlaku (TAMPIL dan TERSIMPAN) adalah saran.
   const payPphHandlers    = {
@@ -182,6 +204,28 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     if (!invoiceId || paySaving) return;
     const amt = Number(payForm.amount) || 0;
     if (amt <= 0) { showToast?.('Nominal pembayaran harus lebih besar dari nol', 'error'); return; }
+    const potonganLain = Number(payForm.potonganLain) || 0;
+    const potonganKeterangan = payForm.potonganKeterangan.trim();
+    if (potonganLain > 0 && !potonganKeterangan) {
+      showToast?.('Keterangan potongan wajib diisi kalau ada potongan lain', 'error');
+      return;
+    }
+
+    // Guard PRA-KIRIM (TD-285/286) -- pesan dini di FE, mencerminkan cap yang
+    // SAMA dengan record_payment (toleransi Rp1, TD-294), supaya user tidak
+    // menunggu round-trip server untuk kesalahan yang sudah terlihat di sini.
+    // Pengaman UTAMA tetap di RPC -- ini tidak menggantikannya.
+    const sisaSebelum = Math.max(sisaTagihan, 0);
+    if (pphField.value > sisaTagihan + 1) {
+      showToast?.(`PPh 23 (${rp(pphField.value)}) melebihi sisa tagihan (${rp(sisaSebelum)})`, 'error');
+      return;
+    }
+    const totalBayarIni = amt + pphField.value + potonganLain;
+    if (totalBayarIni > sisaTagihan + 1) {
+      showToast?.(`Total pembayaran (${rp(totalBayarIni)}) melebihi sisa tagihan (${rp(sisaSebelum)})`, 'error');
+      return;
+    }
+
     setPaySaving(true);
     const { error } = await recordPayment({
       invoiceId,
@@ -191,9 +235,11 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
       // Nilai yang TAMPIL di kolom PPh, bukan state terpisah. Sebelum ini
       // `Number(payForm.pph) || 0` mengirim 0 setiap kali user tidak menyentuh
       // kolomnya -- padahal layar menunjukkan angka saran (bug SP 2031966).
-      pph:            pphField.value,
-      buktiPotongUrl: payForm.buktiUrl.trim() || null,
-      buktiPotongNo:  payForm.buktiNo.trim() || null,
+      pph:                pphField.value,
+      buktiPotongUrl:     payForm.buktiUrl.trim() || null,
+      buktiPotongNo:      payForm.buktiNo.trim() || null,
+      potonganLain,
+      potonganKeterangan: potonganKeterangan || null,
     });
     if (error) {
       setPaySaving(false);
@@ -205,23 +251,26 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     setPayments(data || []);
     setPayForm(PAY_FORM_KOSONG());
     setPphTouched(false);
-    // Buffer teks kedua kolom ikut direset -- kalau tidak, angka pembayaran
+    // Buffer teks ketiga kolom ikut direset -- kalau tidak, angka pembayaran
     // sebelumnya tetap terbaca di kolomnya walau payForm sudah kosong.
-    setPayAmountText(''); setPayAmountBad(false);
-    setPayPphText('');    setPayPphBad(false);
+    setPayAmountText('');   setPayAmountBad(false);
+    setPayPphText('');      setPayPphBad(false);
+    setPayPotonganText(''); setPayPotonganBad(false);
     setPaySaving(false);
     showToast?.('Pembayaran dicatat', 'success');
-  }, [invoiceId, paySaving, payForm, pphField, showToast, onChanged]);
+  }, [invoiceId, paySaving, payForm, pphField, sisaTagihan, showToast, onChanged]);
 
   const handleMarkTtf = useCallback(async () => {
     if (!invoiceId || ttfSaving) return;
     if (!ttfForm.receivedBy.trim()) { showToast?.('Nama penerima wajib diisi', 'error'); return; }
+    if (!ttfForm.ttfDate) { showToast?.('Tanggal TTF wajib diisi', 'error'); return; }
     setTtfSaving(true);
     const { error } = await markTtfReceived({
       invoiceId,
       receivedBy: ttfForm.receivedBy.trim(),
       ttfNo:      ttfForm.ttfNo.trim() || null,
       notes:      ttfForm.notes.trim() || null,
+      ttfDate:    ttfForm.ttfDate,
     });
     if (error) {
       setTtfSaving(false);
@@ -267,12 +316,15 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
 
   /** Masuk mode ubah TTF dengan data yang ada sebagai prefill. RPC
    *  mark_ttf_received sudah upsert (IF v_ttf_id IS NULL → INSERT, ELSE →
-   *  UPDATE), jadi submit yang sama memperbarui baris, bukan bikin TTF kedua. */
+   *  UPDATE), jadi submit yang sama memperbarui baris, bukan bikin TTF kedua.
+   *  ttfDate -- AR Tahap 3: prefill dari tanggal_ttf yang ADA (koreksi), atau
+   *  hari ini untuk pencatatan PERTAMA (pola sama dengan Tanggal Bayar). */
   const mulaiEditTtf = useCallback(() => {
     setTtfForm({
       receivedBy: ttf?.diterima_oleh || '',
       ttfNo:      ttf?.no_ttf || '',
       notes:      ttf?.notes || '',
+      ttfDate:    ttf?.tanggal_ttf || getTodayWIB(),
     });
     setTtfEditing(true);
   }, [ttf]);
@@ -281,14 +333,6 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     setTtfEditing(false);
     setTtfForm(TTF_FORM_KOSONG);
   }, []);
-
-  // Sisa tagihan = total_amount - Sigma(amount + pph). TIDAK di-clamp ke nol:
-  // kalau tercatat lebih bayar, angkanya sengaja tampil negatif.
-  const paidSettled = payments.reduce((sum, p) => sum + (Number(p.amount) || 0) + (Number(p.pph) || 0), 0);
-  const sisaTagihan = (Number(invoice?.total_amount) || 0) - paidSettled;
-  // `totalOngkirInv` + `pphSuggestion` DIPINDAH KE ATAS (dekat state form
-  // Pembayaran) -- handleRecordPayment memakainya lewat `pphField`, dan itu wajib
-  // dideklarasikan sebelum useCallback-nya.
 
   const invStatus = invoice?.status || null;
   const bisaBayarSekarang  = ['issued', 'submitted', 'partial'].includes(invStatus);
@@ -303,6 +347,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     // kolom uang: teks tampilan + penanda "tak dikenali" + handler siap-pakai
     pphField, payAmountText, payAmountBad, payPphBad,
     payAmountHandlers, payPphHandlers,
+    payPotonganText, payPotonganBad, payPotonganHandlers,
     ttfForm, setTtfForm, ttfEditing, mulaiEditTtf, batalEditTtf,
     // status kerja
     invoiceSaving, invoicePdfBusy, paySaving, ttfSaving,
