@@ -41,6 +41,30 @@ Empat prinsip ini menurunkan seluruh keputusan di dokumen ini. Kalau nanti ada u
 | D6 | `btb_date` diisi **saat input BTB**, bukan saat menerbitkan invoice. |
 | D7 | BTB lama yang `btb_date`-nya kosong **diisi mundur**. Cakupan dan sumbernya di §11.2. |
 
+### Keputusan & aturan bisnis yang TERKONFIRMASI (28-29 Sep 2026, dari rekonsiliasi AR Storbit)
+
+> Ditambahkan doc-keeper 29 Sep 2026. Keempat butir di bawah **bukan usulan** — semuanya dipakai sebagai dasar tujuh berkas migrasi koreksi data yang sudah LIVE di produksi 28-29 Sep (`PROGRESS.md` 2026-09-28 & 2026-09-29). Angka SP/invoice = laporan sesi; rumus & lokasi kode diverifikasi doc-keeper.
+
+| # | Aturan | Konsekuensi yang sudah terbukti |
+|---|---|---|
+| **D9** | **Ongkir levelnya PER SP** — satu ongkir per SP di dokumen Indomarco. Di Nexus ia **disimpan per item** (`shipping_price` di `sp_order_items` **dan** `sp_items`), dengan kebiasaan diisi di satu baris saja. | Ketidakcocokan level ini melahirkan dua pola data salah sekaligus: **ongkir dobel di harga satuan (65 baris)** dan **ongkir kosong padahal dibayar (24 baris)**. Setiap koreksi wajib menyentuh **dua tabel**. → **TD-288** · bentuk perbaikan **Keputusan Terbuka #65** |
+| **D10** | **PPN berlaku juga atas ongkir** (rumus resmi "Opsi B"), dan **PPh 23 sebesar 2% atas ONGKIR** — bukan atas total invoice — dipotong Indomarco. | ⛔ PPN dihitung **`ROUND((DPP + ongkir) × 0,11)` per baris, BARU dijumlahkan** — bukan `round(Σ)` — karena itulah yang dilakukan `create_invoice`; `calcItem()` (`src/lib/spCalc.js:17-24`) mencerminkannya persis. **Jangan "dirapikan"** ke satu pembulatan di akhir: invoice yang sudah terbit tak lagi bisa direproduksi. Batas atas PPh yang benar kemungkinan `2% × ongkir` — hari ini **nol validasi** di FE maupun RPC (**TD-286**) |
+| **D11** | Indomarco memotong biaya **±2.900 per TTF**, dan **membayar per BTB**. | `record_payment` hanya mengenal `amount` + `pph` sebagai pelunas, sehingga potongan TTF tak punya tempat → invoice tertahan `partial` dengan sisa ±2.900 walau Finance mencatatnya lunas (SP 2031966 + mayoritas 23 baris ADJUST tahap 8). → **TD-287**. ⛔ **Jangan ditambal dengan menaikkan `c_tolerance`** (toleransi 1 rupiah itu penjaga pembulatan, bukan tempat menyembunyikan potongan) |
+| **D12** | **Urutan kepercayaan sumber data keuangan: (1) mutasi rekening → (2) file AR STORBIT Finance sheet 2026 → (3) rekap outstanding.** | Rekap outstanding **terbukti salah beberapa kali**: nomor SP tertukar, nilai BTB salah, BTB dobel. ⛔ **Impor pembayaran ke depan WAJIB memakai AR Finance, bukan rekap outstanding** — tahap 8 sudah mengikuti ini secara eksplisit. → `03_DATA_MODEL.md` gotcha **#42** |
+
+**Hasil rekonsiliasi per 29 Sep 2026:** **421 dari 465 SP cocok persis dengan AR Finance** *(laporan sesi)*. **44 SP sisanya belum selesai** — dikirim sebagai PDF *"Daftar Cek Rekonsiliasi SP Storbit"* ke Finance & Gudang 29 Sep 2026, **menunggu konfirmasi** → **Keputusan Terbuka #64**. ⛔ Jangan dibaca sebagai rekonsiliasi tuntas, dan jangan pakai "421/465" sebagai KPI selesai: penyebutnya populasi SP di Nexus, bukan populasi order Finance (kerabat temuan 7 Sep 2026 #38/#39 — kedua sistem bisa mengukur objek berbeda).
+
+### Pola koreksi data produksi yang disepakati (28-29 Sep 2026)
+
+> Berlaku untuk koreksi data produksi **berikutnya**, bukan sekadar riwayat tujuh berkas tahap 2–8. Diverifikasi doc-keeper dari isi berkas migrasinya.
+
+1. **Tabel cadangan menyimpan nilai lama DAN baru** — satu per tahap (12 tabel `backfill_*`, daftar di `PROGRESS.md` 2026-09-29 butir 8), ber-RLS + `REVOKE ALL … FROM anon, authenticated`.
+2. **UPDATE hanya kena kalau nilai di DB masih sama persis** dengan nilai lama di tabel cadangan — bukan `WHERE id = …` telanjang. Ini yang membuat migrasi **tidak bisa** menimpa perubahan yang terjadi di antara draft dan eksekusi.
+3. **Jumlah baris terdampak dicek, dan seluruh transaksi DIBATALKAN kalau meleset** (`RAISE EXCEPTION`). ⭐ Header tahap 2 memperlakukan kegagalan di staging sebagai **bukti pengamannya bekerja**, bukan sebagai gangguan: di staging blok itu sengaja gagal di pengecekan pertama (*"0 dari 94"*) dan membatalkan semuanya.
+4. **Jurnal lama TIDAK diubah.** Koreksi selalu lewat **jurnal penyesuaian bertanggal hari eksekusi**, dan jurnalnya wajib seimbang — konsisten dengan COMMENT tabel `journal_entries`: *"Koreksi = jurnal pembalik, bukan UPDATE"*. ⚠️ Inilah yang memaksa constraint `journal_entries_reference_type_check` diperluas dengan **`'invoice_adjustment'`** (`20260928000002:26-28`, LIVE 28 Sep) — **satu-satunya perubahan STRUKTUR DB** dari seluruh seri, dan karenanya `schema_snapshot.sql` kini basi di titik itu.
+5. **Status invoice HANYA dinaikkan, tak pernah diturunkan** (toleransi 1 rupiah, sama dengan `record_payment`).
+6. **Pengaman diuji di staging dulu.**
+
 ---
 
 ## 2. Diagnosa Struktural
