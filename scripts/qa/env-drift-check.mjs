@@ -133,9 +133,21 @@ const DIKETAHUI = [
       // tabel barunya belum ada di produksi.
       || /^(create_invoice_for_sp|create_invoice|record_payment|submit_invoice|generate_delivery_from_picking|set_delivery_signed_date|sp_invoice_readiness|sp_invoice_readiness_all|get_mapped_account|mark_delivery_delivered)\(/.test(hakFungsi(kat, kunci) || '')
       || /^(account_role_mappings|sp_invoices_due_date_backfill_20260927)$/.test(hakTabel(kat, kunci) || ''),
+    // [KOREKSI 29 Sep 2026] "produksi belum" DULU berlaku untuk seluruh daftar di
+    // atas. Itu TIDAK lagi benar untuk create_invoice dan create_invoice_for_sp:
+    // PRODUKSI punya generasi 23 Sep 2026 dari keduanya (tanda tangan 2-argumen,
+    // overload 1-argumen sudah di-DROP) -- tercatat di migrasi retroaktif
+    // 20260923000001_invoice_historis_retroaktif.sql. Yang ada di staging adalah
+    // generasi v2 (seri invoice v2 develop, 20260925..20260928). Jadi untuk kedua
+    // fungsi itu yang berbeda BUKAN "ada vs tidak ada" melainkan ISInya, dan beda
+    // isi itu MEMANG DIHARAPKAN sampai hari launching.
+    //
+    // Tetap SATU entri ANTRE (keputusan Den 29 Sep 2026): keduanya masih menunggu
+    // hari launching yang sama, dan memecahnya jadi dua entri akan membuat daftar
+    // "apa yang masih menggantung" lebih sulit dibaca, bukan lebih mudah.
     kelas: 'antre',
     butir: '6-9, 11-14',
-    alasan: 'AR Tahap 1/2 menunggu hari launching -- LIVE staging, produksi belum, dan urutannya mengikat',
+    alasan: 'AR Tahap 1/2 menunggu hari launching -- urutannya mengikat. Untuk create_invoice & create_invoice_for_sp yang berbeda adalah ISI, bukan keberadaan: produksi punya generasi 23 Sep 2026 (migrasi retroaktif 20260923000001), staging punya v2 (seri invoice v2) -- beda isi DIHARAPKAN sampai launching. Sisanya: LIVE staging, produksi belum',
   },
   {
     kelas: 'selamanya',
@@ -164,6 +176,34 @@ const DIKETAHUI = [
     kelas: 'antre',
     butir: '16-26',
     alasan: 'Invoice lengkap ala Odoo + seam invoice MSI (20260928000001..11) -- LIVE staging, produksi belum, urutannya mengikat',
+  },
+  {
+    // 12 tabel cadangan koreksi data ongkir/AR (tahap 2-8, 28-29 Sep 2026,
+    // migrasi 20260928000001..04 + 20260929000001..03). HANYA DI PRODUCTION,
+    // dan memang tidak perlu ada di staging: isinya jejak nilai lama/baru dari
+    // koreksi yang DIJALANKAN DI PRODUKSI. Menyalinnya ke staging tidak
+    // menambah informasi apa pun, dan justru membuat staging mengaku punya
+    // riwayat koreksi yang tidak pernah terjadi di sana.
+    //
+    // ARAHNYA KEBALIKAN entri ANTRE di atas: yang lain "staging dulu, produksi
+    // menyusul"; ini "produksi saja, selamanya". Karena itu kelasnya
+    // `selamanya`, bukan `antre` -- tidak ada hari launching yang akan
+    // menyamakannya.
+    //
+    // Daftarnya SENGAJA TERTUTUP (nama ber-tanggal, dienumerasi satu-satu):
+    // koreksi data berikutnya akan lahir dengan tanggal baru dan MUNCUL sebagai
+    // DRIFT sampai sengaja ditambahkan di sini. Itu yang diinginkan -- pola
+    // `backfill_*` yang terbuka akan menelan tabel cadangan apa pun di masa
+    // depan tanpa seorang pun memutuskannya.
+    kelas: 'selamanya',
+    cocok: (kat, kunci) => {
+      const T = /^backfill_(invoice_fix|invoice_line_fix|ongkir_fix|tahap4_invoice|tahap4_invoice_line|tahap4_items|tahap5)_20260928$|^backfill_(tahap6|tahap7_invoice|tahap7_invoice_line|tahap7_items|tahap8)_20260929$/;
+      return (kat === 'kolom'   && T.test(kunci))
+        ||   (kat === 'policy'  && T.test(kunci.split('.')[0]))
+        ||   (kat === 'trigger' && T.test(kunci.split('.')[0]))
+        ||   T.test(hakTabel(kat, kunci) || '');
+    },
+    alasan: '12 tabel cadangan koreksi ongkir/AR tahap 2-8 (28-29 Sep 2026) -- HANYA DI PRODUCTION: jejak nilai lama/baru koreksi yang dijalankan di produksi, tidak perlu dan tidak boleh disamakan ke staging',
   },
   {
     // [KOREKSI 27 Sep 2026] Penanda ini dulu berbunyi "skrip ini tidak membaca
