@@ -39,7 +39,7 @@ import {
 } from './financeKit.jsx';
 import {
   C, FONT_DISPLAY, FONT_MONO, SP, RADIUS, kickerStyle, thStyle,
-  rp, fmtDate, selectOnFocus,
+  rp, fmtDate,
 } from '../logistics/spDetailTokens.js';
 import { Badge, ModalField, ModalInp } from '../logistics/spDetailKit.jsx';
 
@@ -1085,11 +1085,18 @@ export default function InvoiceDetailPage({
                 )}
                 <FormGrid>
                   <ModalField label="Nominal (Rp)" req>
+                    {/* type=text, BUKAN number: <input type="number"> tidak bisa menerima
+                        pemisah ribuan id-ID -- "1.766.050" terbaca 1,766 lalu dibulatkan
+                        kolom numeric(18,2) jadi 1.77, SEJUTA KALI lebih kecil tanpa error.
+                        Parsing + format lewat helper bersama src/lib/numberFormat.js. */}
                     <ModalInp
-                      type="number" value={wf.payForm.amount} onFocus={selectOnFocus}
+                      type="text" inputMode="decimal" value={wf.payAmountText}
                       disabled={!wf.canRecordPayment}
-                      onChange={(e) => wf.setPayForm((f) => ({ ...f, amount: e.target.value.replace(/^0+(?=\d)/, '') }))}
+                      {...wf.payAmountHandlers}
                     />
+                    {wf.payAmountBad && (
+                      <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+                    )}
                   </ModalField>
                   <ModalField label="Tanggal Bayar">
                     <ModalInp
@@ -1104,12 +1111,18 @@ export default function InvoiceDetailPage({
                     />
                   </ModalField>
                   <ModalField label="PPh 23 (Rp)">
-                    {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi. */}
+                    {/* Teks DAN nilai simpan datang dari `wf.pphField` yang SAMA, jadi yang
+                        tampil di sini persis yang masuk ke record_payment. ⛔ JANGAN
+                        kembalikan ternary ke sini -- memisahkannya lagi membuka ulang bug
+                        "saran tampil, nol tersimpan" (SP 2031966, PPh 46.000 hilang). */}
                     <ModalInp
-                      type="number" onFocus={selectOnFocus} disabled={!wf.canRecordPayment}
-                      value={wf.pphTouched ? wf.payForm.pph : (wf.payForm.pph || String(wf.pphSuggestion))}
-                      onChange={(e) => { wf.setPphTouched(true); wf.setPayForm((f) => ({ ...f, pph: e.target.value })); }}
+                      type="text" inputMode="decimal" disabled={!wf.canRecordPayment}
+                      value={wf.pphField.text}
+                      {...wf.payPphHandlers}
                     />
+                    {wf.payPphBad && (
+                      <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
+                    )}
                     <span style={{ fontSize: 11, color: C.inkFaint }}>Saran otomatis, sesuaikan dengan bukti potong asli.</span>
                   </ModalField>
                   <ModalField label="Link Bukti Potong">
