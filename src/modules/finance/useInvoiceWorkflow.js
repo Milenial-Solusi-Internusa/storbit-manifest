@@ -277,6 +277,13 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
       showToast?.(error.message || 'Gagal menandai TTF', 'error');
       return;
     }
+    // mark_ttf_received bisa mengubah due_date (AR Tahap 3) -- itu kolom pada
+    // baris INVOICE, bukan pada wf.ttf, jadi memuat ulang wf.ttf saja (di bawah)
+    // tidak cukup. Tanpa onChanged(), header/MetaRow Jatuh Tempo di halaman
+    // (yang membaca `inv.due_date` milik induk) tetap menampilkan nilai lama
+    // sampai halaman di-reload. Pola sama dengan handleSubmitInvoice/
+    // handleRecordPayment.
+    await onChanged?.();
     const { data } = await getTtfStatus(invoiceId);
     setTtf(data || null);
     setTtfForm(TTF_FORM_KOSONG);
@@ -288,7 +295,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
     // `ttf` di sini masih nilai LAMA (setTtf di atas belum ter-commit), jadi ia
     // persis menjawab "sebelumnya sudah ada atau belum".
     showToast?.(ttf?.tanggal_menerima ? 'TTF diperbarui' : 'TTF ditandai diterima', 'success');
-  }, [invoiceId, ttfSaving, ttfForm, ttf, showToast]);
+  }, [invoiceId, ttfSaving, ttfForm, ttf, showToast, onChanged]);
 
   const handleInvoicePdf = useCallback(async (variant) => {
     if (!invoiceId) return;

@@ -389,7 +389,12 @@ export default function InvoiceDetailPage({
     });
     if (wf.ttf?.tanggal_menerima) {
       out.push({
-        key: 'ttf', at: wf.ttf.tanggal_menerima, icon: Stamp,
+        // waktu KEJADIAN di lini masa = created_at (timestamptz, kapan baris
+        // dicatat), BUKAN tanggal_menerima/tanggal_ttf (keduanya `date` tanpa
+        // jam -- Date("YYYY-MM-DD") dibaca tengah malam UTC, yang di WIB
+        // (UTC+7) selalu tampak "12 jam lalu" untuk TTF yang baru saja dicatat
+        // hari yang sama).
+        key: 'ttf', at: wf.ttf.created_at, icon: Stamp,
         title: 'Tanda Terima Faktur diterima',
         actor: wf.ttf.diterima_oleh || null,
         detail: [wf.ttf.no_ttf ? `No. ${wf.ttf.no_ttf}` : null, wf.ttf.notes || null]
@@ -727,7 +732,14 @@ export default function InvoiceDetailPage({
                 >
                   {wf.payments.map((pm) => (
                     <tr key={pm.id}>
-                      <Td nowrap style={{ fontSize: 12.5 }}>{fmtDate(pm.payment_date)}</Td>
+                      {/* Tautan pembuka info pendukung (panelBayar) pindah ke sini
+                          dari kolom Referensi -- strip di Referensi adalah target
+                          klik yang kecil dan membingungkan (sering kosong). */}
+                      <Td nowrap style={{ fontSize: 12.5 }}>
+                        <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
+                          {fmtDate(pm.payment_date)}
+                        </Ref>
+                      </Td>
                       <Td align="right" mono nowrap style={{ fontSize: 12.5 }}>{rp(pm.amount)}</Td>
                       <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>{rp(pm.pph)}</Td>
                       <Td align="right" mono nowrap style={{ fontSize: 12.5, color: C.inkSoft }}>
@@ -736,14 +748,12 @@ export default function InvoiceDetailPage({
                       <Td align="right" mono nowrap style={{ fontSize: 12.5, fontWeight: 600 }}>
                         {rp((Number(pm.amount) || 0) + (Number(pm.pph) || 0) + (Number(pm.potongan_lain) || 0))}
                       </Td>
-                      {/* Referensi kosong -> strip, BUKAN tanggal. Info pendukung
-                          (nomor + tautan bukti potong, "Dicatat siapa, kapan") ada
-                          di panel ringkas lewat klik -- lihat panelBayar. */}
+                      {/* Referensi -- teks biasa (isi atau strip), BUKAN tautan.
+                          Info pendukung (nomor bukti potong, "Dicatat siapa,
+                          kapan") ada di panel ringkas lewat klik Tanggal Bayar. */}
                       <Td style={{ fontSize: 12.5 }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <Ref mono={false} onClick={() => panelBayar(pm)} title="Lihat ringkas pembayaran">
-                            {pm.reference || '—'}
-                          </Ref>
+                          {pm.reference || '—'}
                           {pm.bukti_potong_url && (
                             <a
                               href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"

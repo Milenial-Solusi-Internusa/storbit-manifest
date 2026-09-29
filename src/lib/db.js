@@ -1272,7 +1272,7 @@ export async function getPaymentHistory(invoiceId) {
 export async function getTtfStatus(invoiceId) {
   const { data, error } = await supabase
     .from('ar_ttfs')
-    .select('id, no_ttf, tanggal_ttf, tanggal_menerima, diterima_oleh, notes')
+    .select('id, no_ttf, tanggal_ttf, tanggal_menerima, diterima_oleh, notes, created_at')
     .eq('invoice_id', invoiceId)
     .order('created_at', { ascending: true })
     .limit(1)
