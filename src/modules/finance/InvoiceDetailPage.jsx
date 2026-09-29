@@ -26,7 +26,8 @@ import {
 } from '../../lib/db';
 import useInvoiceExtras from './useInvoiceExtras';
 import { useAuth } from '../../contexts/useAuth';
-import { PPN_RATE, CORETAX_TX_CODES } from '../../lib/taxConstants';
+import { PPN_RATE, PPN_LABEL_PCT, DPP_NILAI_LAIN_RATIO, CORETAX_TX_CODES } from '../../lib/taxConstants';
+import { formatRp2 } from '../../lib/numberFormat';
 import { getTodayWIB, fmtRelativeWIB, fmtDateTimeWIB } from '../../lib/dateUtils';
 import useInvoiceWorkflow from './useInvoiceWorkflow';
 import {
@@ -329,6 +330,22 @@ export default function InvoiceDetailPage({
   // Total — mustahil ada dua angka ongkir yang berbeda di satu layar.
   const ongkir = wf.totalOngkirInv;
 
+  // Baris BARANG saja. Sejak invoice v2 (20260928000002) `sp_invoice_lines` juga
+  // memuat satu baris ber-`line_type='shipping'` dengan `line_amount` = ongkir dan
+  // `dpp`/`ppn` = 0 -- sengaja nol, karena PPN ongkir SUDAH termuat di baris
+  // barang. Tabel ini merender kolom Jumlah dari `l.dpp`, jadi baris itu tampil
+  // "Rp 0" dan dulu berdampingan dengan satu baris ongkir SINTETIS di bawahnya =
+  // dua baris ongkir untuk satu angka, salah satunya nol. Ongkir kini muncul
+  // TEPAT SEKALI, di ringkasan, sama seperti invoice PDF.
+  const barisBarang = inv?.lines?.filter((l) => l.line_type === 'item') ?? [];
+
+  // DPP Nilai Lain = (Subtotal + Shipping) x 11/12 -- rumus & konstanta SAMA
+  // dengan blok totals InvoicePDF (`InvoicePDF.jsx:408`), bukan disalin ulang.
+  // ⚠️ Sukunya `ongkir` (diturunkan dari HEADER invoice), sementara PDF memakai
+  // `total_shipping` = Sigma sp_order_items.shipping_price. Keduanya sama untuk
+  // invoice yang belum disentuh sesudah terbit; bedanya dicatat di TD-296.
+  const dppNilaiLain = ((Number(inv?.total_dpp) || 0) + ongkir) * DPP_NILAI_LAIN_RATIO;
+
   const events = useMemo(() => {
     if (!inv) return [];
     const out = [];
@@ -592,7 +609,7 @@ export default function InvoiceDetailPage({
 
             {/* Tab dokumen */}
             <TabBar style={{ margin: `${SP.s4}px 0 ${SP.s4}px` }}>
-              <TabBtn active={tab === 'lines'} onClick={() => setTab('lines')} label="Baris Invoice" count={inv.lines.length}/>
+              <TabBtn active={tab === 'lines'} onClick={() => setTab('lines')} label="Baris Invoice" count={barisBarang.length}/>
               <TabBtn active={tab === 'other'} onClick={() => setTab('other')} label="Info Lain"/>
               <TabBtn active={tab === 'tax'}   onClick={() => setTab('tax')}   label="Pajak & Coretax"/>
               <TabBtn active={tab === 'docs'}  onClick={() => setTab('docs')}  label="Dokumen Terkait" count={docs.deliveries.length + docs.btb.length}/>
@@ -606,9 +623,9 @@ export default function InvoiceDetailPage({
                   minWidth={560}
                   head={[['Produk'], ['SKU'], ['Qty', 'right'], ['Harga Satuan', 'right'], ['Jumlah', 'right']]}
                 >
-                  {inv.lines.length === 0 ? (
+                  {barisBarang.length === 0 ? (
                     <tr><td colSpan={5} style={{ padding: SP.s3, fontSize: 12.5, color: C.inkFaint, textAlign: 'center' }}>Invoice ini tidak punya baris.</td></tr>
-                  ) : inv.lines.map((l) => (
+                  ) : barisBarang.map((l) => (
                     <tr key={l.id}>
                       <Td>
                         <Ref mono={false} onClick={() => panelProduk(l)} title="Lihat ringkas baris">
@@ -624,31 +641,33 @@ export default function InvoiceDetailPage({
                       <Td align="right" mono nowrap>{rp(l.dpp)}</Td>
                     </tr>
                   ))}
-                  {/* Baris ongkos kirim hanya muncul kalau memang ada nilainya. */}
-                  {ongkir > 0 && (
-                    <tr>
-                      <Td>Ongkos kirim</Td>
-                      <Td mono style={{ color: C.inkFaint }}>—</Td>
-                      <Td align="right" mono>—</Td>
-                      <Td align="right" mono>—</Td>
-                      <Td align="right" mono nowrap>{rp(ongkir)}</Td>
-                    </tr>
-                  )}
                 </TableShell>
 
                 {/* Rincian nilai — Sisa Tagihan paling menonjol. */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: SP.s4 }}>
                   <div style={{ width: '100%', maxWidth: 340 }}>
-                    <MetaRow label="DPP" mono>{rp(inv.total_dpp)}</MetaRow>
-                    {/* Label memakai tarif EFEKTIF (11%) — angka yang memang
-                        dihitung create_invoice. ⚠️ PDF-nya mencetak "VAT (12%)"
-                        (PPN_LABEL_PCT): 12% statutori atas DPP Nilai Lain 11/12
-                        = 11% efektif. KEDUANYA BENAR; jangan disamakan ke salah
-                        satu arah (taxConstants.js, gotcha #32). */}
-                    <MetaRow label={`PPN (${Math.round(PPN_RATE * 100)}%)`} mono>{rp(inv.total_ppn)}</MetaRow>
-                    {ongkir > 0 && <MetaRow label="Ongkos kirim" mono>{rp(ongkir)}</MetaRow>}
+                    {/* Urutan, label, dan sumber angka = CERMIN blok totals invoice PDF
+                        (`InvoicePDF.jsx:583-597`), supaya layar dan dokumen yang dikirim
+                        ke customer tidak pernah terbaca bertentangan. Kelima baris
+                        dirender TANPA GUARD, sama seperti PDF -- termasuk Shipping,
+                        yang pada invoice tanpa ongkir memang tampil Rp 0. */}
+                    <MetaRow label="Subtotal" mono>{rp(inv.total_dpp)}</MetaRow>
+                    <MetaRow label="Shipping" mono>{rp(ongkir)}</MetaRow>
+                    {/* Satu-satunya angka PECAHAN di blok ini -> formatRp2 (maks 2
+                        desimal). `rp()` biasa memakai default toLocaleString = 3
+                        desimal, yang pernah mencetak "Rp 17.856.668,289" di produksi. */}
+                    <MetaRow label="DPP (Nilai Lain)" mono>{formatRp2(dppNilaiLain)}</MetaRow>
+                    {/* Label 12% padahal nominalnya 11% dari DPP — DISENGAJA, keduanya
+                        benar: PPN dikenakan atas DPP Nilai Lain (11/12 x DPP), jadi
+                        12% x 11/12 = 11% efektif, dan Faktur Pajak menuliskan 12%.
+                        Nominalnya `total_ppn` dari create_invoice, TIDAK dihitung ulang.
+                        Jangan "diperbaiki" kembali ke 11 (taxConstants.js, gotcha #32).
+                        ⚠️ Tab Pajak & Coretax SENGAJA tetap memakai label PPN (11%)
+                        (keputusan Den 29 Sep 2026) — dua label berbeda di satu halaman
+                        itu sah, bukan kelalaian. */}
+                    <MetaRow label={`VAT (${PPN_LABEL_PCT}%)`} mono>{rp(inv.total_ppn)}</MetaRow>
                     <div style={{ borderTop: `1.5px solid ${C.line}`, marginTop: 5, paddingTop: 5 }}>
-                      <MetaRow label="Total" mono strong>
+                      <MetaRow label="Grand Total" mono strong>
                         <span style={{ fontSize: 15, color: C.grandTotal }}>{rp(inv.total_amount)}</span>
                       </MetaRow>
                     </div>

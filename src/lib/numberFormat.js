@@ -98,6 +98,33 @@ export function formatIdNumber(n) {
 }
 
 /**
+ * Format rupiah untuk DITAMPILKAN, dengan desimal DIBATASI 2.
+ *
+ * ⚠️ SENGAJA BERBEDA dari `rp()` lokal di `spDetailTokens.js` / `InvoicePDF.jsx`,
+ * dan `rp()` JANGAN diubah: ia dipakai puluhan permukaan dan seluruh angka di
+ * sana rupiah bulat. Yang butuh helper ini hanya nilai yang memang PECAHAN --
+ * praktisnya baris **DPP (Nilai Lain)**, yaitu (Subtotal + Shipping) x 11/12.
+ *
+ * Kenapa perlu: `toLocaleString('id-ID')` tanpa opsi memakai
+ * `maximumFractionDigits` default **3**, sehingga DPP Nilai Lain pernah tercetak
+ * `Rp 17.856.668,289` di invoice produksi. Dua desimal = satuan sen, batas yang
+ * wajar untuk nilai uang.
+ *
+ * Dipakai DUA tempat yang wajib bergerak bersama (kelas checklist TD-233):
+ * ringkasan layar `finance/InvoiceDetailPage.jsx` dan blok totals
+ * `logistics/InvoicePDF.jsx` -- layar dan PDF harus menampilkan angka identik.
+ *
+ * @param {number|string|null|undefined} n
+ * @returns {string} mis. 'Rp 5.270.833,33' · bulat tetap tanpa desimal ('Rp 0')
+ */
+export function formatRp2(n) {
+  // Nilai tak terbaca jatuh ke 0, PERSIS seperti `rp()` lokal (`Number(n) || 0`)
+  // -- tanpa ini null/'' menghasilkan 'Rp ' menggantung di layar maupun PDF.
+  const num = Number(n);
+  return 'Rp ' + formatIdNumber(Number.isFinite(num) ? num : 0);
+}
+
+/**
  * Baca isi input uang → nilai kanonik + penanda "tidak dikenali".
  *
  * Satu tempat untuk kebijakan NaN, supaya keempat input uang SP tidak

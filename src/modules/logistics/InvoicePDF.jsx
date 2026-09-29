@@ -17,6 +17,7 @@ import cormorantSemiBold from '../../assets/fonts/CormorantGaramond-SemiBold.ttf
 import loraRegular from '../../assets/fonts/Lora-Regular.ttf';
 import loraSemiBold from '../../assets/fonts/Lora-SemiBold.ttf';
 import { DPP_NILAI_LAIN_RATIO, PPN_LABEL_PCT } from '../../lib/taxConstants';
+import { formatRp2 } from '../../lib/numberFormat';
 
 Font.register({
   family: 'Cormorant Garamond',
@@ -583,7 +584,7 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
           <View style={s.totalsBox}>
             <View style={s.totalRow}><Text style={s.totalLabel}>Subtotal</Text><Text style={s.totalVal}>{rp(invoice.total_dpp)}</Text></View>
             <View style={s.totalRow}><Text style={s.totalLabel}>Shipping</Text><Text style={s.totalVal}>{rp(invoice.total_shipping)}</Text></View>
-            <View style={s.totalRow}><Text style={s.totalLabel}>DPP (Nilai Lain)</Text><Text style={s.totalVal}>{rp(dppNilaiLain)}</Text></View>
+            <View style={s.totalRow}><Text style={s.totalLabel}>DPP (Nilai Lain)</Text><Text style={s.totalVal}>{formatRp2(dppNilaiLain)}</Text></View>
             {/* Label 12% padahal nominalnya 11% dari DPP — DISENGAJA, keduanya
                 benar. PPN dikenakan atas DPP Nilai Lain (11/12 x DPP), jadi
                 12% x 11/12 = 11% efektif; Faktur Pajak menuliskan 12%, invoice
