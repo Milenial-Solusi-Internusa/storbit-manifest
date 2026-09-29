@@ -1110,16 +1110,46 @@ export default function SalesOrderDetailPage({
   const [ttf,         setTtf]         = useState(null);
   const [paySaving,   setPaySaving]   = useState(false);
   const [ttfSaving,   setTtfSaving]   = useState(false);
-  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+  // `pph` SENGAJA TIDAK ADA di payForm. Nilai PPh yang disimpan diturunkan dari
+  // pphField di bawah (satu sumber dgn yang tampil); menyimpannya juga di sini
+  // berarti dua penyimpan untuk satu angka — bentuk persis bug yang ditutup
+  // perubahan ini (yang tampil saran, yang tersimpan nol).
+  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: getTodayWIB(), reference: '', buktiUrl: '', buktiNo: '' });
   const [pphTouched,  setPphTouched]  = useState(false);
-  // Buffer TEKS dua field uang form Pembayaran. `payForm.amount`/`payForm.pph`
-  // tetap STRING NUMERIK kanonik ('1766050'), jadi kelima pembaca
-  // `Number(payForm.amount)` (handleRecordPayment + disabled/style tombol) dan
-  // `Number(payForm.pph)` di payload RPC tidak perlu disentuh sama sekali.
+  // Buffer TEKS dua field uang form Pembayaran. `payForm.amount` tetap STRING
+  // NUMERIK kanonik ('1766050'), jadi kelima pembaca `Number(payForm.amount)`
+  // (handleRecordPayment + disabled/style tombol) tidak perlu disentuh.
+  // Untuk PPh, buffer + pphTouched SUDAH jadi satu-satunya state-nya.
   const [payAmountText, setPayAmountText] = useState('');
   const [payAmountBad,  setPayAmountBad]  = useState(false);
   const [payPphText,    setPayPphText]    = useState('');
   const [payPphBad,     setPayPphBad]     = useState(false);
+
+  // ── Saran PPh 23 + nilai PPh EFEKTIF ──────────────────────────────────────
+  // DIPINDAH KE ATAS dari dekat sisaTagihan: handleRecordPayment (di bawah)
+  // sekarang ikut memakainya, dan merujuk const yang dideklarasikan lebih bawah
+  // adalah kelas jebakan TDZ yang sama dengan winRateDegraded (9 Sep 2026).
+  //
+  // Suku ongkir = total_amount − dpp − ppn, persis definisi v_total_amount di
+  // create_invoice.
+  const totalOngkirInv = (Number(invoice?.total_amount) || 0)
+    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
+  const pphFullSuggestion = Math.round(Math.max(0, totalOngkirInv) * 0.02);
+  // PPh yang SUDAH tercatat di invoice ini dikurangi dari saran. Sejak saran ini
+  // ikut TERSIMPAN secara default (perubahan ini), saran penuh pada pembayaran
+  // parsial KEDUA akan mencatat PPh dua kali: record_payment tidak punya cap,
+  // v_settled = Σamount + Σpph, status jadi 'paid' begitu v_settled >= total − 1,
+  // dan AR dikredit amount + pph. Jadi pengurangan ini bukan kosmetik.
+  const pphRecorded   = payments.reduce((s, p) => s + (Number(p.pph) || 0), 0);
+  const pphSuggestion = Math.max(0, pphFullSuggestion - pphRecorded);
+
+  // Kolom PPh 23 — SATU sumber untuk apa yang TAMPIL dan apa yang TERSIMPAN.
+  // Sebelum ini keduanya lahir dari dua tempat berbeda (ternary di JSX vs
+  // Number(payForm.pph) di payload), dan itulah bug SP 2031966: saran 46.000
+  // tampil di layar, nol yang tercatat. Jangan pecah lagi jadi dua ternary.
+  const pphField = pphTouched
+    ? { text: payPphText,                    value: readMoneyInput(payPphText).value }
+    : { text: formatIdNumber(pphSuggestion), value: pphSuggestion };
 
   // Satu pola untuk kedua field: teks mentah saat mengetik, format saat blur,
   // teks tak dikenali DIBIARKAN + pesan inline (nilai kanonik 0).
@@ -1134,7 +1164,9 @@ export default function SalesOrderDetailPage({
       setText(raw);
       const { value, unrecognized } = readMoneyInput(raw);
       setBad(unrecognized);
-      setPayForm(f => ({ ...f, [key]: raw.trim() === '' ? '' : String(value) }));
+      // key null = field ini tidak punya cerminan di payForm (PPh: nilainya
+      // diturunkan dari pphField, bukan disimpan dua kali).
+      if (key) setPayForm(f => ({ ...f, [key]: raw.trim() === '' ? '' : String(value) }));
     },
     onBlur: () => {
       const { value, unrecognized } = readMoneyInput(text);
@@ -1144,9 +1176,9 @@ export default function SalesOrderDetailPage({
     onFocus: (e) => e.target.select(),
   });
   const payAmountHandlers = makeMoneyHandlers(payAmountText, setPayAmountText, setPayAmountBad, 'amount');
-  const payPphBase        = makeMoneyHandlers(payPphText,    setPayPphText,    setPayPphBad,    'pph');
-  // `pphTouched` DIPERTAHANKAN persis perilaku lama: prefill saran tampil sampai
-  // user mengetik, lalu tak ditimpa lagi.
+  const payPphBase        = makeMoneyHandlers(payPphText,    setPayPphText,    setPayPphBad,    null);
+  // `pphTouched` = penanda "user sudah mengambil alih kolom ini". Sebelum
+  // disentuh, yang berlaku (tampil DAN tersimpan) adalah saran.
   const payPphHandlers    = {
     ...payPphBase,
     onChange: (e) => { setPphTouched(true); payPphBase.onChange(e); },
@@ -1341,7 +1373,10 @@ export default function SalesOrderDetailPage({
       amount:         amt,
       paymentDate:    payForm.paymentDate || null,
       reference:      payForm.reference.trim() || null,
-      pph:            Number(payForm.pph) || 0,
+      // Nilai yang TAMPIL di kolom PPh, bukan state terpisah. Sebelum ini
+      // `Number(payForm.pph) || 0` mengirim 0 setiap kali user tidak menyentuh
+      // kolomnya — padahal layar menunjukkan angka saran (bug SP 2031966).
+      pph:            pphField.value,
       buktiPotongUrl: payForm.buktiUrl.trim() || null,
       buktiPotongNo:  payForm.buktiNo.trim() || null,
     });
@@ -1355,7 +1390,7 @@ export default function SalesOrderDetailPage({
       const { data } = await getPaymentHistory(invoice.id);
       setPayments(data || []);
     }
-    setPayForm({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+    setPayForm({ amount: '', paymentDate: getTodayWIB(), reference: '', buktiUrl: '', buktiNo: '' });
     setPphTouched(false);
     // Buffer teks kedua field uang ikut direset — kalau tidak, angka pembayaran
     // sebelumnya tetap terbaca di field walau payForm sudah kosong.
@@ -1490,11 +1525,9 @@ export default function SalesOrderDetailPage({
   // konsep overpay — lihat catatan di laporan).
   const paidSettled = payments.reduce((sum, p) => sum + (Number(p.amount) || 0) + (Number(p.pph) || 0), 0);
   const sisaTagihan = (Number(invoice?.total_amount) || 0) - paidSettled;
-  // Saran PPh 23 = total ongkir × 2%. Suku ongkir = total_amount − dpp − ppn,
-  // persis definisi v_total_amount di create_invoice.
-  const totalOngkirInv = (Number(invoice?.total_amount) || 0)
-    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
-  const pphSuggestion = Math.round(Math.max(0, totalOngkirInv) * 0.02);
+  // `totalOngkirInv` + `pphSuggestion` DIPINDAH KE ATAS (dekat state form
+  // Pembayaran) — handleRecordPayment kini ikut memakainya lewat `pphField`,
+  // dan itu dideklarasikan di atas fungsi tersebut.
   const invStatus = invoice?.status || null;
   const showPaymentForm = canRecordPayment && ['issued', 'submitted', 'partial'].includes(invStatus);
   const showPaymentHistory = !!invStatus && !['draft', 'void'].includes(invStatus);
@@ -2196,11 +2229,12 @@ export default function SalesOrderDetailPage({
                         <div style={{ marginTop: SP.s2 }}>
                           <ModalGrid cols={3}>
                             <ModalField label="PPh 23 (Rp)">
-                              {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi.
-                                  Bentuk ternary-nya DIPERTAHANKAN persis — yang berubah hanya
-                                  sumbernya (buffer teks) dan saran diformat id-ID. */}
+                              {/* Teks DAN nilai simpan datang dari `pphField` yang sama, jadi
+                                  yang tampil di sini persis yang masuk ke record_payment.
+                                  JANGAN kembalikan ternary ke sini — memisahkannya lagi
+                                  membuka ulang bug "saran tampil, nol tersimpan". */}
                               <ModalInp type="text" inputMode="decimal"
-                                value={pphTouched ? payPphText : (payPphText || formatIdNumber(pphSuggestion))}
+                                value={pphField.text}
                                 {...payPphHandlers}/>
                               {payPphBad && (
                                 <span style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</span>
