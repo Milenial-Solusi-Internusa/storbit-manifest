@@ -52,13 +52,13 @@
 | 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik + satu sesi dengan butir 28 |
 | 30 | `20260929000001_td281_h2_default_privileges` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
 | 31 | `20260929000002_td281_h3_search_path` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
-| 32 | `20260929000004_ar_tahap3_compute_payment_term_days` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3, PERTAMA |
-| 33 | `20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 12 |
-| 34 | `20260929000006_ar_tahap3_sp_payments_potongan_kolom` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
-| 35 | `20260929000007_ar_tahap3_record_payment_v3` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9, 13, 33, 34 |
-| 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
-| 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ⏸ **DITAHAN STOP KERAS** | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** — sesudah butir 36 |
-| 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 36 |
+| 32 | `20260929000004_ar_tahap3_compute_payment_term_days` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3, PERTAMA |
+| 33 | `20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 12 |
+| 34 | `20260929000006_ar_tahap3_sp_payments_potongan_kolom` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 35 | `20260929000007_ar_tahap3_record_payment_v3` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9, 13, 33, 34 |
+| 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
+| 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ✔ 29 Sep (STOP KERAS dilewati manual, sesudah review V0 Den) | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** (ulang, untuk data production saat launching) — sesudah butir 36 |
+| 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 36 |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
@@ -957,9 +957,9 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 
 ---
 
-## AR Tahap 3 (butir 32-37) — pengaman pembayaran + potongan pelanggan + jatuh tempo dari TTF
+## AR Tahap 3 (butir 32-38) — pengaman pembayaran + potongan pelanggan + jatuh tempo dari TTF
 
-Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-287 (kolom potongan lain) dan dari penutupan D-15 (`due_date` dulu dihitung di dua/tiga tempat sekaligus). **Ditulis 29 Sep 2026, BELUM DIJALANKAN DI MANA PUN** — nol butir di bawah ini sudah menyentuh staging maupun production. Urutan **MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37**.
+Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-287 (kolom potongan lain) dan dari penutupan D-15 (`due_date` dulu dihitung di dua/tiga tempat sekaligus); satu berkas ketujuh (butir 38) menyusul sebagai koreksi hasil UAT (`tanggal_menerima` isi sekali). **Ditulis 29 Sep 2026, LIVE STAGING 29 Sep 2026** (ketujuh berkas, termasuk `20260929000009` yang STOP KERAS-nya sudah dilewati manual sesudah review V0 oleh Den) — **PRODUCTION BELUM SATU PUN**. Urutan **MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review V0 ulang untuk production) → 38** (38 hanya butuh 36, tidak bergantung pada 37).
 
 ⛔ **Dasar `record_payment` (butir 35) adalah v2** (`20260927000003_journal_account_roles_and_readiness.sql`, `get_mapped_account` + menolak status `issued`) — **BUKAN** v1 produksi (`20260817000001`, kode akun hardcode). Keputusan Den: AR Tahap 3 naik **BERSAMA** Tahap 1 (butir 6-9) dan Tahap 2 (butir 11-14), karena UI-nya (`InvoiceDetailPage.jsx`/`useInvoiceWorkflow.js`) sendiri menumpang di sana dan belum ada di `main`. Konsekuensinya: **butir 35 punya prasyarat butir 9 DAN 13**, bukan cuma butir 12.
 
@@ -972,7 +972,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000004_ar_tahap3_compute_payment_term_days.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, PERTAMA di gelombang ini** — mandiri, nol dependensi lain |
 
@@ -989,7 +989,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 12** (`account_role_mappings` harus sudah ada) |
 
@@ -997,7 +997,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 
 ⛔ **Nama peran ini koreksi Den atas usulan PLAN semula** ("beban_potongan_lain" → **"potongan_pelanggan"**) — draft CoA grup menempatkannya di akun **4-1900** "Diskon, rebate, listing fee & potongan trading term" (**kontra-pendapatan, normal DEBIT**). Baris jurnalnya (di `record_payment`) tetap debit.
 
-**Pengisian akun 4-1900 untuk SOA adalah SEED STAGING TERPISAH** — `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql`, **di luar folder migration, TIDAK PERNAH naik ke produksi**. Sampai seed itu (atau padanannya di production, kalau/ketika ada CoA final) dijalankan, `get_mapped_account(company, 'potongan_pelanggan')` akan menolak dengan pesan jelas — dan `record_payment` hanya memanggilnya kalau `p_potongan_lain > 0`, jadi pembayaran tanpa potongan tetap jalan normal.
+**Pengisian akun 4-1900 untuk SOA adalah SEED STAGING TERPISAH** — `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql`, **di luar folder migration, TIDAK PERNAH naik ke produksi**. **Sudah LIVE di staging 29 Sep 2026** (bersama seluruh butir 32-38), jadi `get_mapped_account(SOA, 'potongan_pelanggan')` sudah bisa dipanggil di sana. **Di production, sampai seed ini (atau padanannya, kalau/ketika ada CoA final) dijalankan manual**, `get_mapped_account(company, 'potongan_pelanggan')` akan menolak dengan pesan jelas — dan `record_payment` hanya memanggilnya kalau `p_potongan_lain > 0`, jadi pembayaran tanpa potongan tetap jalan normal di production juga.
 
 ⚠️ **Enam peran lama TIDAK disentuh** — berkas ini murni menambah satu nilai CHECK.
 
@@ -1010,7 +1010,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000006_ar_tahap3_sp_payments_potongan_kolom.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan** — nol dependensi terhadap butir 32/33 |
 
@@ -1027,7 +1027,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000007_ar_tahap3_record_payment_v3.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 9, 13 (AR Tahap 1/2), 33, dan 34** |
 
@@ -1048,7 +1048,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 18 dan 25** (`create_invoice_for_sp` harus sudah versi `20260928000010`) **dan sesudah butir 32** (`compute_payment_term_days`) |
 
@@ -1079,17 +1079,17 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000009_ar_tahap3_due_date_ttf_backfill.sql` |
-| Staging | ⏸ **DITAHAN STOP KERAS** — belum dijalankan bahkan di staging |
+| Staging | ✔ **LIVE 29 Sep 2026** — blok STOP KERAS dilewati MANUAL di staging sesudah V0 direview dan disetujui Den (22 invoice tersentuh: 8 dari TTF, 14 jadi "Belum TTF") |
 | Production | ⛔ **belum** |
-| Tindakan saat launching | ⏸ **JANGAN jalankan** sampai query pengukuran dampak (blok V0 di berkas ini) direview dan disetujui Den |
+| Tindakan saat launching | ⏸ **JANGAN jalankan** sampai query pengukuran dampak (blok V0 di berkas ini) direview dan disetujui Den **untuk data production saat itu** — angkanya akan berbeda dari staging |
 
 **Apa isinya.** Menghitung ulang `due_date` untuk SELURUH invoice hidup (non-void) memakai basis TTF (butir 36), bukan cuma mengisi yang `NULL` — beda dari backfill AR Tahap 2 (`20260927000001`) yang hanya mengisi kekosongan. Karena basisnya berubah (`invoice_date` → `tanggal_ttf`), nilai `due_date` yang **sudah terisi** dari basis lama juga bisa berubah, dan invoice tanpa TTF yang **sudah** punya `due_date` akan **kehilangannya** (jadi tampil "Belum TTF").
 
-⛔⛔⛔ **Berkas ini punya STOP KERAS** — satu blok `DO $stop$ ... RAISE EXCEPTION ...` yang menggagalkan transaksi tanpa syarat, ditempatkan **sesudah** blok pengukuran dampak (V0, read-only, aman dijalankan sendirian) dan **sebelum** blok backfill sungguhan. Blok STOP itu harus **dihapus manual** sesudah angka V0 direview — desain ini disengaja supaya berkas tidak bisa tereksekusi utuh secara tidak sengaja.
+⛔⛔⛔ **Berkas ini punya STOP KERAS, dan blok itu TETAP ADA di repo** — satu blok `DO $stop$ ... RAISE EXCEPTION ...` yang menggagalkan transaksi tanpa syarat, ditempatkan **sesudah** blok pengukuran dampak (V0, read-only, aman dijalankan sendirian) dan **sebelum** blok backfill sungguhan. Blok STOP itu harus **dihapus manual** sesudah angka V0 direview — desain ini disengaja supaya berkas tidak bisa tereksekusi utuh secara tidak sengaja. **Di staging, blok ini sudah dilewati manual 29 Sep 2026** (sesudah review V0 oleh Den) supaya backfill sungguhan bisa jalan di sana — **berkas di repo TIDAK diubah**, jadi menjalankannya lagi (mis. di production) akan berhenti di STOP KERAS itu lagi seperti seharusnya, sampai seseorang mengulang langkah yang sama: baca V0, review dengan Den, baru hapus blok itu manual untuk sesi eksekusi production.
 
-**Cadangan** `sp_invoices_due_date_ttf_backfill_20260929` menyimpan `due_date` lama, `tanggal_ttf` yang dipakai, `term_days`, dan `due_date` baru — pola sama dengan `sp_invoices_due_date_backfill_20260927`.
+**Cadangan** `sp_invoices_due_date_ttf_backfill_20260929` menyimpan `due_date` lama, `tanggal_ttf` yang dipakai, `term_days`, dan `due_date` baru — pola sama dengan `sp_invoices_due_date_backfill_20260927`. **Tabel ini sekarang ada di staging** (lahir dari eksekusi 29 Sep) — didaftarkan ke kelas ANTRE `scripts/qa/env-drift-check.mjs` (butir 32-38) supaya `env-drift-check` tidak melaporkannya sebagai DRIFT tak dikenal.
 
-⚠️ **Dampak produksi terukur di laporan sesi: 1 invoice** kehilangan `due_date` (sudah disetujui Den) — angka pasti untuk staging/production saat launching **wajib diukur ulang** lewat blok V0 sebelum backfill sungguhan dijalankan, karena data bergerak setiap hari.
+⚠️ **Dua angka dampak yang JANGAN tertukar:** laporan sesi sebelumnya (produksi, read-only, sebelum eksekusi apa pun) mengukur **1 invoice** yang akan kehilangan `due_date` di **production**. Eksekusi staging 29 Sep 2026 (V0, sesudah butir 32-36 live di sana) mengukur **22 invoice tersentuh — 8 karena sudah punya TTF (due_date berubah basis), 14 jadi "Belum TTF"** — angka **staging**, bukan production. Angka pasti untuk production saat launching **wajib diukur ulang** lewat blok V0 saat itu, karena data bergerak setiap hari dan populasi staging ≠ populasi production.
 
 **Rollback.** Ada di ekor berkas — syarat: hanya mengembalikan baris yang `due_date`-nya masih sama dengan `due_date_baru` backfill ini (koreksi manual sesudahnya tidak ditimpa).
 
@@ -1100,7 +1100,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **LIVE 29 Sep 2026** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 36** (`mark_ttf_received` harus sudah versi `20260929000008`) |
 

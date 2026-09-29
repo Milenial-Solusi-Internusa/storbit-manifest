@@ -179,9 +179,12 @@ const DIKETAHUI = [
   },
   {
     // AR Tahap 3 (20260929000004..10), doc 12 butir 32-38. Ditulis 29 Sep
-    // 2026, BELUM DIJALANKAN DI MANA PUN -- entri ini disiapkan supaya begitu
-    // staging menjalankannya, drift-nya langsung terbaca ANTRE, bukan DRIFT
-    // tak dikenal.
+    // 2026, LIVE staging 29 Sep 2026 (termasuk 20260929000009, backfill
+    // due_date dari TTF -- dijalankan sesudah pengukuran dampak V0-nya
+    // direview Den: 22 invoice tersentuh, 8 dari TTF, 14 jadi "Belum TTF"),
+    // production BELUM -- entri ini disiapkan supaya begitu staging
+    // menjalankannya, drift-nya langsung terbaca ANTRE, bukan DRIFT tak
+    // dikenal.
     //
     // record_payment/submit_invoice/create_invoice_for_sp SENGAJA TIDAK
     // ditambahkan lagi di sini -- ketiganya SUDAH tercakup regex fungsi/hak
@@ -194,13 +197,19 @@ const DIKETAHUI = [
     // UAT -- tanggal_menerima isi sekali) -- signature TIDAK berubah, jadi
     // regex nama fungsi di bawah ini otomatis ikut mencakup revisi itu juga,
     // tanpa entri baru.
+    //
+    // sp_invoices_due_date_ttf_backfill_20260929 -- tabel cadangan butir 37
+    // (20260929000009). Pola SAMA dengan sp_invoices_due_date_backfill_20260927
+    // (entri "Tahap 1/2" di atas): jejak nilai lama/baru due_date, hanya ada
+    // di staging sampai butir ini naik ke produksi saat launching.
     cocok: (kat, kunci) =>
       (kat === 'fungsi' && /^(compute_payment_term_days|mark_ttf_received)\(/.test(kunci))
-      || (kat === 'kolom' && kunci === 'sp_payments')
-      || /^(compute_payment_term_days|mark_ttf_received)\(/.test(hakFungsi(kat, kunci) || ''),
+      || (kat === 'kolom' && /^(sp_payments|sp_invoices_due_date_ttf_backfill_20260929)$/.test(kunci))
+      || /^(compute_payment_term_days|mark_ttf_received)\(/.test(hakFungsi(kat, kunci) || '')
+      || /^sp_invoices_due_date_ttf_backfill_20260929$/.test(hakTabel(kat, kunci) || ''),
     kelas: 'antre',
     butir: '32-38',
-    alasan: 'AR Tahap 3 -- pengaman pembayaran (TD-285/286/287) + jatuh tempo dari TTF + koreksi UAT tanggal_menerima (20260929000004..10) -- BELUM DIJALANKAN DI MANA PUN per 29 Sep 2026; naik bersama Tahap 1/2 saat launching (UI-nya menumpang di sana)',
+    alasan: 'AR Tahap 3 -- pengaman pembayaran (TD-285/286/287) + jatuh tempo dari TTF + koreksi UAT tanggal_menerima (20260929000004..10) -- LIVE staging 29 Sep 2026, production belum; naik bersama Tahap 1/2 saat launching (UI-nya menumpang di sana)',
   },
   {
     // 12 tabel cadangan koreksi data ongkir/AR (tahap 2-8, 28-29 Sep 2026,

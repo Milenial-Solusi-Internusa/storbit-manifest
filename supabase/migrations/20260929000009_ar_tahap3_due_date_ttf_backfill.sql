@@ -1,11 +1,24 @@
 -- =============================================================================
 -- 20260929000009_ar_tahap3_due_date_ttf_backfill.sql   (AR Tahap 3, berkas 6 dari 6)
 --
--- ⛔⛔⛔ JANGAN DIJALANKAN sebelum query pengukuran dampak (blok V0 di bawah,
--- atau versi standalone di laporan sesi) DIJALANKAN dan HASILNYA DIREVIEW
--- DEN. Berkas ini punya STOP KERAS (lihat blok "STOP" di bawah V0) yang
--- WAJIB dihapus manual sebelum bagian backfill bisa jalan -- itu disengaja,
--- supaya berkas ini tidak bisa tereksekusi utuh secara tidak sengaja.
+-- ✔ SUDAH DIJALANKAN KE STAGING 29 Sep 2026, sesudah blok V0 di bawah
+-- direview dan disetujui Den: 22 invoice tersentuh -- 8 karena sudah punya
+-- TTF (due_date berubah basis dari invoice_date ke tanggal_ttf), 14 jadi
+-- "Belum TTF" (kehilangan due_date lama). Untuk sesi eksekusi staging itu,
+-- blok STOP KERAS (di bawah, lihat "-- STOP KERAS") DIHAPUS MANUAL sesaat
+-- sesudah review -- BUKAN dengan menyunting berkas ini di repo.
+--
+-- ⛔⛔⛔ BERKAS INI DI REPO TETAP MEMUAT STOP KERAS-nya UTUH, dan itu
+-- disengaja: PRODUCTION belum pernah menjalankan berkas ini, dan populasi
+-- invoice-nya BEDA dari staging, jadi angka V0 wajib diukur ULANG dan
+-- direview ULANG untuk production sebelum blok STOP-nya boleh dihapus lagi
+-- -- di sesi eksekusi PRODUCTION itu sendiri, bukan di repo. JANGAN
+-- DIJALANKAN (dan JANGAN hapus blok STOP-nya) sebelum query pengukuran
+-- dampak (blok V0 di bawah, atau versi standalone di laporan sesi)
+-- DIJALANKAN dan HASILNYA DIREVIEW DEN untuk lingkungan yang dituju. Blok
+-- STOP itu WAJIB dihapus manual sebelum bagian backfill bisa jalan --
+-- disengaja, supaya berkas ini tidak bisa tereksekusi utuh secara tidak
+-- sengaja.
 --
 -- KENAPA INI BUKAN SEKADAR "isi yang NULL" (beda dari 20260927000001):
 -- Backfill due_date SEBELUMNYA (20260927000001, AR Tahap 2) mengisi due_date
@@ -22,15 +35,19 @@
 --               FE, BUKAN "lewat jatuh tempo" -- persis tujuan AR Tahap 3.
 --               Kalau sebelumnya due_date-nya TERISI (dari basis invoice_date
 --               lama), baris ini KEHILANGAN due_date -- itu perubahan
---               tampilan yang TERLIHAT, dan sudah DISETUJUI Den (dampak
---               produksi: 1 invoice, per laporan pengukuran).
+--               tampilan yang TERLIHAT, dan sudah DISETUJUI Den. Dua angka
+--               JANGAN tertukar: laporan pengukuran PRODUCTION (read-only,
+--               sebelum eksekusi apa pun) = 1 invoice; hasil EKSEKUSI
+--               STAGING 29 Sep 2026 (lihat catatan di kepala berkas) = 14
+--               invoice -- populasi kedua lingkungan berbeda.
 --   VOID      -> TIDAK disentuh (konsisten K-3, 20260927000001): due_date
 --               pada invoice batal tidak punya arti.
 --
 -- CADANGAN dibuat SEBELUM UPDATE, menyimpan due_date LAMA + tanggal_ttf yang
 -- dipakai + due_date BARU -- pola sama dengan sp_invoices_due_date_backfill_20260927.
 --
--- Status: BELUM DIJALANKAN DI MANA PUN -- MENUNGGU REVIEW DEN
+-- Status: LIVE STAGING 29 Sep 2026 (sesudah review V0 oleh Den) -- PRODUCTION
+-- BELUM, MENUNGGU REVIEW V0 ULANG untuk data production saat launching
 -- =============================================================================
 
 BEGIN;
