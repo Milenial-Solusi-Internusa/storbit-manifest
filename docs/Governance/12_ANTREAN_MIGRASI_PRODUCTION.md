@@ -52,8 +52,14 @@
 | 29 | `20260928000014_td281_l2_fix_check_similar_accounts` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik + satu sesi dengan butir 28 |
 | 30 | `20260929000001_td281_h2_default_privileges` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
 | 31 | `20260929000002_td281_h3_search_path` | ✔ 28 Sep | ✔ **28 Sep** | — **selesai** — ⚠️ arah terbalik, mandiri |
+| 32 | `20260929000004_ar_tahap3_compute_payment_term_days` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3, PERTAMA |
+| 33 | `20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 12 |
+| 34 | `20260929000006_ar_tahap3_sp_payments_potongan_kolom` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 35 | `20260929000007_ar_tahap3_record_payment_v3` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9, 13, 33, 34 |
+| 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
+| 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ⏸ **DITAHAN STOP KERAS** | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** — sesudah butir 36 |
 
-**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.**
+**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 37 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
 ⛔ **Pemblokir launching KEDUA, dan ia tidak punya nomor butir karena berkasnya belum ditulis: PAKET KEAMANAN TD-281 (H4 + H5 + H6).** Lihat §*Paket Keamanan TD-281* di bawah. Butir 27-31 menutup separuhnya; separuh sisanya **masih hidup di produksi hari ini**.
 
@@ -947,6 +953,144 @@ Kedua skrip uji sudah diperkeras: SQLSTATE kelas **42 / 22 / 23 / XX / 0A / 40 =
 • `exec_sql` — diuji **DISKRIMINATIF**, bukan sekadar "masih jalan": sesi di-`SET search_path TO auth, public`, lalu `exec_sql` disuruh membaca `users` (tabel yang **hanya** ada di skema `auth`; ketiadaan `public.users` diperiksa sebagai prasyarat). Ia **tidak menemukannya** → penguncian **benar-benar berlaku**. ⭐ Tanpa uji berbentuk begini, *"exec_sql masih bekerja"* bisa benar **sekaligus** penguncian tidak terpasang — dan membaca `proconfig` pun tidak menutup celah itu, karena itu membaca **niat**, bukan **akibat**. Uji positifnya memakai bentuk persis yang dikirim EF `manage-schema`, lalu `ROLLBACK`, lalu diperiksa bersih **di luar** transaksi.
 
 **Dampak ke drift.** `proconfig` **ikut** sidik jari `fungsi` di `env-drift-check`, jadi selama jendela production→staging kedelapannya akan dilaporkan **BEDA ISI**. **Itu diharapkan**; samakan staging segera.
+
+---
+
+## AR Tahap 3 (butir 32-37) — pengaman pembayaran + potongan pelanggan + jatuh tempo dari TTF
+
+Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-287 (kolom potongan lain) dan dari penutupan D-15 (`due_date` dulu dihitung di dua/tiga tempat sekaligus). **Ditulis 29 Sep 2026, BELUM DIJALANKAN DI MANA PUN** — nol butir di bawah ini sudah menyentuh staging maupun production. Urutan **MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37**.
+
+⛔ **Dasar `record_payment` (butir 35) adalah v2** (`20260927000003_journal_account_roles_and_readiness.sql`, `get_mapped_account` + menolak status `issued`) — **BUKAN** v1 produksi (`20260817000001`, kode akun hardcode). Keputusan Den: AR Tahap 3 naik **BERSAMA** Tahap 1 (butir 6-9) dan Tahap 2 (butir 11-14), karena UI-nya (`InvoiceDetailPage.jsx`/`useInvoiceWorkflow.js`) sendiri menumpang di sana dan belum ada di `main`. Konsekuensinya: **butir 35 punya prasyarat butir 9 DAN 13**, bukan cuma butir 12.
+
+⛔ **`create_invoice_for_sp` versi TERAKHIR bukan `20260928000003` (butir 18) — dicoret dari PLAN semula.** Audit sebelum menulis butir 36 menemukan `20260928000010_invoice_issue_tax_link.sql` (butir 25) lahir belakangan di atas badan butir 18 (mengisi `tax_id`), dan itulah yang hidup di staging hari ini. Badan yang diganti `CREATE OR REPLACE` di butir 36 disalin dari **20260928000010**, dengan diff yang diverifikasi mekanis (bukan dibaca sekilas) hanya tiga baris: deklarasi `v_due_date`, baris hitungnya, dan kolom `due_date` di `UPDATE` — `payment_term_days`/`payment_term_label`/`tax_id`/`post_invoice_journal` semuanya **tetap ada**.
+
+---
+
+## 32. ⛔ `20260929000004_ar_tahap3_compute_payment_term_days` — WAJIB (AR Tahap 3, PERTAMA)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000004_ar_tahap3_compute_payment_term_days.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, PERTAMA di gelombang ini** — mandiri, nol dependensi lain |
+
+**Apa isinya.** Fungsi baru `compute_payment_term_days(company_id, customer_id)` — memusatkan rantai termin tiga tingkat (override akun → `entity_finance_settings` → cadangan 30) yang sebelum ini terduplikasi di `submit_invoice`, `create_invoice_for_sp`, dan backfill `20260927000001`. **Aditif sepenuhnya**, nol tabel/fungsi lama disentuh.
+
+⛔ **REVOKE ALL dari PUBLIC, anon, DAN authenticated** — beda dari `get_mapped_account` yang di-GRANT ke `authenticated`. Fungsi ini **hanya** dipanggil dari dalam fungsi `SECURITY DEFINER` lain (butir 36); tidak ada alasan ia terjangkau langsung lewat PostgREST.
+
+**Rollback.** `DROP FUNCTION IF EXISTS public.compute_payment_term_days(uuid, uuid);` — aman selama butir 36 belum jalan.
+
+---
+
+## 33. ⛔ `20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan` — WAJIB, sesudah butir 12
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 12** (`account_role_mappings` harus sudah ada) |
+
+**Apa isinya.** Memperluas `CHECK` `account_role_mappings_role_key_check` dari enam peran menjadi tujuh, menambahkan `potongan_pelanggan` — dipakai `record_payment` (butir 35) untuk menjurnal potongan lain (TD-287). **Nol baris `account_role_mappings` ditulis di sini** — V1 memastikan itu (0 baris `potongan_pelanggan` sesudah migrasi ini).
+
+⛔ **Nama peran ini koreksi Den atas usulan PLAN semula** ("beban_potongan_lain" → **"potongan_pelanggan"**) — draft CoA grup menempatkannya di akun **4-1900** "Diskon, rebate, listing fee & potongan trading term" (**kontra-pendapatan, normal DEBIT**). Baris jurnalnya (di `record_payment`) tetap debit.
+
+**Pengisian akun 4-1900 untuk SOA adalah SEED STAGING TERPISAH** — `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql`, **di luar folder migration, TIDAK PERNAH naik ke produksi**. Sampai seed itu (atau padanannya di production, kalau/ketika ada CoA final) dijalankan, `get_mapped_account(company, 'potongan_pelanggan')` akan menolak dengan pesan jelas — dan `record_payment` hanya memanggilnya kalau `p_potongan_lain > 0`, jadi pembayaran tanpa potongan tetap jalan normal.
+
+⚠️ **Enam peran lama TIDAK disentuh** — berkas ini murni menambah satu nilai CHECK.
+
+**Rollback.** Ada di ekor berkas — hapus baris `potongan_pelanggan` (kalau ada) lalu kembalikan CHECK ke enam peran.
+
+---
+
+## 34. ⛔ `20260929000006_ar_tahap3_sp_payments_potongan_kolom` — WAJIB, mandiri
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000006_ar_tahap3_sp_payments_potongan_kolom.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** — nol dependensi terhadap butir 32/33 |
+
+**Apa isinya.** Dua kolom baru `sp_payments.potongan_lain` (`numeric(18,2) NOT NULL DEFAULT 0`, `CHECK >= 0`) dan `sp_payments.potongan_keterangan` (`text`). `DEFAULT 0` → nol dampak ke baris lama.
+
+⛔ **Sengaja NOL GRANT UPDATE tambahan ke `authenticated`** untuk kedua kolom — pola sama dengan `amount`/`pph` (beda dari `reference`/`bukti_potong_url`/`bukti_potong_no` yang memang dapat GRANT UPDATE kolom sejak `20260817000001`). Nominal potongan hanya bisa masuk lewat `record_payment`.
+
+**Rollback.** Ada di ekor berkas — `DROP COLUMN`, **hanya** kalau `record_payment` (butir 35) belum pernah menulis `potongan_lain > 0` di baris mana pun.
+
+---
+
+## 35. ⛔ `20260929000007_ar_tahap3_record_payment_v3` — WAJIB, sesudah butir 9, 13, 33, 34
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000007_ar_tahap3_record_payment_v3.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 9, 13 (AR Tahap 1/2), 33, dan 34** |
+
+**Apa isinya.** `record_payment` v3 — TD-285 (batas total pembayaran vs sisa tagihan, baris invoice dikunci `FOR UPDATE` untuk menutup race dua pembayaran bersamaan), TD-286 (batas PPh vs sisa tagihan, diperiksa lebih dulu supaya pesannya spesifik), TD-287 (parameter `p_potongan_lain`/`p_potongan_keterangan`, keterangan wajib kalau potongan > 0, dijurnal debit ke peran `potongan_pelanggan`). Toleransi pembulatan **`c_tolerance = 1`, dipakai ulang** dari penentu status `'paid'` yang sudah ada (TD-294) — bukan angka baru untuk menyembunyikan potongan TTF.
+
+⛔ **Tanda tangan bertambah 2 parameter → FUNGSI BARU bagi Postgres (gotcha #37)**, bukan `CREATE OR REPLACE` atas yang lama. Berkas **DROP eksplisit** signature 7-argumen sebelum `CREATE` yang 9-argumen — membiarkan keduanya hidup bersama membuat panggilan 7-argumen ambigu (kelas insiden `mark_delivery_delivered`, 17 Sep 2026).
+
+⛔ **ACL WAJIB dipulihkan manual** karena DROP+CREATE tidak mewarisi hak: `REVOKE ALL FROM PUBLIC` + `REVOKE ALL FROM anon` + `GRANT EXECUTE TO authenticated` — persis pola v1/v2. V-POST mengasersi ini (gotcha #40: `proacl NULL` **atau** entri berawalan `=` sama-sama PUBLIC EXECUTE).
+
+**V-PRA menolak jalan** kalau badan yang hidup bukan v2 (tidak memuat `get_mapped_account` atau tidak menolak status `issued`) — mencegah menimpa buta badan yang sudah bergerak (gotcha #35).
+
+**Rollback.** Ada di ekor berkas — mengembalikan v2 (badan lengkap ada di `20260927000003_journal_account_roles_and_readiness.sql`). Kehilangan cap TD-285/286 dan potongan TD-287 — hanya untuk kondisi darurat.
+
+---
+
+## 36. ⛔ `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` — WAJIB, sesudah butir 18, 25, 32
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 18 dan 25** (`create_invoice_for_sp` harus sudah versi `20260928000010`) **dan sesudah butir 32** (`compute_payment_term_days`) |
+
+**Apa isinya.** `due_date` pindah pemicu: dari "invoice_date + termin, dihitung saat terbit/submit" menjadi "tanggal_ttf + termin, dihitung SEKALI saat TTF diterima". Tiga fungsi diubah dalam **satu** migrasi supaya nol jendela dua sumber `due_date` hidup bersamaan:
+
+| fungsi | bentuk perubahan | badan sumber |
+|---|---|---|
+| `mark_ttf_received` | **DROP+CREATE** (+`p_ttf_date date DEFAULT CURRENT_DATE`, dulu hardcode `CURRENT_DATE` — tidak pernah bisa diisi dari UI) + hitung `due_date` sekali kalau `tanggal_ttf` sungguh berubah | `20260817000001` (satu-satunya versi) |
+| `submit_invoice` | **CREATE OR REPLACE** (signature tetap), blok hitung `due_date` dicabut | `20260814000003` (satu-satunya versi) |
+| `create_invoice_for_sp` | **CREATE OR REPLACE** (signature tetap), blok hitung `due_date` dicabut | `20260928000010` (versi TERAKHIR — lihat catatan pembuka seksi ini) |
+
+⛔ **Pencarian "siapa saja yang menulis `due_date`" dilakukan penuh sebelum berkas ini ditulis** (backfill sekali-jalan `20260927000001` sengaja dikeluarkan — ia sudah selesai tugasnya). `create_invoice` (wrapper, bukan `_for_sp`) **diperiksa dan NOL menyentuh due_date** — ia hanya memanggil `create_invoice_for_sp` per Surat Jalan.
+
+⭐ **Diff `create_invoice_for_sp` diverifikasi MEKANIS** (`diff` dua badan, bukan dibaca sekilas) — persis 3 baris berubah: deklarasi `v_due_date`, baris hitungnya, kolom `due_date` di `UPDATE`. `v_override_days`/`v_term_days`/`v_term_label` **TETAP ADA dan TETAP DIPAKAI** — keduanya mengisi `payment_term_days`/`payment_term_label` (metadata termin di header invoice), yang tidak ada hubungannya dengan `due_date`. `tax_id`/`post_invoice_journal` (butir 18/25) **tidak tersentuh**.
+
+⭐ **"`due_date` dihitung sekali lalu permanen" (rapat 13 Agu 2026) TETAP berlaku** — yang berubah hanya PEMICUnya (TTF, bukan submit/terbit). `mark_ttf_received` hanya menghitung ulang kalau `tanggal_ttf` **sungguh berubah** (insert TTF pertama, atau koreksi eksplisit); mengedit No. TTF/nama penerima/catatan saja tidak menyentuh `due_date`.
+
+**Cek frontend (diminta, dilaporkan, TIDAK diubah — di luar scope):** `src/` nol menulis `due_date` langsung. Seluruh kemunculannya di `db.js`/`InvoiceListPage.jsx`/`InvoiceDetailPage.jsx`/`invoiceStatus.js`/`InvoicePDF.jsx` adalah baca (mapper, tampilan, `isOverdue`) — satu-satunya jalur tulis selalu RPC, konsisten dengan `sp_invoices` yang nol GRANT `UPDATE(due_date)` ke `authenticated` sejak `20260814000003`.
+
+**V-PRA menolak jalan** kalau salah satu dari ketiga fungsi tidak dalam bentuk PERSIS yang diharapkan (termasuk memastikan `create_invoice_for_sp` benar-benar versi `20260928000010`, bukan versi lain). **V-POST** memastikan `due_date` sungguh hilang dari ketiga badan, `payment_term_days`/`tax_id`/`post_invoice_journal` di `create_invoice_for_sp` tetap ada, dan ACL ketiganya `authenticated`-only.
+
+**Rollback.** Ada di ekor berkas — kembalikan ketiga fungsi ke bentuk sebelum berkas ini (badan lengkap masing-masing ada di file sumber yang disebut di tabel atas).
+
+---
+
+## 37. ⛔ `20260929000009_ar_tahap3_due_date_ttf_backfill` — MENUNGGU REVIEW DEN, sesudah butir 36
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260929000009_ar_tahap3_due_date_ttf_backfill.sql` |
+| Staging | ⏸ **DITAHAN STOP KERAS** — belum dijalankan bahkan di staging |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⏸ **JANGAN jalankan** sampai query pengukuran dampak (blok V0 di berkas ini) direview dan disetujui Den |
+
+**Apa isinya.** Menghitung ulang `due_date` untuk SELURUH invoice hidup (non-void) memakai basis TTF (butir 36), bukan cuma mengisi yang `NULL` — beda dari backfill AR Tahap 2 (`20260927000001`) yang hanya mengisi kekosongan. Karena basisnya berubah (`invoice_date` → `tanggal_ttf`), nilai `due_date` yang **sudah terisi** dari basis lama juga bisa berubah, dan invoice tanpa TTF yang **sudah** punya `due_date` akan **kehilangannya** (jadi tampil "Belum TTF").
+
+⛔⛔⛔ **Berkas ini punya STOP KERAS** — satu blok `DO $stop$ ... RAISE EXCEPTION ...` yang menggagalkan transaksi tanpa syarat, ditempatkan **sesudah** blok pengukuran dampak (V0, read-only, aman dijalankan sendirian) dan **sebelum** blok backfill sungguhan. Blok STOP itu harus **dihapus manual** sesudah angka V0 direview — desain ini disengaja supaya berkas tidak bisa tereksekusi utuh secara tidak sengaja.
+
+**Cadangan** `sp_invoices_due_date_ttf_backfill_20260929` menyimpan `due_date` lama, `tanggal_ttf` yang dipakai, `term_days`, dan `due_date` baru — pola sama dengan `sp_invoices_due_date_backfill_20260927`.
+
+⚠️ **Dampak produksi terukur di laporan sesi: 1 invoice** kehilangan `due_date` (sudah disetujui Den) — angka pasti untuk staging/production saat launching **wajib diukur ulang** lewat blok V0 sebelum backfill sungguhan dijalankan, karena data bergerak setiap hari.
+
+**Rollback.** Ada di ekor berkas — syarat: hanya mengembalikan baris yang `due_date`-nya masih sama dengan `due_date_baru` backfill ini (koreksi manual sesudahnya tidak ditimpa).
 
 ---
 
