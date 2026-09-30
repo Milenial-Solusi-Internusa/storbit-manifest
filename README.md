@@ -95,7 +95,7 @@ Edit `.env.local`:
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
+VITE_SUPABASE_KEY=your-anon-key-here
 VITE_APP_ENV=development
 VITE_SENTRY_DSN=
 ```
@@ -200,17 +200,21 @@ See `docs/performance/performance-baseline.md` for full requirements.
 
 ## Security Requirements
 
-- All business tables must have **Supabase RLS** enabled
-- The `anon` role has **no access** to sensitive tables (financial / RBAC / user / CRM / inventory) — `anon` GRANT revoked as defense-in-depth alongside RLS (2026-06-15)
-- **Never expose the Supabase service role key** in frontend code (service-role logic lives in Edge Functions only)
-- Permissions are enforced via `user_roles` + hierarchical RBAC — never rely on frontend checks alone
-- MFA is required for Admin, CEO/Executive, Finance Controller, and Head Level roles
-- All important actions must be logged in the audit log
-- Use **soft delete** — never hard-delete business data
-- Use **private storage buckets** with signed URLs for attachments
-- **Never weaken RLS** to make code work
+This is a summary. Full baseline, current gaps, and remediation status: `docs/security/security-baseline.md` (governance detail lives in `docs/Governance/08_TECH_DEBT.md`, referenced there by TD number rather than duplicated here).
 
-See `docs/security/security-baseline.md` for full requirements.
+⚠️ This repository is public (Vercel free-tier constraint) as of 2026-09-30, until upgraded to a paid plan.
+
+- Supabase RLS is enabled on nearly all business tables; a tracked subset still has non-scoping policies (TD-173).
+- The `anon` role holds **zero table-level rights** on any table in the `public` schema as of 2026-09-30 (verified in production). Function-level `EXECUTE` hardening for `anon`/`PUBLIC` is still in progress (TD-300).
+- **Never expose the Supabase service role key** in frontend code — service-role logic lives in Edge Functions only.
+- Permissions are enforced via `user_roles` + RLS/RPC guards — never rely on frontend checks alone. See `src/lib/roles.js` for the role hierarchy.
+- MFA is **not yet enforced** (TD-302, LOW — unscheduled).
+- A gap that let deactivated users keep authenticating was found and remediated in production on 2026-09-30; a permanent fix is still pending (TD-301, HIGH).
+- Use **soft delete** — a small number of tables intentionally lack it (tracked, not undocumented drift).
+- Use **private storage buckets** with signed URLs for attachments.
+- **Never weaken RLS** to make code work.
+
+See `docs/security/security-baseline.md` for full requirements and current status.
 
 ---
 

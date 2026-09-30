@@ -1,202 +1,77 @@
 # Nexus by MSI — Security Baseline
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-09-30
+**Owner:** Den (solo developer/maintainer)
+**Review cadence:** on completion of each security hardening package (e.g. TD-281 H1-H6), and at least every 90 days regardless — see **Ownership & Review** at the end.
 
 ---
 
 ## Overview
 
-Security is a non-negotiable first-class requirement in Nexus by MSI. This document defines the minimum security baseline that must be met across all modules, environments, and deployments.
+Security is a first-class requirement in Nexus by MSI. This document is a **summary of current status**, not an implementation manual — full detail, evidence, and remediation plans live in `docs/Governance/08_TECH_DEBT.md` (search by TD number) and `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md`.
+
+⚠️ **This repository is public** (Vercel free-tier constraint) as of 2026-09-30, and will stay that way until upgraded to a paid plan. Anything written here is visible to anyone. Known, still-open gaps are referenced by TD number only — the technical detail (which tables, which functions, exact queries) lives in `docs/Governance/`, which is also part of this public repo but is not the document a casual reader opens first.
 
 ---
 
 ## 1. Authentication
 
-### 1.1 Supabase Auth
-- All authentication is handled via Supabase Auth
-- No custom auth implementation is permitted
-- JWT tokens issued by Supabase are used for all API calls
-- Session expiry must be configured (default: 1 hour access token, 7 day refresh token)
-
-### 1.2 Multi-Factor Authentication (MFA)
-MFA is **mandatory** for the following roles:
-
-| Role | MFA Required | Enforcement |
-|------|-------------|-------------|
-| Super Admin | Yes | Hard-enforced at login |
-| Admin | Yes | Hard-enforced at login |
-| BOD / Director | Yes | Hard-enforced at login |
-| Finance Controller | Yes | Hard-enforced at login |
-| Head Level | Yes | Hard-enforced at login |
-| Finance Staff | Recommended | Soft-enforce (reminder) |
-| Operations Staff | Optional | No enforcement |
-
-MFA enforcement must be server-side — frontend MFA check alone is insufficient.
-
-### 1.3 Inactive User Blocking
-- Users terminated or inactive must be blocked immediately
-- `is_active = false` in `user_profiles` must block all access
-- Supabase Auth user must also be disabled on termination
-- Session invalidation must trigger on `is_active` change
-
----
+- All authentication goes through Supabase Auth; there is no custom implementation.
+- Session expiry (access/refresh token lifetime) is a Supabase project setting — not independently verified in this document.
+- **MFA is not enforced today.** A `profiles.mfa_required` flag and a settings-page toggle exist but are not wired to Supabase Auth's MFA API in any way — setting the flag changes nothing about login behavior. Not yet scheduled — **TD-302** (LOW).
+- **Deactivated users could still authenticate and use existing sessions, until 2026-09-30.** Found during a security audit and remediated in production the same day (affected accounts blocked at the Auth layer, active sessions revoked). The underlying gap — deactivating a user in the app does not block their Supabase Auth login or invalidate sessions already issued to them — has **not** been permanently closed; a code-level fix plus a database-level safeguard are both still required. **TD-301** (HIGH).
 
 ## 2. Authorization
 
-### 2.1 Row Level Security (RLS)
-- RLS must be enabled on ALL business tables
-- All RLS policies must scope by `company_id`
-- RLS must never be disabled to make code work
-- RLS must be reviewed before every schema change
-- Use `auth.uid()` and helper functions — never hardcode user IDs
-
-### 2.2 Role-Permission Model
-- Authorization must be granular per module and action
-- Roles: Super Admin, Admin, BOD, Director, Manager, Head, Finance Controller, Finance Staff, Operations, Sales, Viewer
-- Permissions: `{module}.{action}` — e.g. `invoice.create`, `customer.export`, `user.role_change`
-- Frontend permission checks are UX only — server must enforce via RLS + DB functions
-- Do not rely on frontend-only permission checks for sensitive operations
-
-### 2.3 Service Role Key
-- The Supabase service role key must NEVER be used in frontend code
-- Service role key is only for trusted server-side processes (Edge Functions, migration scripts)
-- If service role is needed in frontend, the architecture is wrong — redesign
-
----
+- Roles and their hierarchy are defined in the `roles` table / `src/lib/roles.js` — that file is the single source of truth and is not duplicated here, since it changes as the org does and a second copy would drift out of date. Note: HR/org-chart job-title levels (`positions.level`) are a separate concept from security roles — do not conflate the two.
+- Permission gating is menu-key based (`role_menu_permissions` / `user_menu_permissions`), enforced through RLS and RPC guards — not a generic `{module}.{action}` scheme, and never through frontend checks alone.
+- RLS is enabled on nearly all business tables. A tracked subset still has non-scoping (`USING(true)`) policies — **TD-173** (CRITICAL, OPEN; the table list is intentionally not repeated here — see the TD entry).
+- A handful of reference tables (`roles`, `departments`, `positions`, `branches`) are intentionally global rather than company-scoped — a deliberate design choice, not a gap.
+- The Supabase service role key is never used in frontend code; server-side logic lives in Edge Functions only.
 
 ## 3. Data Security
 
-### 3.1 Sensitive Data
-Never expose the following in public APIs, frontend views without permission, or logs:
-- Vendor cost and purchase price
-- Job profit / margin
-- Customer credit limit (except to Finance/Head roles)
-- Finance notes and internal notes
-- Personal employee data beyond what is needed
-- Bank account details (mask except last 4 digits for display)
-
-### 3.2 Attachments
-- All file attachments must use **private Supabase Storage buckets**
-- Never use public buckets for business documents
-- Attachment access must use signed URLs with short expiry (15 minutes default)
-- Signed URL generation must be role-gated
-
-### 3.3 Soft Delete
-- All business data must use soft delete (`deleted_at` timestamp)
-- Hard DELETE is prohibited on business tables
-- Soft-deleted records are invisible to normal queries (`WHERE deleted_at IS NULL`)
-- Only Super Admin can view or restore soft-deleted records
-- Important delete actions (customers, vendors, invoices) require approval
-
-### 3.4 Export Restrictions
-- Data export to Excel / CSV is restricted to:
-  - Head Level and above
-  - Roles explicitly granted `{module}.export` permission
-- Export actions must be logged in audit log
-- Bulk export endpoints must be rate-limited
-
----
+- Sensitive fields (vendor cost, margins, credit limits, bank details, etc.) are expected to be masked or role-restricted — **this has not yet been audited end-to-end**. Tracked as open follow-up work, not yet assigned a TD number.
+- Business attachments use a private Storage bucket with signed URLs.
+- Soft delete (`deleted_at`) is the default for business data. A small number of tables intentionally lack it — tracked in `08_TECH_DEBT.md`, not enumerated here.
+- Restoring a soft-deleted record is not a general capability across all tables — do not assume it without checking.
+- There is no approval workflow today for deleting customer/vendor/invoice records.
+- Data export is not currently logged to `audit_logs`, and no export path is rate-limited.
 
 ## 4. API Security
 
-### 4.1 Internal API (Supabase PostgREST)
-- All requests authenticated via JWT
-- RLS enforced automatically
-- No raw internal table rows in public-facing responses
-- Supabase anon key is safe in frontend (RLS protects it)
-- Service role key is server-only
-
-### 4.2 Public API (Future)
-- Public endpoints must use data masking (DTOs)
-- Public endpoints must NEVER return:
-  - Internal IDs (use tracking tokens instead)
-  - Cost / margin / financial data
-  - Internal notes
-  - Employee / PIC personal data
-- Rate limiting is mandatory on all public endpoints
-- API keys must be stored securely and rotatable
-- Public API requests must be logged (`public_tracking_access` event)
-
----
+- All internal API access (Supabase PostgREST) requires a JWT; RLS applies automatically.
+- The anon key is meant to be public and safe to ship — but "safe" rests on two separate layers: RLS (row visibility) and table/function grants (whether an operation is reachable at all). As of 2026-09-30, **`anon` holds zero table-level rights on any table in the `public` schema** (verified directly in production). Function-level `EXECUTE` hardening for `anon`/`PUBLIC` is still in progress — **TD-300**.
+- No public-facing API exists yet; any prior "Public API (Future)" requirements are aspirational and tracked separately, not restated here.
 
 ## 5. Environment Security
 
-### 5.1 Environment Separation
-- Development, Staging, and Production must be completely separated
-- Separate Supabase projects per environment
-- Separate environment variables per environment
-- Never use production credentials in development
-- Never deploy directly to production without going through staging
-
-### 5.2 Environment Variables
-Required environment variables:
-```
-VITE_SUPABASE_URL=         # Supabase project URL (per environment)
-VITE_SUPABASE_ANON_KEY=    # Supabase anon key (per environment)
-VITE_APP_ENV=              # development / staging / production
-VITE_SENTRY_DSN=           # Error monitoring DSN
-```
-
-Never commit `.env.local` or `.env.production` to source control.
-`.env.example` with empty values is the only env file in source control.
-
----
+- Two environments exist as two separate Supabase projects: staging and production. There is no separate "development" project — local development points at staging.
+- Feature work goes through staging before production. Cross-cutting security hardening is a deliberate exception and may land in staging and production the same day, or production first, when the exposure itself is in production (see `12_ANTREAN_MIGRASI_PRODUCTION.md`).
+- Required frontend env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY` (not `VITE_SUPABASE_ANON_KEY` — corrected 2026-09-30). Never committed to source control (`.env*` is gitignored; `.env.example` with empty values is the only env file tracked).
 
 ## 6. Error Monitoring
 
-### 6.1 Sentry Integration (Planned)
-- Sentry must be integrated for production error monitoring
-- Source maps must NOT be exposed publicly (upload to Sentry, delete from build)
-- Error events must never include sensitive user data (PII, financial data)
-- Sentry DSN is stored in environment variables
-
-### 6.2 Supabase Logs
-- Supabase provides built-in query logs — review regularly for anomalies
-- Failed auth attempts must be monitored
-- RLS policy violations should be monitored
-
----
+- Sentry is live (since 2026-09-21), gated on `VITE_SENTRY_DSN` being set; `sendDefaultPii: false`, query strings stripped from breadcrumbs.
+- Source maps: no explicit build setting exists, so the bundler's default (off) applies — none are generated for production builds today.
+- Supabase's built-in query logs exist and should be reviewed for anomalies; failed-auth and RLS-violation monitoring is not independently verified here.
 
 ## 7. Security Checklist per Feature
 
-Before any feature goes to production, verify:
-
-- [ ] RLS policy in place and tested
-- [ ] Permission check on server side (not only frontend)
-- [ ] Sensitive fields masked or excluded from public response
-- [ ] Attachments use private bucket + signed URL
-- [ ] Soft delete implemented (no hard DELETE)
-- [ ] Audit log event triggered for important actions
-- [ ] Export restricted to authorized roles
-- [ ] No service role key used in frontend
-- [ ] No raw database rows returned to public API
-- [ ] Input validation on all user-supplied data
-
----
+Before any feature ships, verify: RLS policy in place and tested · server-side permission check (not frontend-only) · sensitive fields masked or excluded · attachments private + signed URL · soft delete (or a documented exception) · audit log event for important actions · export restricted and logged · no service role key in frontend · no raw rows returned to a public API · input validated.
 
 ## 8. Mandatory Audit Events
 
-The following events must always be logged regardless of module:
+The intended event list (login, logout, create, update, soft_delete, restore, submit, approve, reject, revise, export, import, attachment_upload, attachment_delete, role_change, permission_change, api_request, public_tracking_access) is not fully met today — `export` is a known gap (§3), and coverage of the remainder has not been re-verified line-by-line recently. Treat this list as the target, not a completed guarantee.
 
-| Event | Trigger |
-|-------|---------|
-| `login` | User signs in |
-| `logout` | User signs out |
-| `create` | Any business record created |
-| `update` | Any business record updated |
-| `soft_delete` | Any business record soft deleted |
-| `restore` | Soft-deleted record restored |
-| `submit` | Document submitted for approval |
-| `approve` | Document approved |
-| `reject` | Document rejected |
-| `revise` | Document sent for revision |
-| `export` | Data exported |
-| `import` | Data imported |
-| `attachment_upload` | File attached to record |
-| `attachment_delete` | Attachment removed |
-| `role_change` | User role added or removed |
-| `permission_change` | Role permission modified |
-| `api_request` | External API call received |
-| `public_tracking_access` | Public tracking endpoint accessed |
+---
 
-See full policy in `docs/security/audit-log-policy.md`.
+## Ownership & Review
+
+- **Owner:** Den (solo developer/maintainer) — there is no dedicated security team.
+- **Last Updated:** 2026-09-30.
+- **Review triggers** (whichever comes first):
+  - Every time a security hardening package (TD-281 H1-H6, or a successor) completes — re-read this file against the new state in the same session.
+  - Every 90 days of calendar time regardless of other triggers.
+  - The moment a claim here is cited in a decision and turns out wrong — fix it as part of that same unit of work, don't defer it.
+- This file is a baseline snapshot, not a changelog. Dated history belongs in `PROGRESS.md`/`CLAUDE.md`; this file states what's true *right now*, with a TD number for anything not yet true.
