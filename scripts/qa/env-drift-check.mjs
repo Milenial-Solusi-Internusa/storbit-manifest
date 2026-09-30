@@ -212,6 +212,39 @@ const DIKETAHUI = [
     alasan: 'AR Tahap 3 -- pengaman pembayaran (TD-285/286/287) + jatuh tempo dari TTF + koreksi UAT tanggal_menerima (20260929000004..10) -- LIVE staging 29 Sep 2026, production belum; naik bersama Tahap 1/2 saat launching (UI-nya menumpang di sana)',
   },
   {
+    // AR Tahap 3 bagian kedua (20260930000001..06), doc 12 butir 39-44.
+    // Ditulis 30 Sep 2026, BELUM DIJALANKAN di staging maupun production --
+    // entri ini disiapkan lebih dulu (pola sama entri "32-38") supaya begitu
+    // staging menjalankannya, drift-nya langsung terbaca ANTRE.
+    //
+    // record_payment/submit_invoice/create_invoice_for_sp/mark_ttf_received
+    // SENGAJA TIDAK ditambahkan di sini -- keempatnya SUDAH tercakup regex
+    // nama fungsi di entri "Tahap 1/2" (butir 16-26) dan entri "32-38" di
+    // atas; klasifikasi() berhenti di kecocokan PERTAMA, jadi menambahkannya
+    // lagi di sini hanya jadi baris mati.
+    //
+    // sp_invoices (kolom approved_by/approved_at/rejected_by/rejected_at/
+    // rejection_note, butir 39) TIDAK ditambahkan di sini juga -- tabel itu
+    // SUDAH ada di regex kategori `kolom` entri "Tahap 1/2" (baris ~130),
+    // jadi fingerprint kolom barunya otomatis ikut ANTRE lewat entri itu.
+    //
+    // ⚠️ Perubahan status_check (nilai baru 'pending_approval') dan predikat
+    // index sp_invoice_one_per_sp (butir 39/40) TIDAK BISA didaftarkan di
+    // sini SAMA SEKALI -- INVENTARIS_SQL kategori `kolom` hanya membaca
+    // information_schema.columns (nama/tipe/nullable/default), bukan CHECK
+    // constraint atau index. Pola sama dengan keterbatasan H2/pg_default_acl
+    // yang sudah dicatat doc 12: alat ini TIDAK PERNAH akan melaporkan drift
+    // untuk keduanya, di lingkungan mana pun -- bukti keduanya benar harus
+    // dicari lewat query langsung (pg_get_constraintdef/pg_get_indexdef),
+    // bukan lewat drift-check.
+    cocok: (kat, kunci) =>
+      (kat === 'fungsi' && /^(approve_invoice_issue|reject_invoice_issue|get_invoice_audit_trail)\(/.test(kunci))
+      || /^(approve_invoice_issue|reject_invoice_issue|get_invoice_audit_trail)\(/.test(hakFungsi(kat, kunci) || ''),
+    kelas: 'antre',
+    butir: '39-44',
+    alasan: 'AR Tahap 3 bagian kedua -- approval terbit invoice (pending_approval, approve/reject_invoice_issue) + izin role finance + jejak koreksi TTF (get_invoice_audit_trail) -- ditulis 30 Sep 2026, BELUM DIJALANKAN di mana pun; naik bersama Tahap 1/2/3 bagian pertama saat launching',
+  },
+  {
     // 12 tabel cadangan koreksi data ongkir/AR (tahap 2-8, 28-29 Sep 2026,
     // migrasi 20260928000001..04 + 20260929000001..03). HANYA DI PRODUCTION,
     // dan memang tidak perlu ada di staging: isinya jejak nilai lama/baru dari

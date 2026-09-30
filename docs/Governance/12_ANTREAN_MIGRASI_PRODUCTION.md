@@ -59,6 +59,12 @@
 | 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
 | 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ✔ 29 Sep (STOP KERAS dilewati manual, sesudah review V0 Den) | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** (ulang, untuk data production saat launching) — sesudah butir 36 |
 | 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 36 |
+| 39 | `20260930000001_ar_tahap3b_status_pending_approval` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3 bagian kedua, PERTAMA |
+| 40 | `20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
+| 41 | `20260930000003_ar_tahap3b_approve_reject_invoice` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39, 40 |
+| 42 | `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
+| 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
@@ -1112,9 +1118,137 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 
 **V-PRA menolak jalan** kalau badan yang hidup bukan versi butir 36 (tidak lagi menimpa `tanggal_menerima` di UPDATE, atau kehilangan blok `due_date`) — `oidvectortypes(proargtypes)` dipakai mencocokkan tipe (gotcha #44), bukan `pg_get_function_identity_arguments()`. **V-POST** memastikan pola penimpaan itu sungguh hilang, cabang INSERT + blok `due_date` utuh, dan ACL tetap `authenticated` saja.
 
-⚠️ **Jejak koreksi TTF (nilai lama vs baru) TIDAK dicatat di mana pun** — Nexus belum punya mekanisme audit yang bisa dipakai untuk `ar_ttfs` (lihat laporan sesi 29 Sep 2026 untuk temuan lengkap: `audit_logs` ada tapi skemanya per-record generik dan baru dipakai segelintir RPC lain, `mark_ttf_received` bukan salah satunya). Di luar scope unit kerja ini — dicatat sebagai temuan, bukan dikerjakan.
+⚠️ **Jejak koreksi TTF (nilai lama vs baru) TIDAK dicatat di mana pun** — Nexus belum punya mekanisme audit yang bisa dipakai untuk `ar_ttfs` (lihat laporan sesi 29 Sep 2026 untuk temuan lengkap: `audit_logs` ada tapi skemanya per-record generik dan baru dipakai segelintir RPC lain, `mark_ttf_received` bukan salah satunya). Di luar scope unit kerja ini — dicatat sebagai temuan, bukan dikerjakan. **[→ ditutup butir 42 (`20260930000004`), AR Tahap 3 bagian kedua: `mark_ttf_received` versi berkas itu menulis `audit_logs` aksi `KOREKSI_TTF` di cabang UPDATE, dibaca lewat RPC baru `get_invoice_audit_trail` (butir 44) karena `audit_logs` sendiri tak bisa dibaca finance/finance_controller langsung.]**
 
 **Rollback.** Ada di ekor berkas — tempel ulang badan `20260929000008` (mengembalikan penimpaan `tanggal_menerima` tiap edit).
+
+---
+
+## AR Tahap 3 bagian kedua (butir 39-44) — approval terbit invoice + izin role finance + jejak koreksi TTF
+
+Enam berkas dari PLAN AR Tahap 3 bagian kedua, DISETUJUI Den 30 Sep 2026 sesudah PLAN dipresentasikan: TASK 1 (approval terbit invoice — status baru `pending_approval`, fungsi `approve_invoice_issue`/`reject_invoice_issue`), TASK 2 (izin `finance` dibuka untuk ajukan/submit/TTF/pembayaran; `submit_invoice` disesuaikan), TASK 3 (jejak koreksi TTF ke `audit_logs`, dibaca lewat RPC baru karena `audit_logs` sendiri tak terbaca finance/finance_controller). **Ditulis 30 Sep 2026 sebagai FILE SAJA — BELUM DIJALANKAN di staging maupun production.** Urutan **MENGIKAT: 39 → 40 → 41, dan 39 → 42** (42 tidak bergantung 40/41); **43 dan 44 mandiri** terhadap kelima lainnya, tapi wajar dijalankan di ujung batch ini karena sama-sama bagian PLAN yang sama.
+
+⛔ **Dasar setiap fungsi yang disunting = versi TERAKHIR yang hidup di staging pada AR Tahap 3 bagian pertama (butir 32-38), BUKAN versi produksi** — produksi belum menjalankan satu pun dari butir 32-38, jadi keenam berkas baru ini **TIDAK BOLEH** dijalankan ke production tanpa butir 32-38 (dan butir 6-31 di bawahnya) lebih dulu. Rincian basis per fungsi ada di kepala tiap berkas.
+
+⚠️ **Guard "satu SP satu invoice" punya TIGA penegak, bukan dua** — ditemukan saat Den mengoreksi PLAN semula: `sp_invoice_readiness()` dan `sp_invoice_readiness_all()` adalah guard APLIKASI, tapi ada penegak KETIGA di level index yang independen dari keduanya:
+
+| | Sebelum (butir 40) | Sesudah (butir 40) |
+|---|---|---|
+| `sp_invoice_one_per_sp` (UNIQUE INDEX partial, lahir `20260923000001`, `schema_snapshot.sql:13701`) | `ON public.sp_invoices USING btree (sp_order_id) WHERE (status <> 'void'::text)` | `ON public.sp_invoices USING btree (sp_order_id) WHERE (status NOT IN ('draft', 'void'))` |
+
+Tanpa perubahan index ini, guard aplikasi akan **mengizinkan** pengajuan ulang untuk SP yang invoice-nya ditolak, tapi `INSERT` baris baru akan **gagal di index ini** (index masih menganggap baris `draft` menempati slot `sp_order_id` itu) — guard yang longgar bertemu index yang masih ketat, hasilnya error yang membingungkan di detik terakhir. Ketiganya (`sp_invoice_readiness`, `sp_invoice_readiness_all`, index ini) disunting DALAM SATU berkas (40) supaya tidak bisa bergerak terpisah.
+
+⚠️ **Tanggal jurnal TIDAK ikut pindah ke tanggal approve.** `post_invoice_journal` (`20260928000003_invoice_issue_v2.sql:349-403`) membaca `entry_date` dari `invoice_journal_projection(p_invoice_id)` (berkas sama, `:92-227`), dan fungsi itu SELALU mengisi `entry_date := dn.signed_date` (baris `:142/:147/:205/:212/:220/:226`, dari `delivery_notes.signed_date`) — nol referensi ke `now()`/`CURRENT_DATE`/waktu approve di kedua fungsi, diverifikasi dengan membaca badannya. Memanggil `post_invoice_journal` lebih lambat (saat `approve_invoice_issue`, bukan saat `create_invoice_for_sp`) tidak mengubah satu pun tanggal jurnal yang dihasilkan.
+
+⚠️ **`is_manager_or_above()` pada `create_invoice_for_sp`/`submit_invoice`/`mark_ttf_received` SENGAJA TIDAK dipersempit** — meloloskan seluruh role ber-`level<=6` lintas departemen adalah perilaku LAMA (sejak `20260817000001`), bukan lahir di batch ini; instruksi Den eksplisit: jangan disentuh di PLAN ini. Dicatat **TD-297** (`08_TECH_DEBT.md`) — perlu keputusan Den siapa saja yang seharusnya boleh, sebelum dipersempit.
+
+**Dampak ke data production saat launching (dilaporkan sesuai instruksi Den):** keenam berkas ini **100% ADITIF terhadap perilaku invoice yang sudah `issued`/`submitted`/`partial`/`paid`** — status baru `pending_approval` hanya bisa lahir dari PEMANGGILAN BARU `create_invoice_for_sp` (butir 40) sesudah berkas ini live; **invoice yang sudah terbit SEBELUM migrasi ini tetap `issued` apa adanya, TIDAK tersentuh, TIDAK berubah status**, karena tidak ada UPDATE massal di berkas mana pun — seluruhnya `ALTER TABLE`/`CREATE OR REPLACE FUNCTION`/`CREATE INDEX`. Nol baris `sp_invoices` diubah oleh proses migrasi itu sendiri.
+
+## 39. ⛔ `20260930000001_ar_tahap3b_status_pending_approval` — WAJIB (AR Tahap 3 bagian kedua, PERTAMA)
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000001_ar_tahap3b_status_pending_approval.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan PERTAMA** dari batch ini |
+
+**Apa isinya.** 100% ADITIF: `sp_invoices_status_check` diperluas dengan `pending_approval`; lima kolom baru `approved_by`/`approved_at`/`rejected_by`/`rejected_at`/`rejection_note` (semua nullable, tanpa FK — pola sama `created_by`). Nol fungsi disentuh, nol baris data diubah.
+
+**Rollback.** Ada di ekor berkas — aman HANYA sebelum butir 40 jalan (sesudahnya bisa ada baris `pending_approval` hidup yang akan gagal masuk constraint lama).
+
+---
+
+## 40. ⛔ `20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate` — WAJIB, sesudah butir 39
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39** |
+
+**Apa isinya.** Tiga objek, harus bergerak bersama (lihat tabel index di pengantar bagian ini): `sp_invoice_readiness()` guard #1 (`status <> 'void'` → `status NOT IN ('draft', 'void')`), `sp_invoice_readiness_all()` CTE kandidat (syarat yang sama), dan index `sp_invoice_one_per_sp` (predikat yang sama). Plus `create_invoice_for_sp` dipotong jadi tahap PENGAJUAN saja — dicabut: penomoran (`increment_document_sequence`, susun `v_invoice_no`), `PERFORM post_invoice_journal`, `PERFORM sp_recompute_status`; INSERT header memakai `status='pending_approval'`, `invoice_no` tidak diisi; ditambah `INSERT INTO audit_logs` aksi `AJUKAN_INVOICE`. Guard peran ditambah `has_role('finance')`.
+
+**Basis `create_invoice_for_sp`:** `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql` (versi TERAKHIR yang hidup di staging). **Diff diverifikasi MEKANIS** (`diff`) — hanya menyentuh: deklarasi 5 variabel penomoran dicabut, satu baris guard peran, satu baris `v_year` dicabut, blok penomoran 7 baris dicabut, kolom `invoice_no` dicabut dari INSERT + nilai status `'issued'`→`'pending_approval'`, dan ekor fungsi (`PERFORM post_invoice_journal`+`PERFORM sp_recompute_status`) diganti `INSERT INTO audit_logs`. Segala sesuatu yang lain (readiness check, rantai termin, hitung `invoice_date`, `tax_id`, baris item, baris ongkir, hitung total) byte-identik.
+
+**V-PRA menolak jalan** kalau `create_invoice_for_sp` yang hidup bukan versi `20260929000008` (dicek: memanggil `post_invoice_journal` langsung, belum menyebut `pending_approval`). **V-POST** memastikan `create_invoice_for_sp` tidak lagi memanggil `post_invoice_journal`/`sp_recompute_status`, meng-INSERT `pending_approval`, memuat `has_role('finance')` dan `AJUKAN_INVOICE`; ACL ketiga fungsi + index `sp_invoice_one_per_sp` diverifikasi.
+
+**Rollback.** Ada di ekor berkas — kembalikan ketiga fungsi + index ke bentuk `20260929000008`/`20260927000003`/`20260923000001`. Aman hanya kalau belum ada baris `pending_approval` hidup.
+
+---
+
+## 41. ⛔ `20260930000003_ar_tahap3b_approve_reject_invoice` — WAJIB, sesudah butir 39, 40
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000003_ar_tahap3b_approve_reject_invoice.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39 dan 40** |
+
+**Apa isinya.** Dua fungsi BARU. `approve_invoice_issue(uuid)`: mengunci baris (`FOR UPDATE`), menolak kalau bukan `pending_approval`, menolak kalau `created_by = auth.uid()` KECUALI `super_admin` (jawaban Den atas pertanyaan PLAN), lalu memindahkan VERBATIM blok penomoran yang dicabut dari `create_invoice_for_sp` di butir 40, `UPDATE ... SET invoice_no=..., status='issued', approved_by, approved_at`, `PERFORM post_invoice_journal`, `PERFORM sp_recompute_status`, `INSERT INTO audit_logs` aksi `SETUJUI_INVOICE`. `reject_invoice_issue(uuid, text)`: guard sama (termasuk larangan menolak pengajuan sendiri), catatan penolakan wajib, `UPDATE ... SET status='draft', rejected_by, rejected_at, rejection_note`, `INSERT INTO audit_logs` aksi `TOLAK_INVOICE`.
+
+Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`finance_controller`/`ceo`, sesuai keputusan rapat 9/11/24 Sep 2026 (penyetuju = finance_controller, pengganti = Finance Controller lain atau CEO).
+
+**V-POST** memastikan kedua fungsi ada dan ACL `authenticated`-only.
+
+**Rollback.** `DROP FUNCTION` keduanya — aman hanya kalau nol baris `pending_approval` hidup butuh jalur ini.
+
+---
+
+## 42. ⛔ `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard` — WAJIB, sesudah butir 39
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000004_ar_tahap3b_record_payment_ttf_pending_guard.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39** |
+
+**Apa isinya.** Dua fungsi, masing-masing untuk dua alasan yang harus mendarat bersama. `record_payment` (basis `20260929000007`, v3, signature TIDAK berubah): guard status ditambah cabang `pending_approval`; guard peran ditambah `has_role('finance')` (keputusan rapat 24 Sep 2026). `mark_ttf_received` (basis `20260929000010`, TERAKHIR): guard status + `pending_approval`; guard peran + `has_role('finance')`; **jejak koreksi TTF** — `audit_logs` aksi `KOREKSI_TTF` diisi HANYA di cabang UPDATE (bukan INSERT pertama) dan HANYA kalau `tanggal_ttf`/`no_ttf`/`diterima_oleh`/`notes` sungguh berubah dari nilai sebelumnya (menutup catatan terbuka di butir 38: "jejak koreksi TTF tidak dicatat di mana pun").
+
+⛔ **`is_manager_or_above()` pada `mark_ttf_received` TIDAK disentuh** — lihat TD-297.
+
+**Kedua diff diverifikasi MEKANIS.** `record_payment`: `CREATE FUNCTION` → `CREATE OR REPLACE FUNCTION` (signature sama, kata kunci saja), satu baris guard peran, tiga baris guard status baru — selebihnya byte-identik. `mark_ttf_received`: tiga variabel deklarasi baru (nilai lama no_ttf/diterima_oleh/notes) + dua variabel nilai baru, satu baris guard peran, tiga baris guard status baru, SELECT "sebelum" diperluas 2→5 kolom, dan blok `IF ... THEN INSERT INTO audit_logs ... END IF;` baru di cabang UPDATE — cabang INSERT dan blok hitung `due_date` tidak tersentuh.
+
+**V-PRA** menolak jalan kalau salah satu fungsi bukan basis yang diharapkan atau sudah menyebut `pending_approval` (migrasi sudah pernah jalan). **V-POST** memastikan kedua guard status+peran ada, `KOREKSI_TTF` ada, pola lama "menimpa `tanggal_menerima`" TIDAK kembali, dan ACL keduanya `authenticated`-only.
+
+**Rollback.** Tempel ulang badan dari `20260929000007`/`20260929000010`, REVOKE/GRANT ulang.
+
+---
+
+## 43. ⛔ `20260930000005_ar_tahap3b_submit_invoice_finance_role` — WAJIB, mandiri
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000005_ar_tahap3b_submit_invoice_finance_role.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** — nol dependensi terhadap butir 39-42 |
+
+**Apa isinya.** Satu baris berubah: guard peran `submit_invoice` ditambah `has_role('finance')`. Guard status TIDAK disentuh — sudah gaya allowlist (`status <> 'issued'`), otomatis menolak `pending_approval` tanpa perubahan.
+
+**Basis:** `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql`. **Diff diverifikasi MEKANIS: HANYA satu baris** (penambahan `OR has_role('finance')`).
+
+**Rollback.** Tempel ulang badan dari `20260929000008`, REVOKE/GRANT ulang.
+
+---
+
+## 44. ⛔ `20260930000006_ar_tahap3b_get_invoice_audit_trail` — WAJIB, mandiri
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20260930000006_ar_tahap3b_get_invoice_audit_trail.sql` |
+| Staging | ⛔ **belum** |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan** (perlu berjalan sebelum panel Riwayat FE bisa memuat data apa pun, tapi tidak bergantung ke butir lain di batch ini) |
+
+**Apa isinya.** RPC BARU `get_invoice_audit_trail(uuid)`, `SECURITY DEFINER`, gerbang `invoice_dapat_dibaca()` (sudah ada sejak `20260928000007`). Melayani panel Riwayat Detail Invoice: gabungan baris `audit_logs` `entity_type='sp_invoices'` (AJUKAN/SETUJUI/TOLAK dari butir 40/41) dan `entity_type='ar_ttfs'` milik invoice itu (KOREKSI_TTF dari butir 42), satu urutan waktu.
+
+⛔ **Perlu ada karena `audit_logs_read` (RLS) dibatasi `is_admin_or_above()`** (`role.code IN ('super_admin','admin')`, diverifikasi ke definisi fungsi) — finance dan finance_controller BUKAN admin, jadi tidak bisa membaca `audit_logs` langsung lewat PostgREST. Tanpa RPC ini, panel Riwayat yang diminta TASK 1 dan TASK 3 akan kosong PERSIS untuk orang yang paling butuh melihatnya.
+
+**Rollback.** `DROP FUNCTION` — aman kapan pun, baca-saja.
 
 ---
 
@@ -1132,6 +1266,8 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 ### H4 — permukaan panggil yang masih PUBLIC EXECUTE
 
 **Tiga penerbit invoice di production:** `create_invoice` dan `create_invoice_for_sp` (`proacl NULL` = **PUBLIC EXECUTE**) dan `submit_invoice` (`=X/postgres` = PUBLIC). Staging sudah mengetatkannya lewat `20260926000002`, jadi `env-drift-check` melaporkannya sebagai **ANTRE** — ⚠️ dan **"ANTRE" berarti *sudah diperbaiki di staging*, BUKAN *tidak berbahaya di produksi*.** Arah longgarnya ada di produksi.
+
+✅ **[30 Sep 2026] Bagian INVOICE dari H4 TERTUTUP sebagai efek samping antrean butir 9** (`20260926000002_ar_single_issue_path.sql:535-542`, sudah berisi `REVOKE ALL ... FROM PUBLIC` + `GRANT EXECUTE ... TO authenticated` untuk ketiga fungsi ini) — bukan karena PLAN AR Tahap 3 bagian kedua (butir 39-44) melakukan sesuatu yang baru untuk H4, melainkan karena ketiga fungsi itu memang sudah dibenahi ACL-nya sejak butir 9 ditulis, dan PLAN AR Tahap 3 bagian kedua mengasersi ulang ACL itu secara defensif di setiap `CREATE OR REPLACE` yang menyentuhnya (butir 40, 43). Menjalankan butir 9 ke production (prasyarat wajib bagi butir 39-44 apa pun) dengan sendirinya menutup baris "tiga penerbit invoice" di paragraf ini. **BUKAN berarti H4 selesai** — sisanya (`get_linked_bnf_status`, paragraf di bawah) TIDAK tersentuh, dan H5 + H6 (dua subbagian di bawah) **TETAP SEPENUHNYA TERBUKA**, tidak disinggung sama sekali oleh batch invoice mana pun.
 
 ⛔ **`get_linked_bnf_status(uuid)` — dan ini BUKAN sekadar soal ACL.** Ia PUBLIC EXECUTE, tapi guard di dalamnya juga **gagal untuk `anon`** lewat logika tiga nilai: `IF v_created_by != auth.uid() AND NOT is_bnf_authorized()` — untuk `anon`, `auth.uid()` NULL, maka `v_created_by != NULL` → **NULL**, `NULL AND true` → **NULL**, dan `IF NULL` **tidak diambil**, sehingga eksekusi jatuh terus dan **mengembalikan status**. `SECURITY DEFINER` mem-bypass RLS.
 >> **`REVOKE` saja menutup pintunya sambil membiarkan logikanya tetap keliru** untuk setiap pemanggil ber-`auth.uid()` NULL. **Keduanya wajib diperbaiki bersama**, dan itulah sebabnya fungsi ini masuk H4 alih-alih jadi pekerjaan ACL biasa.
