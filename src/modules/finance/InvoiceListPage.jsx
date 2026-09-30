@@ -261,7 +261,9 @@ export default function InvoiceListPage({ onOpenInvoice }) {
                     {entityFilter === 'semua' && (
                       <Td nowrap style={{ color: C.inkSoft }}>{r.companies?.code || r.companies?.name || '—'}</Td>
                     )}
-                    <Td mono nowrap style={{ color: C.accent, fontWeight: 600 }}>{r.invoice_no || '—'}</Td>
+                    <Td mono nowrap style={r.invoice_no ? { color: C.accent, fontWeight: 600 } : { color: C.inkFaint }}>
+                      {r.invoice_no || 'Menunggu nomor'}
+                    </Td>
                     <Td>{r.sp_orders?.accounts?.name || '—'}</Td>
                     <Td mono nowrap style={{ color: C.inkSoft }}>{r.sp_orders?.sp_no || '—'}</Td>
                     <Td nowrap>{fmtDate(r.invoice_date)}</Td>

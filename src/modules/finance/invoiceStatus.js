@@ -144,3 +144,17 @@ export function dueDateText(row) {
   if (row?.due_date) return fmtDate(row.due_date);
   return ['draft', 'pending_approval', 'void'].includes(row?.status) ? '—' : 'Belum TTF';
 }
+
+// ─── Label saat belum bernomor ─────────────────────────────────────────────
+// `invoice_no` lahir saat invoice DISETUJUI (approve_invoice_issue) -- sampai
+// itu terjadi, pending_approval/draft dulu menampilkan "(tanpa nomor)" polos
+// di judul halaman & breadcrumb, kesannya data rusak. Dipakai HANYA di dua
+// tempat itu (Detail Invoice) -- baris "No. Invoice" di detail dan kolom
+// "No. Invoice" di daftar punya teks pudarnya sendiri ("Terbit setelah
+// disetujui" / "Menunggu nomor"), TIDAK lewat helper ini.
+export function invoiceNoLabel({ invoice_no, status, sp_no } = {}) {
+  if (invoice_no) return invoice_no;
+  if (status === 'pending_approval' && sp_no) return `Pengajuan SP ${sp_no}`;
+  if (status === 'draft' && sp_no) return `Ditolak · SP ${sp_no}`;
+  return '(tanpa nomor)';
+}

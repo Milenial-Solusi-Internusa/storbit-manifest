@@ -33,7 +33,7 @@ import { getTodayWIB, fmtRelativeWIB, fmtDateTimeWIB } from '../../lib/dateUtils
 import useInvoiceWorkflow from './useInvoiceWorkflow';
 import {
   STATUS_LABEL, STATUS_TAG, INVOICE_STEPS, stepIndexOf,
-  filterInvoices, isOverdue, dueDateText,
+  filterInvoices, isOverdue, dueDateText, invoiceNoLabel,
 } from './invoiceStatus.js';
 import {
   Crumbs, Btn, MoreMenu, RecordNav, Stepper, Panel, MetaRow, TabBar, TabBtn,
@@ -540,6 +540,8 @@ export default function InvoiceDetailPage({
   const tagStatus = STATUS_TAG[status] || STATUS_TAG.draft;
   // Lihat ALASAN_PDF_BELUM_TERBIT -- status, bukan peran.
   const pdfTerkunci = status === 'pending_approval' || status === 'draft';
+  // Judul halaman + breadcrumb -- lihat invoiceNoLabel() (invoiceStatus.js).
+  const invoiceLabel = invoiceNoLabel(inv);
 
   /* ── Aksi utama, KONTEKSTUAL pada status ──────────────────────────────── */
   const aksiUtama = (() => {
@@ -601,7 +603,7 @@ export default function InvoiceDetailPage({
       {/* ══ Kepala halaman ══════════════════════════════════════════════ */}
       <Crumbs items={[
         { label: 'Daftar Invoice', onClick: onBack },
-        { label: inv.invoice_no || '(tanpa nomor)', mono: true },
+        { label: invoiceLabel, mono: !!inv.invoice_no },
       ]}/>
 
       <div className="nx-grid-2 nx-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)', gap: SP.s6, alignItems: 'start' }}>
@@ -609,10 +611,10 @@ export default function InvoiceDetailPage({
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
             <h1 style={{
-              margin: 0, fontFamily: FONT_MONO, fontSize: 30, fontWeight: 600,
+              margin: 0, fontFamily: inv.invoice_no ? FONT_MONO : FONT_DISPLAY, fontSize: 30, fontWeight: 600,
               letterSpacing: '-0.01em', lineHeight: 1.15, color: C.ink, wordBreak: 'break-all',
             }}>
-              {inv.invoice_no || '(tanpa nomor)'}
+              {invoiceLabel}
             </h1>
             <Badge {...tagStatus}>{STATUS_LABEL[status] || status || '—'}</Badge>
           </div>
@@ -748,7 +750,10 @@ export default function InvoiceDetailPage({
               </div>
 
               <div style={{ minWidth: 220, flex: '0 1 280px' }}>
-                <MetaRow label="No. Invoice" mono strong>{inv.invoice_no || '—'}</MetaRow>
+                <MetaRow label="No. Invoice" mono strong>
+                  {inv.invoice_no
+                    || <span style={{ color: C.inkFaint, fontFamily: 'inherit' }}>Terbit setelah disetujui</span>}
+                </MetaRow>
                 <MetaRow label="No. SP" mono>
                   {inv.sp_no
                     ? <Ref onClick={panelSp} title="Lihat ringkas SP">{inv.sp_no}</Ref>
