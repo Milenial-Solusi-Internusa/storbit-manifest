@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-22T09:00:43.733Z",
-  "errors": 137,
+  "generatedAt": "2026-09-30T04:59:16.168Z",
+  "errors": 139,
   "warnings": 21,
   "files": {
     "src/App.jsx": {
@@ -149,6 +149,10 @@
     },
     "src/modules/crm/RateListPage.jsx": {
       "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/finance/InvoiceDetailPage.jsx": {
+      "errors": 2,
       "warnings": 0
     },
     "src/modules/foundation/OrgStructurePage.jsx": {

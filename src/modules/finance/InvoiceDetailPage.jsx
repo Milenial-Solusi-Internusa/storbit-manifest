@@ -243,26 +243,9 @@ export default function InvoiceDetailPage({
     kicker: 'DC tujuan', title: [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '(tanpa DC)',
     rows: [['Kode', inv.dc?.kode || '—'], ['Wilayah', inv.dc?.wilayah || '—'], ['Alamat', inv.dc?.alamat || '—']],
   });
-  // TD-289: dulu ber-onOpenFull ke halaman SP penuh, yang menendang Finance
-  // Controller ke Beranda (tak punya akses menu di sana). Diganti panel
-  // baca-saja SAJA -- pola sama panelBtb() (SJ dan BTB sudah begitu sejak
-  // awal), Grand Design Bagian 1 prinsip 4: visibilitas lewat referensi,
-  // bukan akses menu. Data (sp_orders/sp_order_items/sp_btb/dc_master) sudah
-  // terbaca RLS company-scoped TANPA syarat role -- yang rusak murni gerbang
-  // MENU, bukan data.
-  const jumlahJenisBarang = barisBarang.length;
-  const jumlahQtyBarang   = barisBarang.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const panelSp = () => setPanel({
-    kicker: 'Surat Pesanan', title: inv.sp_no || '(tanpa nomor)',
-    rows: [
-      ['Tanggal SP', fmtDate(inv.sp_date)],
-      ['Customer', inv.customer_name || '—'],
-      ['DC', [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '—'],
-      ['Barang', jumlahJenisBarang > 0
-        ? `${jumlahJenisBarang} jenis · ${jumlahQtyBarang.toLocaleString('id-ID')} unit`
-        : '—'],
-    ],
-  });
+  // panelSp() (baris "Surat Pesanan") DIPINDAH ke bawah, sesudah barisBarang
+  // dideklarasikan -- lihat komentar di sana. Isinya (kicker/title/rows) TIDAK
+  // berubah sama sekali, cuma posisinya di berkas ini.
   const panelDelivery = (d) => setPanel({
     kicker: 'Surat Jalan', title: d.do_no || '(tanpa nomor)',
     rows: [
@@ -375,6 +358,33 @@ export default function InvoiceDetailPage({
   // dua baris ongkir untuk satu angka, salah satunya nol. Ongkir kini muncul
   // TEPAT SEKALI, di ringkasan, sama seperti invoice PDF.
   const barisBarang = inv?.lines?.filter(isInvoiceItemLine) ?? [];
+
+  // jumlahJenisBarang/jumlahQtyBarang DAN panelSp() (baris "Surat Pesanan",
+  // dekat panelDc() semula) DIPINDAH ke sini, SESUDAH barisBarang -- posisi
+  // lama keduanya ada SEBELUM barisBarang, jadi `barisBarang.length` dibaca
+  // sebelum barisBarang terinisialisasi = ReferenceError TDZ di SETIAP
+  // render (`eslint no-use-before-define{variables:true}` menangkapnya;
+  // ketahuan dari ErrorBoundary di beta). Isi panel TIDAK berubah.
+  const jumlahJenisBarang = barisBarang.length;
+  const jumlahQtyBarang   = barisBarang.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  // TD-289: dulu ber-onOpenFull ke halaman SP penuh, yang menendang Finance
+  // Controller ke Beranda (tak punya akses menu di sana). Diganti panel
+  // baca-saja SAJA -- pola sama panelBtb() (SJ dan BTB sudah begitu sejak
+  // awal), Grand Design Bagian 1 prinsip 4: visibilitas lewat referensi,
+  // bukan akses menu. Data (sp_orders/sp_order_items/sp_btb/dc_master) sudah
+  // terbaca RLS company-scoped TANPA syarat role -- yang rusak murni gerbang
+  // MENU, bukan data.
+  const panelSp = () => setPanel({
+    kicker: 'Surat Pesanan', title: inv.sp_no || '(tanpa nomor)',
+    rows: [
+      ['Tanggal SP', fmtDate(inv.sp_date)],
+      ['Customer', inv.customer_name || '—'],
+      ['DC', [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '—'],
+      ['Barang', jumlahJenisBarang > 0
+        ? `${jumlahJenisBarang} jenis · ${jumlahQtyBarang.toLocaleString('id-ID')} unit`
+        : '—'],
+    ],
+  });
 
   // DPP Nilai Lain = (Subtotal + Shipping) x 11/12 -- rumus & konstanta SAMA
   // dengan blok totals InvoicePDF (`InvoicePDF.jsx:408`), bukan disalin ulang.
