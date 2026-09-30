@@ -6,11 +6,15 @@
 -- SELURUH tabel (dan view/materialized view -- lihat catatan relkind di bawah)
 -- yang SUDAH ADA di skema `public`.
 --
--- Status: BELUM DIJALANKAN di mana pun (ditulis 30 Sep 2026).
+-- Status: ✅ LIVE staging DAN production 30 Sep 2026 (ditulis 30 Sep 2026).
+--         Seluruh V-PRA/V-POST lolos di KEDUA lingkungan, nol koreksi
+--         diperlukan untuk berkas ini (beda dari lapis 2, lihat berkasnya).
+--         Angka potret sebelum/sesudah yang sebenarnya terjadi (bukan
+--         perkiraan di bawah): `12_ANTREAN_MIGRASI_PRODUCTION.md` §H5.
 --         ⛔ BUKAN "uji staging dulu, produksi menyusul" seperti H1/H3, dan
 --         BUKAN pula "produksi dulu" seperti H2/H3. Temuan (b) TD-281 eksplisit
 --         menyatakan T-R-T-M `authenticated` SERAGAM di KEDUA lingkungan --
---         karena itu TIDAK PERNAH muncul sebagai drift. Rencana: STAGING DAN
+--         karena itu TIDAK PERNAH muncul sebagai drift. Dijalankan: STAGING DAN
 --         PRODUCTION DI HARI YANG SAMA, sebagai PENGERASAN MANDIRI, TIDAK
 --         menunggu launching fitur `develop` (keputusan Den 30 Sep 2026).
 --

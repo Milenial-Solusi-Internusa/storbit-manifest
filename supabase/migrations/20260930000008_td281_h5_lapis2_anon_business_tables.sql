@@ -5,12 +5,28 @@
 -- ALL") di 11 tabel bisnis (TD-24) dan EXECUTE `anon` di dua RPC yang hanya
 -- berguna kalau anon punya hak tabel di baliknya.
 --
--- Status: BELUM DIJALANKAN di mana pun (ditulis 30 Sep 2026).
---         Sama seperti lapis 1: STAGING DAN PRODUCTION DI HARI YANG SAMA,
---         sebagai PENGERASAN MANDIRI, TIDAK menunggu launching fitur `develop`
---         (keputusan Den 30 Sep 2026). Jalankan SESUDAH lapis 1 -- lapis 1
---         mencabut T-R-T-M di tabel yang sama; menjalankan keduanya berdekatan
---         menghindari jendela drift ganda pada objek yang sama.
+-- Status: ✅ LIVE staging DAN production 30 Sep 2026 (ditulis 30 Sep 2026,
+--         dijalankan dengan versi yang SUDAH DIBETULKAN -- lihat koreksi di
+--         bawah dan di blok "PENCABUTAN RPC"). Dijalankan SESUDAH lapis 1 --
+--         lapis 1 mencabut T-R-T-M di tabel yang sama; menjalankan keduanya
+--         berdekatan menghindari jendela drift ganda pada objek yang sama.
+--         Staging dan production di hari yang sama, sebagai PENGERASAN
+--         MANDIRI, TIDAK menunggu launching fitur `develop` (keputusan Den
+--         30 Sep 2026). Angka potret sebelum/sesudah: `12_ANTREAN_MIGRASI_
+--         PRODUCTION.md` §H5.
+--
+-- ⛔ KOREKSI DITEMUKAN SAAT DIJALANKAN (staging, 30 Sep 2026): draft awal
+--         berkas ini hanya `REVOKE EXECUTE ... FROM anon` pada kedua RPC.
+--         V-POST (yang sejak semula memeriksa anon MAUPUN PUBLIC sekaligus,
+--         gotcha #40) GAGAL dengan BENAR -- kedua RPC ternyata JUGA punya
+--         grant PUBLIC eksplisit ("=X/postgres", di luar grant anon), dan
+--         PUBLIC mencakup anon; mencabut dari anon saja menyisakan PUBLIC
+--         utuh. Diperbaiki: GRANT authenticated LEBIH DULU (pola H1), baru
+--         REVOKE dari PUBLIC DAN anon sekaligus. Isi blok "PENCABUTAN RPC" di
+--         bawah SUDAH versi yang dijalankan. Gotcha baru: `03_DATA_MODEL.md`
+--         -- REVOKE dari anon TIDAK menghapus grant PUBLIC, keduanya entri
+--         TERPISAH di `proacl`; cek `proacl` untuk pola `=X` (PUBLIC) sebelum
+--         menyimpulkan sebuah fungsi sudah tertutup.
 --
 -- -- KENAPA INI, DAN KENAPA AMAN ------------------------------------------------
 -- TD-24 (diukur 2 Sep 2026, DIUKUR ULANG 30 Sep 2026 -- daftar & jumlah SAMA
@@ -134,6 +150,13 @@ REVOKE ALL ON TABLE
 -- PENCABUTAN RPC. Signature diresolusi dari katalog via oid::regprocedure,
 -- BUKAN diketik ulang (gotcha #44, pola sama H1) -- salah ketik signature di
 -- sini berarti REVOKE yang tidak mengenai apa pun (kelas TD-282).
+--
+-- GRANT authenticated LEBIH DULU, baru REVOKE dari PUBLIC dan anon SEKALIGUS
+-- (pola H1) -- BUKAN "REVOKE FROM anon" saja. Kedua RPC punya grant PUBLIC
+-- eksplisit ("=X/postgres") DI LUAR grant anon; PUBLIC mencakup anon, jadi
+-- mencabut hanya dari anon menyisakan jalur PUBLIC tetap terbuka untuk siapa
+-- pun (ditemukan lewat V-POST GAGAL saat dijalankan sungguhan, bukan ditalar
+-- -- lihat koreksi di kepala berkas).
 -- -----------------------------------------------------------------------------
 DO $rpc$
 DECLARE v_sig text; v_n int := 0;
@@ -144,9 +167,10 @@ BEGIN
      WHERE n.nspname = 'public'
        AND p.proname IN ('indomarco_dashboard_stats','storbit_sp_customers')
   LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon', v_sig);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', v_sig);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon', v_sig);
     v_n := v_n + 1;
-    RAISE NOTICE 'EXECUTE dicabut dari anon: %', v_sig;
+    RAISE NOTICE 'EXECUTE: authenticated diberi, PUBLIC+anon dicabut: %', v_sig;
   END LOOP;
   IF v_n <> 2 THEN
     RAISE EXCEPTION 'V-PRA/RPC GAGAL: ditemukan % fungsi (harus tepat 2: indomarco_dashboard_stats, storbit_sp_customers).', v_n;
@@ -221,9 +245,16 @@ COMMIT;
 -- kolom `hak_anon_sebelum` mencatat PERSIS privilege apa yang dulu ada (bisa
 -- beda per tabel walau sama-sama "TD-24").
 --   GRANT <daftar privilege dari hak_anon_sebelum> ON TABLE public.<tabel> TO anon;
--- RPC (signature via oid::regprocedure saat rollback, jangan diketik ulang):
+-- RPC (signature via oid::regprocedure saat rollback, jangan diketik ulang).
+-- Sebelum berkas ini, kedua RPC punya EXECUTE untuk anon MAUPUN PUBLIC
+-- (lihat koreksi di kepala berkas) -- granular ke anon SAJA kalau rollback
+-- benar-benar perlu:
 --   GRANT EXECUTE ON FUNCTION public.indomarco_dashboard_stats(uuid) TO anon;
 --   GRANT EXECUTE ON FUNCTION public.storbit_sp_customers()          TO anon;
+-- !! JANGAN kembalikan ke PUBLIC -- itu otomatis mencakup anon lagi (dan
+--    setiap peran lain, termasuk yang belum lahir), lebih lebar daripada yang
+--    pernah dibutuhkan siapa pun. Kalau ada yang benar-benar patah, granular
+--    ke anon dulu dan lihat apakah itu cukup.
 --
 -- !! Sama seperti lapis 1: lakukan hanya kalau ada yang benar-benar patah dan
 --    itu bukan sesuatu yang bisa diperbaiki dengan cara lain (mis. memindahkan
