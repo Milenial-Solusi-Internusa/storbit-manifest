@@ -140,7 +140,6 @@ function DetailRoute() {
           listQuery={parseListQuery(searchParams)}
           onBack={() => navigate(listPath(query))}
           onOpenInvoice={(id) => navigate(invoicePath(id, query))}
-          onOpenSp={(customerId, spNo) => navigate(spDetailPath(customerId, spNo))}
           onOpenDelivery={(id) => navigate(deliveryPath(id))}
         />
       </Boundary>

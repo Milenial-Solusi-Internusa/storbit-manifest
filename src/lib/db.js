@@ -1192,7 +1192,10 @@ export async function getSpInvoice(spOrderId) {
   return { data, error };
 }
 
-/** Terbitkan invoice via RPC (guard Σshipped=Σqty di server). Returns { data: invoice_id, error }. */
+/** Ajukan invoice via RPC (guard Σshipped=Σqty di server). Sejak AR Tahap 3
+ *  bagian kedua ini TIDAK menerbitkan -- hasilnya baris `pending_approval`
+ *  tanpa invoice_no/jurnal, menunggu approveInvoiceRpc/rejectInvoiceRpc.
+ *  Returns { data: invoice_id, error }. */
 export async function createInvoiceRpc(spOrderId) {
   const { data, error } = await supabase.rpc('create_invoice', { p_sp_order_id: spOrderId });
   return { data, error };
@@ -1202,6 +1205,34 @@ export async function createInvoiceRpc(spOrderId) {
 export async function submitInvoiceRpc(invoiceId) {
   const { error } = await supabase.rpc('submit_invoice', { p_invoice_id: invoiceId });
   return { error };
+}
+
+// ── AR Tahap 3 bagian kedua — approval terbit invoice ───────────────────────
+
+/** Setujui invoice pending_approval: lahirkan invoice_no + posting jurnal.
+ *  Returns { error }. */
+export async function approveInvoiceRpc(invoiceId) {
+  const { error } = await supabase.rpc('approve_invoice_issue', { p_invoice_id: invoiceId });
+  return { error };
+}
+
+/** Tolak invoice pending_approval: kembali ke draft + catatan wajib.
+ *  Returns { error }. */
+export async function rejectInvoiceRpc(invoiceId, rejectionNote) {
+  const { error } = await supabase.rpc('reject_invoice_issue', {
+    p_invoice_id: invoiceId, p_rejection_note: rejectionNote,
+  });
+  return { error };
+}
+
+/** Riwayat gabungan (ajukan/setujui/tolak + koreksi TTF) untuk panel Riwayat
+ *  Detail Invoice. Lewat RPC (bukan .from('audit_logs')) karena audit_logs
+ *  dibaca RLS is_admin_or_above() -- finance/finance_controller tidak lolos
+ *  itu, jadi query langsung akan selalu kosong untuk mereka.
+ *  Returns { data: [...], error }. */
+export async function getInvoiceAuditTrail(invoiceId) {
+  const { data, error } = await supabase.rpc('get_invoice_audit_trail', { p_invoice_id: invoiceId });
+  return { data: data || [], error };
 }
 
 // ============================================================
@@ -1701,12 +1732,18 @@ export async function getInvoiceReadiness(spOrderId) {
  * hilang cuma namanya, barisnya tetap tampil — invoice yang ada tapi tak bisa
  * dibaca namanya lebih baik terlihat daripada hilang tanpa penjelasan.
  */
+/** companyId=null -> tanpa filter (RLS sp_invoices_read sudah membatasi ke
+ *  entitas yang boleh dilihat pemanggil, termasuk varian jamak
+ *  get_user_company_ids() sejak 20260910000001) -- dipakai InvoiceListPage
+ *  filter "Semua" (AR Tahap 3 bagian kedua, TASK 4). Embed `companies` untuk
+ *  kolom Entitas yang ditampilkan saat filter itu aktif. */
 export async function listInvoices({ companyId = null } = {}) {
   let q = supabase
     .from('sp_invoices')
     .select(`
-      id, invoice_no, invoice_date, due_date, status,
+      id, invoice_no, invoice_date, due_date, status, company_id,
       total_dpp, total_ppn, total_amount, sp_order_id,
+      companies!sp_invoices_company_id_fkey ( code, name ),
       sp_orders!sp_invoices_sp_order_id_fkey ( sp_no, customer_id, company_id,
         accounts:accounts!sp_orders_customer_id_fkey ( name ) )
     `)

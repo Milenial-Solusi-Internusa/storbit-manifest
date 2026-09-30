@@ -131,27 +131,47 @@ export function isManagerOrAbove(erpRoles, { companyId } = {}) {
 // bukan erpRoles. Lihat catatan SALES_ONLY_ROLES.
 export const isSalesOnly = (erpRole) => SALES_ONLY_ROLES.includes(erpRole);
 
-// ─── AR / Invoice (AR Tahap 2) ────────────────────────────────────────────
-// CERMIN guard RPC, bukan kebijakan baru. Tiga permukaan tombol di modul
-// Finance memakainya untuk memutuskan tombolnya NONAKTIF atau tidak — bukan
-// untuk MENYEMBUNYIKANNYA (keputusan Den K-6: kalau DB akan menolak, tombolnya
+// ─── AR / Invoice (AR Tahap 2 + AR Tahap 3 bagian kedua) ──────────────────
+// CERMIN guard RPC, bukan kebijakan baru. Permukaan tombol di modul Finance
+// memakainya untuk memutuskan tombolnya NONAKTIF atau tidak — bukan untuk
+// MENYEMBUNYIKANNYA (keputusan Den K-6: kalau DB akan menolak, tombolnya
 // tetap tampil dengan alasan tertulis).
 //
 // ⛔ Kalau daftar role di RPC-nya berubah, ubah DI SINI juga — dua tempat yang
 // wajib bergerak bersama (kelas checklist TD-233).
 //
-//   create_invoice_for_sp / submit_invoice :
+//   create_invoice_for_sp (ajukan) / submit_invoice :
 //       is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')
+//       OR has_role('finance')
 //   record_payment :
-//       is_super_admin() OR has_role('finance_controller')
+//       is_super_admin() OR has_role('finance_controller') OR has_role('finance')
+//   mark_ttf_received (canMarkTtf, useInvoiceWorkflow.js) :
+//       is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')
+//       OR has_role('finance')
+//   approve_invoice_issue / reject_invoice_issue :
+//       is_super_admin() OR has_role('finance_controller') OR has_role('ceo')
+//       -- SENGAJA TANPA is_manager_or_above(): approval bukan "manajer mana
+//       pun", keputusan rapat 9/11/24 Sep 2026. Tidak boleh menyetujui/menolak
+//       pengajuan sendiri kecuali super_admin -- diperiksa di RPC lewat
+//       created_by, TIDAK dicerminkan di sini (butuh baris invoice-nya, bukan
+//       cuma erpRoles).
 //
-// Perhatikan: role `finance` polos TIDAK lolos keduanya. Itu keadaan hari ini,
-// dan melonggarkannya = pekerjaan AR Tahap 3, bukan tambalan FE.
+// ⚠️ is_manager_or_above() pada tiga guard pertama meloloskan SELURUH role
+// ber-level<=6 LINTAS DEPARTEMEN (bukan cuma manajer finance) -- perilaku
+// LAMA, sengaja tidak dipersempit di sini (TD-297, perlu keputusan Den).
 export function canIssueInvoice(erpRoles, opt) {
   return isSuperAdmin(erpRoles, opt)
       || isManagerOrAbove(erpRoles, opt)
-      || hasAnyRole(erpRoles, ['finance_controller'], opt);
+      || hasAnyRole(erpRoles, ['finance_controller', 'finance'], opt);
 }
 export function canRecordInvoicePayment(erpRoles, opt) {
-  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller'], opt);
+  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller', 'finance'], opt);
+}
+// canApproveInvoice -- cermin approve_invoice_issue/reject_invoice_issue.
+// SENGAJA fungsi terpisah, bukan turunan canIssueInvoice: himpunan perannya
+// berbeda (tanpa is_manager_or_above, dengan ceo) meskipun ada irisan
+// finance_controller -- pola yang sama dengan alasan canMarkTtf ditulis
+// utuh sendiri (useInvoiceWorkflow.js).
+export function canApproveInvoice(erpRoles, opt) {
+  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller', 'ceo'], opt);
 }

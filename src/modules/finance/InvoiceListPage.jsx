@@ -14,9 +14,11 @@
 //
 // Keluarga token: ungu/serif Storbit (lihat catatan di financeKit.jsx / TD-277).
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, Receipt, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Building2, Receipt, RefreshCw, Search } from 'lucide-react';
 import { listInvoices, getPaymentTotalsByInvoice } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
+import { useCompanies } from '../../hooks/useCompanies';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
 import {
   STATUS_LABEL, STATUS_LABEL_SHORT, STATUS_TAG,
@@ -30,8 +32,11 @@ import {
 } from '../logistics/spDetailTokens.js';
 import { Badge } from '../logistics/spDetailKit.jsx';
 
-// Urutan tab. 'semua' pertama, lalu mengikuti alur hidup invoice.
-const TABS = ['semua', 'issued', 'submitted', 'partial', 'paid', 'void'];
+// Urutan tab. 'semua' pertama, lalu mengikuti alur hidup invoice. pending_approval
+// dan draft (AR Tahap 3 bagian kedua) disisip DI DEPAN issued -- draft di sini
+// berarti "ditolak", bukan "belum diajukan" (Nexus tidak punya draft invoice
+// yang bisa diedit -- isinya seluruhnya diturunkan dari SP).
+const TABS = ['semua', 'pending_approval', 'draft', 'issued', 'submitted', 'partial', 'paid', 'void'];
 
 /** Awal bulan berjalan dalam WIB, 'YYYY-MM-01'. */
 const awalBulanWIB = (hariIni) => `${hariIni.slice(0, 7)}-01`;
@@ -48,13 +53,24 @@ export default function InvoiceListPage({ onOpenInvoice }) {
   // statusnya sendiri tanpa query.
   const [terbayar, setTerbayar] = useState({});
 
-  // Entitas aktif = CompanySwitcher, bukan home company (lihat catatan yang
-  // sama di ReadyToInvoicePage).
-  const { activeCompanyId } = useAuth();
+  // Filter Entitas -- LOKAL ke halaman ini, LEPAS dari CompanySwitcher topbar
+  // (beda dari ReadyToInvoicePage yang masih ikut activeCompanyId). Default
+  // 'semua' untuk SIAPA PUN (AR Tahap 3 bagian kedua, TASK 4): untuk user
+  // satu-entitas, 'semua' dan "entitas mereka" menghasilkan baris yang SAMA
+  // PERSIS (RLS sp_invoices_read sudah membatasi ke entitas yang boleh
+  // dilihat), jadi tidak perlu bercabang berdasarkan role -- defaultnya benar
+  // untuk semua orang sekaligus.
+  const { erpRoles, myCompanyIds } = useAuth();
+  const { data: companies } = useCompanies();
+  const [entityFilter, setEntityFilter] = useState('semua');
+  const entitasPilihan = isAllEntitiesRole(erpRoles)
+    ? companies
+    : companies.filter((c) => (myCompanyIds || []).includes(c.id));
 
   useEffect(() => {
     let batal = false;
-    listInvoices({ companyId: activeCompanyId }).then(async ({ data, error: err }) => {
+    const companyId = entityFilter === 'semua' ? null : entityFilter;
+    listInvoices({ companyId }).then(async ({ data, error: err }) => {
       if (batal) return;
       const baris = data || [];
       setRows(baris);
@@ -65,7 +81,7 @@ export default function InvoiceListPage({ onOpenInvoice }) {
       if (!batal) setTerbayar(peta || {});
     });
     return () => { batal = true; };
-  }, [activeCompanyId, muatKe]);
+  }, [entityFilter, muatKe]);
 
   const hariIni = getTodayWIB();
 
@@ -175,18 +191,41 @@ export default function InvoiceListPage({ onOpenInvoice }) {
             />
           ))}
         </TabBar>
-        <label style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px',
-          border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface, marginBottom: SP.s2,
-        }}>
-          <Search size={14} style={{ color: C.inkFaint, flexShrink: 0 }}/>
-          <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari no. invoice, no. SP, customer"
-            aria-label="Cari invoice"
-            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: C.ink, width: 250, maxWidth: '48vw', fontFamily: 'inherit' }}
-          />
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: SP.s2, marginBottom: SP.s2 }}>
+          {entitasPilihan.length > 1 && (
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 4px 0 11px',
+              border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface,
+            }}>
+              <Building2 size={14} style={{ color: C.inkFaint, flexShrink: 0 }}/>
+              <select
+                value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)}
+                aria-label="Filter entitas"
+                style={{
+                  height: 32, border: 'none', outline: 'none', background: 'transparent',
+                  fontSize: 13, color: C.ink, fontFamily: 'inherit', cursor: 'pointer',
+                }}
+              >
+                <option value="semua">Semua entitas</option>
+                {entitasPilihan.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px',
+            border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface,
+          }}>
+            <Search size={14} style={{ color: C.inkFaint, flexShrink: 0 }}/>
+            <input
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari no. invoice, no. SP, customer"
+              aria-label="Cari invoice"
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: C.ink, width: 250, maxWidth: '48vw', fontFamily: 'inherit' }}
+            />
+          </label>
+        </div>
       </div>
 
       {/* ── Tabel ── */}
@@ -202,8 +241,9 @@ export default function InvoiceListPage({ onOpenInvoice }) {
         ) : (
           <div style={{ padding: SP.s3 }}>
             <TableShell
-              minWidth={860}
+              minWidth={entityFilter === 'semua' ? 940 : 860}
               head={[
+                ...(entityFilter === 'semua' ? [['Entitas']] : []),
                 ['No. Invoice'], ['Customer'], ['No. SP'], ['Tanggal'], ['Jatuh Tempo'],
                 ['Total', 'right'], ['Sisa', 'right'], ['Status'],
               ]}
@@ -218,6 +258,9 @@ export default function InvoiceListPage({ onOpenInvoice }) {
                     tabIndex={0} role="button" title="Buka detail invoice"
                     style={{ cursor: 'pointer' }}
                   >
+                    {entityFilter === 'semua' && (
+                      <Td nowrap style={{ color: C.inkSoft }}>{r.companies?.code || r.companies?.name || '—'}</Td>
+                    )}
                     <Td mono nowrap style={{ color: C.accent, fontWeight: 600 }}>{r.invoice_no || '—'}</Td>
                     <Td>{r.sp_orders?.accounts?.name || '—'}</Td>
                     <Td mono nowrap style={{ color: C.inkSoft }}>{r.sp_orders?.sp_no || '—'}</Td>

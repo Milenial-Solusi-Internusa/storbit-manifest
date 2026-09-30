@@ -29,7 +29,7 @@ import {
   recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus,
 } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove, canIssueInvoice, canRecordInvoicePayment } from '../../lib/roles';
+import { isManagerOrAbove, canIssueInvoice, canRecordInvoicePayment, hasAnyRole } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 import { rp } from '../logistics/spDetailTokens.js';
@@ -167,10 +167,14 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
   const { erpRoles } = useAuth();
   const canSubmit        = canIssueInvoice(erpRoles);         // cermin submit_invoice
   const canRecordPayment = canRecordInvoicePayment(erpRoles); // cermin record_payment
-  // mark_ttf_received meloloskan manager ke atas DI SAMPING finance_controller
-  // dan super_admin — daftarnya sengaja ditulis utuh di sini, bukan meminjam
-  // canIssueInvoice yang kebetulan berisi himpunan yang sama hari ini.
-  const canMarkTtf       = isManagerOrAbove(erpRoles) || canRecordPayment;
+  // mark_ttf_received meloloskan manager ke atas DI SAMPING finance_controller,
+  // finance, dan super_admin — daftarnya sengaja ditulis utuh di sini, bukan
+  // meminjam canIssueInvoice yang kebetulan berisi himpunan yang sama hari
+  // ini. has_role('finance') ditulis EKSPLISIT (bukan hanya lewat efek
+  // samping OR canRecordPayment) supaya baris ini tidak diam-diam ikut
+  // bergeser kalau canRecordInvoicePayment berubah untuk alasan lain nanti
+  // (AR Tahap 3 bagian kedua, 24 Sep 2026).
+  const canMarkTtf       = isManagerOrAbove(erpRoles) || canRecordPayment || hasAnyRole(erpRoles, ['finance']);
 
   const invoiceId = invoice?.id || null;
 
@@ -343,7 +347,7 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
 
   const invStatus = invoice?.status || null;
   const bisaBayarSekarang  = ['issued', 'submitted', 'partial'].includes(invStatus);
-  const showPaymentHistory = !!invStatus && !['draft', 'void'].includes(invStatus);
+  const showPaymentHistory = !!invStatus && !['draft', 'pending_approval', 'void'].includes(invStatus);
   const bisaTtfSekarang    = ['issued', 'submitted', 'partial', 'paid'].includes(invStatus);
 
   return {

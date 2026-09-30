@@ -16,30 +16,33 @@ import { TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN, fmtDate } from '../logist
 // sudah terjadi, sementara yang sungguh dilakukan Finance adalah mengunggah
 // invoice ke portal customer.
 export const STATUS_LABEL = {
-  draft:     'Draft',
-  issued:    'Terbit',
-  submitted: 'Sudah Upload ke Portal',
-  partial:   'Bayar Sebagian',
-  paid:      'Lunas',
-  void:      'Void',
+  draft:            'Draft',
+  pending_approval: 'Menunggu Persetujuan',
+  issued:           'Terbit',
+  submitted:        'Sudah Upload ke Portal',
+  partial:          'Bayar Sebagian',
+  paid:             'Lunas',
+  void:             'Void',
 };
 
 // Label pendek untuk tempat sempit (tab, kolom tabel sempit).
 export const STATUS_LABEL_SHORT = {
   ...STATUS_LABEL,
-  submitted: 'Sudah Upload',
+  pending_approval: 'Persetujuan',
+  submitted:        'Sudah Upload',
 };
 
 // Pemetaan ke empat varian tag keluarga ungu/serif Storbit. Aturannya sama
 // dengan yang berlaku di Detail SP: PALE = selesai/positif, OUTLINE = sedang
 // berjalan, ATTN = butuh perhatian, NEUTRAL = inert/informasi.
 export const STATUS_TAG = {
-  draft:     TAG_NEUTRAL,
-  issued:    TAG_OUTLINE,
-  submitted: TAG_OUTLINE,
-  partial:   TAG_ATTN,
-  paid:      TAG_PALE,
-  void:      TAG_NEUTRAL,
+  draft:            TAG_NEUTRAL,
+  pending_approval: TAG_ATTN,
+  issued:           TAG_OUTLINE,
+  submitted:        TAG_OUTLINE,
+  partial:          TAG_ATTN,
+  paid:             TAG_PALE,
+  void:             TAG_NEUTRAL,
 };
 
 // ─── Stepper tahap ─────────────────────────────────────────────────────────
@@ -47,20 +50,17 @@ export const STATUS_TAG = {
 // melainkan pembatalan, dan dirender sebagai label merah terpisah di ujung bar
 // (pola yang sama dengan `closed` pada StatusBar kit).
 //
-// ⭐ SIAP DISISIPI: AR Tahap 3 akan menambahkan "Menunggu Persetujuan" DI DEPAN
-// 'issued'. Caranya cukup menyisipkan satu entri di awal array ini -- komponen
-// Stepper menghitung tahap aktif lewat indexOf pada array ini, bukan lewat
-// angka hardcode, jadi nol tempat lain yang perlu disentuh. Contoh:
-//   { id: 'pending_approval', label: 'Menunggu Persetujuan' },
-/* Tahapnya TIDAK berubah: id, urutan, dan `stepIndexOf` sama persis. Yang
-   berbeda hanya TULISAN tahap 2 -- 'Upload Portal', bukan 'Sudah Upload ke
-   Portal' seperti di badge dan tombol.
-   Sengaja: stepper hidup di kolom sempit (~345px pada layar 1280), dan label
-   penuh membuatnya 380px = tidak muat satu baris. Label pendek 324px, muat
-   dengan sisa 21px. Kata lengkapnya tetap ada di badge status dan di tombol
-   aksi, jadi tidak ada informasi yang hilang -- yang dipendekkan hanya
-   ribbon-nya. Ukuran + alasan lengkap: Stepper di financeKit.jsx. */
+/* AR Tahap 3 bagian kedua: "Menunggu Persetujuan" disisip DI DEPAN 'issued',
+   persis seperti yang diantisipasi komentar lama di sini -- komponen Stepper
+   menghitung tahap aktif lewat indexOf pada array ini, bukan lewat angka
+   hardcode, jadi nol tempat lain yang perlu disentuh.
+   Tahapnya SELEBIHNYA TIDAK berubah: id, urutan, dan `stepIndexOf` sama
+   persis. Yang beda hanya TULISAN tahap 2 dan 3 -- label pendek untuk kolom
+   sempit (~345px pada layar 1280); kata lengkapnya tetap ada di badge status
+   dan di tombol aksi, jadi tidak ada informasi yang hilang. Ukuran + alasan
+   lengkap: Stepper di financeKit.jsx. */
 export const INVOICE_STEPS = [
+  { id: 'pending_approval', label: 'Persetujuan' },
   { id: 'issued',    label: 'Terbit' },
   { id: 'submitted', label: 'Upload Portal' },
   { id: 'partial',   label: 'Bayar Sebagian' },
@@ -134,12 +134,13 @@ export function isOverdue(row, todayIso) {
 
 // AR Tahap 3: due_date sekarang HANYA lahir dari mark_ttf_received (TTF +
 // termin), bukan lagi dari invoice_date saat submit/terbit -- jadi due_date
-// NULL di luar draft/void berarti "TTF belum dicatat", bukan "belum sempat
-// dihitung". draft/void TIDAK pernah relevan (invoice belum jadi/batal), jadi
-// keduanya tetap strip -- satu-satunya perubahan adalah status LAIN (issued,
-// submitted, partial, paid) yang due_date-nya NULL kini menyebut TTF secara
-// eksplisit, bukan "belum diisi" yang generik.
+// NULL di luar draft/pending_approval/void berarti "TTF belum dicatat", bukan
+// "belum sempat dihitung". draft/pending_approval/void TIDAK pernah relevan
+// (invoice belum terbit/ditolak/batal), jadi ketiganya tetap strip --
+// satu-satunya perubahan adalah status LAIN (issued, submitted, partial,
+// paid) yang due_date-nya NULL kini menyebut TTF secara eksplisit, bukan
+// "belum diisi" yang generik.
 export function dueDateText(row) {
   if (row?.due_date) return fmtDate(row.due_date);
-  return ['draft', 'void'].includes(row?.status) ? '—' : 'Belum TTF';
+  return ['draft', 'pending_approval', 'void'].includes(row?.status) ? '—' : 'Belum TTF';
 }

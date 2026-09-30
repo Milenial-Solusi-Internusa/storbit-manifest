@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, Download, FileText, Link2, Lock, MessageSquare,
-  Paperclip, Pencil, Printer, Receipt, Send, Stamp, Trash2, Truck, Upload, Wallet,
+  Paperclip, Pencil, Printer, Receipt, Send, Stamp, Trash2, Truck, Upload, Wallet, X,
 } from 'lucide-react';
 import {
   getInvoiceViewData, listInvoices, getSpFulfillmentDocs, listSpBtbNew,
@@ -83,11 +83,24 @@ function Terkunci({ label, children, alasan }) {
 // Alasan tertulis di tombol yang akan ditolak server (aturan K-6). Teksnya
 // SENGAJA menyebut siapa yang boleh, bukan cuma "tidak diizinkan": orang yang
 // kena harus tahu ke siapa memintanya. Satu kalimat, tanpa kata "server".
-const ALASAN_TERBIT = 'Hanya Finance Controller, manager ke atas, atau Super Admin yang bisa menandai invoice sudah diupload.';
-const ALASAN_BAYAR  = 'Hanya Finance Controller atau Super Admin yang bisa mencatat pembayaran.';
-const ALASAN_TTF    = 'Hanya manager ke atas, Finance Controller, atau Super Admin yang bisa mencatat TTF.';
-const ALASAN_PAJAK  = 'Hanya Finance, Finance Controller, atau Super Admin yang bisa mengisi data pajak.';
-const ALASAN_UNGGAH = 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengunggah lampiran.';
+const ALASAN_TERBIT  = 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa menandai invoice sudah diupload.';
+const ALASAN_BAYAR   = 'Hanya Finance, Finance Controller, atau Super Admin yang bisa mencatat pembayaran.';
+const ALASAN_TTF     = 'Hanya Finance, manager ke atas, Finance Controller, atau Super Admin yang bisa mencatat TTF.';
+const ALASAN_PAJAK   = 'Hanya Finance, Finance Controller, atau Super Admin yang bisa mengisi data pajak.';
+const ALASAN_UNGGAH  = 'Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengunggah lampiran.';
+// AR Tahap 3 bagian kedua -- approval. Dua pesan berbeda: peran yang kurang
+// vs sudah cukup peran tapi mengajukan sendiri (created_by = diri sendiri).
+const ALASAN_APPROVE       = 'Hanya Finance Controller, CEO, atau Super Admin yang bisa menyetujui/menolak invoice.';
+const ALASAN_APPROVE_SENDIRI = 'Tidak boleh menyetujui/menolak invoice yang diajukan sendiri.';
+
+// Aksi audit_logs -> ikon+judul lini masa Riwayat. Module scope (bukan di
+// dalam komponen) supaya bukan dependency baru bagi useMemo yang memakainya.
+const AUDIT_EVENT = {
+  AJUKAN_INVOICE:  { icon: FileText, title: 'Invoice diajukan untuk disetujui' },
+  SETUJUI_INVOICE: { icon: Check,    title: 'Invoice disetujui' },
+  TOLAK_INVOICE:   { icon: X,        title: 'Invoice ditolak' },
+  KOREKSI_TTF:     { icon: Stamp,    title: 'TTF dikoreksi' },
+};
 
 /* Grid isian yang menyesuaikan diri — kolom kanan halaman ini sempit, jadi
    jumlah kolomnya tidak boleh ditetapkan. */
@@ -131,7 +144,7 @@ function EventRow({ ev }) {
 }
 
 export default function InvoiceDetailPage({
-  invoiceId, showToast, onBack, onOpenSp, onOpenDelivery,
+  invoiceId, showToast, onBack, onOpenDelivery,
   listQuery = { status: 'semua', search: '' },
   onOpenInvoice,
 }) {
@@ -151,6 +164,10 @@ export default function InvoiceDetailPage({
 
   const [tab,     setTab]     = useState('lines');
   const [payOpen, setPayOpen] = useState(false);
+  // AR Tahap 3 bagian kedua -- form Tolak Invoice, pola SAMA dengan payOpen:
+  // inline, bukan modal (file ini tidak memakai modal overlay di mana pun).
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectNote, setRejectNote] = useState('');
   // Panel samping (Contextual Master Data Access). Satu state untuk SELURUH
   // jenis rujukan: dua panel terbuka sekaligus tidak pernah masuk akal, dan
   // satu state membuat itu mustahil alih-alih cuma tidak dilakukan.
@@ -166,7 +183,6 @@ export default function InvoiceDetailPage({
 
   useEffect(() => {
     let batal = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!invoiceId) { setLoading(false); return undefined; }
     getInvoiceViewData(invoiceId).then(({ data, error: err }) => {
       if (batal) return;
@@ -183,7 +199,6 @@ export default function InvoiceDetailPage({
   const customerId = inv?.customer_id || null;
   const spNo       = inv?.sp_no || '';
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!spOrderId) { setDocs({ deliveries: [], btb: [] }); return undefined; }
     let batal = false;
     Promise.all([
@@ -228,15 +243,25 @@ export default function InvoiceDetailPage({
     kicker: 'DC tujuan', title: [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '(tanpa DC)',
     rows: [['Kode', inv.dc?.kode || '—'], ['Wilayah', inv.dc?.wilayah || '—'], ['Alamat', inv.dc?.alamat || '—']],
   });
+  // TD-289: dulu ber-onOpenFull ke halaman SP penuh, yang menendang Finance
+  // Controller ke Beranda (tak punya akses menu di sana). Diganti panel
+  // baca-saja SAJA -- pola sama panelBtb() (SJ dan BTB sudah begitu sejak
+  // awal), Grand Design Bagian 1 prinsip 4: visibilitas lewat referensi,
+  // bukan akses menu. Data (sp_orders/sp_order_items/sp_btb/dc_master) sudah
+  // terbaca RLS company-scoped TANPA syarat role -- yang rusak murni gerbang
+  // MENU, bukan data.
+  const jumlahJenisBarang = barisBarang.length;
+  const jumlahQtyBarang   = barisBarang.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const panelSp = () => setPanel({
     kicker: 'Surat Pesanan', title: inv.sp_no || '(tanpa nomor)',
     rows: [
       ['Tanggal SP', fmtDate(inv.sp_date)],
       ['Customer', inv.customer_name || '—'],
       ['DC', [inv.dc?.kode, inv.dc?.nama].filter(Boolean).join(' - ') || '—'],
+      ['Barang', jumlahJenisBarang > 0
+        ? `${jumlahJenisBarang} jenis · ${jumlahQtyBarang.toLocaleString('id-ID')} unit`
+        : '—'],
     ],
-    onOpenFull: onOpenSp && inv.customer_id ? () => onOpenSp(inv.customer_id, inv.sp_no) : null,
-    fullLabel: 'Buka Detail SP',
   });
   const panelDelivery = (d) => setPanel({
     kicker: 'Surat Jalan', title: d.do_no || '(tanpa nomor)',
@@ -361,12 +386,30 @@ export default function InvoiceDetailPage({
   const events = useMemo(() => {
     if (!inv) return [];
     const out = [];
-    if (inv.created_at) {
+    // AJUKAN_INVOICE/SETUJUI_INVOICE (audit_logs, di bawah) menggantikan
+    // event ini untuk invoice yang lahir SESUDAH AR Tahap 3 bagian kedua --
+    // dua tahap (ajukan lalu setujui), bukan satu "diterbitkan". Invoice LAMA
+    // (terbit langsung, sebelum fitur ini ada) tidak punya baris audit_logs
+    // sama sekali, jadi event lama ini dipertahankan sebagai JATUH BALIK
+    // supaya timeline-nya tidak kosong untuk mereka.
+    const punyaJejakTerbit = (ex.auditTrail || []).some(
+      (a) => a.action === 'AJUKAN_INVOICE' || a.action === 'SETUJUI_INVOICE',
+    );
+    if (inv.created_at && !punyaJejakTerbit) {
       out.push({
         key: 'created', at: inv.created_at, icon: Receipt,
         title: 'Invoice diterbitkan',
         actor: inv.created_by_name || null,
         detail: inv.invoice_no ? `No. ${inv.invoice_no}` : null,
+      });
+    }
+    for (const a of (ex.auditTrail || [])) {
+      const meta = AUDIT_EVENT[a.action];
+      if (!meta) continue;
+      out.push({
+        key: `audit-${a.id}`, at: a.created_at, icon: meta.icon, title: meta.title,
+        actor: a.actor_name || null,
+        detail: a.action === 'TOLAK_INVOICE' ? (a.notes || null) : null,
       });
     }
     if (inv.submitted_at) {
@@ -422,7 +465,7 @@ export default function InvoiceDetailPage({
       });
     }
     return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  }, [inv, wf.payments, wf.ttf, ex.notes]);
+  }, [inv, wf.payments, wf.ttf, ex.notes, ex.auditTrail]);
 
   // ── Keadaan gagal / kosong ──────────────────────────────────────────────
   if (loading) {
@@ -454,6 +497,31 @@ export default function InvoiceDetailPage({
 
   /* ── Aksi utama, KONTEKSTUAL pada status ──────────────────────────────── */
   const aksiUtama = (() => {
+    if (status === 'pending_approval') {
+      const alasanApprove = !ex.bolehApprove
+        ? (ex.diajukanSendiri ? ALASAN_APPROVE_SENDIRI : ALASAN_APPROVE)
+        : undefined;
+      return (
+        <>
+          <Btn
+            variant="primary" icon={Check}
+            onClick={ex.handleApproveInvoice}
+            disabled={!ex.bolehApprove || ex.approveSaving || rejectOpen}
+            title={alasanApprove}
+          >
+            {ex.approveSaving ? 'Menyetujui…' : 'Setujui'}
+          </Btn>
+          <Btn
+            icon={X}
+            onClick={() => setRejectOpen((v) => !v)}
+            disabled={!ex.bolehApprove || ex.rejectSaving}
+            title={alasanApprove}
+          >
+            Tolak
+          </Btn>
+        </>
+      );
+    }
     if (status === 'issued') {
       return (
         <Btn
@@ -559,6 +627,44 @@ export default function InvoiceDetailPage({
           Invoice tidak bisa diubah setelah terbit.
         </span>
       </div>
+
+      {/* ══ Form Tolak Invoice — inline, pola sama Terima Pembayaran ══════ */}
+      {status === 'pending_approval' && rejectOpen && (
+        <div style={{
+          border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, background: C.surface,
+          padding: SP.s3, display: 'flex', flexDirection: 'column', gap: SP.s2,
+        }}>
+          <div style={kickerStyle}>Tolak Invoice</div>
+          <ModalField label="Catatan penolakan" req>
+            <textarea
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="Jelaskan kenapa invoice ini ditolak…"
+              rows={3}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: SP.s2,
+                border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface,
+                fontSize: 13, color: C.ink, fontFamily: 'inherit', outline: 'none', resize: 'vertical',
+              }}
+            />
+          </ModalField>
+          <div style={{ display: 'flex', gap: SP.s2 }}>
+            <Btn
+              variant="primary" icon={X}
+              onClick={async () => {
+                const sukses = await ex.handleRejectInvoice(rejectNote);
+                if (sukses) { setRejectOpen(false); setRejectNote(''); }
+              }}
+              disabled={ex.rejectSaving || !rejectNote.trim()}
+            >
+              {ex.rejectSaving ? 'Menolak…' : 'Kirim Penolakan'}
+            </Btn>
+            <Btn onClick={() => { setRejectOpen(false); setRejectNote(''); }} disabled={ex.rejectSaving}>
+              Batal
+            </Btn>
+          </div>
+        </div>
+      )}
 
       {/* ══ Badan: dokumen kiri, konteks kanan ══════════════════════════ */}
       <div className="nx-grid-2 nx-stack" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(0,1fr)', gap: SP.s6, alignItems: 'start' }}>
@@ -1344,7 +1450,7 @@ export default function InvoiceDetailPage({
           {/* ── Riwayat (chatter) ── */}
           <Panel title="Riwayat" icon={FileText}>
             {events.length === 0 ? (
-              <Empty icon={FileText} title="Belum ada kejadian" sub="Riwayat terisi sendiri dari penerbitan, upload portal, TTF, cetak, dan pembayaran."/>
+              <Empty icon={FileText} title="Belum ada kejadian" sub="Riwayat terisi sendiri dari pengajuan, persetujuan/penolakan, upload portal, TTF (termasuk koreksinya), cetak, dan pembayaran."/>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {events.map((ev) => <EventRow key={ev.key} ev={ev}/>)}
@@ -1352,8 +1458,12 @@ export default function InvoiceDetailPage({
             )}
             {/* Lini masa disusun dari jejak yang SUDAH tersimpan (created_at,
                 submitted_at, ar_ttfs, sp_payments, printed_at/emailed_at) plus
-                catatan internal dari `invoice_notes`. Beberapa kejadian tidak
-                punya pelaku karena kolomnya memang tidak ada. */}
+                catatan internal dari `invoice_notes` DAN (AR Tahap 3 bagian
+                kedua) audit_logs lewat get_invoice_audit_trail -- ajukan/
+                setujui/tolak invoice + koreksi TTF. Dibaca lewat RPC, bukan
+                query langsung ke audit_logs: RLS-nya is_admin_or_above(),
+                yang tidak mencakup finance/finance_controller. Beberapa
+                kejadian tidak punya pelaku karena kolomnya memang tidak ada. */}
             <p style={{ ...thStyle, padding: `${SP.s2}px 0 0`, letterSpacing: '.06em' }}>
               Disusun dari jejak yang sudah tersimpan
             </p>

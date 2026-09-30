@@ -2,7 +2,9 @@
 // Finance > Accounts Receivable > Invoice Management > Siap Ditagih (6.2.1).
 //
 // DUA kelompok, satu sumber aturan:
-//   (a) SP yang lolos SELURUH guard create_invoice_for_sp -> tombol terbitkan
+//   (a) SP yang lolos SELURUH guard create_invoice_for_sp -> tombol ajukan
+//       (AR Tahap 3 bagian kedua: mengAJUKAN, bukan menerbitkan langsung --
+//       hasilnya pending_approval, menunggu persetujuan di Detail Invoice)
 //   (b) SP yang TERTAHAN, beserta alasannya per SP
 //
 // ⭐ Alasannya TIDAK dihitung di sini. RPC sp_invoice_readiness_all memanggil
@@ -91,7 +93,11 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [tertahan]);
 
-  const terbitkan = async (row) => {
+  // AR Tahap 3 bagian kedua: tombol ini mengAJUKAN invoice (status
+  // pending_approval, tanpa nomor/jurnal), BUKAN lagi menerbitkannya
+  // langsung -- penerbitan sesungguhnya terjadi saat finance_controller/ceo
+  // menyetujui di Detail Invoice.
+  const ajukan = async (row) => {
     if (busyId) return;
     setBusyId(row.sp_order_id);
     const { error: err } = await createInvoiceRpc(row.sp_order_id);
@@ -100,11 +106,11 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
       // Pesan RAISE dari DB diteruskan APA ADANYA — ia sudah menyebut alasan
       // bisnisnya, dan membungkusnya dengan pesan generik justru menghapus
       // satu-satunya keterangan yang berguna.
-      showToast?.(err.message || 'Gagal menerbitkan invoice', 'error');
+      showToast?.(err.message || 'Gagal mengajukan invoice', 'error');
       await muat();
       return;
     }
-    showToast?.(`Invoice untuk SP ${row.sp_no} diterbitkan`, 'success');
+    showToast?.(`Invoice untuk SP ${row.sp_no} diajukan, menunggu persetujuan`, 'success');
     await muat();
   };
 
@@ -127,13 +133,13 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
           dan siapa yang bisa memakainya. */}
       {!bolehTerbit && (
         <Notice tone="attn" icon={AlertTriangle}>
-          Hanya Finance Controller, manager ke atas, atau Super Admin yang bisa menerbitkan invoice.
+          Hanya Finance, Finance Controller, manager ke atas, atau Super Admin yang bisa mengajukan invoice.
         </Notice>
       )}
 
       {/* ── Strip ringkas ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: SP.s3 }}>
-        <StatCard label="Siap ditagih" value={siap.length} sub="siap diterbitkan sekarang" tone={C.accentDeep}/>
+        <StatCard label="Siap ditagih" value={siap.length} sub="siap diajukan sekarang" tone={C.accentDeep}/>
         <StatCard label="Tertahan" value={tertahan.length} sub="menunggu dokumen atau pengiriman" tone={tertahan.length > 0 ? C.attn : undefined}/>
         <StatCard
           label="Penahan terbanyak"
@@ -175,11 +181,11 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
                 <Td align="right">
                   <Btn
                     size="sm" variant="primary" icon={Receipt}
-                    onClick={() => terbitkan(r)}
+                    onClick={() => ajukan(r)}
                     disabled={!bolehTerbit || !!busyId}
-                    title={bolehTerbit ? undefined : 'Server menolak peran kamu untuk menerbitkan invoice'}
+                    title={bolehTerbit ? undefined : 'Server menolak peran kamu untuk mengajukan invoice'}
                   >
-                    {busyId === r.sp_order_id ? 'Menerbitkan…' : 'Terbitkan Invoice'}
+                    {busyId === r.sp_order_id ? 'Mengajukan…' : 'Ajukan Invoice'}
                   </Btn>
                 </Td>
               </tr>
@@ -196,7 +202,7 @@ export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
         {loading ? (
           <Hint>Memuat…</Hint>
         ) : tertahan.length === 0 ? (
-          <Empty icon={CheckCircle2} title="Tidak ada SP yang tertahan" sub="Semua SP terkirim penuh sudah punya invoice atau siap diterbitkan."/>
+          <Empty icon={CheckCircle2} title="Tidak ada SP yang tertahan" sub="Semua SP terkirim penuh sudah punya invoice atau siap diajukan."/>
         ) : (
           <TableShell
             minWidth={680}
