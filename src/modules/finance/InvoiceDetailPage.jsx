@@ -92,6 +92,13 @@ const ALASAN_UNGGAH  = 'Hanya Finance, Finance Controller, manager ke atas, atau
 // vs sudah cukup peran tapi mengajukan sendiri (created_by = diri sendiri).
 const ALASAN_APPROVE       = 'Hanya Finance Controller, CEO, atau Super Admin yang bisa menyetujui/menolak invoice.';
 const ALASAN_APPROVE_SENDIRI = 'Tidak boleh menyetujui/menolak invoice yang diajukan sendiri.';
+// Beda dari empat di atas: ini bukan soal PERAN, tapi soal STATUS invoice
+// (keputusan Den) -- cetak/unduh (dan kirim, kalau kelak ada) terkunci selama
+// invoice belum disetujui (pending_approval) atau sudah ditolak (draft), supaya
+// dokumen yang belum sah tidak bisa terkirim ke customer. ⚠️ Murni tampilan:
+// `mark_invoice_printed`/`mark_invoice_emailed` di DB TIDAK memeriksa status
+// (hanya `invoice_dapat_dibaca()`), jadi guard-nya cuma di sini.
+const ALASAN_PDF_BELUM_TERBIT = 'PDF tersedia setelah invoice disetujui.';
 
 // Aksi audit_logs -> ikon+judul lini masa Riwayat. Module scope (bukan di
 // dalam komponen) supaya bukan dependency baru bagi useMemo yang memakainya.
@@ -101,6 +108,31 @@ const AUDIT_EVENT = {
   TOLAK_INVOICE:   { icon: X,        title: 'Invoice ditolak' },
   KOREKSI_TTF:     { icon: Stamp,    title: 'TTF dikoreksi' },
 };
+
+// Field KOREKSI_TTF di old_data/new_data (jsonb, dari get_invoice_audit_trail)
+// -- nama & urutan PERSIS jsonb_build_object di mark_ttf_received
+// (20260930000004). Tanggal pakai fmtDate() yang sama dengan panel TTF
+// (`['Tanggal TTF', fmtDate(wf.ttf?.tanggal_ttf)]` di atas).
+const TTF_KOREKSI_FIELDS = [
+  { key: 'tanggal_ttf',   label: 'Tanggal TTF',   format: fmtDate },
+  { key: 'no_ttf',        label: 'No. TTF',       format: (v) => v || '—' },
+  { key: 'diterima_oleh', label: 'Diterima oleh', format: (v) => v || '—' },
+  { key: 'notes',         label: 'Catatan',       format: (v) => v || '—' },
+];
+
+// DB hanya menjamin SALAH SATU field berubah (guard IS DISTINCT FROM di
+// mark_ttf_received) -- bukan berarti keempatnya. Tampilkan HANYA yang
+// benar-benar beda, satu baris per field; kalau (seharusnya tak pernah
+// terjadi) nol yang beda, kembalikan null -- EventRow tetap tampil tanpa
+// detail, tidak error.
+function ttfKoreksiDetail(oldData, newData) {
+  const o = oldData || {};
+  const n = newData || {};
+  const lines = TTF_KOREKSI_FIELDS
+    .filter((f) => (o[f.key] ?? null) !== (n[f.key] ?? null))
+    .map((f) => `${f.label}: ${f.format(o[f.key])} → ${f.format(n[f.key])}`);
+  return lines.length ? lines.join('\n') : null;
+}
 
 /* Grid isian yang menyesuaikan diri — kolom kanan halaman ini sempit, jadi
    jumlah kolomnya tidak boleh ditetapkan. */
@@ -133,7 +165,7 @@ function EventRow({ ev }) {
             {fmtRelativeWIB(ev.at)}
           </span>
         </div>
-        <div style={{ fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45, marginTop: 1 }}>
+        <div style={{ fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45, marginTop: 1, whiteSpace: 'pre-line' }}>
           {ev.actor && <span style={{ color: C.ink }}>{ev.actor}</span>}
           {ev.actor && ev.detail ? ' · ' : null}
           {ev.detail}
@@ -419,7 +451,9 @@ export default function InvoiceDetailPage({
       out.push({
         key: `audit-${a.id}`, at: a.created_at, icon: meta.icon, title: meta.title,
         actor: a.actor_name || null,
-        detail: a.action === 'TOLAK_INVOICE' ? (a.notes || null) : null,
+        detail: a.action === 'TOLAK_INVOICE' ? (a.notes || null)
+          : a.action === 'KOREKSI_TTF' ? ttfKoreksiDetail(a.old_data, a.new_data)
+          : null,
       });
     }
     if (inv.submitted_at) {
@@ -504,6 +538,8 @@ export default function InvoiceDetailPage({
   }
 
   const tagStatus = STATUS_TAG[status] || STATUS_TAG.draft;
+  // Lihat ALASAN_PDF_BELUM_TERBIT -- status, bukan peran.
+  const pdfTerkunci = status === 'pending_approval' || status === 'draft';
 
   /* ── Aksi utama, KONTEKSTUAL pada status ──────────────────────────────── */
   const aksiUtama = (() => {
@@ -616,12 +652,15 @@ export default function InvoiceDetailPage({
       <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
         {aksiUtama}
         <Btn
-          icon={Printer} onClick={() => cetak('print')} disabled={!!wf.invoicePdfBusy}
-          title="Versi untuk kertas kop: tanpa blok kop & tanpa latar krem"
+          icon={Printer} onClick={() => cetak('print')} disabled={!!wf.invoicePdfBusy || pdfTerkunci}
+          title={pdfTerkunci ? ALASAN_PDF_BELUM_TERBIT : 'Versi untuk kertas kop: tanpa blok kop & tanpa latar krem'}
         >
           {wf.invoicePdfBusy === 'print' ? 'Menyiapkan…' : 'Cetak PDF (Kop Surat)'}
         </Btn>
-        <Btn icon={Download} onClick={() => cetak('download')} disabled={!!wf.invoicePdfBusy}>
+        <Btn
+          icon={Download} onClick={() => cetak('download')} disabled={!!wf.invoicePdfBusy || pdfTerkunci}
+          title={pdfTerkunci ? ALASAN_PDF_BELUM_TERBIT : undefined}
+        >
           {wf.invoicePdfBusy === 'download' ? 'Menyiapkan…' : 'Download PDF'}
         </Btn>
         <MoreMenu items={[{
