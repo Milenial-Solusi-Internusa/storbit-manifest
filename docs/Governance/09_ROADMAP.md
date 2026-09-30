@@ -566,7 +566,7 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 5. **Jatuh tempo dihitung dari tanggal TTF + termin pelanggan**, bukan dari tanggal invoice — Indomarco: **30 hari setelah tukar faktur**. Contoh staging **SP 9100024**: TTF 16 Jul, `due_date` tertulis **8 Agu**, seharusnya **15 Agu**; akibatnya invoice yang baru terbit bisa langsung tampil "lewat jatuh tempo". Bersinggungan dengan **D-15** (penyatuan perhitungan `due_date`) dan **D-14** (AR Aging berbasis TTF).
 6. **TD-289** — klik nomor SP di modul Finance melempar Finance Controller ke beranda. Usulan: **panel samping baca-saja** alih-alih membuka halaman SP — Grand Design Bagian 1 prinsip 4, *visibilitas lewat referensi, bukan akses menu*.
 7. **Kolom Referensi di riwayat pembayaran menampilkan TANGGAL saat referensi kosong.** Perlu konfirmasi apakah itu disengaja (fallback) atau keliru — belum diinvestigasi, dicatat apa adanya.
-8. **TD-296** — PDF invoice menghitung `Shipping` (dan lewat itu `DPP (Nilai Lain)`) dari data SP (`Σ sp_order_items.shipping_price`), bukan dari header invoice yang terkunci, sehingga PDF bisa berubah sesudah invoice terbit.
+8. ~~**TD-296** — PDF invoice menghitung `Shipping` (dan lewat itu `DPP (Nilai Lain)`) dari data SP (`Σ sp_order_items.shipping_price`), bukan dari header invoice yang terkunci, sehingga PDF bisa berubah sesudah invoice terbit.~~ ✅ **RESOLVED 30 Sep 2026** (TASK 6, branch `develop`) — sudah dikerjakan di luar urutan Tahap 3, tidak menunggu daftar ini. Detail: `08_TECH_DEBT.md` TD-296.
 9. **Rini perlu role `finance_controller` di SOA production** — prasyarat butir 1 bisa diuji dengan orang sungguhan, bukan hanya akun uji.
 
 

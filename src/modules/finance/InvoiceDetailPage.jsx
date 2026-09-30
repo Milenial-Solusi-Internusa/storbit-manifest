@@ -378,9 +378,9 @@ export default function InvoiceDetailPage({
 
   // DPP Nilai Lain = (Subtotal + Shipping) x 11/12 -- rumus & konstanta SAMA
   // dengan blok totals InvoicePDF (`InvoicePDF.jsx:408`), bukan disalin ulang.
-  // ⚠️ Sukunya `ongkir` (diturunkan dari HEADER invoice), sementara PDF memakai
-  // `total_shipping` = Sigma sp_order_items.shipping_price. Keduanya sama untuk
-  // invoice yang belum disentuh sesudah terbit; bedanya dicatat di TD-296.
+  // `ongkir` (di atas) dan `invoice.total_shipping` (dipakai PDF) sama-sama
+  // diturunkan dari invoiceShippingFromHeader() sejak TD-296 ditutup -- satu
+  // sumber, mustahil berbeda lagi.
   const dppNilaiLain = ((Number(inv?.total_dpp) || 0) + ongkir) * DPP_NILAI_LAIN_RATIO;
 
   const events = useMemo(() => {

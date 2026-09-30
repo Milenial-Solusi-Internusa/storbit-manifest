@@ -32,6 +32,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, canIssueInvoice, canRecordInvoicePayment, hasAnyRole } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
+import { invoiceShippingFromHeader } from '../../lib/taxConstants';
 import { rp } from '../logistics/spDetailTokens.js';
 import InvoicePDF from '../logistics/InvoicePDF';
 
@@ -87,15 +88,14 @@ export default function useInvoiceWorkflow({ invoice, showToast, onChanged }) {
   const [payPotonganBad,  setPayPotonganBad]  = useState(false);
 
   // Saran PPh 23 = 2% x ongkir invoice, DIKURANGI PPh yang sudah tercatat.
-  // Suku ongkir = total_amount - dpp - ppn (definisi v_total_amount di
-  // create_invoice). Pengurangannya bukan kosmetik: begitu saran ikut TERSIMPAN
-  // secara default, saran penuh pada pembayaran parsial KEDUA akan mencatat PPh
-  // dua kali -- record_payment tidak punya cap (v_settled = Sigma amount +
-  // Sigma pph, status jadi 'paid' begitu v_settled >= total - 1, dan AR dikredit
-  // amount + pph), jadi dobel itu melunasi invoice dengan uang yang tak pernah
-  // masuk. Lihat TD-285.
-  const totalOngkirInv = (Number(invoice?.total_amount) || 0)
-    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
+  // Suku ongkir = invoiceShippingFromHeader() (taxConstants.js) -- SATU sumber
+  // dipakai bersama PDF (getInvoicePdfData), lihat TD-296. Pengurangannya bukan
+  // kosmetik: begitu saran ikut TERSIMPAN secara default, saran penuh pada
+  // pembayaran parsial KEDUA akan mencatat PPh dua kali -- record_payment tidak
+  // punya cap (v_settled = Sigma amount + Sigma pph, status jadi 'paid' begitu
+  // v_settled >= total - 1, dan AR dikredit amount + pph), jadi dobel itu
+  // melunasi invoice dengan uang yang tak pernah masuk. Lihat TD-285.
+  const totalOngkirInv = invoiceShippingFromHeader(invoice);
   const pphFullSuggestion = Math.round(Math.max(0, totalOngkirInv) * 0.02);
   const pphRecorded   = payments.reduce((sum, p) => sum + (Number(p.pph) || 0), 0);
   const pphSuggestion = Math.max(0, pphFullSuggestion - pphRecorded);

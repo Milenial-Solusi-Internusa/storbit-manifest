@@ -3,6 +3,7 @@
 // Pattern: tiap fungsi kembaliin { data, error } supaya UI bisa handle error consistent.
 
 import { supabase } from './supabase';
+import { invoiceShippingFromHeader } from './taxConstants';
 
 // ============================================================
 // CONVERTERS — DB row (snake_case) ↔ App row (camelCase)
@@ -1368,7 +1369,7 @@ export async function getInvoicePdfData(invoiceId) {
   const spOrder = inv.sp_orders || {};
   const companyId = spOrder.company_id || null;
 
-  const [linesRes, customerRes, companyRes, bankRes, shippingRes] = await Promise.all([
+  const [linesRes, customerRes, companyRes, bankRes] = await Promise.all([
     supabase
       .from('sp_invoice_lines')
       // Satuan (UOM) TIDAK di-snapshot di sp_order_items / sp_invoice_lines —
@@ -1391,11 +1392,15 @@ export async function getInvoicePdfData(invoiceId) {
     companyId
       ? supabase.from('entity_bank_accounts').select('bank_name, account_number, account_holder, branch').eq('company_id', companyId).eq('is_default', true).eq('is_active', true).limit(1).maybeSingle()
       : Promise.resolve({ data: null }),
-    supabase.from('sp_order_items').select('shipping_price').eq('sp_order_id', inv.sp_order_id),
   ]);
 
-  const firstError = linesRes.error || customerRes.error || companyRes.error || bankRes.error || shippingRes.error || null;
-  const totalShipping = (shippingRes.data || []).reduce((sum, r) => sum + (Number(r.shipping_price) || 0), 0);
+  const firstError = linesRes.error || customerRes.error || companyRes.error || bankRes.error || null;
+  // Shipping diturunkan dari HEADER invoice (total_amount - total_dpp -
+  // total_ppn), BUKAN lagi dari Σ sp_order_items.shipping_price -- invoice
+  // terkunci sesudah terbit, jadi PDF sebuah invoice tak lagi bisa berubah
+  // kalau ongkir SP diedit belakangan. Satu sumber dengan layar
+  // (useInvoiceWorkflow.js's totalOngkirInv). Menutup TD-296.
+  const totalShipping = invoiceShippingFromHeader(inv);
 
   return {
     data: {

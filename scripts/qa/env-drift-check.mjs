@@ -213,9 +213,9 @@ const DIKETAHUI = [
   },
   {
     // AR Tahap 3 bagian kedua (20260930000001..06), doc 12 butir 39-44.
-    // Ditulis 30 Sep 2026, BELUM DIJALANKAN di staging maupun production --
-    // entri ini disiapkan lebih dulu (pola sama entri "32-38") supaya begitu
-    // staging menjalankannya, drift-nya langsung terbaca ANTRE.
+    // LIVE staging 30 Sep 2026, production belum -- entri ini disiapkan
+    // lebih dulu (pola sama entri "32-38"), dan sudah terbukti benar: begitu
+    // staging menjalankannya, drift-nya terbaca ANTRE seperti dirancang.
     //
     // record_payment/submit_invoice/create_invoice_for_sp/mark_ttf_received
     // SENGAJA TIDAK ditambahkan di sini -- keempatnya SUDAH tercakup regex
@@ -242,7 +242,7 @@ const DIKETAHUI = [
       || /^(approve_invoice_issue|reject_invoice_issue|get_invoice_audit_trail)\(/.test(hakFungsi(kat, kunci) || ''),
     kelas: 'antre',
     butir: '39-44',
-    alasan: 'AR Tahap 3 bagian kedua -- approval terbit invoice (pending_approval, approve/reject_invoice_issue) + izin role finance + jejak koreksi TTF (get_invoice_audit_trail) -- ditulis 30 Sep 2026, BELUM DIJALANKAN di mana pun; naik bersama Tahap 1/2/3 bagian pertama saat launching',
+    alasan: 'AR Tahap 3 bagian kedua -- approval terbit invoice (pending_approval, approve/reject_invoice_issue) + izin role finance + jejak koreksi TTF (get_invoice_audit_trail) -- LIVE staging 30 Sep 2026, production belum; naik bersama Tahap 1/2/3 bagian pertama saat launching',
   },
   {
     // 12 tabel cadangan koreksi data ongkir/AR (tahap 2-8, 28-29 Sep 2026,

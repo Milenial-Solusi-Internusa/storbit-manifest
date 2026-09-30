@@ -59,12 +59,12 @@
 | 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 18, 25, 32 |
 | 37 | `20260929000009_ar_tahap3_due_date_ttf_backfill` | ✔ 29 Sep (STOP KERAS dilewati manual, sesudah review V0 Den) | ⛔ belum | ⏸ **MENUNGGU REVIEW DEN** (ulang, untuk data production saat launching) — sesudah butir 36 |
 | 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali` | ✔ 29 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 36 |
-| 39 | `20260930000001_ar_tahap3b_status_pending_approval` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3 bagian kedua, PERTAMA |
-| 40 | `20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
-| 41 | `20260930000003_ar_tahap3b_approve_reject_invoice` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39, 40 |
-| 42 | `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
-| 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
-| 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail` | ⛔ belum | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 39 | `20260930000001_ar_tahap3b_status_pending_approval` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 3 bagian kedua, PERTAMA |
+| 40 | `20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
+| 41 | `20260930000003_ar_tahap3b_approve_reject_invoice` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39, 40 |
+| 42 | `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 39 |
+| 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
 
 **Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
@@ -1126,7 +1126,7 @@ Enam berkas lahir dari TD-285 (batas total pembayaran), TD-286 (batas PPh), TD-2
 
 ## AR Tahap 3 bagian kedua (butir 39-44) — approval terbit invoice + izin role finance + jejak koreksi TTF
 
-Enam berkas dari PLAN AR Tahap 3 bagian kedua, DISETUJUI Den 30 Sep 2026 sesudah PLAN dipresentasikan: TASK 1 (approval terbit invoice — status baru `pending_approval`, fungsi `approve_invoice_issue`/`reject_invoice_issue`), TASK 2 (izin `finance` dibuka untuk ajukan/submit/TTF/pembayaran; `submit_invoice` disesuaikan), TASK 3 (jejak koreksi TTF ke `audit_logs`, dibaca lewat RPC baru karena `audit_logs` sendiri tak terbaca finance/finance_controller). **Ditulis 30 Sep 2026 sebagai FILE SAJA — BELUM DIJALANKAN di staging maupun production.** Urutan **MENGIKAT: 39 → 40 → 41, dan 39 → 42** (42 tidak bergantung 40/41); **43 dan 44 mandiri** terhadap kelima lainnya, tapi wajar dijalankan di ujung batch ini karena sama-sama bagian PLAN yang sama.
+Enam berkas dari PLAN AR Tahap 3 bagian kedua, DISETUJUI Den 30 Sep 2026 sesudah PLAN dipresentasikan: TASK 1 (approval terbit invoice — status baru `pending_approval`, fungsi `approve_invoice_issue`/`reject_invoice_issue`), TASK 2 (izin `finance` dibuka untuk ajukan/submit/TTF/pembayaran; `submit_invoice` disesuaikan), TASK 3 (jejak koreksi TTF ke `audit_logs`, dibaca lewat RPC baru karena `audit_logs` sendiri tak terbaca finance/finance_controller). ✅ **LIVE STAGING 30 Sep 2026 (isi yang sama persis yang dijalankan, seluruh palang dan V-POST lolos) — PRODUCTION BELUM.** Urutan **MENGIKAT: 39 → 40 → 41, dan 39 → 42** (42 tidak bergantung 40/41); **43 dan 44 mandiri** terhadap kelima lainnya, tapi wajar dijalankan di ujung batch ini karena sama-sama bagian PLAN yang sama.
 
 ⛔ **Dasar setiap fungsi yang disunting = versi TERAKHIR yang hidup di staging pada AR Tahap 3 bagian pertama (butir 32-38), BUKAN versi produksi** — produksi belum menjalankan satu pun dari butir 32-38, jadi keenam berkas baru ini **TIDAK BOLEH** dijalankan ke production tanpa butir 32-38 (dan butir 6-31 di bawahnya) lebih dulu. Rincian basis per fungsi ada di kepala tiap berkas.
 
@@ -1149,7 +1149,7 @@ Tanpa perubahan index ini, guard aplikasi akan **mengizinkan** pengajuan ulang u
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000001_ar_tahap3b_status_pending_approval.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan PERTAMA** dari batch ini |
 
@@ -1164,7 +1164,7 @@ Tanpa perubahan index ini, guard aplikasi akan **mengizinkan** pengajuan ulang u
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39** |
 
@@ -1183,7 +1183,7 @@ Tanpa perubahan index ini, guard aplikasi akan **mengizinkan** pengajuan ulang u
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000003_ar_tahap3b_approve_reject_invoice.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39 dan 40** |
 
@@ -1202,7 +1202,7 @@ Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`f
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000004_ar_tahap3b_record_payment_ttf_pending_guard.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan, sesudah butir 39** |
 
@@ -1223,7 +1223,7 @@ Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`f
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000005_ar_tahap3b_submit_invoice_finance_role.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan** — nol dependensi terhadap butir 39-42 |
 
@@ -1240,7 +1240,7 @@ Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`f
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20260930000006_ar_tahap3b_get_invoice_audit_trail.sql` |
-| Staging | ⛔ **belum** |
+| Staging | ✔ **30 Sep** |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan** (perlu berjalan sebelum panel Riwayat FE bisa memuat data apa pun, tapi tidak bergantung ke butir lain di batch ini) |
 

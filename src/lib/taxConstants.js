@@ -89,3 +89,25 @@ export const CORETAX_TX_CODES = [
   { code: '09', label: '[09] 09 - Penyerahan Aktiva Pasal 16D' },
   { code: '10', label: '[10] 10 - Penyerahan yang PPN-nya Dipungut oleh Pihak Lain' },
 ];
+
+/**
+ * Ongkos kirim satu invoice, diturunkan DARI HEADER-nya:
+ *     Shipping = total_amount - total_dpp - total_ppn
+ * Definisi ini SAMA dengan v_total_amount di RPC create_invoice. Invoice
+ * TERKUNCI begitu terbit (keputusan Den 29 Sep 2026) -- jadi menurunkan
+ * Shipping dari header, bukan dari Σ sp_order_items.shipping_price, membuat
+ * angkanya tidak bisa lagi bergeser kalau ongkir SP diedit belakangan (jalur
+ * Edit Item SP masih ada) atau pada penagihan parsial per BTB, di mana
+ * Σ item = ongkir SELURUH SP sedangkan header = yang benar-benar ditagih.
+ *
+ * Satu-satunya sumber dipakai BERSAMA oleh layar (`useInvoiceWorkflow.js`
+ * -> `InvoiceDetailPage.jsx`) dan PDF (`db.js`'s `getInvoicePdfData` ->
+ * `InvoicePDF.jsx`) supaya keduanya mustahil berbeda. Menutup TD-296.
+ *
+ * @param {{total_amount?: number|string, total_dpp?: number|string, total_ppn?: number|string}} invoice
+ * @returns {number}
+ */
+export function invoiceShippingFromHeader(invoice) {
+  return (Number(invoice?.total_amount) || 0)
+    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
+}
