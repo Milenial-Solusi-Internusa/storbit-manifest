@@ -113,14 +113,42 @@ export function useUserAccess({ page = 1, search = '' } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// toggleUserActive — quick activate / deactivate without touching ERP roles.
+// setUserActiveStatus — invokes the set-user-status Edge Function (TD-301).
+// Replaces the old toggleUserActive(), which only wrote profiles.active
+// directly via PostgREST — nothing blocked the Supabase Auth account, nothing
+// touched user_roles, and a deactivated user with a still-valid access token
+// could keep calling the API after being "deactivated" in the UI.
+// The Edge Function uses service_role to, in order:
+//   - UPDATE profiles.active
+//   - on deactivate: revoke ALL active user_roles (every company, not just
+//     the one being edited — deactivation is a full stop); NOT restored on
+//     reactivate, an admin must re-assign a role explicitly afterwards
+//   - auth.admin.updateUserById(... ban_duration) to block/unblock sign-in
+// super_admin-only (same gate as create-user/delete-user/reset-password) —
+// callers must check erpRole themselves before showing the control (see
+// UserAccessPage.jsx / UserEditPage.jsx).
+// Returns { data: { success, partial, steps } } on success — `partial: true`
+// means profiles.active committed but a later step (roles/ban) failed; the
+// caller must report this, never read `success` alone as "fully done".
 // ---------------------------------------------------------------------------
-export async function toggleUserActive(profileId, active) {
-  const { error } = await supabase
-    .from('profiles')
-    .update({ active })
-    .eq('id', profileId);
-  return { error };
+export async function setUserActiveStatus(userId, active) {
+  const { data, error } = await supabase.functions.invoke('set-user-status', {
+    body: { user_id: userId, active },
+  });
+
+  if (error) {
+    // supabase.functions.invoke wraps non-2xx responses in a FunctionsHttpError.
+    // The actual error body from our function is in error.context (the raw Response).
+    let message = error.message;
+    try {
+      const body = await error.context?.json?.();
+      if (body?.error) message = body.error;
+    } catch { /* response body not JSON-parseable — keep generic message */ }
+    return { error: { message } };
+  }
+
+  if (data?.error) return { error: { message: data.error } };
+  return { data };
 }
 
 // ---------------------------------------------------------------------------

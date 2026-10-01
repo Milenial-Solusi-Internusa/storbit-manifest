@@ -9,8 +9,13 @@
 //   Email lives in Supabase Auth (auth.users) — not stored in public.profiles.
 //
 // Edit is now a full page (state-swap in AdminShell) — see UserEditPage.jsx.
-// Deactivate/Activate: per-row direct action with confirm dialog.
-//   Disabled for the logged-in user's own row.
+// Deactivate/Activate: per-row direct action with confirm dialog, routed
+// through the set-user-status Edge Function (TD-301) so deactivation also
+// blocks the Supabase Auth account and revokes ERP roles, not just the
+// profiles.active flag. Disabled for the logged-in user's own row AND for
+// non-super_admin editors — the Edge Function itself is super_admin-only
+// (same gate as create-user/delete-user/reset-password), and showing an
+// active control that always fails for other editors would be trap-UX.
 //
 // Props:
 //   showToast(msg, type) — shell-level toast (AdminShell owns the toast UI)
@@ -28,7 +33,7 @@ import {
   fetchDepartmentsForCompany,
   fetchPositionsForCompany,
   fetchRolesForCompany,
-  toggleUserActive,
+  setUserActiveStatus,
   createUser,
   USER_ACCESS_PAGE_SIZE,
 } from '../../../hooks/useUserAccess';
@@ -70,6 +75,10 @@ const EMPTY_ADD = {
 
 export default function UserAccessPage({ showToast, onEditUser }) {
   const { profile: myProfile, erpRole, user } = useAuth();
+  // TD-301: set-user-status (Auth block/unblock + user_roles revoke) is
+  // super_admin-only, mirroring create-user/delete-user/reset-password — see
+  // isSuperAdmin gate on the Activate/Deactivate button below.
+  const isSuperAdmin = erpRole === 'super_admin';
 
   // Fallback toast if rendered without a shell-level showToast (defensive).
   const [localToast, setLocalToast] = useState(null);
@@ -103,25 +112,36 @@ export default function UserAccessPage({ showToast, onEditUser }) {
       async () => {
         closeConfirm();
         setTogglingId(row.id);
-        const { error: toggleErr } = await toggleUserActive(row.id, !row.active);
+        const { data: statusData, error: toggleErr } = await setUserActiveStatus(row.id, !row.active);
         setTogglingId(null);
         if (toggleErr) {
           toast(toggleErr.message || `Failed to ${action} user.`, 'error');
           return;
         }
-        if (action === 'deactivate') {
-          logAudit(supabase, {
-            action: ACTION_TYPES.DEACTIVATE_USER,
-            entityType: ENTITY_TYPES.USER,
-            entityId: row.id,
-            entityLabel: row.full_name || null,
-          }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
-        }
+        // TD-301: audit BOTH transitions now, not just deactivate — the old
+        // toggleUserActive() path never logged ACTIVATE_USER at all (gap
+        // found while building this hotfix, closed here, not a new rule).
+        const partialNote = statusData?.partial
+          ? ` (sebagian gagal: ${JSON.stringify(statusData.steps)})`
+          : '';
+        logAudit(supabase, {
+          action: action === 'deactivate' ? ACTION_TYPES.DEACTIVATE_USER : ACTION_TYPES.ACTIVATE_USER,
+          entityType: ENTITY_TYPES.USER,
+          entityId: row.id,
+          entityLabel: row.full_name || null,
+          oldData: { active: row.active },
+          newData: { active: !row.active },
+          notes: statusData?.steps ? `set-user-status: ${JSON.stringify(statusData.steps)}${partialNote}` : null,
+        }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
         refresh();
-        toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+        if (statusData?.partial) {
+          toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}, but one step failed — check audit log.`, 'error');
+        } else {
+          toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+        }
       }
     );
-  }, [refresh, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refresh, toast, myProfile?.id, myProfile?.company_id, user, erpRole]);
 
   // ── Add User modal state ─────────────────────────────────────
   const [addOpen, setAddOpen]           = useState(false);
@@ -418,22 +438,24 @@ export default function UserAccessPage({ showToast, onEditUser }) {
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleActive(row)}
-                    disabled={isSelf || isToggling}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
-                    style={
-                      row.active
-                        ? { background: `${PASTEL.roseDeep}18`, color: PASTEL.roseDeep }
-                        : { background: `${PASTEL.mintDeep}18`, color: PASTEL.mintDeep }
-                    }
-                    title={isSelf ? 'Cannot change your own status' : undefined}
-                  >
-                    {isToggling
-                      ? <Spinner size={11} className="animate-spin" />
-                      : row.active ? 'Deactivate' : 'Activate'}
-                  </button>
+                  {isSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(row)}
+                      disabled={isSelf || isToggling}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+                      style={
+                        row.active
+                          ? { background: `${PASTEL.roseDeep}18`, color: PASTEL.roseDeep }
+                          : { background: `${PASTEL.mintDeep}18`, color: PASTEL.mintDeep }
+                      }
+                      title={isSelf ? 'Cannot change your own status' : undefined}
+                    >
+                      {isToggling
+                        ? <Spinner size={11} className="animate-spin" />
+                        : row.active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  )}
                 </div>
               </div>
             );
