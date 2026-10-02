@@ -28,15 +28,15 @@
 // Kalau urutannya dibalik, "ready" akan tertangkap sebagai invoiceId dan halaman
 // menampilkan "Invoice tidak ditemukan" untuk path yang sah.
 //
-// ── Tab 6.2.2 (impor TTF massal / Invoice Submission & Acknowledgement) ─────
-// menuId LAMA `finance` (label lama "Finance Docs") dipindah dari
-// `LegacyMenuOutlet` ke sini, pola yang SAMA dengan `billing` saat AR Tahap 2:
-// menuId-nya DIPERTAHANKAN (nol key menu baru, nol migrasi grant baru —
-// matriks peran yang sudah mengizinkan halaman lama otomatis mengizinkan
-// penggantinya), yang berubah cuma rute + isi halamannya. Path-nya datang
-// dari `MENU_PATHS` (diturunkan dari menu-skeleton.js), BUKAN ditulis literal
-// di sini — sama dengan `BASE` di atas. Tab 6.2.3 (AR Aging) dan 6.2.4
-// (Payment & Collection Tracking) menyusul dengan pola yang sama.
+// ── Tab 6.2.2/6.2.3 (impor TTF massal, AR Aging) ────────────────────────────
+// menuId LAMA `finance`/`outstanding` (label lama "Finance Docs"/
+// "Outstanding") dipindah dari `LegacyMenuOutlet` ke sini, pola yang SAMA
+// dengan `billing` saat AR Tahap 2: menuId-nya DIPERTAHANKAN (nol key menu
+// baru, nol migrasi grant baru — matriks peran yang sudah mengizinkan halaman
+// lama otomatis mengizinkan penggantinya), yang berubah cuma rute + isi
+// halamannya. Path-nya datang dari `MENU_PATHS` (diturunkan dari
+// menu-skeleton.js), BUKAN ditulis literal di sini — sama dengan `BASE` di
+// atas. Tab 6.2.4 (Payment & Collection Tracking) menyusul pola yang sama.
 // ============================================================================
 import { lazy } from 'react';
 import { Navigate, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -51,6 +51,7 @@ const ReadyToInvoicePage = lazy(() => import('@/modules/finance/ReadyToInvoicePa
 const InvoiceListPage    = lazy(() => import('@/modules/finance/InvoiceListPage'));
 const InvoiceDetailPage  = lazy(() => import('@/modules/finance/InvoiceDetailPage'));
 const TtfSubmissionPage      = lazy(() => import('@/modules/finance/TtfSubmissionPage'));
+const ArAgingPage            = lazy(() => import('@/modules/finance/ArAgingPage'));
 
 const BASE       = MENU_PATHS.billing;
 const PATH_READY = `${BASE}/ready`;
@@ -173,10 +174,21 @@ function SubmissionRoute() {
   );
 }
 
+function AgingRoute() {
+  const navigate = useNavigate();
+  return (
+    <ModuleShell>
+      <Boundary title="AR Aging tidak tersedia">
+        <ArAgingPage onOpenInvoice={(id) => navigate(invoicePath(id))} />
+      </Boundary>
+    </ModuleShell>
+  );
+}
+
 /** Id menu yang rutenya dimiliki file INI — dipakai legacy.routes.jsx dan
  *  skeleton.routes.jsx untuk mengecualikannya, supaya tidak pernah ada dua rute
  *  untuk satu path. */
-export const FINANCE_MENU_IDS = ['billing', 'finance'];
+export const FINANCE_MENU_IDS = ['billing', 'finance', 'outstanding'];
 
 export const financeRoutes = [
   {
@@ -191,4 +203,5 @@ export const financeRoutes = [
     ],
   },
   { path: MENU_PATHS.finance,     handle: { menuId: 'finance' },     element: <SubmissionRoute/> },
+  { path: MENU_PATHS.outstanding, handle: { menuId: 'outstanding' }, element: <AgingRoute/> },
 ];

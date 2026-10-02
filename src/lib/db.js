@@ -1798,8 +1798,15 @@ export async function getInvoiceById(invoiceId) {
 }
 
 /**
- * Sigma (amount + pph) per invoice untuk SEKUMPULAN invoice — dipakai kolom
- * "Sisa" di Daftar Invoice.
+ * Sigma (amount + pph + potongan_lain) per invoice untuk SEKUMPULAN invoice —
+ * dipakai kolom "Sisa" di Daftar Invoice, dan oleh collectionData.js (AR Aging
+ * + Payment & Collection Tracking) untuk formula sisa yang SAMA.
+ *
+ * ⛔ `potongan_lain` WAJIB ikut (AR Tahap 3, TD-287) — formula sisa yang benar
+ * adalah `total_amount - Σ(amount + pph + potongan_lain)`, persis yang dipakai
+ * record_payment v3 sendiri (lihat migrasi 20260929000007) untuk memutuskan
+ * status `paid`. Sebelum ini kolom itu tidak ikut dijumlahkan, jadi "Sisa"
+ * sedikit overstate untuk invoice yang pernah dapat potongan lain.
  *
  * ⚠️ Pemanggilnya WAJIB mengirim daftar yang PENDEK. Hanya invoice berstatus
  * `partial` yang sungguh perlu dihitung: `issued`/`submitted` menurut definisi
@@ -1815,12 +1822,13 @@ export async function getPaymentTotalsByInvoice(invoiceIds = []) {
   if (ids.length === 0) return { data: {}, error: null };
   const { data, error } = await supabase
     .from('sp_payments')
-    .select('invoice_id, amount, pph')
+    .select('invoice_id, amount, pph, potongan_lain')
     .in('invoice_id', ids)
     .limit(1000);
   const map = {};
   (data || []).forEach((p) => {
-    map[p.invoice_id] = (map[p.invoice_id] || 0) + (Number(p.amount) || 0) + (Number(p.pph) || 0);
+    map[p.invoice_id] = (map[p.invoice_id] || 0)
+      + (Number(p.amount) || 0) + (Number(p.pph) || 0) + (Number(p.potongan_lain) || 0);
   });
   return { data: map, error };
 }
