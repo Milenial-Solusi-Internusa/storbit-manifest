@@ -28,15 +28,15 @@
 // Kalau urutannya dibalik, "ready" akan tertangkap sebagai invoiceId dan halaman
 // menampilkan "Invoice tidak ditemukan" untuk path yang sah.
 //
-// ── Tab 6.2.2/6.2.3 (impor TTF massal, AR Aging) ────────────────────────────
-// menuId LAMA `finance`/`outstanding` (label lama "Finance Docs"/
-// "Outstanding") dipindah dari `LegacyMenuOutlet` ke sini, pola yang SAMA
-// dengan `billing` saat AR Tahap 2: menuId-nya DIPERTAHANKAN (nol key menu
-// baru, nol migrasi grant baru — matriks peran yang sudah mengizinkan halaman
-// lama otomatis mengizinkan penggantinya), yang berubah cuma rute + isi
-// halamannya. Path-nya datang dari `MENU_PATHS` (diturunkan dari
-// menu-skeleton.js), BUKAN ditulis literal di sini — sama dengan `BASE` di
-// atas. Tab 6.2.4 (Payment & Collection Tracking) menyusul pola yang sama.
+// ── Tab 6.2.2/6.2.3/6.2.4 (impor TTF massal, AR Aging, Payment & Collection) ─
+// Tiga menuId LAMA (`finance`/`outstanding`/`ar` — label lama "Finance Docs"/
+// "Outstanding"/"AR Collection") dipindah dari `LegacyMenuOutlet` ke sini,
+// pola yang SAMA dengan `billing` saat AR Tahap 2: menuId-nya DIPERTAHANKAN
+// (nol key menu baru, nol migrasi grant baru — matriks peran yang sudah
+// mengizinkan ketiga halaman lama otomatis mengizinkan penggantinya), yang
+// berubah cuma rute + isi halamannya. Path-nya datang dari `MENU_PATHS`
+// (diturunkan dari menu-skeleton.js), BUKAN ditulis literal di sini — sama
+// dengan `BASE` di atas.
 // ============================================================================
 import { lazy } from 'react';
 import { Navigate, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -52,6 +52,7 @@ const InvoiceListPage    = lazy(() => import('@/modules/finance/InvoiceListPage'
 const InvoiceDetailPage  = lazy(() => import('@/modules/finance/InvoiceDetailPage'));
 const TtfSubmissionPage      = lazy(() => import('@/modules/finance/TtfSubmissionPage'));
 const ArAgingPage            = lazy(() => import('@/modules/finance/ArAgingPage'));
+const CollectionTrackingPage = lazy(() => import('@/modules/finance/CollectionTrackingPage'));
 
 const BASE       = MENU_PATHS.billing;
 const PATH_READY = `${BASE}/ready`;
@@ -185,10 +186,21 @@ function AgingRoute() {
   );
 }
 
+function CollectionRoute() {
+  const navigate = useNavigate();
+  return (
+    <ModuleShell>
+      <Boundary title="Payment & Collection Tracking tidak tersedia">
+        <CollectionTrackingPage onOpenInvoice={(id) => navigate(invoicePath(id))} />
+      </Boundary>
+    </ModuleShell>
+  );
+}
+
 /** Id menu yang rutenya dimiliki file INI — dipakai legacy.routes.jsx dan
  *  skeleton.routes.jsx untuk mengecualikannya, supaya tidak pernah ada dua rute
  *  untuk satu path. */
-export const FINANCE_MENU_IDS = ['billing', 'finance', 'outstanding'];
+export const FINANCE_MENU_IDS = ['billing', 'finance', 'outstanding', 'ar'];
 
 export const financeRoutes = [
   {
@@ -204,4 +216,5 @@ export const financeRoutes = [
   },
   { path: MENU_PATHS.finance,     handle: { menuId: 'finance' },     element: <SubmissionRoute/> },
   { path: MENU_PATHS.outstanding, handle: { menuId: 'outstanding' }, element: <AgingRoute/> },
+  { path: MENU_PATHS.ar,          handle: { menuId: 'ar' },          element: <CollectionRoute/> },
 ];

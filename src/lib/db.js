@@ -1333,6 +1333,28 @@ export async function getTtfStatusByInvoices(invoiceIds = []) {
   return { data: map, error };
 }
 
+/** Pembayaran TERBARU lintas invoice (terbaru dulu) — dipakai panel "Riwayat
+ *  Pembayaran Terbaru" CollectionTrackingPage.jsx. BACA-SAJA, nol aksi di
+ *  halaman itu (mencatat pembayaran tetap di Detail Invoice). */
+export async function listRecentPayments(limit = 30) {
+  const { data, error } = await supabase
+    .from('sp_payments')
+    .select(`
+      id, payment_date, amount, pph, potongan_lain, reference, created_by, created_at,
+      invoice_id,
+      sp_invoices!sp_payments_invoice_id_fkey ( invoice_no, company_id,
+        companies!sp_invoices_company_id_fkey ( code, name ),
+        sp_orders!sp_invoices_sp_order_id_fkey ( sp_no,
+          accounts:accounts!sp_orders_customer_id_fkey ( name ) ) )
+    `)
+    .order('payment_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) return { data: [], error };
+  const nama = await namaPelaku((data || []).map((p) => p.created_by));
+  return { data: (data || []).map((p) => ({ ...p, pencatat: nama[p.created_by] || '' })), error: null };
+}
+
 // Kop surat entitas untuk preview dokumen on-screen (bukan PDF) — subset kolom
 // yang sama dengan yang dipakai getInvoicePdfData di bawah, tanpa join apa pun.
 // Dipakai panel "Dokumen & Invoice" di SalesOrderDetailPage.
