@@ -23,11 +23,11 @@
 |---|---|---|---|---|
 | 1 | `20260917000001_delivery_signed_date` | ✔ 24 Sep | ✔ 17 Sep | **nol** — referensi |
 | 2 | Parity AR Tahap 0 + seed COA SOA | ✔ 24 Sep | ✔ (rekonsiliasi AR) | **nol** — referensi |
-| 3 | `crm_rate_list` → katalog modul `procurement` | ✔ 24 Sep | ⛔ **belum** | ⛔ **WAJIB jalankan** |
+| 3 | `crm_rate_list` → katalog modul `procurement` | ✔ 24 Sep | ✔ **2 Okt** | — **selesai** |
 | 4 | Cabut 4 izin `bd_sales_executive` | ✔ 24 Sep | ⏸ belum | ⏸ **menunggu keputusan** |
 | 5 | `20260924000001` + `20260924000002` (katalog menu) | ⛔ belum | ⛔ belum | opsional, lihat butir 5 |
-| 6 | `20260925000001_dni_sp_order_item_link` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — paling lambat bersama AR Tahap 1 |
-| 7 | `20260925000002_sp_order_items_legacy_unique` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 6 |
+| 6 | `20260925000001_dni_sp_order_item_link` | ✔ 25 Sep | ✔ **2 Okt** | — **selesai** |
+| 7 | `20260925000002_sp_order_items_legacy_unique` | ✔ 25 Sep | ✔ **2 Okt** | — **selesai** |
 | 8 | `20260926000001_set_delivery_signed_date` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1 |
 | 9 | `20260926000002_ar_single_issue_path` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 1, TERAKHIR |
 | 10 | `20260925000003` — `notify_sp_milestone` no-op | ✔ 25 Sep | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
@@ -68,7 +68,9 @@
 | 45 | `20260930000007_td281_h5_lapis1_revoke_trtm_existing` | ✔ 30 Sep | ✔ 30 Sep | — **selesai** — pengerasan mandiri, dijalankan sebelum launching, staging & production hari yang sama |
 | 46 | `20260930000008_td281_h5_lapis2_anon_business_tables` | ✔ 30 Sep | ✔ 30 Sep | — **selesai** — dijalankan dengan koreksi (lihat §H5); staging & production hari yang sama |
 
-**Butir 3** memblokir launching. **Butir 6 sampai 9** adalah AR Tahap 1 dan wajib, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9.** **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
+~~**Butir 3** memblokir launching.~~ **✅ SELESAI 2 Okt 2026 — lihat paragraf di bawah; butir 3 BUKAN LAGI pemblokir launching.** **Butir 6 dan 7 SELESAI di production 2 Okt 2026** (lihat seksinya masing-masing) — sisa **8 dan 9** dari rantai AR Tahap 1 masih **⛔ belum**, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9** tetap berlaku untuk dua butir sisanya. **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
+
+✅ **Pemblokir launching PERTAMA: butir 3 (`crm_rate_list` → katalog modul `procurement`) — SELESAI 2 Okt 2026.** Dijalankan di production lewat Supabase MCP (bukan oleh doc-keeper, dan bukan lewat merge kode) — `UPDATE module_menus SET module_id = (modul procurement), sort_order = 8 WHERE key = 'crm_rate_list'`, pola `UPDATE module_id` sesuai langkah yang sudah ditulis di seksi 3 (bukan hapus-buat-ulang, 10 grant role yang menempel ke menu ini tidak ikut tersentuh). Direkam retroaktif sebagai `supabase/migrations/20261002000001_crm_rate_list_module_procurement.sql`. **Dengan ini, satu-satunya pemblokir launching yang TERSISA dan masih AKTIF adalah pemblokir KETIGA (TD-300, Group E) di bawah** — pemblokir KEDUA (Paket Keamanan TD-281) sudah selesai duluan.
 
 ✅ **Pemblokir launching KEDUA: PAKET KEAMANAN TD-281 (H4 + H5 + H6) — SELESAI, TIDAK LAGI MEMBLOKIR.** Lihat §*Paket Keamanan TD-281* di bawah. Butir 27-31 (H1-H3), **butir 45-46 (H5 lapis 1 & 2)**, dan **H6 (koreksi README/security-baseline.md) SEMUANYA ✅ SELESAI** — H5 dijalankan 30 Sep 2026 sebagai pengerasan mandiri **SEBELUM** launching (staging & production hari yang sama, keputusan Den 30 Sep 2026); H6 ditulis ulang 30 Sep 2026 sesudah H5 live, menemukan TD-301 (HIGH) dan TD-302 (LOW) sebagai temuan sampingan di luar cakupan paket ini. H4 sisa (`get_linked_bnf_status`) **sengaja TIDAK diperbaiki terpisah** — ikut Fase 4 (penghapusan total BNF-family) — lihat rincian di §*Paket Keamanan TD-281*.
 
@@ -122,17 +124,19 @@ Objek yang disamakan, **terukur di staging 25 Sep 2026**:
 
 ~~⚠️ ACL kedua fungsi invoice **masih default PUBLIC di kedua environment**. Pengetatannya (`REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`) adalah **Tahap 1 rencana AR**, bukan butir antrean ini.~~ **[KOREKSI 25 Sep 2026: pengetatan itu KINI butir 9 (butir e), dan cakupannya TIGA fungsi — `create_invoice` + `create_invoice_for_sp` + `submit_invoice`, ketiganya ber-PUBLIC EXECUTE sebelumnya.** Sudah berlaku di staging; produksi mengikut butir 9. Jadi kalimat "bukan butir antrean ini" **tidak berlaku lagi**.]
 
-## 3. ⛔ `crm_rate_list` → katalog modul `procurement` — WAJIB
+## 3. ✔ `crm_rate_list` → katalog modul `procurement` — SELESAI 2 Okt 2026
 
-**Satu-satunya butir yang memblokir launching** (butir 6 juga wajib, tapi tenggatnya AR Tahap 1, bukan launching).
+**Dulu satu-satunya butir yang memblokir launching** (butir 6 juga wajib, tapi tenggatnya AR Tahap 1, bukan launching) — **tidak lagi**, lihat §Ringkasan di atas.
 
 | | |
 |---|---|
-| Isi | Saklar/toggle **Rate List** (`module_menus.key = 'crm_rate_list'`) dipindah dari katalog modul `crm` ke modul **`procurement`** |
+| Isi | Saklar/toggle **Rate List** (`module_menus.key = 'crm_rate_list'`) dipindah dari katalog modul `crm` ke modul **`procurement`**, `sort_order = 8` |
 | Staging | ✔ dilakukan **manual 24 Sep 2026**. Terukur 25 Sep: modul = `procurement` |
-| Production | ⛔ **belum** |
-| Berkas migrasi | ⛔ **tidak ada** — nol jejak git, nol berkas di `supabase/migrations/` |
+| Production | ✔ **dijalankan 2 Okt 2026**, lewat Supabase MCP |
+| Berkas migrasi | ✔ **direkam retroaktif** `supabase/migrations/20261002000001_crm_rate_list_module_procurement.sql` (91 baris) — ditulis SESUDAH eksekusi, pola yang sama dengan `20260917000001` (butir 1) |
 | Kenapa wajib | Kerangka menu Bagian 1 menempatkan Rate List di bawah Procurement. Tanpa pemindahan katalog, izin menu untuk Rate List tidak cocok dengan posisinya di sidebar produksi |
+
+**Cara eksekusi production sesuai langkah yang sudah ditulis di atas:** `UPDATE module_id`, **BUKAN** hapus-buat-ulang baris menu — 10 grant role yang menempel ke `crm_rate_list` tidak ikut jatuh. Staging sudah dalam keadaan ini sejak 24 Sep 2026 (manual, nol jejak git saat itu); production kini menyusul dan sejak 2 Okt 2026 **kedua environment sama**.
 
 **Langkah:** jalankan `UPDATE` di SQL Editor produksi untuk memindah `module_menus.module_id` baris `crm_rate_list` ke id modul `procurement`. Sebelum dan sesudah, catat hasil:
 
@@ -178,15 +182,17 @@ WHERE mm.key = 'crm_rate_list';
 
 **`20260924000002`** = template pemberian izin. Jalankan hanya bila memang mau memberi izin ke key placeholder.
 
-## 6. ⛔ `20260925000001_dni_sp_order_item_link` — WAJIB, paling lambat bersama AR Tahap 1
+## 6. ✔ `20260925000001_dni_sp_order_item_link` — SELESAI (production) 2 Okt 2026
 
 | | |
 |---|---|
 | Isi | (1) `generate_delivery_from_picking` mengisi `delivery_note_items.sp_order_item_id` · (2) backfill idempoten baris yang masih NULL · (3) guard keras di `create_invoice_for_sp` |
 | Berkas migrasi | ✔ `supabase/migrations/20260925000001_dni_sp_order_item_link.sql` |
 | Staging | ✔ **dijalankan 25 Sep 2026** |
-| Production | ⛔ belum |
+| Production | ✔ **dijalankan 2 Okt 2026**, lewat Supabase MCP |
 | Sifat | 2 `CREATE OR REPLACE` (signature & ACL identik) + 1 `UPDATE` ber-`WHERE … IS NULL`. Nol DDL tabel, nol GRANT/REVOKE, nol baris dihapus |
+
+**✅ Eksekusi production 2 Okt 2026 (laporan sesi).** `generate_delivery_from_picking` dipasang memakai **badan LIVE staging** (komentarnya lebih pendek dari berkas di repo ini, karena staging sempat diiterasi sejak 25 Sep) — dipilih supaya md5 badannya **SAMA PERSIS** dengan staging: `88f5525343075eeddeb2ccbb6253e7ed`. `create_invoice_for_sp` production kini bermd5 `1b754c87def41341134823aeb6a1dc06` (badan dari berkas migrasi di atas, guard terpasang). **Verifikasi `V1a` di production = 0** (lolos — tak ada baris `sp_order_items` yatim yang gagal dipetakan, beda dari staging yang punya 5 baris data uji lama). **77 baris di 33 Surat Jalan** (rentang 25 Sep s/d 2 Okt 2026 — persis Surat Jalan yang lahir sejak migrasi staging sampai hari eksekusi production) kini tersambung lewat perbaikan ini, dari yang sebelumnya NULL. Cadangan badan LAMA (sebelum diganti) disimpan oleh sesi yang mengerjakan, **di luar repo**.
 
 **Sebabnya, dan kenapa ia tidak terlihat sampai sekarang.** `generate_delivery_from_picking` menyisipkan baris `delivery_note_items` **tanpa** kolom `sp_order_item_id` — kolomnya ada, dibiarkan NULL. `create_invoice_for_sp` menghitung jurnal per Surat Jalan lewat `JOIN sp_order_items soi ON soi.id = dni.sp_order_item_id`. Dengan NULL, join itu kosong → `v_amount_sj = 0` → `IF v_amount_sj = 0 THEN CONTINUE` → **invoice terbit, nol jurnal, nol error**.
 
@@ -210,15 +216,17 @@ WHERE mm.key = 'crm_rate_list';
 
 ⚠️ **Satu bug ditemukan saat dijalankan, sudah dikoreksi di berkasnya:** backfill semula ditulis `UPDATE … FROM a JOIN b ON b.x = dni.y`, dan Postgres menolaknya (`42P01`) karena kondisi `JOIN` tidak boleh merujuk tabel target. Bentuk yang benar = daftar FROM + seluruh syarat di `WHERE`. Kalau berkas ini disalin ke migrasi lain, salin bentuk yang sudah dikoreksi.
 
-## 7. ⛔ `20260925000002_sp_order_items_legacy_unique` — WAJIB, sesudah butir 6
+## 7. ✔ `20260925000002_sp_order_items_legacy_unique` — SELESAI (production) 2 Okt 2026
 
 | | |
 |---|---|
 | Isi | `CREATE UNIQUE INDEX` parsial `sp_order_items_legacy_sp_item_id_key ON sp_order_items (legacy_sp_item_id) WHERE legacy_sp_item_id IS NOT NULL` + pra-cek duplikat |
 | Berkas migrasi | ✔ `supabase/migrations/20260925000002_sp_order_items_legacy_unique.sql` |
 | Staging | ✔ **dijalankan 25 Sep 2026** |
-| Production | ⛔ belum |
+| Production | ✔ **dijalankan 2 Okt 2026**, lewat Supabase MCP, sesudah butir 6 |
 | Sifat | DDL index saja, idempoten (`IF NOT EXISTS`). Nol kolom, nol data, nol GRANT/REVOKE, nol policy |
+
+**✅ Eksekusi production 2 Okt 2026 (laporan sesi).** Index unique parsial terpasang **VALID**. Uji sisip duplikat ditolak dengan kode error Postgres **23505** (`unique_violation`), sesuai harapan — rantai `legacy_sp_item_id` kini dijamin skema, bukan lagi hanya oleh keadaan data. **Nol baris uji tertinggal** di tabel sesudah pengujian.
 
 **Kenapa wajib, bukan kosmetik.** Butir 6 memetakan lewat rantai `picking_list_items.sp_item_id` → `sp_order_items.legacy_sp_item_id`. Rantai itu hanya benar kalau `legacy_sp_item_id` unik — dan sebelum butir ini, **keunikannya tidak dijamin apa pun**: satu-satunya index di `sp_order_items` adalah `sp_order_items_pkey` (diukur di produksi 25 Sep 2026). Yang menjaganya adalah keadaan data, bukan skema.
 
