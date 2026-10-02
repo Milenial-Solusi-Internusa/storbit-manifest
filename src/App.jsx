@@ -113,14 +113,6 @@ const formatRupiah = (n) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 };
 
-const formatRupiahShort = (n) => {
-  if (n === null || n === undefined || isNaN(n)) return '-';
-  if (n >= 1_000_000_000) return `Rp ${(n/1_000_000_000).toFixed(1)}M`;
-  if (n >= 1_000_000) return `Rp ${(n/1_000_000).toFixed(1)}jt`;
-  if (n >= 1_000) return `Rp ${(n/1_000).toFixed(0)}rb`;
-  return `Rp ${n}`;
-};
-
 const formatNumber = (n) => {
   if (n === null || n === undefined || isNaN(n)) return '0';
   return new Intl.NumberFormat('id-ID').format(n);
@@ -1751,7 +1743,7 @@ export default function StorbitManifest() {
     removeRow: dbRemoveRow,
     removeRowsBySp: dbRemoveRowsBySp,
   } = useSpItems({ customers });
-  const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
+  const { arData, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
   const [activeModule, setActiveModule] = useState(
     localStorage.getItem('nexus_last_module') || null
@@ -2119,9 +2111,14 @@ export default function StorbitManifest() {
   }, [profile?.id]);
 
   const [editingCustomer, setEditingCustomer] = useState(null);
+  // ARTrackerPage/ARModal dipensiunkan (TASK 5, halaman Finance lama tidak
+  // pernah dipakai nyata) -- ARSidePanel.onEdit masih memanggil setEditingAR,
+  // tapi satu-satunya pembaca editingAR (ARModal) sudah tidak ada. Dibiarkan
+  // (bukan dihapus): ARSidePanel di luar cakupan unit kerja ini, lihat laporan
+  // TASK 5.
+  // eslint-disable-next-line no-unused-vars
   const [editingAR, setEditingAR] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
-  const [showAddAR, setShowAddAR] = useState(false);
   const [viewingAR, setViewingAR] = useState(null);
   const [shipmentRow, setShipmentRow] = useState(null);
   const [financeRow, setFinanceRow] = useState(null);
@@ -2142,10 +2139,6 @@ export default function StorbitManifest() {
   // eslint-disable-next-line no-unused-vars
   const [sortBy, setSortBy] = useState({ field: 'spDate', dir: 'desc' });
 
-  // AR-specific filters
-  const [arFilterCustomer, setArFilterCustomer] = useState('all');
-  const [arFilterStatus, setArFilterStatus] = useState('all');
-  const [arSearch, setArSearch] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   // Mini profil read-only rekan kerja (klik nama, mis. sales di Header DealDetailPage).
@@ -2555,18 +2548,6 @@ export default function StorbitManifest() {
     }
   };
 
-  const handleSaveAR = async (data) => {
-    try {
-      const isUpdate = data.id && arData.find(a => a.id === data.id);
-      await dbSaveTtf(data);
-      showToast(isUpdate ? 'AR data berhasil diupdate ✨' : 'AR data berhasil ditambahkan ✨');
-      setEditingAR(null);
-      setShowAddAR(false);
-    } catch (err) {
-      showToast('Gagal menyimpan AR: ' + (err.message || 'unknown error'), 'error');
-    }
-  };
-
   const handleDeleteAR = async (id) => {
     const ttf = arData.find(a => a.id === id);
     if (!ttf) return;
@@ -2656,9 +2637,9 @@ export default function StorbitManifest() {
 
   const shell = {
     ShipmentPage, activeAssetId, activeMenu, activeModule, adminInitialSection,
-    arData, arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail,
+    backFromAssetDetail,
     bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP,
-    canManageTtf, canRenderPage, currentRoleLabel,
+    canRenderPage, currentRoleLabel,
     customerBySpNo, customerByUid, customerPrfInquiryId,
     customerPrfViewId, customers, dbRemoveRowsBySp, dbSaveRow, dcList,
     enrichedRows, exportCSV, filterMonth,
@@ -2666,13 +2647,13 @@ export default function StorbitManifest() {
     isBnfAuthorized, monthList, navigateTo, navigateToAssetDetail, navigateToCustomerDetail,
     permissionsLoading, prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile,
     refreshSp, reportingMomId, reportingMomMode, role,
-    rows, selectedProduct, setActiveMenu, setArFilterCustomer, setArFilterStatus, setArSearch,
+    rows, selectedProduct, setActiveMenu,
     setCustomerPrfInquiryId, setCustomerPrfViewId,
     setEditingCustomer,
-    setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId, setProcPrfDetailId,
+    setFilterMonth, setInquiryPrefill, setPrfPrefillInquiryId, setProcPrfDetailId,
     setProcPrfEditId, setReportingMomId,
-    setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer,
-    setSoDetailId, setViewingAR,
+    setReportingMomMode, setSelectedProduct, setShowAddCustomer,
+    setSoDetailId,
     setViewingProfileId, showToast,
     soDetailId, spLoading, stats, updateShipmentRow,
   };
@@ -3066,14 +3047,6 @@ export default function StorbitManifest() {
           canManageTtf={canManageTtf}
         />
       )}
-      {(editingAR || showAddAR) && (
-        <ARModal
-          initial={editingAR}
-          customers={customers}
-          onClose={() => { setEditingAR(null); setShowAddAR(false); }}
-          onSave={handleSaveAR}
-        />
-      )}
       {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
       {/* onSave -> onSaved: FinanceModal kini memanggil RPC set_sp_finance_docs
           sendiri (level SP), bukan lagi menumpang dbSaveRow milik handleSave
@@ -3122,23 +3095,21 @@ export default function StorbitManifest() {
 // dihapus dari sini pada gilirannya.
 export function LegacyMenuOutlet() {
   const {
-    activeAssetId, activeMenu, activeModule, adminInitialSection, arData,
-    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail,
-    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canManageTtf, canRenderPage,
+    activeAssetId, activeMenu, activeModule, adminInitialSection,
+    backFromAssetDetail,
+    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canRenderPage,
     currentRoleLabel,
     customers, dcList,
-    enrichedRows, filterMonth, groupedSP,
+    filterMonth, groupedSP,
     handleDeleteCustomer, monthList,
     navigateTo, navigateToAssetDetail, permissionsLoading,
     prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile,
     reportingMomId, reportingMomMode, role, rows, selectedProduct, setActiveMenu,
-    setArFilterCustomer, setArFilterStatus, setArSearch,
     setEditingCustomer,
-    setFilterMonth, setFinanceRow,
+    setFilterMonth,
     setProcPrfDetailId, setProcPrfEditId,
-    setReportingMomId, setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer,
+    setReportingMomId, setReportingMomMode, setSelectedProduct, setShowAddCustomer,
     setSoDetailId,
-    setViewingAR,
     showToast, soDetailId, stats,
   } = useAppShell();
   // PRF (belum pindah) menyerahkan payload ke FORM Quotation yang sudah punya
@@ -3229,16 +3200,6 @@ export function LegacyMenuOutlet() {
               capabilities={['Planned for a future ERP phase', 'Part of the Nexus roadmap']}
             />
           )}
-          {activeMenu === 'finance' && (canRenderPage('finance') ? (
-            <FinancePage rows={enrichedRows} onUpdate={(r) => can(role,'finance') && setFinanceRow(r)} role={role}/>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
-          {activeMenu === 'outstanding' && (canRenderPage('outstanding') ? (
-            <OutstandingPage rows={enrichedRows} onUpdate={(r) => can(role,'finance') && setFinanceRow(r)} role={role}/>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
           {activeMenu === 'customers' && (
             <CustomersPage
               customers={customers}
@@ -3248,18 +3209,6 @@ export function LegacyMenuOutlet() {
               onEdit={(c) => setEditingCustomer(c)}
               onDelete={handleDeleteCustomer}
               role={role}
-            />
-          )}
-          {activeMenu === 'ar' && (
-            <ARTrackerPage
-              arData={arData}
-              customers={customers}
-              filterCustomer={arFilterCustomer} setFilterCustomer={setArFilterCustomer}
-              filterStatus={arFilterStatus} setFilterStatus={setArFilterStatus}
-              search={arSearch} setSearch={setArSearch}
-              onAdd={() => setShowAddAR(true)}
-              onView={(ttf) => setViewingAR(ttf)}
-              canManageTtf={canManageTtf}
             />
           )}
           {/* Legacy activeMenu ids — Fase 1 Tahap B pensiunkan AdminShell +
@@ -3541,27 +3490,6 @@ export function LegacyMenuOutlet() {
 // ============================
 // Cards & atoms
 // ============================
-function KPICard({ label, value, icon: Icon, color, accent }) {
-  return (
-    <div
-      className="rounded-3xl p-5 border transition-all hover:-translate-y-0.5"
-      style={{
-        background: 'linear-gradient(180deg, #FFFFFF 0%, #FBFCFA 100%)',
-        borderColor: 'rgba(15,42,35,0.1)',
-        boxShadow: '0 14px 34px rgba(15,42,35,0.05)',
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>{label}</div>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center border" style={{ background: color, borderColor: 'rgba(255,255,255,0.65)' }}>
-          <Icon size={16} style={{ color: accent }}/>
-        </div>
-      </div>
-      <div className="font-numeric text-4xl font-bold tracking-tight">{value}</div>
-    </div>
-  );
-}
-
 function StatusBadge({ status, overdue, large }) {
   const styles = {
     Open: { bg: PASTEL.sky, color: '#1F4D6B' },
@@ -3678,36 +3606,12 @@ function ComingSoonPage({ title, description, capabilities }) {
 }
 
 
-function FilterPill({ value, onChange, options }) {
-  return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      className="rounded-full px-4 py-2 text-sm font-medium cursor-pointer focus:outline-none"
-      style={{ background: PASTEL.cream, border: `1px solid ${PASTEL.line}`, color: PASTEL.ink }}
-    >
-      {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-    </select>
-  );
-}
-
 function SummaryStat({ label, value, bg }) {
   return (
     <div className="rounded-2xl p-3.5" style={{ background: bg }}>
       <div className="text-[9px] uppercase tracking-[0.18em] font-semibold opacity-75" style={{ color: PASTEL.ink }}>{label}</div>
       <div className="text-sm font-semibold mt-1" style={{ color: PASTEL.ink }}>{value}</div>
     </div>
-  );
-}
-
-function DocChip({ label, active }) {
-  return (
-    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold" style={{
-      background: active ? PASTEL.mint : PASTEL.lineSoft,
-      color: active ? '#1B5739' : PASTEL.inkMute
-    }}>
-      {active ? '✓' : '○'} {label}
-    </span>
   );
 }
 
@@ -3787,163 +3691,6 @@ export function ShipmentPage({ rows, onUpdate, role }) {
 }
 
 // ============================
-// Finance page
-// ============================
-function FinancePage({ rows, onUpdate, role }) {
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-            style={{ background: PASTEL.mint, color: '#0F5132' }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.mintDeep }}/>
-            Finance · Documents
-          </span>
-        </div>
-        <h2 className="font-display text-3xl font-semibold tracking-tight">Finance & Documents</h2>
-        <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Update invoice, faktur pajak, submit, kirim, dan email status</p>
-      </div>
-
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="px-5 py-3.5 border-b flex items-center justify-between"
-          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #F3FAF7 100%)' }}>
-          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Finance Document Status</span>
-          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
-            style={{ background: PASTEL.mint, color: '#0F5132' }}>
-            {rows.length} items
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: PASTEL.lineSoft }}>
-                {['SP No','Customer','Product','Grand Total','INV','FP','Submit','Kirim','Submit Date','Email','Action'].map((h,i) => (
-                  <th key={h} className={`px-4 py-3.5 text-[10px] uppercase tracking-[0.15em] font-semibold ${i===3 ? 'text-right' : i>=4 && i<=7 ? 'text-center' : i===10 ? 'text-right' : 'text-left'}`} style={{ color: PASTEL.inkSoft }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && <tr><td colSpan={11} className="text-center py-12 text-sm" style={{ color: PASTEL.inkMute }}>Belum ada data</td></tr>}
-              {rows.map(r => (
-                <tr key={r.id} className="border-t" style={{ borderColor: PASTEL.line, background: 'white' }}>
-                  <td className="px-4 py-3 font-mono font-semibold whitespace-nowrap">{r.spNo}</td>
-                  <td className="px-4 py-3">
-                    {r.customer ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>{r.customer}</span>
-                    ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                  </td>
-                  <td className="px-4 py-3"><div className="max-w-[240px] truncate">{r.productName}</div></td>
-                  <td className="px-4 py-3 text-right font-mono whitespace-nowrap">{formatRupiah(r.grandTotal)}</td>
-                  <td className="px-4 py-3 text-center"><DocChip label="" active={r.inv}/></td>
-                  <td className="px-4 py-3 text-center"><DocChip label="" active={r.fp}/></td>
-                  <td className="px-4 py-3 text-center"><DocChip label="" active={r.submit}/></td>
-                  <td className="px-4 py-3 text-center"><DocChip label="" active={r.kirim}/></td>
-                  <td className="px-4 py-3 text-xs font-mono" style={{ color: PASTEL.inkSoft }}>{formatDateID(r.submitDate)}</td>
-                  <td className="px-4 py-3 text-xs font-mono" style={{ color: PASTEL.inkSoft }}>{formatDateID(r.emailStatus)}</td>
-                  <td className="px-4 py-3 text-right">
-                    {can(role,'finance') ? (
-                      <button onClick={()=>onUpdate(r)} className="px-3 py-1.5 rounded-full text-xs font-medium" style={{ background: PASTEL.mint, color: '#1B5739' }}>
-                        Update
-                      </button>
-                    ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================
-// Outstanding page
-// ============================
-function OutstandingPage({ rows, onUpdate, role }) {
-  const pending = rows.filter(r => !r.inv || !r.fp || !r.submit || !r.kirim);
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-            style={{ background: PASTEL.butter, color: '#5C4416' }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.butterDeep }}/>
-            Finance · Outstanding
-          </span>
-        </div>
-        <h2 className="font-display text-3xl font-semibold tracking-tight">Outstanding Finance</h2>
-        <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{pending.length} item dengan dokumen pending</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Invoice" value={rows.filter(r=>!r.inv).length} icon={FileText} color={PASTEL.peach} accent={PASTEL.peachDeep}/>
-        <KPICard label="FP Pending" value={rows.filter(r=>!r.fp).length} icon={FileText} color={PASTEL.lavender} accent={PASTEL.lavenderDeep}/>
-        <KPICard label="Submit" value={rows.filter(r=>!r.submit).length} icon={FileText} color={PASTEL.butter} accent={PASTEL.butterDeep}/>
-        <KPICard label="Kirim" value={rows.filter(r=>!r.kirim).length} icon={FileText} color={PASTEL.rose} accent={PASTEL.roseDeep}/>
-      </div>
-
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="px-5 py-3.5 border-b flex items-center justify-between"
-          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #FEFAF0 100%)' }}>
-          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Items with Pending Documents</span>
-          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
-            style={{ background: pending.length > 0 ? PASTEL.peach : PASTEL.mint, color: pending.length > 0 ? '#5C2F12' : '#0F5132' }}>
-            {pending.length} items
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: PASTEL.lineSoft }}>
-                {['SP No','Customer','Product','SP Date','Grand Total','Pending Docs','Action'].map((h,i) => (
-                  <th key={h} className={`px-4 py-3.5 text-[10px] uppercase tracking-[0.15em] font-semibold ${i===4 ? 'text-right' : i===5 ? 'text-center' : i===6 ? 'text-right' : 'text-left'}`} style={{ color: PASTEL.inkSoft }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pending.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-sm" style={{ color: PASTEL.inkMute }}>Semua dokumen complete ✨</td></tr>}
-              {pending.map(r => {
-                const missing = [];
-                if (!r.inv) missing.push('INV');
-                if (!r.fp) missing.push('FP');
-                if (!r.submit) missing.push('SUB');
-                if (!r.kirim) missing.push('KRM');
-                return (
-                  <tr key={r.id} className="border-t" style={{ borderColor: PASTEL.line, background: 'white' }}>
-                    <td className="px-4 py-3 font-mono font-semibold whitespace-nowrap">{r.spNo}</td>
-                    <td className="px-4 py-3">
-                      {r.customer ? (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>{r.customer}</span>
-                      ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                    </td>
-                    <td className="px-4 py-3"><div className="max-w-[280px] truncate">{r.productName}</div></td>
-                    <td className="px-4 py-3 text-xs font-mono" style={{ color: PASTEL.inkSoft }}>{formatDateID(r.spDate)}</td>
-                    <td className="px-4 py-3 text-right font-mono whitespace-nowrap">{formatRupiah(r.grandTotal)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap justify-center gap-1">
-                        {missing.map(m => <span key={m} className="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold" style={{ background: PASTEL.peach, color: '#5C2F12' }}>{m}</span>)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {can(role,'finance') ? (
-                        <button onClick={()=>onUpdate(r)} className="px-3 py-1.5 rounded-full text-xs font-medium" style={{ background: PASTEL.mint, color: '#1B5739' }}>
-                          Process
-                        </button>
-                      ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================
 // Modals
 // ============================
 function ModalShell({ title, subtitle, onClose, children, maxWidth = 'max-w-3xl' }) {
@@ -3959,15 +3706,6 @@ function ModalShell({ title, subtitle, onClose, children, maxWidth = 'max-w-3xl'
         </div>
         {children}
       </div>
-    </div>
-  );
-}
-
-function FormSection({ label, children }) {
-  return (
-    <div>
-      <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3 pb-1.5 border-b" style={{ color: PASTEL.inkMute, borderColor: PASTEL.line }}>{label}</div>
-      {children}
     </div>
   );
 }
@@ -4433,205 +4171,6 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave, co
   );
 }
 
-// ============================
-// AR Tracker Page
-// ============================
-function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, filterStatus, setFilterStatus, search, setSearch, onAdd, onView, canManageTtf }) {
-  const enriched = arData.map(t => ({ ...t, ...calcAR(t) }));
-
-  const filtered = enriched.filter(t => {
-    if (filterCustomer !== 'all' && t.customer !== filterCustomer) return false;
-    if (filterStatus !== 'all') {
-      if (filterStatus === 'overdue' && !t.isOverdue) return false;
-      if (filterStatus !== 'overdue' && t.status !== filterStatus) return false;
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      const inHeader = (t.noTTF || '').toLowerCase().includes(q) || (t.noINV || '').toLowerCase().includes(q) || (t.noSP || '').toLowerCase().includes(q);
-      const inBTB = (t.btbs || []).some(b => (b.noBTB || '').toLowerCase().includes(q));
-      if (!inHeader && !inBTB) return false;
-    }
-    return true;
-  }).sort((a, b) => (b.tanggalTTF || '').localeCompare(a.tanggalTTF || ''));
-
-  // Stats
-  const totalInvoice = enriched.reduce((s, t) => s + t.totalInvoice, 0);
-  const totalPayment = enriched.reduce((s, t) => s + t.totalPayment, 0);
-  const totalOS = enriched.reduce((s, t) => s + t.totalOS, 0);
-  const overdueCount = enriched.filter(t => t.isOverdue).length;
-  const avgJarak = enriched.filter(t => t.status === 'Lunas' && t.jarakTgl !== null).reduce((s, t, _, arr) => s + t.jarakTgl/arr.length, 0);
-
-  // Aging buckets
-  const aging = { b1: 0, b2: 0, b3: 0, b4: 0 };
-  enriched.forEach(t => {
-    if (t.status === 'Lunas' || t.status === 'Lebih Bayar') return;
-    if (t.jarakTgl === null) return;
-    if (t.jarakTgl <= 30) aging.b1 += t.totalOS;
-    else if (t.jarakTgl <= 60) aging.b2 += t.totalOS;
-    else if (t.jarakTgl <= 90) aging.b3 += t.totalOS;
-    else aging.b4 += t.totalOS;
-  });
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
-              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
-              Finance · AR Collection
-            </span>
-          </div>
-          <h2 className="font-display text-3xl font-semibold tracking-tight">AR Tracker</h2>
-          <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{enriched.length} TTF · {filtered.length} after filter · monitoring outstanding receivables</p>
-        </div>
-        {canManageTtf && (
-          <button onClick={onAdd} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold" style={{ background: PASTEL.ink, color: PASTEL.cream }}>
-            <Plus size={14}/> Add TTF
-          </button>
-        )}
-      </div>
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Total Invoice" value={formatRupiahShort(totalInvoice)} icon={FileText} color={PASTEL.lavender} accent={PASTEL.lavenderDeep}/>
-        <KPICard label="Total Paid" value={formatRupiahShort(totalPayment)} icon={CheckCircle2} color={PASTEL.mint} accent={PASTEL.mintDeep}/>
-        <KPICard label="Outstanding" value={formatRupiahShort(totalOS)} icon={Clock} color={PASTEL.peach} accent={PASTEL.peachDeep}/>
-        <KPICard label="Overdue TTF" value={overdueCount} icon={AlertTriangle} color={overdueCount > 0 ? PASTEL.rose : PASTEL.lineSoft} accent={overdueCount > 0 ? PASTEL.roseDeep : PASTEL.inkMute}/>
-      </div>
-
-      {/* Aging buckets */}
-      <div className="rounded-3xl p-5 border" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <h3 className="font-display text-lg font-semibold mb-3">Aging Buckets</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <AgingBucket label="0–30 days" value={aging.b1} bg={PASTEL.mint}/>
-          <AgingBucket label="31–60 days" value={aging.b2} bg={PASTEL.butter}/>
-          <AgingBucket label="61–90 days" value={aging.b3} bg={PASTEL.peach}/>
-          <AgingBucket label="90+ days" value={aging.b4} bg={PASTEL.rose}/>
-        </div>
-        {avgJarak > 0 && (
-          <div className="text-xs mt-3" style={{ color: PASTEL.inkMute }}>
-            Avg payment time (lunas): <span className="font-numeric font-bold" style={{ color: PASTEL.ink }}>{Math.round(avgJarak)} hari</span>
-          </div>
-        )}
-      </div>
-
-      {/* Customer tabs */}
-      <div className="flex items-center gap-2 flex-wrap pb-1">
-        <button
-          onClick={() => setFilterCustomer('all')}
-          className="px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-all"
-          style={{
-            background: filterCustomer === 'all' ? PASTEL.ink : 'white',
-            color: filterCustomer === 'all' ? PASTEL.cream : PASTEL.inkSoft,
-            border: `1px solid ${filterCustomer === 'all' ? PASTEL.ink : PASTEL.line}`
-          }}
-        >
-          All Customers
-        </button>
-        {customers.filter(c => c.active !== false).map(c => {
-          const active = filterCustomer === c.name;
-          const count = enriched.filter(t => t.customer === c.name).length;
-          if (count === 0) return null;
-          return (
-            <button
-              key={c.id}
-              onClick={() => setFilterCustomer(c.name)}
-              className="px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2"
-              style={{
-                background: active ? PASTEL.peach : 'white',
-                color: active ? PASTEL.ink : PASTEL.inkSoft,
-                border: `1px solid ${active ? PASTEL.peachDeep : PASTEL.line}`
-              }}
-            >
-              <span>{c.name}</span>
-              <span className="font-numeric font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: active ? PASTEL.cream : PASTEL.lineSoft }}>{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <div className="rounded-3xl p-4 border flex flex-wrap items-center gap-3" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="relative flex-1 min-w-[260px]">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PASTEL.inkMute }}/>
-          <input type="text" placeholder="Cari TTF, INV, SP, BTB..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none"
-            style={{ background: PASTEL.cream, border: `1px solid ${PASTEL.line}` }}/>
-        </div>
-        <FilterPill label="Status" value={filterStatus} onChange={setFilterStatus} options={[
-          { v: 'all', l: 'All Status' },
-          { v: 'Belum Bayar', l: 'Belum Bayar' },
-          { v: 'Partial', l: 'Partial' },
-          { v: 'Lunas', l: 'Lunas' },
-          { v: 'Lebih Bayar', l: 'Lebih Bayar' },
-          { v: 'overdue', l: 'Overdue Only' },
-        ]}/>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: PASTEL.lineSoft }}>
-                {['No. TTF','Customer','Tgl TTF','Tgl Terima','No. INV','No. SP','Total Inv','Payment','OS','Tgl Bayar','Jarak','Status'].map((h, i) => (
-                  <th key={h} className={`px-4 py-3.5 text-[10px] uppercase tracking-[0.15em] font-semibold ${[6,7,8,10].includes(i) ? 'text-right' : 'text-left'}`} style={{ color: PASTEL.inkSoft }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={12} className="text-center py-16 text-sm" style={{ color: PASTEL.inkMute }}>Tidak ada TTF yang cocok</td></tr>
-              )}
-              {filtered.map(t => (
-                <tr
-                  key={t.id}
-                  onClick={() => onView(t)}
-                  className="cursor-pointer transition-colors border-t"
-                  style={{ borderColor: PASTEL.line, background: t.isOverdue ? `${PASTEL.rose}25` : 'white' }}
-                  onMouseEnter={(e) => { if (!t.isOverdue) e.currentTarget.style.background = PASTEL.lineSoft; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = t.isOverdue ? `${PASTEL.rose}25` : 'white'; }}
-                >
-                  <td className="px-4 py-3 font-mono font-semibold whitespace-nowrap text-xs">{t.noTTF}</td>
-                  <td className="px-4 py-3">
-                    {t.customer ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>{t.customer}</span>
-                    ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(t.tanggalTTF)}</td>
-                  <td className="px-4 py-3 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(t.tanggalMenerima)}</td>
-                  <td className="px-4 py-3 text-xs font-mono">{t.noINV || '-'}</td>
-                  <td className="px-4 py-3 text-xs font-mono">{t.noSP || '-'}</td>
-                  <td className="px-4 py-3 text-right font-numeric font-semibold whitespace-nowrap text-xs">{formatRupiah(t.totalInvoice)}</td>
-                  <td className="px-4 py-3 text-right font-numeric whitespace-nowrap text-xs" style={{ color: PASTEL.mintDeep }}>{formatRupiah(t.totalPayment)}</td>
-                  <td className="px-4 py-3 text-right font-numeric font-semibold whitespace-nowrap text-xs" style={{ color: Math.abs(t.totalOS) <= 1 ? PASTEL.mintDeep : t.totalOS > 0 ? PASTEL.peachDeep : PASTEL.roseDeep }}>{formatRupiah(t.totalOS)}</td>
-                  <td className="px-4 py-3 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(t.tglPembayaran)}</td>
-                  <td className="px-4 py-3 text-right font-numeric text-xs" style={{ color: t.isOverdue ? PASTEL.roseDeep : PASTEL.inkSoft }}>{t.jarakTgl !== null ? `${t.jarakTgl}d` : '-'}</td>
-                  <td className="px-4 py-3"><ARStatusBadge status={t.status} overdue={t.isOverdue}/></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="text-[11px]" style={{ color: PASTEL.inkMute }}>
-        Klik baris TTF untuk melihat detail BTB · Toleransi rounding ±1 dianggap Lunas · Overdue jika belum lunas + jarak {'>'} 30 hari
-      </div>
-    </div>
-  );
-}
-
-function AgingBucket({ label, value, bg }) {
-  return (
-    <div className="rounded-2xl p-4" style={{ background: bg }}>
-      <div className="text-[9px] uppercase tracking-[0.18em] font-semibold mb-1" style={{ color: PASTEL.ink }}>{label}</div>
-      <div className="font-numeric text-xl font-bold" style={{ color: PASTEL.ink }}>{formatRupiahShort(value)}</div>
-    </div>
-  );
-}
-
 function ARStatusBadge({ status, overdue }) {
   const styles = {
     'Lunas': { bg: PASTEL.mint, color: '#1B5739' },
@@ -4782,205 +4321,3 @@ function ARSidePanel({ ttf, onClose, onEdit, onDelete, canManageTtf }) {
   );
 }
 
-// ============================
-// AR Modal
-// ============================
-function ARModal({ initial, customers, onClose, onSave }) {
-  const [data, setData] = useState(() => initial || {
-    noTTF: '', tanggalTTF: '', tanggalMenerima: '',
-    noINV: '', noSP: '', customer: '', customerId: '',
-    tglPembayaran: '', notes: '',
-    btbs: [{ id: `tmp-${Date.now()}`, noBTB: '', dppPPN: 0, pph: 0, payment: 0 }]
-  });
-
-  const update = (k, v) => setData({ ...data, [k]: v });
-  const updateBTB = (idx, k, v) => {
-    const next = [...data.btbs];
-    next[idx] = { ...next[idx], [k]: k === 'noBTB' ? v : Number(v) || 0 };
-    setData({ ...data, btbs: next });
-  };
-  const addBTB = () => {
-    setData({ ...data, btbs: [...data.btbs, { id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, noBTB: '', dppPPN: 0, pph: 0, payment: 0 }] });
-  };
-  const removeBTB = (idx) => {
-    if (data.btbs.length === 1) {
-      alert('Minimal harus ada 1 BTB');
-      return;
-    }
-    setData({ ...data, btbs: data.btbs.filter((_, i) => i !== idx) });
-  };
-
-  const calc = calcAR(data);
-  const activeCustomers = customers.filter(c => c.active !== false);
-
-  // Begitu TTF tertaut ke sebuah invoice, seluruh baris BTB (No. BTB, DPP+PPN,
-  // PPH, Payment) jadi read-only: sisi uang dikelola di sp_invoice_lines /
-  // sp_payments lewat Detail SP (DESIGN_SP_SCHEMA.md §2.5). Cegah double-entry.
-  // Pasangannya di data layer: guard invoice_id di updateTtf() (src/lib/db.js).
-  const btbLocked = !!initial?.invoiceId;
-
-  const submit = () => {
-    if (!data.noTTF.trim()) { alert('No. TTF wajib diisi'); return; }
-    if (!data.customerId) { alert('Customer wajib dipilih'); return; }
-    // Validasi BTB di-skip saat terkunci — baris BTB tak bisa diisi dari sini,
-    // jadi menegakkannya akan mengunci penyimpanan field header juga.
-    if (!btbLocked && (data.btbs.length === 0 || data.btbs.every(b => !b.noBTB.trim()))) {
-      alert('Minimal harus ada 1 BTB dengan nomor');
-      return;
-    }
-    onSave(data);
-  };
-
-  return (
-    <ModalShell title={initial ? 'Edit TTF' : 'Add New TTF'} subtitle="Master data Tanda Terima Faktur" onClose={onClose} maxWidth="max-w-4xl">
-      <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
-        <FormSection label="TTF Information">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Input label="No. TTF *" value={data.noTTF} onChange={v=>update('noTTF', v)} placeholder="25E0011001163"/>
-            <Input label="Tanggal TTF" type="date" value={data.tanggalTTF} onChange={v=>update('tanggalTTF', v)}/>
-            <Input label="Tanggal Menerima" type="date" value={data.tanggalMenerima} onChange={v=>update('tanggalMenerima', v)}/>
-          </div>
-          <div className="grid grid-cols-3 gap-3 mt-3">
-            <Input label="No. INV" value={data.noINV} onChange={v=>update('noINV', v)} placeholder="JKT-251001"/>
-            <Input label="No. SP" value={data.noSP} onChange={v=>update('noSP', v)} placeholder="1881279"/>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Customer *</label>
-              <select value={data.customerId || ''} onChange={e => {
-                  // Simpan ID (dipakai ttfToDb -> ar_ttfs.customer_id, satu-satunya
-                  // jalur company_id untuk TTF non-invoice) DAN nama (dipakai
-                  // tampilan daftar AR). Sebelumnya dropdown ini hanya menyimpan
-                  // nama, sehingga customer_id SELALU null untuk TTF baru.
-                  const picked = activeCustomers.find(c => c.id === e.target.value);
-                  setData(d => ({ ...d, customerId: picked?.id || '', customer: picked?.name || '' }));
-                }}
-                className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-                style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-                <option value="">— Pilih customer —</option>
-                {activeCustomers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
-              </select>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection label="Payment">
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Tanggal Pembayaran" type="date" value={data.tglPembayaran} onChange={v=>update('tglPembayaran', v)}/>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Status (Auto)</label>
-              <div className="rounded-xl px-3.5 py-2.5 text-sm" style={{ background: PASTEL.lineSoft }}>
-                <ARStatusBadge status={calc.status} overdue={calc.isOverdue}/>
-              </div>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection label="BTB Items">
-          {btbLocked && (
-            <div className="mb-3 rounded-2xl p-4 text-sm" style={{ background: PASTEL.butter, color: '#5C4416' }}>
-              Nilai pembayaran invoice ini dikelola di Detail SP{data.noSP ? ` ${data.noSP}` : ''} — buka Invoice di sana untuk mencatat pembayaran atau BTB.
-            </div>
-          )}
-          <div className="space-y-2">
-            <div className="grid gap-2 items-center text-[10px] uppercase tracking-wider font-semibold px-2" style={{ gridTemplateColumns: '2fr 1.2fr 1fr 1.2fr 1.2fr 1.2fr 32px', color: PASTEL.inkMute }}>
-              <div>No. BTB</div>
-              <div className="text-right">DPP+PPN</div>
-              <div className="text-right">PPH</div>
-              <div className="text-right">Total (auto)</div>
-              <div className="text-right">Payment</div>
-              <div className="text-right">OS (auto)</div>
-              <div></div>
-            </div>
-            {data.btbs.map((b, idx) => {
-              const total = (Number(b.dppPPN)||0) + (Number(b.pph)||0);
-              const os = total - (Number(b.payment)||0);
-              return (
-                <div key={b.id} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.2fr 1fr 1.2fr 1.2fr 1.2fr 32px' }}>
-                  {btbLocked ? (
-                    <>
-                      <div className="rounded-lg px-2.5 py-2 text-xs font-mono" style={{ background: PASTEL.lineSoft }}>
-                        {b.noBTB || '—'}
-                      </div>
-                      <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
-                        {formatRupiah(b.dppPPN)}
-                      </div>
-                      <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
-                        {formatRupiah(b.pph)}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <input value={b.noBTB} onChange={e=>updateBTB(idx,'noBTB',e.target.value)} placeholder="2025-BTB-..."
-                        className="rounded-lg px-2.5 py-2 text-xs font-mono focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                      <input type="number" value={b.dppPPN} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'dppPPN',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                        className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                      <input type="number" value={b.pph} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'pph',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                        className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                    </>
-                  )}
-                  <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: PASTEL.lineSoft }}>
-                    {formatRupiah(total)}
-                  </div>
-                  {btbLocked ? (
-                    <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
-                      {formatRupiah(b.payment)}
-                    </div>
-                  ) : (
-                    <input type="number" value={b.payment} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'payment',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                      className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                  )}
-                  <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: Math.abs(os) <= 1 ? PASTEL.mint : os > 0 ? PASTEL.peach : PASTEL.rose, color: PASTEL.ink }}>
-                    {formatRupiahShort(os)}
-                  </div>
-                  {btbLocked ? (
-                    <div/>
-                  ) : (
-                    <button type="button" onClick={() => removeBTB(idx)} className="rounded-lg p-1.5 flex items-center justify-center" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-                      <Trash2 size={12}/>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {btbLocked && data.btbs.length === 0 && (
-              <div className="rounded-lg px-3 py-3 text-xs text-center" style={{ background: PASTEL.lineSoft, color: PASTEL.inkMute }}>
-                Belum ada BTB untuk invoice ini.
-              </div>
-            )}
-          </div>
-          {!btbLocked && (
-            <button type="button" onClick={addBTB} className="mt-3 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
-              <Plus size={13}/> Add BTB
-            </button>
-          )}
-          <div className="mt-4 p-4 rounded-2xl space-y-1.5" style={{ background: PASTEL.lineSoft }}>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total Invoice</span>
-              <span className="font-numeric font-semibold">{formatRupiah(calc.totalInvoice)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total Payment</span>
-              <span className="font-numeric font-semibold" style={{ color: PASTEL.mintDeep }}>{formatRupiah(calc.totalPayment)}</span>
-            </div>
-            <div className="flex items-center justify-between pt-2 border-t font-semibold" style={{ borderColor: PASTEL.line }}>
-              <span className="text-sm">Outstanding</span>
-              <span className="font-numeric text-base" style={{ color: Math.abs(calc.totalOS) <= 1 ? PASTEL.mintDeep : calc.totalOS > 0 ? PASTEL.peachDeep : PASTEL.roseDeep }}>{formatRupiah(calc.totalOS)}</span>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection label="Notes">
-          <textarea value={data.notes} onChange={e=>update('notes', e.target.value)} rows={2}
-            className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-            style={{ background: 'white', border: `1px solid ${PASTEL.line}` }} placeholder="Catatan tambahan..."/>
-        </FormSection>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
-          <button type="button" onClick={submit} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.ink, color: PASTEL.cream }}>
-            <Save size={14}/> Save
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  );
-}
