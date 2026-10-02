@@ -92,7 +92,13 @@ export default function useOpenInvoicesForCollection() {
     const hariTelat = r.due_date && String(r.due_date) < hariIni
       ? Math.round((Date.parse(hariIni) - Date.parse(r.due_date)) / 86400000)
       : 0;
-    return { ...r, sisa, bucket, hariTelat };
+    // Aditif untuk tab "Jatuh Tempo Dekat" (Payment & Collection) -- NOL
+    // dibaca ArAgingPage. NULL kalau belum due_date atau sudah lewat tempo
+    // (hariTelat sudah menutupi kasus itu).
+    const hariMenujuJatuhTempo = r.due_date && String(r.due_date) >= hariIni
+      ? Math.round((Date.parse(r.due_date) - Date.parse(hariIni)) / 86400000)
+      : null;
+    return { ...r, sisa, bucket, hariTelat, hariMenujuJatuhTempo };
   }), [rows, terbayar, hariIni]);
 
   return { invoices, loading, error, reload, hariIni };
