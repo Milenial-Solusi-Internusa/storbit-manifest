@@ -37,6 +37,13 @@
 // berubah cuma rute + isi halamannya. Path-nya datang dari `MENU_PATHS`
 // (diturunkan dari menu-skeleton.js), BUKAN ditulis literal di sini — sama
 // dengan `BASE` di atas.
+//
+// `finance` (6.2.2) BUKAN leaf lagi sejak Detail TTF: pola BERSARANG yang
+// sama dengan `billing` — index = TtfSubmissionPage (tab Belum TTF/Daftar
+// TTF), `ttf/:kunci` = TtfDetailPage, SATU `handle.menuId: 'finance'` untuk
+// keduanya (izin mengikuti halaman TTF yang sudah ada, nol key menu baru).
+// `?tab=daftar-ttf` di URL index (bukan location.state) membawa tombol
+// "Kembali" Detail TTF balik ke tab Daftar TTF, bukan Belum TTF.
 // ============================================================================
 import { lazy } from 'react';
 import { Navigate, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -51,12 +58,18 @@ const ReadyToInvoicePage = lazy(() => import('@/modules/finance/ReadyToInvoicePa
 const InvoiceListPage    = lazy(() => import('@/modules/finance/InvoiceListPage'));
 const InvoiceDetailPage  = lazy(() => import('@/modules/finance/InvoiceDetailPage'));
 const TtfSubmissionPage      = lazy(() => import('@/modules/finance/TtfSubmissionPage'));
+const TtfDetailPage          = lazy(() => import('@/modules/finance/TtfDetailPage'));
 const ArAgingPage            = lazy(() => import('@/modules/finance/ArAgingPage'));
 const CollectionTrackingPage = lazy(() => import('@/modules/finance/CollectionTrackingPage'));
 
 const BASE       = MENU_PATHS.billing;
 const PATH_READY = `${BASE}/ready`;
 const PATH_LIST  = `${BASE}/list`;
+const PATH_SUBMISSION = MENU_PATHS.finance;
+// Kunci = kunci pengelompokan internal ttfGrouping.js (no_ttf di-trim+
+// lowercase, atau sentinel KUNCI_TANPA_NOMOR) -- di-encode di sini, dibaca
+// balik sudah ter-decode oleh useParams() di TtfDetailRoute.
+const ttfDetailPath = (kunci) => `${PATH_SUBMISSION}/ttf/${encodeURIComponent(kunci)}`;
 // `query` = keadaan filter/pencarian Daftar Invoice, dibawa ke URL detail
 // supaya navigasi rekaman "3 / 22" di sana mengikuti urutan yang sama dan tetap
 // benar sesudah refresh (lihat invoiceStatus.js).
@@ -162,12 +175,36 @@ function DetailRoute() {
 
 function SubmissionRoute() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { showToast } = useAppShell();
+  // `?tab=daftar-ttf` -- satu-satunya jalan Detail TTF (onBack) membawa user
+  // kembali ke tab Daftar TTF, bukan Belum TTF (keputusan Den). Dibaca lewat
+  // URL, bukan location.state: pelajaran G3/TD-129 -- tab di state tak
+  // bertahan lewat refresh/deep-link, tab di query string bertahan.
+  const initialTab = searchParams.get('tab') === 'daftar-ttf' ? 'daftar-ttf' : 'belum-ttf';
   return (
     <ModuleShell>
       <Boundary title="Invoice Submission & Acknowledgement tidak tersedia">
         <TtfSubmissionPage
           showToast={showToast}
+          initialTab={initialTab}
+          onOpenInvoice={(id) => navigate(invoicePath(id))}
+          onOpenTtf={(kunci) => navigate(ttfDetailPath(kunci))}
+        />
+      </Boundary>
+    </ModuleShell>
+  );
+}
+
+function TtfDetailRoute() {
+  const { kunci } = useParams();
+  const navigate = useNavigate();
+  return (
+    <ModuleShell>
+      <Boundary title="Detail TTF tidak tersedia">
+        <TtfDetailPage
+          kunci={kunci}
+          onBack={() => navigate(`${PATH_SUBMISSION}?tab=daftar-ttf`)}
           onOpenInvoice={(id) => navigate(invoicePath(id))}
         />
       </Boundary>
@@ -214,7 +251,15 @@ export const financeRoutes = [
       { path: ':invoiceId',   handle: { menuId: 'billing' }, element: <DetailRoute/> },
     ],
   },
-  { path: MENU_PATHS.finance,     handle: { menuId: 'finance' },     element: <SubmissionRoute/> },
+  {
+    path: PATH_SUBMISSION,
+    handle: { menuId: 'finance' },
+    element: <Outlet/>,
+    children: [
+      { index: true,       handle: { menuId: 'finance' }, element: <SubmissionRoute/> },
+      { path: 'ttf/:kunci', handle: { menuId: 'finance' }, element: <TtfDetailRoute/> },
+    ],
+  },
   { path: MENU_PATHS.outstanding, handle: { menuId: 'outstanding' }, element: <AgingRoute/> },
   { path: MENU_PATHS.ar,          handle: { menuId: 'ar' },          element: <CollectionRoute/> },
 ];

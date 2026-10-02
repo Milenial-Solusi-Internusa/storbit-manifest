@@ -7,15 +7,18 @@
 //      tercatat (lihat invoiceStatus.js:dueDateText -- "Belum TTF" BUKAN
 //      status invoice, ia kondisi `due_date IS NULL` pada invoice terbuka).
 //   2. "Daftar TTF" -- invoice yang SUDAH punya catatan TTF (baris ar_ttfs),
-//      TERMASUK invoice lunas, dikelompokkan per nomor TTF. Satu nomor TTF
-//      fisik bisa menanungi banyak invoice/customer (lihat KONTEKS PLAN:
-//      dokumen TTF Indomarco nyata) -- pengelompokan dilakukan DI TAMPILAN
-//      (client-side, kunci = no_ttf di-trim+lowercase), BUKAN di struktur DB:
-//      `ar_ttfs` hari ini satu baris per invoice, nol relasi ke `sp_btb`. Yang
-//      TIDAK bisa ditampilkan tanpa perubahan struktur: nilai TTF/PPh PER BTB
-//      dan nomor faktur pajak per BTB (lihat roadmap TASK 4, dicatat doc-keeper
-//      terpisah) -- No. BTB di sini murni daftar nomor BTB milik SP invoice
-//      itu (`sp_btb`), bukan pecahan nilai per BTB.
+//      TERMASUK invoice lunas, dikelompokkan per nomor TTF (ttfGrouping.js).
+//      Satu nomor TTF fisik bisa menanungi banyak invoice/customer (lihat
+//      KONTEKS PLAN: dokumen TTF Indomarco nyata) -- pengelompokan dilakukan
+//      DI TAMPILAN (client-side), BUKAN di struktur DB: `ar_ttfs` hari ini
+//      satu baris per invoice, nol relasi ke `sp_btb`.
+//
+//      Daftar ini BACA-SAJA dan MURNI DAFTAR -- baris diklik membuka halaman
+//      Detail TTF (`TtfDetailPage.jsx`, lewat `onOpenTtf`), pola yang sama
+//      dengan Daftar Invoice -> Detail Invoice. SEBELUMNYA baris bisa
+//      dibuka-tutup (expand) menampilkan rincian di tempat; keputusan Den:
+//      itu pindah ke halaman sendiri supaya punya alamat (refresh-safe,
+//      bisa ditautkan) -- rincian per-BTB TIDAK lagi dirender di sini.
 //
 // Tab 1 SENGAJA baca-saja: tiap baris menaut ke Detail Invoice, tempat form
 // "Catat TTF" satu-per-satu sudah ada (useInvoiceWorkflow.js). Formnya TIDAK
@@ -29,19 +32,19 @@
 // sesudah 15 Oktober, lihat PLAN.
 //
 // Keluarga token: ungu/serif Storbit (lihat catatan di financeKit.jsx).
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, Download, FileSpreadsheet,
-  Search, Stamp, Upload, X,
+  AlertTriangle, Check, Download, FileSpreadsheet, Search, Stamp, Upload, X,
 } from 'lucide-react';
-import { listInvoices, getTtfStatusByInvoices, listSpBtbNew, markTtfReceived } from '../../lib/db';
+import { listInvoices, getTtfStatusByInvoices, markTtfReceived } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { canImportTtf } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
-import { OPEN_STATUSES, STATUS_LABEL, STATUS_LABEL_SHORT, STATUS_TAG } from './invoiceStatus.js';
+import { OPEN_STATUSES, STATUS_LABEL } from './invoiceStatus.js';
 import {
   downloadTtfImportTemplate, parseTtfImportFile, categorizeImportRows, KATEGORI, KATEGORI_LABEL,
 } from './ttfImport.js';
+import useDaftarTtf from './ttfGrouping.js';
 import {
   PageHead, Btn, Panel, TabBar, TabBtn, TableShell, Td, Notice, Hint, Empty,
 } from './financeKit.jsx';
@@ -59,10 +62,6 @@ const KATEGORI_TAG = {
 
 const ALASAN_IMPOR = 'Hanya Finance, Finance Controller, atau Super Admin yang bisa memproses impor TTF massal.';
 
-// Sentinel kunci grup untuk invoice ber-TTF TANPA nomor TTF (no_ttf kosong) --
-// JANGAN dibuang dari Daftar TTF, dikumpulkan sebagai satu grup tersendiri.
-const KUNCI_TANPA_NOMOR = '__tanpa_nomor__';
-
 /** Baris pendek perbedaan lama -> baru, HANYA untuk kategori "sudah TTF beda". */
 function diffBaris(row) {
   if (row.kategori !== KATEGORI.TTF_BEDA || !row.existing) return [];
@@ -79,86 +78,20 @@ function diffBaris(row) {
   return out;
 }
 
-/** Kelompokkan invoice ber-TTF per nomor TTF (trim + lowercase sebagai kunci;
- *  teks aslinya yang ditampilkan). Tanggal TTF yang berbeda dalam satu grup
- *  ditampilkan sebagai RENTANG, bukan dipilih salah satu diam-diam. */
-function kelompokkanDaftarTtf(invoices, ttfByInvoiceId) {
-  const grup = new Map();
-  invoices.forEach((inv) => {
-    const ttf = ttfByInvoiceId[inv.id];
-    if (!ttf) return; // nol catatan TTF -- bukan bagian Daftar TTF (ada di tab Belum TTF, atau invoice tertutup tanpa TTF)
-    const noTtfAsli = (ttf.no_ttf || '').trim();
-    const kunci = noTtfAsli ? noTtfAsli.toLowerCase() : KUNCI_TANPA_NOMOR;
-    if (!grup.has(kunci)) {
-      grup.set(kunci, {
-        kunci, noTtf: noTtfAsli || null, tanggalMin: null, tanggalMax: null,
-        customerMap: new Map(), invoices: [],
-      });
-    }
-    const g = grup.get(kunci);
-    g.invoices.push({ ...inv, ttf });
-    if (ttf.tanggal_ttf) {
-      if (!g.tanggalMin || ttf.tanggal_ttf < g.tanggalMin) g.tanggalMin = ttf.tanggal_ttf;
-      if (!g.tanggalMax || ttf.tanggal_ttf > g.tanggalMax) g.tanggalMax = ttf.tanggal_ttf;
-    }
-    const custId = inv.sp_orders?.customer_id || '__tanpa_customer__';
-    if (!g.customerMap.has(custId)) g.customerMap.set(custId, inv.sp_orders?.accounts?.name || '—');
-  });
-  return [...grup.values()].map((g) => ({
-    ...g,
-    totalNilai: g.invoices.reduce((s, r) => s + (Number(r.total_amount) || 0), 0),
-    customerLabel: g.customerMap.size > 1 ? 'Multi-customer' : ([...g.customerMap.values()][0] || '—'),
-  })).sort((a, b) => (b.tanggalMax || '').localeCompare(a.tanggalMax || ''));
-}
-
-export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
+export default function TtfSubmissionPage({ onOpenInvoice, onOpenTtf, initialTab = 'belum-ttf', showToast }) {
   const { erpRoles } = useAuth();
   const bolehImpor = canImportTtf(erpRoles);
 
-  const [tab, setTab] = useState('belum-ttf');
+  const [tab, setTab] = useState(initialTab === 'daftar-ttf' ? 'daftar-ttf' : 'belum-ttf');
 
-  // ── Daftar invoice (dipakai worklist Belum TTF, pencocokan impor, DAN
-  // Daftar TTF) -- listInvoices({}) mengambil SEMUA status, termasuk lunas,
-  // supaya Daftar TTF bisa memuat invoice yang sudah LUNAS sekalipun. ───────
-  const [invoices, setInvoices] = useState([]);
-  const [loadingInv, setLoadingInv] = useState(true);
-  const [errorInv, setErrorInv] = useState(null);
-  const [muatKe, setMuatKe] = useState(0);
-  // `setLoadingInv(true)` dipanggil DI SINI, bukan di dalam efek -- pola yang
-  // sama dengan tombol "Muat Ulang" InvoiceListPage.jsx (hindari
-  // react-hooks/set-state-in-effect).
-  const muatUlang = () => { setLoadingInv(true); setMuatKe((n) => n + 1); };
-
-  // Status TTF untuk SELURUH invoice (bukan hanya yang terbuka -- beda dari
-  // peta yang dipakai pencocokan impor di handleFile) -- sumber Daftar TTF.
-  const [ttfByInvoiceId, setTtfByInvoiceId] = useState({});
-  const [loadingTtf, setLoadingTtf] = useState(true);
-  const [errorTtf, setErrorTtf] = useState(null);
-
-  useEffect(() => {
-    let batal = false;
-    listInvoices({}).then(async ({ data, error }) => {
-      if (batal) return;
-      const baris = data || [];
-      setInvoices(baris);
-      setErrorInv(error || null);
-      setLoadingInv(false);
-      const { data: ttf, error: errTtf } = await getTtfStatusByInvoices(baris.map((r) => r.id));
-      if (batal) return;
-      setTtfByInvoiceId(ttf || {});
-      setErrorTtf(errTtf || null);
-      setLoadingTtf(false);
-    });
-    return () => { batal = true; };
-  }, [muatKe]);
+  // ── Daftar invoice ber-TTF, dikelompokkan (tab Daftar TTF) -- SATU muatan
+  // dipakai juga untuk worklist Belum TTF (lihat `invoices` di bawah). ──────
+  const { invoices, daftarTtf, loading: loadingTtf, error: errorTtf, reload: muatUlang } = useDaftarTtf();
 
   const belumTtf = useMemo(
     () => invoices.filter((r) => OPEN_STATUSES.includes(r.status) && !r.due_date),
     [invoices],
   );
-
-  // ── Daftar TTF (tab 2) ──────────────────────────────────────────────────
-  const daftarTtf = useMemo(() => kelompokkanDaftarTtf(invoices, ttfByInvoiceId), [invoices, ttfByInvoiceId]);
 
   const [searchTtf, setSearchTtf] = useState('');
   const daftarTtfTersaring = useMemo(() => {
@@ -174,44 +107,6 @@ export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
       ))
     ));
   }, [daftarTtf, searchTtf]);
-
-  // No. BTB per SP -- dimuat LAZY saat grup dibuka, di-cache per sp_order_id
-  // supaya buka-tutup berulang tidak memicu fetch ulang (pola sama dengan
-  // lazy-fetch tab Dashboard Storbit).
-  const [expandedTtf, setExpandedTtf] = useState(() => new Set());
-  const [btbBySpOrderId, setBtbBySpOrderId] = useState({});
-
-  const toggleGrupTtf = (kunci) => {
-    setExpandedTtf((s) => {
-      const next = new Set(s);
-      if (next.has(kunci)) next.delete(kunci); else next.add(kunci);
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    let batal = false;
-    const idButuh = [];
-    expandedTtf.forEach((kunci) => {
-      const g = daftarTtf.find((x) => x.kunci === kunci);
-      g?.invoices.forEach((inv) => {
-        if (inv.sp_order_id && !(inv.sp_order_id in btbBySpOrderId) && !idButuh.includes(inv.sp_order_id)) {
-          idButuh.push(inv.sp_order_id);
-        }
-      });
-    });
-    if (idButuh.length === 0) return undefined;
-    Promise.all(idButuh.map((id) => listSpBtbNew(id).then(({ data }) => [id, data || []])))
-      .then((hasil) => {
-        if (batal) return;
-        setBtbBySpOrderId((prev) => {
-          const next = { ...prev };
-          hasil.forEach(([id, data]) => { next[id] = data; });
-          return next;
-        });
-      });
-    return () => { batal = true; };
-  }, [expandedTtf, daftarTtf, btbBySpOrderId]);
 
   // ── Impor massal ───────────────────────────────────────────────────────
   const fileInputRef = useRef(null);
@@ -425,14 +320,14 @@ export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
 
           {/* ── Daftar kerja: Belum TTF ── */}
           <Panel title="Belum TTF" icon={AlertTriangle}>
-            {errorInv && (
+            {errorTtf && (
               <div style={{ marginBottom: SP.s3 }}>
                 <Notice tone="danger" icon={AlertTriangle}>
-                  Daftar invoice gagal dimuat: {errorInv.message || 'penyebab tidak diketahui'}
+                  Daftar invoice gagal dimuat: {errorTtf.message || 'penyebab tidak diketahui'}
                 </Notice>
               </div>
             )}
-            {loadingInv ? (
+            {loadingTtf ? (
               <Hint>Memuat…</Hint>
             ) : belumTtf.length === 0 ? (
               <Empty icon={Check} title="Nol invoice menunggu TTF" sub="Seluruh invoice terbuka sudah punya tanggal TTF."/>
@@ -467,9 +362,9 @@ export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
 
       {tab === 'daftar-ttf' && (
         <>
-          {(errorInv || errorTtf) && (
+          {errorTtf && (
             <Notice tone="danger" icon={AlertTriangle}>
-              Data gagal dimuat: {(errorInv || errorTtf)?.message || 'penyebab tidak diketahui'}
+              Data gagal dimuat: {errorTtf.message || 'penyebab tidak diketahui'}
             </Notice>
           )}
 
@@ -487,7 +382,7 @@ export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
           </label>
 
           <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, overflow: 'hidden', background: C.surface }}>
-            {(loadingInv || loadingTtf) ? (
+            {loadingTtf ? (
               <p style={{ padding: SP.s3, fontSize: 13, color: C.inkFaint, margin: 0 }}>Memuat…</p>
             ) : daftarTtfTersaring.length === 0 ? (
               <Empty
@@ -497,78 +392,33 @@ export default function TtfSubmissionPage({ onOpenInvoice, showToast }) {
             ) : (
               <div style={{ padding: SP.s3 }}>
                 <TableShell
-                  minWidth={900}
+                  minWidth={780}
                   head={[
-                    [''], ['No. TTF'], ['Tanggal TTF'], ['Customer'],
+                    ['No. TTF'], ['Tanggal TTF'], ['Customer'],
                     ['Jumlah Invoice', 'right'], ['Total Nilai', 'right'],
                   ]}
                 >
                   {daftarTtfTersaring.map((g) => {
-                    const terbuka = expandedTtf.has(g.kunci);
                     const rentangTanggal = g.tanggalMin && g.tanggalMax
                       ? (g.tanggalMin === g.tanggalMax ? fmtDate(g.tanggalMin) : `${fmtDate(g.tanggalMin)} – ${fmtDate(g.tanggalMax)}`)
                       : '—';
                     return (
-                      <Fragment key={g.kunci}>
-                        <tr
-                          onClick={() => toggleGrupTtf(g.kunci)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggleGrupTtf(g.kunci); } }}
-                          tabIndex={0} role="button" title="Buka/tutup rincian"
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <Td style={{ width: 24 }}>
-                            {terbuka ? <ChevronDown size={15} style={{ color: C.inkSoft }}/> : <ChevronRight size={15} style={{ color: C.inkSoft }}/>}
-                          </Td>
-                          <Td mono nowrap style={g.noTtf ? { fontWeight: 600 } : { color: C.inkFaint, fontStyle: 'italic' }}>
-                            {g.noTtf || 'Tanpa nomor TTF'}
-                          </Td>
-                          <Td nowrap>{rentangTanggal}</Td>
-                          <Td style={g.customerLabel === 'Multi-customer' ? { color: C.inkSoft, fontStyle: 'italic' } : undefined}>
-                            {g.customerLabel}
-                          </Td>
-                          <Td align="right" mono>{g.invoices.length}</Td>
-                          <Td align="right" mono style={{ fontWeight: 600 }}>{rp(g.totalNilai)}</Td>
-                        </tr>
-                        {terbuka && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: `0 0 ${SP.s3}px`, borderBottom: `1px solid ${C.lineSoft}`, background: C.surface2 }}>
-                              <div style={{ padding: `${SP.s2}px ${SP.s3}px` }}>
-                                <TableShell
-                                  minWidth={820}
-                                  head={[
-                                    ['No. Invoice'], ['No. SP'], ['No. BTB'], ['Diterima Oleh'],
-                                    ['Tanggal Diterima Nexus'], ['Jatuh Tempo'], ['Status'],
-                                  ]}
-                                >
-                                  {g.invoices.map((inv) => {
-                                    const btb = inv.sp_order_id ? btbBySpOrderId[inv.sp_order_id] : null;
-                                    return (
-                                      <tr
-                                        key={inv.id} onClick={(e) => { e.stopPropagation(); onOpenInvoice?.(inv.id); }}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onOpenInvoice?.(inv.id); } }}
-                                        tabIndex={0} role="button" title="Buka detail invoice"
-                                        style={{ cursor: 'pointer' }}
-                                      >
-                                        <Td mono nowrap style={{ color: C.accent, fontWeight: 600 }}>{inv.invoice_no || '—'}</Td>
-                                        <Td mono nowrap style={{ color: C.inkSoft }}>{inv.sp_orders?.sp_no || '—'}</Td>
-                                        <Td mono nowrap>
-                                          {btb === null || btb === undefined ? '…' : (btb.length === 0 ? '—' : btb.map((b) => b.btb_no).join(', '))}
-                                        </Td>
-                                        <Td>{inv.ttf.diterima_oleh || '—'}</Td>
-                                        <Td nowrap>{inv.ttf.tanggal_menerima ? fmtDate(inv.ttf.tanggal_menerima) : '—'}</Td>
-                                        <Td nowrap>{inv.due_date ? fmtDate(inv.due_date) : 'Belum jatuh tempo'}</Td>
-                                        <Td nowrap>
-                                          <Badge {...(STATUS_TAG[inv.status] || STATUS_TAG.issued)}>{STATUS_LABEL_SHORT[inv.status] || inv.status}</Badge>
-                                        </Td>
-                                      </tr>
-                                    );
-                                  })}
-                                </TableShell>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                      <tr
+                        key={g.kunci} onClick={() => onOpenTtf?.(g.kunci)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpenTtf?.(g.kunci); } }}
+                        tabIndex={0} role="button" title="Buka detail TTF"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <Td mono nowrap style={g.noTtf ? { color: C.accent, fontWeight: 600 } : { color: C.inkFaint, fontStyle: 'italic' }}>
+                          {g.noTtf || 'Tanpa nomor TTF'}
+                        </Td>
+                        <Td nowrap>{rentangTanggal}</Td>
+                        <Td style={g.customerLabel === 'Multi-customer' ? { color: C.inkSoft, fontStyle: 'italic' } : undefined}>
+                          {g.customerLabel}
+                        </Td>
+                        <Td align="right" mono>{g.invoices.length}</Td>
+                        <Td align="right" mono style={{ fontWeight: 600 }}>{rp(g.totalNilai)}</Td>
+                      </tr>
                     );
                   })}
                 </TableShell>
