@@ -6,9 +6,11 @@
 // Notes on local copies:
 // - PASTEL and format utilities are copied here from App.jsx.
 //   The canonical definitions remain in App.jsx until Phase 0.5 (shared utils extraction).
-// - KPICard and StatusBadge are copied here from App.jsx.
-//   App.jsx keeps its own copies because those components are also used by
-//   FinancePage, ARTrackerPage, Manifest, SPSidePanel, and ShipmentPage.
+// - KPICard and StatusBadge are copied here from App.jsx (as of this writing).
+//   Status 2 Okt 2026: App.jsx's own KPICard was removed entirely when
+//   FinancePage/OutstandingPage/ARTrackerPage/ARModal were retired (its only
+//   remaining consumers) -- this file's copy is now the only KPICard left.
+//   App.jsx still keeps its own StatusBadge, used by ShipmentPage.
 //   Deduplication is planned for Phase 0.5.
 // - FinancialCard, AlertCard, ChartCard, EmptyChart, CustomTooltip are
 //   Dashboard-exclusive and have been removed from App.jsx.
@@ -81,7 +83,9 @@ const monthLabel = (key) => {
 };
 
 // ─── KPICard ──────────────────────────────────────────────────────────────────
-// Local copy. App.jsx retains its own copy (used by FinancePage, ARTrackerPage).
+// Local copy. App.jsx's own copy was removed 2 Okt 2026 when FinancePage/
+// ARTrackerPage (its only consumers there) were retired -- this is now the
+// only KPICard in the codebase.
 function KPICard({ label, value, icon: Icon, color, accent }) {
   return (
     <div

@@ -19,10 +19,9 @@ import {
 import { useAuth } from './contexts/useAuth';
 import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
 import { supabase } from './lib/supabase';
-import { listSpOrderStatuses, getSpOrderStatus, setSpFinanceDocs } from './lib/db';
+import { listSpOrderStatuses, getSpOrderStatus } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
-import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import CustomFieldsSection from './components/CustomFieldsSection';
@@ -108,11 +107,6 @@ const PASTEL = {
 // ============================
 // Utils
 // ============================
-const formatRupiah = (n) => {
-  if (n === null || n === undefined || isNaN(n)) return '-';
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
-};
-
 const formatNumber = (n) => {
   if (n === null || n === undefined || isNaN(n)) return '0';
   return new Intl.NumberFormat('id-ID').format(n);
@@ -208,48 +202,6 @@ const groupBySP = (rows) => {
 
     return { ...g, status, isOverdue, itemCount, financePct };
   });
-};
-
-// ============================
-// AR Tracker helpers
-// ============================
-const calcAR = (ttf) => {
-  const btbs = (ttf.btbs || []).map(b => {
-    const dpp = Number(b.dppPPN) || 0;
-    const pph = Number(b.pph) || 0;
-    const total = dpp + pph;
-    const pay = Number(b.payment) || 0;
-    const os = total - pay;
-    return { ...b, total, os };
-  });
-  const totalInvoice = btbs.reduce((s, b) => s + b.total, 0);
-  const totalPayment = btbs.reduce((s, b) => s + b.payment, 0);
-  const totalOS = totalInvoice - totalPayment;
-
-  // Jarak hari
-  let jarakTgl = null;
-  if (ttf.tanggalMenerima) {
-    const dStart = new Date(ttf.tanggalMenerima);
-    const dEnd = ttf.tglPembayaran ? new Date(ttf.tglPembayaran) : new Date();
-    if (!isNaN(dStart.getTime()) && !isNaN(dEnd.getTime())) {
-      jarakTgl = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24));
-    }
-  }
-
-  // Status
-  let status = 'Belum Bayar';
-  const TOLERANCE = 1; // ±1 rupiah dianggap lunas (rounding)
-  if (Math.abs(totalOS) <= TOLERANCE && totalPayment > 0) status = 'Lunas';
-  else if (totalOS < -TOLERANCE) status = 'Lebih Bayar';
-  else if (totalPayment > 0 && totalOS > TOLERANCE) status = 'Partial';
-
-  // Overdue: belum lunas + jarak > 30 hari (kalau belum bayar pakai today vs tanggalMenerima)
-  let isOverdue = false;
-  if (status !== 'Lunas' && status !== 'Lebih Bayar' && jarakTgl !== null && !ttf.tglPembayaran && jarakTgl > 30) {
-    isOverdue = true;
-  }
-
-  return { btbs, totalInvoice, totalPayment, totalOS, jarakTgl, status, isOverdue };
 };
 
 const ROLES = [
@@ -1743,7 +1695,6 @@ export default function StorbitManifest() {
     removeRow: dbRemoveRow,
     removeRowsBySp: dbRemoveRowsBySp,
   } = useSpItems({ customers });
-  const { arData, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
   const [activeModule, setActiveModule] = useState(
     localStorage.getItem('nexus_last_module') || null
@@ -1917,16 +1868,6 @@ export default function StorbitManifest() {
   //  hrga_requests.current_level × hrga_approval_configs role mapping.)
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const { approverKeys, approverScopeLoading } = useMyApproverScope();
-  // Gate AR/TTF — CERMIN policy RLS ar_ttfs/ar_btbs (migrasi
-  // 20260821000005): super_admin OR ceo OR finance_controller OR finance.
-  // SENGAJA bukan can(role,'finance'): peta PERMISSIONS meloloskan admin & gm
-  // juga, dan sejak migrasi itu RLS menolak mereka — tombolnya harus ikut
-  // hilang, bukan menyisakan aksi yang pasti gagal di server.
-  // Dibaca dari erpRoles (SELURUH role aktif), bukan prop `role`, karena
-  // pickPrimaryErpRole menaruh finance_controller DI BAWAH manager.
-  const canManageTtf = (authErpRoles || [])
-    .map(r => r.roles?.code)
-    .some(c => ['super_admin', 'ceo', 'finance_controller', 'finance'].includes(c));
   // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat nama akun di
   // handleSaveCustomer. Pola sama dgn InquiryFormPage:286 — fetch sekali.
   const [entityCode, setEntityCode] = useState('');
@@ -2111,17 +2052,8 @@ export default function StorbitManifest() {
   }, [profile?.id]);
 
   const [editingCustomer, setEditingCustomer] = useState(null);
-  // ARTrackerPage/ARModal dipensiunkan (TASK 5, halaman Finance lama tidak
-  // pernah dipakai nyata) -- ARSidePanel.onEdit masih memanggil setEditingAR,
-  // tapi satu-satunya pembaca editingAR (ARModal) sudah tidak ada. Dibiarkan
-  // (bukan dihapus): ARSidePanel di luar cakupan unit kerja ini, lihat laporan
-  // TASK 5.
-  // eslint-disable-next-line no-unused-vars
-  const [editingAR, setEditingAR] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
-  const [viewingAR, setViewingAR] = useState(null);
   const [shipmentRow, setShipmentRow] = useState(null);
-  const [financeRow, setFinanceRow] = useState(null);
   const [toast, setToast] = useState(null);
 
   // SP list filters — setters kept for future SP detail / legacy support (SalesOrderPage handles its own state)
@@ -2492,7 +2424,6 @@ export default function StorbitManifest() {
       await dbSaveRow(data);
       showToast(isUpdate ? 'Data berhasil diupdate ✨' : 'Data berhasil ditambahkan ✨');
       setShipmentRow(null);
-      setFinanceRow(null);
     } catch (err) {
       showToast('Gagal menyimpan: ' + (err.message || 'unknown error'), 'error');
     }
@@ -2545,19 +2476,6 @@ export default function StorbitManifest() {
       showToast('Customer dihapus');
     } catch (err) {
       showToast('Gagal hapus customer: ' + (err.message || 'unknown error'), 'error');
-    }
-  };
-
-  const handleDeleteAR = async (id) => {
-    const ttf = arData.find(a => a.id === id);
-    if (!ttf) return;
-    if (!confirm(`Yakin hapus TTF ${ttf.noTTF}? Beserta ${ttf.btbs?.length || 0} BTB items.`)) return;
-    try {
-      await dbRemoveTtf(id);
-      setViewingAR(null);
-      showToast('TTF dihapus');
-    } catch (err) {
-      showToast('Gagal hapus TTF: ' + (err.message || 'unknown error'), 'error');
     }
   };
 
@@ -3038,28 +2956,7 @@ export default function StorbitManifest() {
           onSave={handleSaveCustomer}
         />
       )}
-      {viewingAR && (
-        <ARSidePanel
-          ttf={viewingAR}
-          onClose={() => setViewingAR(null)}
-          onEdit={() => { setEditingAR(viewingAR); setViewingAR(null); }}
-          onDelete={() => handleDeleteAR(viewingAR.id)}
-          canManageTtf={canManageTtf}
-        />
-      )}
       {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
-      {/* onSave -> onSaved: FinanceModal kini memanggil RPC set_sp_finance_docs
-          sendiri (level SP), bukan lagi menumpang dbSaveRow milik handleSave
-          yang bermuara di update_sp_item_dual. ShipmentModal di atas TIDAK
-          diubah — masih jalur item, masih handleSave. */}
-      {financeRow && (
-        <FinanceModal
-          row={financeRow}
-          showToast={showToast}
-          onClose={() => setFinanceRow(null)}
-          onSaved={async () => { await refreshSp(); setFinanceRow(null); }}
-        />
-      )}
 
       {/* TOAST */}
       {toast && (
@@ -3606,15 +3503,6 @@ function ComingSoonPage({ title, description, capabilities }) {
 }
 
 
-function SummaryStat({ label, value, bg }) {
-  return (
-    <div className="rounded-2xl p-3.5" style={{ background: bg }}>
-      <div className="text-[9px] uppercase tracking-[0.18em] font-semibold opacity-75" style={{ color: PASTEL.ink }}>{label}</div>
-      <div className="text-sm font-semibold mt-1" style={{ color: PASTEL.ink }}>{value}</div>
-    </div>
-  );
-}
-
 // ============================
 // Shipment page
 // ============================
@@ -3736,21 +3624,6 @@ function Input({ label, type='text', value, onChange, placeholder, onBlur, disab
   );
 }
 
-function Toggle({ label, value, onChange }) {
-  return (
-    <button type="button" onClick={() => onChange(!value)}
-      className="px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
-      style={{
-        background: value ? PASTEL.mint : 'white',
-        color: value ? '#1B5739' : PASTEL.inkMute,
-        border: `1px solid ${value ? PASTEL.mintDeep : PASTEL.line}`,
-      }}
-    >
-      {value ? '✓ ' : '○ '}{label}
-    </button>
-  );
-}
-
 function ShipmentModal({ row, onClose, onSave }) {
   const [data, setData] = useState({
     shippedQty: row.shippedQty,
@@ -3824,99 +3697,6 @@ function ShipmentModal({ row, onClose, onSave }) {
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
           <button onClick={submit} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.peachDeep, color: 'white' }}>
             <Save size={14}/> Save
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  );
-}
-
-// Duplikat 3 nilai EMAIL_OPTIONS milik SalesOrderDetailPage.jsx — SENGAJA
-// tidak di-import: file itu lazy-loaded, mengimpor konstanta darinya menyeret
-// chunk-nya ke bundle utama. Pola duplikasi-dengan-catatan ini sudah dipakai
-// CustomerDetailPage.jsx:386 atas alasan yang sama. ⚠️ Kalau daftarnya berubah
-// di satu tempat, ubah juga di tempat lain — tidak ada yang menegakkannya.
-const FINANCE_EMAIL_OPTIONS = ['Belum dikirim', 'Terkirim ke customer', 'Dibalas customer'];
-
-// Modal status dokumen SP — LEVEL SP, bukan level item (promosi 2 Sep 2026,
-// migrasi 20260902000003/4). `row` tetap satu baris sp_items karena halaman
-// Finance/Outstanding memang berbaris per-item, tapi yang ditulis adalah
-// header SP-nya lewat kunci komposit (customer_id, sp_no) — dan RPC
-// menyinkronkan turun ke SELURUH item se-SP.
-//
-// Jalur simpan pindah dari dbSaveRow -> setSpFinanceDocs. Alasannya bukan
-// kosmetik: dbSaveRow bermuara di update_sp_item_dual yang guard-nya sumbu
-// GUDANG (is_sp_item_writer) dan TIDAK punya cabang finance — sehingga sejak
-// 25 Agu 2026 modal ini bisa dibuka & di-toggle oleh Finance tapi Save-nya
-// PASTI ditolak 'Tidak berhak mengubah item SP ini'. RPC baru ber-guard sumbu
-// FINANCE, jadi Save akhirnya benar-benar berhasil untuk role yang memang
-// memakai halaman ini.
-//
-// Field "Notes" DICABUT: notes adalah atribut per-ITEM (sp_items.notes) yang
-// ditulis update_sp_item_dual — role finance tak berhak menulisnya, jadi
-// mempertahankannya di sini = menawarkan aksi yang dijamin gagal. Edit notes
-// tetap ada di Edit Item (Detail SP) untuk role gudang.
-//
-// "Email Status" kini <select>, bukan <input type="date">. Kolomnya memang
-// text berisi 3 nilai enum-ish (lihat COMMENT sp_items.email_status di
-// schema_snapshot) — input date di sini adalah bug lama yang tidak dibawa
-// serta ke kode baru.
-function FinanceModal({ row, onClose, onSaved, showToast }) {
-  const [data, setData] = useState({
-    inv: row.inv, fp: row.fp, submit: row.submit, kirim: row.kirim,
-    submitDate: row.submitDate || '', emailStatus: row.emailStatus || '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    if (saving) return;
-    if (!row.customerId || !row.spNo) {
-      showToast?.('SP tidak dikenali (customer/nomor SP kosong)', 'error');
-      return;
-    }
-    setSaving(true);
-    const { error } = await setSpFinanceDocs(row.customerId, row.spNo, data);
-    setSaving(false);
-    // Pesan RAISE dari RPC sudah manusiawi & berbahasa Indonesia
-    // ('Tidak berhak…', 'SP sudah dibatalkan…') — diteruskan apa adanya.
-    if (error) { showToast?.('Gagal simpan status dokumen: ' + (error.message || 'unknown error'), 'error'); return; }
-    showToast?.(`Status dokumen ${row.spNo} diperbarui ✨`);
-    await onSaved?.();
-  };
-
-  return (
-    <ModalShell title="Update Status Dokumen SP" subtitle={`SP-${row.spNo} • ${formatRupiah(row.grandTotal)}`} onClose={onClose} maxWidth="max-w-xl">
-      <div className="p-6 space-y-4">
-        <div className="rounded-xl px-3.5 py-2.5 text-xs" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-          Status dokumen adalah atribut <b>level SP</b> — perubahan di sini berlaku untuk <b>seluruh item</b> SP ini.
-        </div>
-
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Document Status</div>
-          <div className="grid grid-cols-2 gap-2">
-            <Toggle label="Invoice" value={data.inv} onChange={v=>setData({...data, inv: v})}/>
-            <Toggle label="Faktur Pajak" value={data.fp} onChange={v=>setData({...data, fp: v})}/>
-            <Toggle label="Submit" value={data.submit} onChange={v=>setData({...data, submit: v})}/>
-            <Toggle label="Kirim" value={data.kirim} onChange={v=>setData({...data, kirim: v})}/>
-          </div>
-        </div>
-
-        <Input label="Submit Date" type="date" value={data.submitDate} onChange={v=>setData({...data, submitDate: v})}/>
-
-        <div>
-          <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Email Status</label>
-          <select value={data.emailStatus} onChange={e=>setData({...data, emailStatus: e.target.value})}
-            className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-            style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-            <option value="">— Belum ditentukan —</option>
-            {FINANCE_EMAIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft, cursor: saving ? 'not-allowed' : 'pointer' }}>Cancel</button>
-          <button onClick={submit} disabled={saving} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.mintDeep, color: 'white', opacity: saving ? .7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
-            <Save size={14}/> {saving ? 'Menyimpan…' : 'Save'}
           </button>
         </div>
       </div>
@@ -4168,156 +3948,6 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave, co
         </div>
       </div>
     </ModalShell>
-  );
-}
-
-function ARStatusBadge({ status, overdue }) {
-  const styles = {
-    'Lunas': { bg: PASTEL.mint, color: '#1B5739' },
-    'Partial': { bg: PASTEL.butter, color: '#7A5B12' },
-    'Belum Bayar': { bg: PASTEL.sky, color: '#1F4D6B' },
-    'Lebih Bayar': { bg: PASTEL.lavender, color: '#3D2B5C' },
-  };
-  const s = styles[status] || styles['Belum Bayar'];
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="px-2.5 py-0.5 text-[10px] rounded-full font-semibold tracking-wide whitespace-nowrap" style={{ background: s.bg, color: s.color }}>
-        {status}
-      </span>
-      {overdue && (
-        <span className="px-2.5 py-0.5 text-[10px] rounded-full font-semibold tracking-wide" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-          Overdue
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ============================
-// AR Side Panel
-// ============================
-function ARSidePanel({ ttf, onClose, onEdit, onDelete, canManageTtf }) {
-  const calc = calcAR(ttf);
-
-  return (
-    <>
-      <div className="fixed inset-0 z-40 animate-fade-in" style={{ background: 'rgba(45, 42, 40, 0.4)', backdropFilter: 'blur(4px)' }} onClick={onClose}/>
-      <div className="fixed top-0 right-0 bottom-0 w-full md:w-[680px] z-50 overflow-y-auto animate-slide-in shadow-2xl" style={{ background: PASTEL.cream }}>
-        <div className="sticky top-0 z-10 px-6 py-5 border-b backdrop-blur" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.92)' }}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <button onClick={onClose} className="p-1 -ml-1 rounded hover:bg-black/5 transition-colors">
-                  <ChevronLeft size={18}/>
-                </button>
-                <span className="text-[10px] uppercase tracking-[0.2em] font-semibold" style={{ color: PASTEL.inkMute }}>TTF Detail</span>
-              </div>
-              <h2 className="font-numeric text-3xl font-bold tracking-tight">{ttf.noTTF}</h2>
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <ARStatusBadge status={calc.status} overdue={calc.isOverdue}/>
-                {ttf.customer && (
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: PASTEL.peach, color: '#5C2F12' }}>
-                    <User size={11}/>{ttf.customer}
-                  </span>
-                )}
-                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                  {(ttf.btbs || []).length} BTB
-                </span>
-              </div>
-            </div>
-            <button onClick={onClose} className="p-2 rounded-xl hover:bg-black/5 transition-colors">
-              <X size={18}/>
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* Summary */}
-          <div className="grid grid-cols-2 gap-3">
-            <SummaryStat label="Tgl TTF" value={formatDateID(ttf.tanggalTTF)} bg={PASTEL.peach}/>
-            <SummaryStat label="Tgl Menerima" value={formatDateID(ttf.tanggalMenerima)} bg={PASTEL.butter}/>
-            <SummaryStat label="No. INV" value={ttf.noINV || '—'} bg={PASTEL.lavender}/>
-            <SummaryStat label="No. SP" value={ttf.noSP || '—'} bg={PASTEL.sky}/>
-            <SummaryStat label="Tgl Pembayaran" value={formatDateID(ttf.tglPembayaran)} bg={calc.status === 'Lunas' ? PASTEL.mint : PASTEL.lineSoft}/>
-            <SummaryStat label="Jarak Tgl" value={calc.jarakTgl !== null ? `${calc.jarakTgl} hari` : '—'} bg={calc.isOverdue ? PASTEL.rose : PASTEL.lineSoft}/>
-          </div>
-
-          {/* Money summary */}
-          <div className="rounded-2xl p-5" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-            <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3" style={{ color: PASTEL.inkMute }}>Financial Summary</div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Total Invoice</span><span className="font-numeric font-semibold">{formatRupiah(calc.totalInvoice)}</span></div>
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Total Payment</span><span className="font-numeric font-semibold" style={{ color: PASTEL.mintDeep }}>{formatRupiah(calc.totalPayment)}</span></div>
-              <div className="flex justify-between pt-2 border-t" style={{ borderColor: PASTEL.line }}>
-                <span className="font-semibold">Outstanding (OS)</span>
-                <span className="font-numeric text-xl font-bold" style={{ color: Math.abs(calc.totalOS) <= 1 ? PASTEL.mintDeep : calc.totalOS > 0 ? PASTEL.peachDeep : PASTEL.roseDeep }}>{formatRupiah(calc.totalOS)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* BTB Items */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display text-xl font-semibold">BTB Items</h3>
-              <span className="text-xs" style={{ color: PASTEL.inkMute }}>{(ttf.btbs || []).length} items</span>
-            </div>
-            <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr style={{ background: PASTEL.lineSoft }}>
-                    <th className="px-3 py-2 text-left text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>No. BTB</th>
-                    <th className="px-3 py-2 text-right text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>DPP+PPN</th>
-                    <th className="px-3 py-2 text-right text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>PPH</th>
-                    <th className="px-3 py-2 text-right text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>Total</th>
-                    <th className="px-3 py-2 text-right text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>Payment</th>
-                    <th className="px-3 py-2 text-right text-[9px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>OS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(calc.btbs || []).map(b => (
-                    <tr key={b.id} className="border-t" style={{ borderColor: PASTEL.line }}>
-                      <td className="px-3 py-2 font-mono text-[11px]">{b.noBTB}</td>
-                      <td className="px-3 py-2 text-right font-numeric">{formatRupiah(b.dppPPN)}</td>
-                      <td className="px-3 py-2 text-right font-numeric" style={{ color: PASTEL.inkMute }}>{b.pph ? formatRupiah(b.pph) : '-'}</td>
-                      <td className="px-3 py-2 text-right font-numeric font-semibold">{formatRupiah(b.total)}</td>
-                      <td className="px-3 py-2 text-right font-numeric" style={{ color: PASTEL.mintDeep }}>{formatRupiah(b.payment)}</td>
-                      <td className="px-3 py-2 text-right font-numeric font-semibold" style={{ color: Math.abs(b.os) <= 1 ? PASTEL.mintDeep : b.os > 0 ? PASTEL.peachDeep : PASTEL.roseDeep }}>{formatRupiah(b.os)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t" style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft }}>
-                    <td className="px-3 py-2 font-semibold">Total</td>
-                    <td colSpan={2}></td>
-                    <td className="px-3 py-2 text-right font-numeric font-bold">{formatRupiah(calc.totalInvoice)}</td>
-                    <td className="px-3 py-2 text-right font-numeric font-bold" style={{ color: PASTEL.mintDeep }}>{formatRupiah(calc.totalPayment)}</td>
-                    <td className="px-3 py-2 text-right font-numeric font-bold" style={{ color: Math.abs(calc.totalOS) <= 1 ? PASTEL.mintDeep : calc.totalOS > 0 ? PASTEL.peachDeep : PASTEL.roseDeep }}>{formatRupiah(calc.totalOS)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          {ttf.notes && (
-            <div className="rounded-2xl p-4" style={{ background: PASTEL.butter, color: '#5C4416' }}>
-              <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1">Notes</div>
-              <p className="text-sm whitespace-pre-wrap">{ttf.notes}</p>
-            </div>
-          )}
-
-          {canManageTtf && (
-            <div className="flex items-center gap-2 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
-              <button onClick={onEdit} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                <Edit3 size={14} className="inline mr-2"/> Edit TTF
-              </button>
-              <button onClick={onDelete} className="px-4 py-2.5 rounded-xl text-sm font-medium" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-                <Trash2 size={14}/>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
   );
 }
 

@@ -165,8 +165,10 @@ export function ttfFromDb(row) {
     customer: row.customers?.name || '',
     // Tautan ke chain SP baru (Fase 4/5). Aditif — ttfToDb() sengaja TIDAK
     // menulis balik kedua kolom ini; tautan hanya dibuat dari sisi SP/invoice.
-    // Dipakai ARModal untuk mengunci baris BTB (nilai uang pindah ke
-    // sp_invoice_lines/sp_payments — DESIGN_SP_SCHEMA.md §2.5).
+    // Dulu dipakai ARModal untuk mengunci baris BTB (nilai uang pindah ke
+    // sp_invoice_lines/sp_payments — DESIGN_SP_SCHEMA.md §2.5) — ARModal
+    // dipensiunkan 2 Okt 2026 (App.jsx, lihat PROGRESS.md), useTtfs() yang
+    // memakai pemetaan ini kini nol pemanggil.
     invoiceId: row.invoice_id || null,
     spOrderId: row.sp_order_id || null,
     tglPembayaran: row.tgl_pembayaran || '',
@@ -713,8 +715,9 @@ export async function completePicking(pickingListId) {
 // 2 Sep 2026 (migrasi 20260902000003): keenamnya kini atribut level SP, sumber
 // kebenarannya sp_orders. Konsumennya kartu "Finance & Dokumen" tab Overview.
 // Versi sp_items masih ada dan tetap disinkronkan turun oleh
-// set_sp_finance_docs() — itu yang menjaga groupBySP/financePct, KPI
-// FinancePage, chip OutstandingPage, dan export CSV tetap benar tanpa diubah.
+// set_sp_finance_docs() — itu yang menjaga groupBySP/financePct dan export CSV
+// tetap benar tanpa diubah. (KPI FinancePage/chip OutstandingPage yang dulu
+// ikut disebut di sini sudah dipensiunkan 2 Okt 2026, lihat PROGRESS.md.)
 // ⚠️ dc_master_read = `is_super_admin() OR company_id = get_user_company_id()`
 // (varian TUNGGAL). User multi-entitas yang home-nya bukan SOA bisa dapat
 // embed null walau SP-nya terbaca — semua konsumen WAJIB degrade ke '—',
@@ -1014,8 +1017,9 @@ export async function updateTtf(id, t) {
   // Jaring pengaman anti double-entry: begitu TTF tertaut ke sebuah invoice,
   // seluruh sisi uang dikelola di sp_invoice_lines/sp_payments lewat Detail SP
   // (DESIGN_SP_SCHEMA.md §2.5). Blok DELETE + re-INSERT ar_btbs di bawah
-  // di-skip SELURUHNYA — bukan sebagian — sejalan dengan ARModal yang
-  // merender baris BTB sebagai read-only untuk TTF yang sama.
+  // di-skip SELURUHNYA — bukan sebagian — sejalan dengan ARModal (dipensiunkan
+  // 2 Okt 2026, lihat PROGRESS.md) yang dulu merender baris BTB sebagai
+  // read-only untuk TTF yang sama.
   // Guard sengaja dibaca dari DB, bukan dari state klien yang bisa basi.
   // Header (No. TTF, tanggal, No. INV/SP, customer, notes) tetap tersimpan.
   const btbLocked = !!header?.invoice_id;
