@@ -199,55 +199,62 @@ export default function ArAgingPage({ onOpenInvoice }) {
         />
       </div>
 
-      {/* ── Daftar invoice tersaring ── */}
-      <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, overflow: 'hidden', background: C.surface }}>
-        <div style={{
-          padding: `${SP.s2}px ${SP.s3}px`, borderBottom: `1px solid ${C.lineSoft}`,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: SP.s2,
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Daftar Invoice{adaFilter ? ' (tersaring)' : ''}</span>
-          <span style={{ fontSize: 12, color: C.inkSoft }}>
-            {tersaring.length} invoice ·{' '}
-            <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>{rp(totalTersaring)}</span>
-          </span>
-        </div>
-        {loading ? (
-          <p style={{ padding: SP.s3, fontSize: 13, color: C.inkFaint, margin: 0 }}>Memuat…</p>
-        ) : tersaring.length === 0 ? (
-          <Empty icon={AlertTriangle} title="Tidak ada invoice pada tampilan ini" sub="Coba hapus filter di atas."/>
-        ) : (
-          <div style={{ padding: SP.s3 }}>
-            <TableShell
-              minWidth={960}
-              head={[['Entitas'], ['No. Invoice'], ['Customer'], ['Jatuh Tempo'], ['Kelompok'], ['Sisa', 'right'], ['Status']]}
-            >
-              {tersaring.map((r) => {
-                const label = AGING_BUCKETS.find((b) => b.key === r.bucket)?.label || r.bucket;
-                return (
-                  <tr
-                    key={r.id} onClick={() => onOpenInvoice?.(r.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpenInvoice?.(r.id); } }}
-                    tabIndex={0} role="button" title="Buka detail invoice"
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <Td nowrap style={{ color: C.inkSoft }}>{r.companies?.code || r.companies?.name || '—'}</Td>
-                    <Td mono nowrap style={r.invoice_no ? { color: C.accent, fontWeight: 600 } : { color: C.inkFaint }}>
-                      {r.invoice_no || 'Menunggu nomor'}
-                    </Td>
-                    <Td>{r.sp_orders?.accounts?.name || '—'}</Td>
-                    <Td nowrap>{r.due_date ? fmtDate(r.due_date) : 'Belum TTF'}</Td>
-                    <Td nowrap>{label}{r.hariTelat > 0 ? ` (${r.hariTelat} hari)` : ''}</Td>
-                    <Td align="right" mono>{rp(r.sisa)}</Td>
-                    <Td nowrap>
-                      <Badge {...(STATUS_TAG[r.status] || STATUS_TAG.issued)}>{STATUS_LABEL_SHORT[r.status] || r.status}</Badge>
-                    </Td>
-                  </tr>
-                );
-              })}
-            </TableShell>
+      {/* ── Daftar invoice tersaring — HANYA muncul sesudah ada filter ── */}
+      {adaFilter ? (
+        <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, overflow: 'hidden', background: C.surface }}>
+          <div style={{
+            padding: `${SP.s2}px ${SP.s3}px`, borderBottom: `1px solid ${C.lineSoft}`,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: SP.s2,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Daftar Invoice (tersaring)</span>
+            <span style={{ fontSize: 12, color: C.inkSoft }}>
+              {tersaring.length} invoice ·{' '}
+              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>{rp(totalTersaring)}</span>
+            </span>
           </div>
-        )}
-      </div>
+          {loading ? (
+            <p style={{ padding: SP.s3, fontSize: 13, color: C.inkFaint, margin: 0 }}>Memuat…</p>
+          ) : tersaring.length === 0 ? (
+            <Empty icon={AlertTriangle} title="Tidak ada invoice pada tampilan ini" sub="Coba hapus filter di atas."/>
+          ) : (
+            <div style={{ padding: SP.s3 }}>
+              <TableShell
+                minWidth={960}
+                head={[['Entitas'], ['No. Invoice'], ['Customer'], ['Jatuh Tempo'], ['Kelompok'], ['Sisa', 'right'], ['Status']]}
+              >
+                {tersaring.map((r) => {
+                  const label = AGING_BUCKETS.find((b) => b.key === r.bucket)?.label || r.bucket;
+                  return (
+                    <tr
+                      key={r.id} onClick={() => onOpenInvoice?.(r.id)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpenInvoice?.(r.id); } }}
+                      tabIndex={0} role="button" title="Buka detail invoice"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Td nowrap style={{ color: C.inkSoft }}>{r.companies?.code || r.companies?.name || '—'}</Td>
+                      <Td mono nowrap style={r.invoice_no ? { color: C.accent, fontWeight: 600 } : { color: C.inkFaint }}>
+                        {r.invoice_no || 'Menunggu nomor'}
+                      </Td>
+                      <Td>{r.sp_orders?.accounts?.name || '—'}</Td>
+                      <Td nowrap>{r.due_date ? fmtDate(r.due_date) : 'Belum TTF'}</Td>
+                      <Td nowrap>{label}{r.hariTelat > 0 ? ` (${r.hariTelat} hari)` : ''}</Td>
+                      <Td align="right" mono>{rp(r.sisa)}</Td>
+                      <Td nowrap>
+                        <Badge {...(STATUS_TAG[r.status] || STATUS_TAG.issued)}>{STATUS_LABEL_SHORT[r.status] || r.status}</Badge>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </TableShell>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Empty
+          title="Pilih kelompok umur, customer, atau entitas"
+          sub="Klik salah satu kartu di atas, atau nama/sel di tabel ringkasan, untuk melihat daftar invoicenya."
+        />
+      )}
     </div>
   );
 }
