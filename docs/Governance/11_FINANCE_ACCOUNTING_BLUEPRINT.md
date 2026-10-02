@@ -471,6 +471,30 @@ Jadi yang benar-benar perlu di-void: **empat invoice** — 0001, 0007, 0008, 000
 | T5 | **Sumber nilai HPP untuk jurnal** | Kandidat: `stock_ledger` atau harga pokok produk. Belum diputuskan |
 | T6 | **`sp_btb.delivery_note_id`** | Nol terisi. Rantai SJ → BTB terputus di data. Tidak memblokir v1 |
 | T7 | **`btb_date` jadi NOT NULL** | Baru bisa setelah backfill 456 baris selesai |
+| T8 | **Struktur TTF-induk + rincian per BTB** (nilai DPP/PPN/PPh + nomor faktur pajak per baris BTB, bukan per invoice) | Menunggu rilis AR Tahap 1-3b (rencana 15 Okt 2026) + jawaban Keputusan Terbuka `09_ROADMAP.md` **#67**. Fondasinya (`sp_invoice_lines.btb_id`) sudah ada di skema tapi dormant — sketsa & angka terukur di subsection di bawah |
+
+### Sketsa pasca-15 Oktober 2026 — TTF per-BTB (T8)
+
+> Ditambahkan doc-keeper 2 Okt 2026, dipicu contoh dokumen TTF Indomarco nyata (TTF 26E0011178287, cetak 2 Okt 2026) yang dibaca Den saat merevisi tiga tab Finance AR (`PROGRESS.md` 2026-10-02). **Ini sketsa, bukan rencana detail** — bentuk akhirnya belum diputuskan (lihat Keputusan Terbuka `09_ROADMAP.md` #67 / Q6 di bawah).
+
+**Yang ditunjukkan dokumen asli, dan tidak ada tempatnya di skema hari ini:** satu TTF berisi banyak baris, tiap baris dikenali dari **nomor BTB Indomarco** (mis. `2026-BTB-2191949-NEW`), bukan nomor invoice Nexus; satu faktur pajak bisa menaungi **dua BTB**; tiap baris BTB punya nilai sendiri (DPP, PPN, PPh) dan nomor faktur pajak sendiri; satu-satunya tanggal di dokumen = Tanggal Cetak. `sp_btb` (tabel BTB live) nol kolom nilai/PPh/faktur pajak; `ar_ttfs` nol relasi ke `sp_btb` (`no_sp`/`no_inv` adalah TEXT bebas, bukan FK).
+
+**Fondasi yang SUDAH ADA, tapi DORMANT:** `sp_invoice_lines.btb_id` (uuid) sudah punya FK sungguhan ke `sp_btb(id)` — `ADD CONSTRAINT sp_invoice_lines_btb_id_fkey FOREIGN KEY (btb_id) REFERENCES public.sp_btb(id)` (`schema_snapshot.sql:16824-16828`; kolomnya sendiri `:9915`). ⚠️ **Kapan persis kolom ini ditambahkan tidak bisa dipastikan dari repo** — baik tabel `sp_invoice_lines` maupun constraint FK ini **nol jejak migrasi** (SQL manual, kemungkinan sejak Fase 4 Invoice Agustus 2026 — pola yang sama dengan banyak objek lain di modul ini). **Diverifikasi: NOL migrasi yang pernah MENGISI kolom ini** — satu-satunya kemunculan `btb_id` lain di seluruh `supabase/migrations/*.sql` adalah variabel PL/pgSQL `v_btb_id` di dalam `sp_issue_btb()`/`sp_delete_btb()`, bukan penulis kolom tabel. Jadi `sp_invoice_lines.btb_id` **selalu NULL** hari ini, baik di staging maupun produksi — kelas yang sama dengan `delivery_note_items.sp_order_item_id` (`PROGRESS.md` 2026-09-25): *kolom yang ADA di skema ≠ kolom yang PERNAH DIISI.*
+
+**Konsekuensi untuk arah ke depan:** pekerjaan T8 kemungkinan besar TINGGAL mengisi kolom ini + menambah kolom nilai/PPh/faktur-pajak (di `sp_invoice_lines` sendiri atau tabel baru), BUKAN membangun relasi FK dari nol. Ini juga menunjukkan arah implementasi yang **BERBEDA** dari rencana awal §5 dokumen ini (`sp_invoices.btb_id` di level HEADER, satu invoice per BTB — D2/F2/R3): yang benar-benar terbangun di AR Tahap 2 (28 Sep 2026) justru linkage di **level BARIS** (`sp_invoice_lines`), sejalan dengan index `sp_invoice_one_per_sp` yang tetap dipertahankan (satu invoice per SP, bukan satu invoice per BTB). ⚠️ Rencana §5/§4 di atas **belum disunting ulang** untuk mencerminkan ini — dibiarkan sebagai jejak rencana awal, bukan dihapus.
+
+**Sketsa struktur (BELUM diputuskan):** kandidat tabel baru `ar_ttf_lines` — TTF-induk (`no_ttf` + Tanggal Cetak, sekali) dan baris anak per BTB (`btb_id → sp_btb(id)`, `dpp`, `ppn`, `pph`, `total_ttf`, `faktur_pajak_no`, `faktur_pajak_date`) — ATAU isi langsung ke `sp_invoice_lines` lewat `btb_id` yang sudah ada + kolom baru. Nasib `ar_ttfs` (jadi ringkasan/induk, atau dilebur ke struktur baru) dan migrasi datanya (206+ baris historis `sp_btbs`/`ar_ttfs` kalau dilebur — lihat `08_TECH_DEBT.md` TD-306) **belum dipikirkan**.
+
+**Dampak ke `mark_ttf_received`:** fungsi ini hari ini EFEKTIF 1-baris-per-invoice — `SELECT t.id, t.tanggal_ttf FROM ar_ttfs t WHERE t.invoice_id = p_invoice_id ORDER BY t.created_at LIMIT 1`, lalu UPDATE baris itu kalau ada / INSERT kalau tidak (`20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql`; disempurnakan satu baris oleh `20260929000010` — mencabut penimpaan `tanggal_menerima` di cabang UPDATE — tanpa mengubah bentuk SELECT…LIMIT 1 ini). **Nol konsep** "invoice ini sebagian ditutup TTF-A, sisanya TTF-B": memanggilnya dua kali untuk invoice yang sama MENIMPA baris yang sama (semantik "koreksi"), bukan menambah baris kedua. Kalau model per-BTB dibangun, fungsi ini perlu dirombak total — ubah signature = **fungsi BARU bagi Postgres** (gotcha #37, `03_DATA_MODEL.md`) — dan aturan `due_date` perlu menunggu SEMUA BTB invoice itu tertutup TTF, bukan satu tanggal tunggal seperti sekarang. Lihat Keputusan Terbuka #67 (b).
+
+**Skala masalah — hasil query production 2 Okt 2026** *(laporan sesi — tidak bisa diverifikasi ulang dari repo; `schema_snapshot.sql` schema-only sejak 5 Sep 2026, nol blok `COPY`)*:
+
+| Angka | Arti |
+|---|---|
+| **151 SP** punya lebih dari satu BTB hidup (`sp_btb` dikelompokkan per `sp_order_id`, `deleted_at IS NULL`, `HAVING count(*) > 1`) | Skala konkret seberapa sering 1 invoice (ingat: 1 SP = 1 invoice hidup, index `sp_invoice_one_per_sp`) akan butuh pemecahan nilai per-BTB kalau T8 dibangun |
+| **690 dari 691** nilai `btb_no` berupa angka murni; 1 pengecualian teks `"DONE"` pada SP `SOA-0001` | SP `SOA-0001` = SP data uji/demo lama yang sudah dikenal dokumen lain, bukan temuan baru — konteks saja kalau nanti ada yang menormalkan format `btb_no` |
+| **25 SP** berstatus `BTB_TERBIT` tanpa invoice | Semuanya SUDAH punya BTB (sesuai definisi statusnya), menunggu invoice diterbitkan |
+| **31 SP** berstatus `TERKIRIM_PENUH` tanpa invoice | Populasi BERBEDA dari 25 di atas — semuanya BELUM punya BTB sama sekali (masih tahap gudang, bukan soal TTF/Finance) |
 
 ### Pertanyaan terbuka yang menunggu jawaban
 
@@ -483,6 +507,7 @@ Kelimanya juga dicatat di `09_ROADMAP.md` §Keputusan Terbuka supaya terbaca dar
 | Q3 | **#45** | Empat SP di §11.3 — apakah BTB-nya memang tidak pernah ada, atau ada tapi belum diinput? | Elvira / Gigih |
 | Q4 | **#46** | Nilai HPP diambil dari mana untuk jurnal BTB? | Finance / Accounting |
 | Q5 | **#47** | Apakah Storbit akan punya tim finance sendiri, atau tetap dilayani finance group? | Finance Controller |
+| Q6 | **#67** | Tanggal TTF mana yang menentukan jatuh tempo invoice — Tanggal Cetak atau tanggal dokumen fisik ditukar ke kasir Indomarco? Kalau BTB satu invoice tersebar di lebih dari satu TTF, TTF mana yang menang? (bagian b baru bisa dijawab dan diterapkan setelah T8 dibangun — lihat subsection di atas) | Finance |
 
 ⚠️ **#42 sengaja dilewati** — nomor itu sudah dipakai branch `feature/crm-v3-batch-persiapan` (`accounts.estimated_closing_date` salah sumbu). Lompatan 41 → 43 di `09_ROADMAP.md` **bukan kekeliruan**; jangan "dirapikan".
 
