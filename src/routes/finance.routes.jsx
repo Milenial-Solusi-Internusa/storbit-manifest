@@ -27,6 +27,16 @@
 // ⚠️ `:id` diletakkan PALING AKHIR supaya /ready dan /list (statis) menang.
 // Kalau urutannya dibalik, "ready" akan tertangkap sebagai invoiceId dan halaman
 // menampilkan "Invoice tidak ditemukan" untuk path yang sah.
+//
+// ── Tab 6.2.2 (impor TTF massal / Invoice Submission & Acknowledgement) ─────
+// menuId LAMA `finance` (label lama "Finance Docs") dipindah dari
+// `LegacyMenuOutlet` ke sini, pola yang SAMA dengan `billing` saat AR Tahap 2:
+// menuId-nya DIPERTAHANKAN (nol key menu baru, nol migrasi grant baru —
+// matriks peran yang sudah mengizinkan halaman lama otomatis mengizinkan
+// penggantinya), yang berubah cuma rute + isi halamannya. Path-nya datang
+// dari `MENU_PATHS` (diturunkan dari menu-skeleton.js), BUKAN ditulis literal
+// di sini — sama dengan `BASE` di atas. Tab 6.2.3 (AR Aging) dan 6.2.4
+// (Payment & Collection Tracking) menyusul dengan pola yang sama.
 // ============================================================================
 import { lazy } from 'react';
 import { Navigate, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -40,6 +50,7 @@ import ModuleShell from './ModuleShell.jsx';
 const ReadyToInvoicePage = lazy(() => import('@/modules/finance/ReadyToInvoicePage'));
 const InvoiceListPage    = lazy(() => import('@/modules/finance/InvoiceListPage'));
 const InvoiceDetailPage  = lazy(() => import('@/modules/finance/InvoiceDetailPage'));
+const TtfSubmissionPage      = lazy(() => import('@/modules/finance/TtfSubmissionPage'));
 
 const BASE       = MENU_PATHS.billing;
 const PATH_READY = `${BASE}/ready`;
@@ -147,10 +158,25 @@ function DetailRoute() {
   );
 }
 
+function SubmissionRoute() {
+  const navigate = useNavigate();
+  const { showToast } = useAppShell();
+  return (
+    <ModuleShell>
+      <Boundary title="Invoice Submission & Acknowledgement tidak tersedia">
+        <TtfSubmissionPage
+          showToast={showToast}
+          onOpenInvoice={(id) => navigate(invoicePath(id))}
+        />
+      </Boundary>
+    </ModuleShell>
+  );
+}
+
 /** Id menu yang rutenya dimiliki file INI — dipakai legacy.routes.jsx dan
  *  skeleton.routes.jsx untuk mengecualikannya, supaya tidak pernah ada dua rute
  *  untuk satu path. */
-export const FINANCE_MENU_IDS = ['billing'];
+export const FINANCE_MENU_IDS = ['billing', 'finance'];
 
 export const financeRoutes = [
   {
@@ -164,4 +190,5 @@ export const financeRoutes = [
       { path: ':invoiceId',   handle: { menuId: 'billing' }, element: <DetailRoute/> },
     ],
   },
+  { path: MENU_PATHS.finance,     handle: { menuId: 'finance' },     element: <SubmissionRoute/> },
 ];

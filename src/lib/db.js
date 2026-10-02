@@ -1312,6 +1312,27 @@ export async function getTtfStatus(invoiceId) {
   return { data: data || null, error };
 }
 
+/** Versi jamak dari getTtfStatus() — satu panggilan untuk SEKUMPULAN invoice,
+ *  dipakai pratinjau impor TTF massal (TtfSubmissionPage) untuk mengetahui
+ *  invoice mana yang sudah punya TTF sebelum mengirim apa pun. Baris TERTUA
+ *  per invoice_id yang dipilih (sama dengan getTtfStatus/mark_ttf_received).
+ *  @returns {Promise<{data: Record<string, object>, error: object|null}>} */
+export async function getTtfStatusByInvoices(invoiceIds = []) {
+  const ids = (invoiceIds || []).filter(Boolean);
+  if (ids.length === 0) return { data: {}, error: null };
+  const { data, error } = await supabase
+    .from('ar_ttfs')
+    .select('invoice_id, no_ttf, tanggal_ttf, tanggal_menerima, diterima_oleh, notes, created_at')
+    .in('invoice_id', ids)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  const map = {};
+  (data || []).forEach((t) => {
+    if (!map[t.invoice_id]) map[t.invoice_id] = t;
+  });
+  return { data: map, error };
+}
+
 // Kop surat entitas untuk preview dokumen on-screen (bukan PDF) — subset kolom
 // yang sama dengan yang dipakai getInvoicePdfData di bawah, tanpa join apa pun.
 // Dipakai panel "Dokumen & Invoice" di SalesOrderDetailPage.

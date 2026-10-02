@@ -175,3 +175,17 @@ export function canRecordInvoicePayment(erpRoles, opt) {
 export function canApproveInvoice(erpRoles, opt) {
   return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller', 'ceo'], opt);
 }
+
+// canImportTtf -- gate tombol "Proses Impor" di TtfSubmissionPage (impor TTF
+// massal). SENGAJA LEBIH SEMPIT daripada canMarkTtf (useInvoiceWorkflow.js,
+// yang juga meloloskan is_manager_or_above() -- manajer LINTAS departemen,
+// TD-297): satu kesalahan di impor massal menimpa banyak invoice sekaligus,
+// sementara mencatat TTF satu-per-satu menimpa satu baris. Keputusan Den saat
+// PLAN fitur ini -- bukan cermin satu RPC tertentu (mark_ttf_received tetap
+// dipanggil apa adanya, guard-nya sendiri TIDAK berubah), jadi TIDAK masuk
+// daftar checklist TD-233 di atas. Halaman itu sendiri tetap kelihatan oleh
+// siapa pun yang punya izin menu `finance` -- yang digerbang di sini hanya
+// tombol prosesnya.
+export function canImportTtf(erpRoles, opt) {
+  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller', 'finance'], opt);
+}
