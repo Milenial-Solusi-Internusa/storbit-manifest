@@ -2,9 +2,15 @@
 // Wrapper yang nge-handle 3 auth states: loading → login → app
 // Inactive user juga di-handle (kasih message + tombol logout).
 
+import { useEffect } from 'react';
 import { Loader2, Package, ShieldOff, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/useAuth';
 import Login from './Login';
+
+// TD-301: how long the "Akun Dinonaktifkan" message stays on screen before
+// signOut() fires automatically. Long enough to read, short enough that
+// "keluar otomatis" is true rather than nominal.
+const INACTIVE_AUTO_SIGNOUT_MS = 3000;
 
 const PASTEL = {
   peach: '#FFD4B8',
@@ -18,6 +24,21 @@ const PASTEL = {
 
 export default function AuthGate({ children }) {
   const { loading, isAuthenticated, profile, signOut } = useAuth();
+
+  // TD-301: auto-signout once the "Akun Dinonaktifkan" screen is shown below
+  // — previously a manual "Keluar" button only. Must be an unconditional hook
+  // call (before the early returns that follow), per Rules of Hooks; the
+  // condition lives inside the effect, not in whether the effect runs. This
+  // only affects the SPA's own rendering/session — it does not touch
+  // authorization. The real guard against an inactive-but-still-authenticated
+  // user is the server-side RLS fix (TD-301 Lapis B migration), which applies
+  // whether or not this tab is even open.
+  const isDeactivated = !isAuthenticated && !!profile && profile.active === false;
+  useEffect(() => {
+    if (!isDeactivated) return undefined;
+    const t = setTimeout(() => { signOut(); }, INACTIVE_AUTO_SIGNOUT_MS);
+    return () => clearTimeout(t);
+  }, [isDeactivated, signOut]);
 
   // 1. Loading: cek session lagi proses
   if (loading) {

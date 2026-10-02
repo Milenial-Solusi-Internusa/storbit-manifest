@@ -26,6 +26,7 @@ import {
   fetchPositionsForCompany,
   fetchRolesForCompany,
   saveUserAccess,
+  setUserActiveStatus,
   deleteUser,
   resetUserPassword,
 } from '../../../hooks/useUserAccess';
@@ -62,6 +63,7 @@ function buildDraft(r) {
     department_id:      r.department_id || '',
     position_id:        r.position_id || '',
     active:             r.active !== false,
+    _originalActive:    r.active !== false, // TD-301 — active is no longer part of profilePatch; compared separately in handleSave
     mfa_required:       !!r.mfa_required,
     erp_role_id:        primary?.role_id || '',
     _originalErpRoleId: primary?.role_id || '',
@@ -252,6 +254,11 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
     setError(null);
 
     const erpRoleChanged = draft.erp_role_id !== draft._originalErpRoleId;
+    // TD-301: `active` is no longer part of profilePatch — it moved behind
+    // set-user-status (Auth block/unblock + user_roles revoke), called
+    // separately below. Bundling it back into saveUserAccess's plain
+    // `UPDATE profiles` would reopen exactly the silent-write path this
+    // hotfix closes.
     const { error: saveErr } = await saveUserAccess({
       profileId:    draft.id,
       profilePatch: {
@@ -259,19 +266,43 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
         branch_id:     draft.branch_id     || null,
         department_id: draft.department_id || null,
         position_id:   draft.position_id   || null,
-        active:        draft.active,
         mfa_required:  draft.mfa_required,
       },
       newErpRoleId: erpRoleChanged ? (draft.erp_role_id || null) : undefined,
       companyId:    draft.company_id || null,
     });
 
-    setSaving(false);
     if (saveErr) {
+      setSaving(false);
       setError(saveErr.message ? `Save failed: ${saveErr.message}` : 'Save failed. Check your permissions.');
       return;
     }
+
     const audUser = { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id };
+
+    // TD-301: active-status transition, own call + own audit event — only
+    // reachable here because the Save Changes button is already
+    // isSuperAdmin-gated (see JSX below), matching set-user-status's own gate.
+    const activeChanged = draft.active !== draft._originalActive;
+    if (activeChanged) {
+      const { data: statusData, error: statusErr } = await setUserActiveStatus(draft.id, draft.active);
+      if (statusErr) {
+        setSaving(false);
+        setError(`Profile saved, but account status change FAILED: ${statusErr.message || 'unknown error'}. Other fields were saved; status was not changed.`);
+        return;
+      }
+      logAudit(supabase, {
+        action: draft.active ? ACTION_TYPES.ACTIVATE_USER : ACTION_TYPES.DEACTIVATE_USER,
+        entityType: ENTITY_TYPES.USER,
+        entityId: draft.id,
+        entityLabel: draft.full_name || null,
+        oldData: { active: draft._originalActive },
+        newData: { active: draft.active },
+        notes: statusData?.steps ? `set-user-status: ${JSON.stringify(statusData.steps)}` : null,
+      }, audUser);
+    }
+
+    setSaving(false);
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_USER,
       entityType: ENTITY_TYPES.USER,
@@ -785,13 +816,29 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
                       )}
                     </div>
 
-                    <FieldToggle
-                      label={draft.active ? 'Account active' : 'Account inactive'}
-                      checked={draft.active}
-                      onChange={(v) => setDraft((d) => ({ ...d, active: v }))}
-                      disabled={saving || isSelf}
-                      helpText={isSelf ? 'You cannot deactivate your own account.' : undefined}
-                    />
+                    <div>
+                      <FieldLabel>Account Status</FieldLabel>
+                      {isSuperAdmin ? (
+                        <FieldToggle
+                          label={draft.active ? 'Account active' : 'Account inactive'}
+                          checked={draft.active}
+                          onChange={(v) => setDraft((d) => ({ ...d, active: v }))}
+                          disabled={saving || isSelf}
+                          helpText={isSelf ? 'You cannot deactivate your own account.' : undefined}
+                        />
+                      ) : (
+                        <div
+                          className="text-sm px-3.5 py-2.5 rounded-xl"
+                          style={{ background: PASTEL.sky, color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
+                        >
+                          {draft.active ? 'Account active' : 'Account inactive'}
+                          <span className="block text-[10px] mt-1" style={{ color: PASTEL.inkMute }}>
+                            Only super admin can change account status — deactivating also blocks
+                            Supabase Auth sign-in (TD-301), same gate as create-user/delete-user.
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
                     <FieldToggle
                       label={draft.mfa_required ? 'MFA required' : 'MFA not required'}

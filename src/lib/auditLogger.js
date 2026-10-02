@@ -42,6 +42,8 @@ export const ACTION_TYPES = {
   CREATE_USER:         'CREATE_USER',
   UPDATE_USER:         'UPDATE_USER',
   DEACTIVATE_USER:     'DEACTIVATE_USER',
+  ACTIVATE_USER:       'ACTIVATE_USER', // TD-301 — reactivation was never logged at all before this
+
   CHANGE_ROLE:         'CHANGE_ROLE',
   CREATE_ASSET:        'CREATE_ASSET',
   CREATE_MOM:          'CREATE_MOM',
