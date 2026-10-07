@@ -26,6 +26,7 @@ import { isManagerOrAbove, canWriteSpItem as canWriteSpItemRole } from '../../li
 import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
+import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
 // @font-face Cormorant/Lora — di-scope ke chunk halaman ini. Lihat header file CSS-nya.
@@ -244,6 +245,32 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
 
   const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
 
+  // Buffer TEKS field ongkir. `draft.shippingPrice` tetap ANGKA kanonik — kalau
+  // teks berformat disimpan di sana, `Number(draft.shippingPrice)` di handleSave
+  // (dan spToDb di db.js) jadi NaN → 0. Buffer lokal = blast radius satu <input>.
+  const [shipText, setShipText] = useState(() => formatIdNumber(item.shippingPrice ?? 0));
+  const [shipBad,  setShipBad]  = useState(false);
+
+  const handleShipChange = (e) => {
+    const raw = e.target.value;
+    setShipText(raw);
+    const { value, unrecognized } = readMoneyInput(raw);
+    setShipBad(unrecognized);
+    set('shippingPrice', value);
+  };
+  // Teks tak dikenali SENGAJA DIBIARKAN di field (keputusan Den) — mengosongkannya
+  // diam-diam menyembunyikan bahwa yang tersimpan 0. Pesan inline yang memberi tahu.
+  const handleShipBlur = () => {
+    const { value, unrecognized } = readMoneyInput(shipText);
+    if (unrecognized) return;
+    setShipText(shipText.trim() === '' ? '' : formatIdNumber(value));
+  };
+
+  // Ongkir > 0 tapi < seribu = bentuk khas nominal yang kehilangan pemisah
+  // ribuannya (1.766.050 → 1,77). PERINGATAN saja, tidak memblokir Save.
+  const shipValue = Number(draft.shippingPrice) || 0;
+  const shipOdd   = shipValue > 0 && shipValue < 1000;
+
   // Dropdown-only: item yang SUDAH tertaut wajib tetap tertaut (cegah unlink tak sengaja).
   // Item legacy (product_id null) boleh disimpan tanpa memilih (lenient) — keputusan user.
   const wasLinked = !!item.productId;
@@ -260,9 +287,13 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
 
   // Auto-calculated fields
   const outstanding = Math.max(0, Number(draft.qty) - Number(draft.shippedQty));
-  const subtotal    = Number(draft.qty) * Number(draft.unitPrice);
-  const ppn         = Math.round(subtotal * PPN_RATE);
-  const grandTotal  = subtotal + ppn + Number(draft.shippingPrice);
+  // Subtotal/PPN/Grand Total lewat calcItem() — SATU rumus untuk seluruh aplikasi,
+  // dan dasar PPN-nya subtotal + ONGKIR seperti create_invoice
+  // (ROUND((unit_price*qty + shipping_price)*0.11)). Sebelum ini ringkasan modal
+  // ini menghitung PPN dari subtotal SAJA, jadi PPN & Grand Total yang ditampilkan
+  // lebih kecil dari yang nanti ditagih invoice.
+  // `outstanding` di atas TETAP lokal: calcItem tidak meng-clamp ke nol.
+  const { subtotal, ppn, grandTotal } = calcItem(draft);
 
   function autoStatus() {
     const q = Number(draft.qty), s = Number(draft.shippedQty), out = Math.max(0, q - s);
@@ -417,9 +448,20 @@ function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
             <ModalField label="Shipping Price (Rp)">
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.inkFaint, pointerEvents: 'none' }}>Rp</span>
-                <input type="number" value={draft.shippingPrice} onFocus={selectOnFocus} onChange={e => set('shippingPrice', e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
+                {/* type=text, BUKAN number: <input type="number"> tak bisa menerima
+                    pemisah ribuan id-ID — "1.766.050" terbaca 1,766 lalu dibulatkan
+                    kolom numeric(18,2) jadi 1.77. onFocus pakai select() langsung
+                    karena selectOnFocus ber-guard `type === 'number'` (jadi no-op). */}
+                <input type="text" inputMode="decimal" value={shipText}
+                  onFocus={e => e.target.select()} onChange={handleShipChange} onBlur={handleShipBlur}
                   style={{ height: 38, paddingLeft: 32, paddingRight: 11, border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: "'IBM Plex Mono',monospace", width: '100%', boxSizing: 'border-box' }}/>
               </div>
+              {shipBad && (
+                <div style={{ fontSize: 11, color: C.danger }}>Angka tidak dikenali</div>
+              )}
+              {!shipBad && shipOdd && (
+                <div style={{ fontSize: 11, color: C.warn }}>Ongkir di bawah Rp 1.000, pastikan angka sesuai SP</div>
+              )}
             </ModalField>
           </div>
           {/* Calc row */}
@@ -875,10 +917,15 @@ export default function SalesOrderDetailPage({
   // Daftar rolenya hidup di src/lib/roles.js (cermin is_manager_or_above()).
   // isFinanceCtl DICABUT bersama form pembayaran/TTF (AR Tahap 2) — sumbu
   // finance kini dinilai di InvoicePanel, tempat tombolnya hidup.
-  const { erpRoles } = useAuth();
+  const { erpRoles, hasMenuPermission } = useAuth();
   const roleCodes    = (erpRoles || []).map(r => r.roles?.code).filter(Boolean);
   const isSuperAdmin   = roleCodes.includes('super_admin');
   const isManagerAbove = isManagerOrAbove(erpRoles);   // src/lib/roles.js, cermin is_manager_or_above()
+  // Tombol "Buka Detail Invoice" (di bawah) digerbang izin yang SAMA dengan
+  // halaman tujuannya (ModuleShell -> isMenuAccessible('billing',...) ->
+  // hasMenuPermission('fin_invoice','view'), lihat MENU_KEY_MAP di App.jsx) —
+  // supaya tidak ada user yang mengklik lalu mendarat di "Akses Ditolak".
+  const canOpenInvoice = hasMenuPermission('fin_invoice', 'view');
   // CERMIN guard server pada RPC gudang/SP (migrasi 20260821000003/4/6):
   //   is_super_admin() OR (company ∈ get_user_company_ids()
   //                        AND (is_manager_or_above() OR has_role('operations')))
@@ -1574,7 +1621,7 @@ export default function SalesOrderDetailPage({
                       </span>
                       <span style={{ fontSize: 13, color: C.inkSoft }}>{rp(invoice.total_amount)}</span>
                     </div>
-                    {onOpenInvoice && (
+                    {onOpenInvoice && canOpenInvoice && (
                       <button
                         onClick={() => onOpenInvoice(invoice.id)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY, flexShrink: 0 }}
