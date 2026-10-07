@@ -14,6 +14,8 @@
 > ⚠️ **Dua arah, jangan tertukar.** Sebagian butir justru sudah LIVE di produksi dan stagingnya yang menyusul (butir 1 & 2). Butir itu **nol tindakan** saat launching; dicatat supaya tidak dikira utang.
 >
 > Kolom "staging" di bawah **diukur langsung** ke `nexus-staging` 25 Sep 2026, bukan diasumsikan dari laporan.
+>
+> ⏰ **[Klarifikasi 7 Okt 2026] Rencana rilis gabungan "15 Oktober 2026" (AR Tahap 1-3b + Batch Finance AR) punya DUA tanggal, jangan tertukar:** jendela **EKSEKUSI** SQL/deploy = **malam 14 Okt 2026** (sesudah jam kerja); **EFEKTIF** dipakai Finance = **pagi 15 Okt 2026**. "15 Oktober" di seluruh dokumen (`CLAUDE.md`, `PROGRESS.md`) merujuk tanggal EFEKTIF, bukan jendela eksekusi.
 
 ---
 
@@ -500,6 +502,8 @@ Sepuluh berkas `20260928*` lahir dari satu keputusan: **seluruh kolom form invoi
 ⛔ **Butir 18 juga menuntut butir 9 (`ar_single_issue_path`) sudah jalan**, karena ia menulis ulang `create_invoice_for_sp` di atas bentuk yang dibuat butir 9. Menjalankan 18 di produksi yang belum punya butir 9 akan menimpa jalur penerbitan dengan versi yang mengandaikan guard yang belum ada.
 
 ⚠️ **Seluruh sepuluh berkas dijalankan di STAGING 25 Sep 2026. Produksi belum satu pun.** Angka di bawah diukur di staging kecuali disebutkan lain.
+
+> ⚠️ **[7 Okt 2026] PERINGATAN RILIS — tabel tracking migrasi Supabase TIDAK BISA DIPERCAYA untuk rentang tanggal ini, belum diverifikasi penuh.** Temuan (read-only, lewat `list_migrations` Supabase dibandingkan file repo): kesepuluh migrasi invoice v2 di atas (`invoice_header_v2` dkk) tercatat di tabel `supabase_migrations.schema_migrations` **STAGING** dengan timestamp versi **25 September** (contoh: `20260925094015`), TAPI file-nya di repo bertanggal **28 September** (`20260928000001_invoice_header_v2.sql` dkk). **Penyebab paling mungkin** (belum diverifikasi penuh): migrasi pertama kali dijalankan ke staging 25 Sep (lewat `supabase db push` atau serupa, tercatat versi itu), lalu file-nya ditulis ulang/diberi nomor baru 3 hari kemudian (28 Sep) saat didokumentasikan ke repo, **tanpa memperbarui tabel tracking staging** supaya cocok. **Kita TIDAK bisa memverifikasi isi persis cocok** tanpa membandingkan SQL langsung (di luar scope read-only sesi ini) — ini adalah **asumsi, bukan fakta pasti**. ⛔ **SEBELUM rilis 14/15 Oktober: JANGAN menjalankan ulang `20260928000001` dkk ke staging** mengira belum jalan HANYA berdasarkan tabel tracking Supabase — **cek dulu apakah objeknya (fungsi/kolom/tabel) sudah ada di staging dengan query langsung**, karena tabel tracking staging **tidak bisa dipercaya** untuk rentang ini. Pola serupa juga ditemukan di **production** untuk migrasi 18 Sep (`20260918000001_set_sql_on_quotation_sent.sql` vs tracking versi `20260918100429`) — **TD-279** (`08_TECH_DEBT.md`) sudah menyinggung sebagian dari kelas masalah ini (drift staging vs produksi), ditautkan di sini sebagai kerabat, bukan duplikat.
 
 ---
 
@@ -1321,6 +1325,35 @@ Klaim keamanannya belum diselaraskan dengan keadaan hari ini. Dokumentasi yang m
 **H1 lapis 1** (butir 27) · **H1 lapis 2** + perbaikan `check_similar_accounts` (butir 28 & 29) · **H2** (butir 30) · **H3** (butir 31) — **keempatnya LIVE di production DAN staging 28 Sep 2026**, masing-masing dengan gerbangnya sendiri. **H5 lapis 1** (butir 45) · **H5 lapis 2** (butir 46) — **keduanya LIVE di production DAN staging 30 Sep 2026**, dijalankan sebagai pengerasan mandiri sebelum launching. **H6** (koreksi `README.md` §Security Requirements + `docs/security/security-baseline.md`) — **✅ SELESAI 30 Sep 2026**, dokumentasi saja, nol migrasi.
 
 ⭐ **Peta lapisnya, supaya sisa pekerjaannya tidak salah ditaksir:** H1 + H3 menutup **permukaan panggil fungsi** dan **resolusi nama di dalamnya**; H2 menutup **pabrik tabel baru**; **H5 menutup hak tabel yang sudah terlanjur ada** (TD-230 + TD-24) — bagian yang paling luas, sekarang sudah tertutup; **H6 menutup klaim dokumentasi publik** yang tertinggal dari keadaan sungguhan, dan audit yang dilakukan untuk menulisnya menemukan dua tech debt baru di luar cakupan paket ini (**TD-301** HIGH, **TD-302** LOW). **Yang BELUM tersentuh:** H4 sisa (`get_linked_bnf_status`, sengaja ikut Fase 4 BNF, bukan dikerjakan terpisah) · Group D (DML `authenticated` di ~65 tabel RPC-only lain, di luar syarat launching) · Group E (EXECUTE `anon`/PUBLIC di 99 fungsi lain, baru sebatas PLAN — TD-300). **Dengan H1-H3+H5+H6 tertutup, paket TD-281 tidak lagi jadi pemblokir launching** — sisanya (H4 residual, Group D/E) sengaja di luar cakupan.
+
+---
+
+## Koreksi Data dan Akses Manual (di luar Migrasi)
+
+Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **berkas migrasi** (skema/fungsi/RLS, tercatat `supabase/migrations/`). Bagian ini mencatat **SQL/perubahan akses manual langsung di production** — dieksekusi lewat **Claude chat + connector Supabase MCP** (kecuali disebutkan lain), **nol jejak git**, tidak akan pernah muncul di `supabase/migrations/`. Tanpa catatan di sini, perubahan jenis ini adalah yang **paling mudah hilang** dari sejarah proyek.
+
+| Tanggal | Apa yang diubah | Alasan | Lewat mana | Status |
+|---|---|---|---|---|
+| 17 Sep 2026 | INSERT `user_roles`: akun CEO (Azhar Malik / "Pak Adam") diberi role `ceo` tambahan di entitas **SOA**, selain `ceo`@MSI yang sudah ada | Dashboard Storbit kosong untuk akun ini tanpa akses SOA (RLS company-scoped) | Claude chat + connector Supabase | Permanen. Pola `user_roles` jamak yang sama sudah dipakai 3 orang lain (Elvira MSI→SOA; Camelia & Dery SOA→3 entitas) — bukan kasus baru, prosedurnya memang belum pernah ditulis sebagai SOP (`04_ROLE_PERMISSION_MATRIX.md` §5 #12). Sudah tercatat sebelumnya di `CLAUDE.md` bullet [17 Sep 2026]. |
+| **2 Okt 2026** | Role `super_admin`@MSI milik Azhar Malik **diaktifkan kembali** (tanpa `valid_until`), atas permintaan Den | Tidak dicatat di sesi ini — permintaan Den | Claude chat + connector Supabase | ⚠️ **[SEMENTARA, PERLU DITINJAU]** TERVERIFIKASI MASIH AKTIF per 6 Okt 2026. Akun ini sekarang punya **TIGA role aktif sekaligus**: `ceo`@MSI, `super_admin`@MSI, `ceo`@SOA. Ini **akses sementara yang harus ditinjau/dicabut** — keputusan pencabutan diambil Den terpisah, **BUKAN bagian dari catatan ini**. `super_admin` bypass seluruh RLS company-scoped — radius dampaknya jauh lebih besar daripada tambahan role `ceo`@SOA di baris sebelumnya. |
+| 17 Sep 2026 | UPDATE `picking_lists`/item picking: `qty_picked` 500→550 untuk `PICK/SOA/WH/2026/0146` (SP `2280683`, item Shelf Strip Flat 90 CM); pemindahan **1.165 unit** Shelf Strip Flat 90 CM dari Gudang Lainnya ke Gudang Semper | Koreksi picking list statis yang tak ikut update (TD-267) + koreksi input penerimaan salah gudang (TD-268) — belum ada fitur transfer/edit stok antar gudang di aplikasi | SQL manual | Permanen. Detail lengkap: `08_TECH_DEBT.md` **TD-267** (picking snapshot statis) / **TD-268** (belum ada fitur transfer stok). |
+| 18 Sep 2026 | UPDATE `roles` (level 7→6) + INSERT 6 baris `role_menu_permissions` untuk role `bd_digital_marketing_spv` ("Digital Marketing Supervisor") — enam izin VIEW: `crm_dashboard`, `crm_pipeline`, `crm_prospects`, `crm_inquiry`, `crm_quotation`, `crm_customers` | Supaya role ini lolos `is_manager_or_above()` dan sejajar dengan Sales Supervisor | Claude chat + connector Supabase | Permanen. |
+| ~2 Sep 2026 (tanggal eksekusi tidak presisi, ditemukan lewat diff snapshot 5 Sep) | REVOKE akses `anon` pada fungsi `get_table_columns` | Pengerasan akses — fungsi itu tak seharusnya terbuka untuk `anon` | Tidak diketahui persis (ditemukan dari diff snapshot, bukan dicatat saat eksekusi) | Permanen. Sudah tercatat `08_TECH_DEBT.md` **TD-24 RESOLVED** / `03_DATA_MODEL.md` **gotcha #23** — ditautkan di sini karena ini JUGA contoh akses manual tanpa jejak git. |
+| 6 Okt 2026, 08:04 UTC | UPDATE `accounts.source`: akun "HOME WELL INDONESIA" (`id = 40808722-7a4a-4756-9061-c002692a685c`, company MSI) diubah dari `sales_visit` ke `whatsapp` | Salah pilih saat input awal | Claude chat + connector Supabase | Permanen. Terkait **TD-307** (`08_TECH_DEBT.md`) — field `source` di `ProspectFormPage.jsx` punya nilai DEFAULT diam-diam, bukan field wajib tanpa pilihan, yang sedang memicu kesalahan input seperti ini. |
+
+### Backfill Fase B — 68 SP historis Storbit-Indomarco (23-24 Sep 2026)
+
+**Status: SELESAI.** SQL langsung di production (BUKAN migrasi — diuji dulu dengan `BEGIN`+`ROLLBACK` sebelum dieksekusi sungguhan), memasukkan **68 SP historis Storbit-Indomarco** yang belum ada di Nexus ke `sp_orders`, `sp_items`, `sp_btb`, `picking_lists`, `delivery_notes`. **Sengaja TIDAK** menyentuh `stock_ledger`.
+
+⚠️ **Verifikasi kode (dilakukan sesi ini, 7 Okt 2026, read-only):** **TIDAK ADA file SQL/migrasi apa pun di repo** untuk backfill ini (konsisten dengan "SQL langsung di production, tanpa migration file"). Migrasi `20260923000001_invoice_historis_retroaktif.sql` yang ADA di repo (tanggal berdekatan) **TERNYATA untuk keperluan BERBEDA** — menambahkan parameter tanggal historis ke `create_invoice` untuk impor **468 invoice historis** 23-24 Sep 2026, **bukan** untuk 68 SP Fase B ini. **JANGAN disamakan kedua hal ini.**
+
+### Fase C — generate invoice untuk SP lama (TERTUNDA)
+
+**Status: TERTUNDA.** Rencana: generate invoice untuk SP lama dari backfill Fase B + sinkron status untuk **427 SP** yang cocok dengan rekap Finance. **Blocker:** fungsi `create_invoice`/`create_invoice_for_sp` membaca baris item dari `sp_order_items`, sedangkan Fase B mengisi `sp_items` — 68 SP baru itu **TIDAK punya baris di `sp_order_items`**, jadi invoice-nya tidak bisa diterbitkan lewat jalur normal. Menunggu keputusan: patch `create_invoice`/`create_invoice_for_sp` agar juga membaca `sp_items` untuk kasus ini, ATAU backfill ulang ke `sp_order_items` — dicatat sebagai **Keputusan Terbuka #68** di `09_ROADMAP.md`.
+
+**23 SP batch terakhir Fase C** ditahan karena bentrok dengan `STORBIT_SHIPPING_MANIFEST` (13 SP masih status Pending di manifest, 7 SP malah tidak ada di manifest sama sekali) — menunggu konfirmasi dari Gigih (pihak eksternal/Finance).
+
+> ⛔ **Aturan:** setiap perubahan manual terhadap data atau akses di production ke depan (SQL langsung, bukan lewat migrasi terkelola) wajib dicatat di bagian ini — tanggal, apa yang diubah, alasan, dan lewat mana dieksekusi.
 
 ---
 
