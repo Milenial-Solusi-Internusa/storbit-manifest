@@ -1310,19 +1310,19 @@ function navHasGate(item) {
   return !!(item && (item.public === true || MENU_KEY_MAP[item.id]));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
-function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
-  // Item Soon (Level 3 Bagian 1 yang belum punya halaman) tampil untuk SEMUA
-  // user — keputusan Den: kerangka menunya memang untuk dilihat semua orang.
-  // Ia tidak bisa diklik (lihat cabang `c.soon` di LeafRow) dan tidak membuka
-  // data apa pun, jadi ini murni visibilitas baris, bukan pemberian akses:
-  // gate KONTEN-nya tetap MENU_KEY_MAP → `skel_*` yang tidak di-seed, sehingga
-  // deep-link ke rutenya tetap super_admin-only.
+function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
+  // Item Soon (Level 3 Bagian 1 yang belum punya halaman) kini HANYA tampil
+  // untuk super_admin (revisi Den, rilis 14 Okt 2026) — sebelumnya tampil
+  // untuk semua user. Konten-nya tetap tidak bisa diklik untuk siapa pun
+  // selain super_admin: gate KONTEN-nya tetap MENU_KEY_MAP → `skel_*` yang
+  // tidak di-seed, jadi baris ini hanya menyamakan VISIBILITASNYA dengan gate
+  // konten yang sudah ada, bukan membuka akses baru.
   // Ditaruh di penjaga BERSAMA ini supaya `childVisible` (baris Level 3),
   // `navModuleVisible` (baris modul), dan OR grup Level 2 ikut benar sekaligus
   // — tanpa logika kedua yang harus diingat bergerak bersama.
-  if (c.soon) return true;
+  if (c.soon) return !!isSuperAdminUser;
   if (c.children) {
-    const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized));
+    const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized, isSuperAdminUser));
     if (subs.some(s => s === true)) return true;
     if (subs.every(s => s === null)) return null;
     return false;
@@ -1333,11 +1333,11 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
   return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
 }
 // Apakah modul Level 1 memuat minimal satu halaman HIDUP yang boleh dibuka user.
-// Sengaja TIDAK memakai navChildGate: penjaga itu menganggap item Soon terlihat
-// (memang begitu aturannya untuk baris Level 2/Level 3), sementara di tingkat
-// modul Soon TIDAK boleh ikut menentukan (keputusan Den, revisi visibilitas).
-// Tanpa pemisahan ini setiap modul akan selalu tampil untuk semua orang, karena
-// tiap modul pasti punya Soon.
+// Sengaja TIDAK memakai navChildGate: fungsi ini hanya pernah dipanggil untuk
+// NON-super_admin (pemanggilnya, `moduleVisible` di NexusSidebar, sudah
+// mem-bypass super_admin lebih dulu), dan untuk merekalah Soon harus TIDAK
+// PERNAH dihitung "hidup" — kalau tidak, modul yang isinya murni Soon akan
+// tetap tampil terbuka (bisa diklik) untuk siapa pun.
 function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
   return (nodes || []).some((n) => {
     if (n.soon) return false;                       // Soon tidak menghidupkan modul
@@ -1359,14 +1359,17 @@ function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
     return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
   });
 }
-function navModuleVisible(m, hasMenuPermission, isBnfAuthorized) {
-  if (m.soon) return true;             // roadmap skeleton — shown, disabled
+function navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
+  // Modul Level 1 ber-`soon:true` tidak pernah lahir dari SKELETON hari ini
+  // (kode mati), tapi ikut aturan "Soon hanya untuk super_admin" demi
+  // konsistensi dengan `navChildGate` kalau kelak ada yang menambahkannya.
+  if (m.soon) return !!isSuperAdminUser;
   if (m.target) {                      // direct-navigate leaf (Beranda)
     const real = findMenuItemById(m.target);
     if (!real || !navHasGate(real)) return true;
     return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
   }
-  const gates = (m.children || []).map(c => navChildGate(c, hasMenuPermission, isBnfAuthorized));
+  const gates = (m.children || []).map(c => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser));
   if (gates.some(g => g === true)) return true;                   // a visible gated child
   if (gates.length && gates.every(g => g === null)) return true;  // fully gateless → show
   return false;                                                   // gated children, none visible → hide
@@ -1378,12 +1381,12 @@ function navModuleContaining(id) {
 // Content-level gate (F4): mirror the sidebar so a page can't be rendered by a
 // role that can't see its menu. Gateless child → inherit its NEXUS_NAV module's
 // visibility (NOT default-deny → Asset sub-pages stay reachable when the module is).
-function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized) {
+function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
   if (!id) return true;
   const item = findMenuItemById(id);
   if (item && navHasGate(item)) return canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized);
   const mod = navModuleContaining(id);
-  if (mod) return navModuleVisible(mod, hasMenuPermission, isBnfAuthorized);
+  if (mod) return navModuleVisible(mod, hasMenuPermission, isBnfAuthorized, isSuperAdminUser);
   return true; // unknown/synthetic → allow (caller keeps its SYNTHETIC/prefix allow-list)
 }
 
@@ -1400,7 +1403,7 @@ function NexusSidebar({
   // Asset sub-page: they carry no gate, only the module `assets` does).
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
-  const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized) !== false;
+  const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) !== false;
   // Level 1: tampil HANYA kalau user boleh membuka minimal satu Level 3 hidup di
   // dalamnya (keputusan Den). super_admin dikecualikan — ia tetap melihat
   // sembilan modul, termasuk Console & PPJK yang hari ini NOL halaman hidup dan
@@ -1408,7 +1411,7 @@ function NexusSidebar({
   // Modul ber-`target` (Beranda, Admin Settings) tidak punya anak → tetap
   // dinilai navModuleVisible seperti sebelumnya.
   const moduleVisible = (m) => {
-    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized)) return false;
+    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser)) return false;
     if (!m.children) return true;
     if (isSuperAdminUser) return true;
     return navModuleHasLivePage(m.children, hasMenuPermission, isBnfAuthorized);
@@ -2147,7 +2150,7 @@ export default function StorbitManifest() {
     // and this guard bounced the user to the first visible menu (the public
     // Command Center dashboard). Reusing isMenuAccessible keeps the sidebar, the
     // content gate, and this redirect perfectly in sync (opsi A).
-    if (isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized)) return;
+    if (isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, isSuperAdmin(authErpRoles))) return;
 
     // Not accessible → land on the first visible top-level menu (or home).
     const visFlat = ERP_MENU_GROUPS
@@ -2158,7 +2161,7 @@ export default function StorbitManifest() {
     // guard passes on the next run, so this does not loop. `replace`: alamat yang
     // ditolak tidak tertinggal sebagai entri riwayat.
     navigate(pathFor(visFlat[0]?.id || 'home') ?? '/home', { replace: true });
-  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading, navigate]);
+  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading, navigate, authErpRoles]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
@@ -2539,7 +2542,10 @@ export default function StorbitManifest() {
     // F4: per-item gate mirroring the sidebar (gateless child inherits its
     // module's visibility) — replaces the coarse "parent visible → all children
     // accessible" (collectMenuIds) that let ungranted child pages render.
-    return isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized);
+    // isSuperAdminUser sudah dipastikan false di titik ini (early-return baris
+    // pertama fungsi ini) — diteruskan apa adanya demi konsistensi signature
+    // dengan pemanggil navModuleVisible lainnya.
+    return isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, false);
   })();
 
   // AppShellContext (Batch FS Fase 2.5 G1) — seluruh state/setter/handler yang

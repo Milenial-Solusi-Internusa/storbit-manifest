@@ -10,7 +10,7 @@
      Rp nominal) — product decision.
    - New palette (soft navy + pastels), lucide icons, Montserrat/Inter.
    ========================================================================= */
-import { Plus, FileText, CheckCircle2, Megaphone, Clock, User, Receipt } from 'lucide-react';
+import { Plus, FileText, CheckCircle2, Megaphone, Clock, User, Receipt, ClipboardList } from 'lucide-react';
 
 const NAVY = '#1B4D8A';
 const INK = '#212A37';
@@ -38,6 +38,16 @@ const TASKS = [
     actions: [{ label: 'Tinjau', kind: 'pri', to: 'crm-customers' }] },
   { gate: 'quotation-draft', tone: ['#E7F4ED', '#479467'], icon: FileText, title: 'Setujui quotation', sub: 'QT-0412 · Martin · MSI',
     actions: [{ label: 'Tolak', kind: 'sec', to: 'quotation-draft' }, { label: 'Setujui', kind: 'pri', to: 'quotation-draft' }] },
+];
+
+// Layanan Karyawan — kartu HRGA untuk SEMUA karyawan (menu HCGA sejak
+// kerangka Bagian 1 hanya tampil untuk tim HCGA di sidebar, jadi pengajuan
+// HRGA butuh pintu masuk lain yang terlihat semua orang). Kedua id ini
+// `public: true` di App.jsx — gate `can()` di bawah tetap dipakai demi
+// konsistensi dengan QUICK, bukan karena diharapkan pernah menyaring siapa pun.
+const HRGA_LINKS = [
+  { id: 'hrga-buat-request', label: 'Buat Permintaan' },
+  { id: 'hrga',              label: 'Permintaan Saya' },
 ];
 
 const ANNOUNCEMENTS = [
@@ -77,6 +87,7 @@ export default function HomeDashboard({ profile, currentRoleLabel, onNavigate, c
     { id: 'crm-inquiry',     label: 'Catat Inquiry',  icon: FileText },
   ].filter(q => can(q.id));
   const visibleTasks = TASKS.filter(t => can(t.gate));
+  const hrgaLinks = HRGA_LINKS.filter(l => can(l.id));
 
   return (
     <div style={{ padding: '6px 30px 46px', maxWidth: 1240, margin: '0 auto', fontFamily: "'Inter', system-ui, sans-serif", color: INK }}>
@@ -185,6 +196,29 @@ export default function HomeDashboard({ profile, currentRoleLabel, onNavigate, c
 
         {/* RIGHT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {hrgaLinks.length > 0 && (
+            <Panel delay={0.24}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+                <ClipboardList size={17} style={{ color: NAVY }} />
+                <h4 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14, margin: 0 }}>
+                  Layanan Karyawan
+                </h4>
+              </div>
+              <p style={{ fontSize: 12, color: MUTE, margin: '0 0 14px', lineHeight: 1.5 }}>
+                Pengajuan HRGA terbuka untuk semua karyawan Nexus.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {hrgaLinks.map((l, i) => (
+                  <button key={l.id} type="button" onClick={() => nav(l.id)}
+                    style={{ fontSize: 11.5, fontWeight: 600, border: 'none', borderRadius: 9, padding: '8px 14px', cursor: 'pointer',
+                      background: i === 0 ? NAVY : '#EDF0F4', color: i === 0 ? '#fff' : '#525E70' }}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          )}
+
           <Panel delay={0.28}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h4 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 9, margin: 0 }}>

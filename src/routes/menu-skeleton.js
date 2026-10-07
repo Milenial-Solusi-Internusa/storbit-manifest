@@ -164,7 +164,7 @@ export const SKELETON = [
         ],
       },
       {
-        code: "1.7", label: "Pipeline & Deal Tracking", slug: "pipeline",
+        code: "1.7", label: "Pipeline & Inquiry Tracking", slug: "pipeline",
         path: "/crm/pipeline", icon: TrendingUp,
         tabs: [
           { code: "1.7.1", label: "Stage-based Pipeline Board", slug: "board", path: "/crm/pipeline/board",
@@ -175,7 +175,7 @@ export const SKELETON = [
           { code: "1.7.2", label: "Win/Loss/Cancellation Tracking", slug: "win-loss", path: "/crm/pipeline/win-loss",
             desc: "mencatat hasil akhir deal beserta alasannya.",
             id: "ph-1-7-2", menuKey: "skel_1_7_2", mounts: [] },
-          { code: "1.7.3", label: "Deal Aging & Follow-up Reminder", slug: "deal-aging", path: "/crm/pipeline/deal-aging",
+          { code: "1.7.3", label: "Inquiry Aging & Follow-up Reminder", slug: "deal-aging", path: "/crm/pipeline/deal-aging",
             desc: "mengingatkan deal yang sudah lama tidak ada progres.",
             mounts: [
               { menuId: "crm-calls", path: "/crm/pipeline/deal-aging/schedule", label: "Jadwal & Tindak Lanjut" },
@@ -290,7 +290,7 @@ export const SKELETON = [
           { code: "2.3.2", label: "Multi-level Approval", slug: "multi-level-approval", path: "/procurement/prf/multi-level-approval",
             desc: "memproses persetujuan berjenjang atas permintaan tersebut.",
             id: "ph-2-3-2", menuKey: "skel_2_3_2", mounts: [] },
-          { code: "2.3.3", label: "Linking to Related Inquiry/Deal", slug: "linking", path: "/procurement/prf/linking",
+          { code: "2.3.3", label: "Linking to Related Inquiry", slug: "linking", path: "/procurement/prf/linking",
             desc: "menautkan permintaan ke inquiry atau deal terkait.",
             mounts: [
               { menuId: "proc-sales-order", path: "/procurement/prf/linking" },
