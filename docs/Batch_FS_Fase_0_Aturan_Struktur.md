@@ -102,16 +102,27 @@ modules/crm/
     pages/          LeadListPage.jsx
   inquiry/
     pages/          InquiryListPage.jsx, InquiryDetailPage.jsx
+    documents/      InquiryPDF.jsx
   quotation/
-    pages/          QuotationFormPage.jsx, QuotationDetailPage.jsx
-    documents/      QuotationPDF.jsx
+    pages/          QuotationFormPage.jsx, QuotationDetailPage.jsx,
+                    RateListPage.jsx
+    documents/      QuotationPDF.jsx, RateSheetPDF.jsx
   pipeline/
     pages/          PipelineKanbanPage.jsx
   customer/
     pages/          CustomerListPage.jsx, CustomerDetailPage.jsx
-    documents/      ActivityReportPDF.jsx, VisitHistoryPDF.jsx, RateSheetPDF.jsx
+  sales-order/
+    pages/          SalesOrderPage.jsx, SalesOrderDetailPage.jsx
+    documents/      StorbitReportPDF.jsx
+  sales-activity/
+    pages/          ActivitiesPage.jsx, ActivityLogPage.jsx,
+                    RiwayatVisitPage.jsx
+    documents/      ActivityReportPDF.jsx, VisitHistoryPDF.jsx
+  sales-target/
+    pages/          SalesTargetsPage.jsx
   handover/
-    pages/          (menyusul, lihat catatan Order Handover di Bagian 10)
+    pages/          (menyusul, lihat catatan Order Handover di Catatan
+                    Terbuka yang Dibawa ke Fase Berikutnya)
   components/       HANYA komponen yang dipakai 2 sub-fitur CRM atau lebih;
                     dipakai di 1 sub-fitur saja, taruh di dalam sub-fitur itu
 ```
@@ -234,10 +245,60 @@ Kalau hasil audit menyimpulkan bagian struktural ini perlu disatukan, rumah targ
 modules/sales-order/ (SO CRM, 1 baris data)
   -> digabung masuk modules/crm/, karena itu memang rumahnya di Bagian 1
 
-modules/logistics/SalesOrderPage.jsx (SP Storbit)
-  -> tetap nama Sales Order, tapi rumahnya modules/logistics-warehouse/,
-     dan penjelasan "ini Surat Pesanan Storbit" ditegaskan di komentar
-     kepala file supaya tidak ketukar lagi
+modules/logistics/SalesOrderPage.jsx + SalesOrderDetailPage.jsx (SP Storbit)
+  -> pindah ke modules/crm/sales-order/pages/, karena sales yang
+     menginput SP bekerja di CRM, dan mockup memakai sales Storbit
+     sebagai pemilik SP (keputusan penempatan file, Okt 2026). Selama
+     penginput SP masih tim gudang, diatur lewat hak akses, bukan lewat
+     penempatan folder. Halaman gudang lanjutan (picking, Surat Jalan,
+     BTB) tetap di modules/logistics-warehouse/. File pendamping
+     spDetailKit.jsx, spDetailTokens.js, dan salesOrderDetail.module.css
+     TIDAK ikut pindah di sini, lihat Catatan Terbuka. Fase 3.
+
+modules/logistics/InvoicePDF.jsx
+  -> pindah ke modules/finance-accounting/accounts-receivable/documents/.
+     Syarat invoice harus punya SP, SO, atau PO customer dijaga oleh
+     hubungan data, bukan letak folder. Fase 3.
+
+modules/logistics/printKit.jsx + printTokens.js
+  -> pindah ke src/kit/print/, isi tidak diubah. Dipakai InvoicePDF.jsx
+     (Finance) dan StorbitReportPDF.jsx (CRM) selain PickingListPDF.jsx
+     dan DeliveryNotePDF.jsx yang tetap di logistics-warehouse; dipindah
+     bersamaan dengan InvoicePDF dan StorbitReportPDF supaya tidak ada
+     jendela waktu impor lintas modul yang patah. Penyatuan bagian
+     struktural PDF (kop, footer, tanda tangan, watermark) antar dokumen
+     tetap menunggu audit dan dieksekusi di Fase 7 sesuai Bagian 9,
+     pemindahan folder ini tidak menyelesaikan audit itu. Fase 3.
+
+modules/logistics/StorbitReportPDF.jsx
+  -> pindah ke modules/crm/sales-order/documents/, karena ini laporan
+     status SP. Fase 3.
+
+modules/procurement/PRFDetailPage.jsx, PRFFormPage.jsx,
+PRFVendorOfferModal.jsx, prfShared.js, ProcInquiryForwardingPage.jsx
+  -> pindah ke modules/procurement/rate-sourcing/pages/, karena fitur
+     PRF yang hidup adalah Rate Request. procurement/purchase-requisition/
+     dibiarkan kosong, menunggu pembelian internal dibangun. Fase 7.
+
+modules/procurement/VendorListPage.jsx
+  -> pindah ke modules/procurement/vendor/pages/. Fase 7.
+
+modules/crm/ActivitiesPage.jsx, ActivityLogPage.jsx, RiwayatVisitPage.jsx
+  -> pindah ke modules/crm/sales-activity/pages/ (folder baru, Grand
+     Design 1.11, usulan). Fase 7.
+
+modules/crm/ActivityReportPDF.jsx, VisitHistoryPDF.jsx
+  -> pindah ke modules/crm/sales-activity/documents/. Fase 7.
+
+modules/crm/RateSheetPDF.jsx, RateListPage.jsx
+  -> pindah ke modules/crm/quotation/documents/ dan pages/, karena ini
+     daftar harga jual untuk customer, bukan data customer atau rate
+     sourcing vendor. Fase 7.
+
+modules/admin/pages/SalesTargetsPage.jsx
+  -> pindah ke modules/crm/sales-target/pages/, menunya dipasang di CRM
+     1.9.1 sesuai Grand Design, tanpa perubahan tampilan. Desain ulang
+     mengikuti mockup menunggu Batch DS 3. Fase 3.
 
 App.jsx inline CustomersPage/FinancePage/OutstandingPage/ARTrackerPage
   -> dipindah jadi modules/finance-accounting/pages/, bukan lagi
@@ -260,11 +321,15 @@ BNF-family sudah final diputuskan dihapus total (lihat Bagian 2a), bukan lagi me
 
 Sembilan folder huruf kecil yang beku sejak Mei-Juli (architecture, database, security, dan sejenisnya) dipindah ke `docs/archive/` atau dihapus kalau isinya sudah tergantikan total oleh Governance. `docs/Governance/` jadi satu-satunya dokumentasi teknis yang hidup.
 
+**Cakupan diukur ulang doc-keeper 7 Okt 2026 (`ls`/`find` langsung ke repo):** **8 folder** memenuhi kriteria "beku sejak Mei-Juli" — `architecture/` (5 file) · `database/` (5) · `integration/` (2) · `modules/` (1) · `operations/` (12) · `performance/` (4) · `security/` (5) · `workflow/` (3) = **37 file ter-track total**. ⚠️ Paragraf di atas menulis "sembilan folder" — angka terukur hari ini **delapan**; dicatat sebagai temuan verifikasi, bukan dikoreksi sepihak (mungkin ada folder kesembilan yang sudah hilang/digabung sebelum tanggal pengukuran ini, atau angka awal memang perlu dikonfirmasi Den). Pemindahan/penghapusan kedelapan folder ini (dan file kesembilan yang belum teridentifikasi, kalau memang ada) **adalah cakupan Fase 5 ("bersihkan docs") — BELUM dieksekusi, sengaja ditunda** (lihat urutan fase di footer dokumen ini dan `09_ROADMAP.md`).
+
 ---
 
 ## 12. Aturan Root Repo
 
 Seed data dan file backup pindah ke folder baru `scripts/seed/` dan `scripts/backup/`, tidak boleh lagi ada file lepas nangkring di root.
+
+**Cakupan diukur ulang doc-keeper 7 Okt 2026:** selain seed/backup, root repo hari ini juga punya **7 file audit/design lepas** yang masuk kategori "file lepas nangkring di root" — `AUDIT_B4_READINESS.md` · `AUDIT_CRM_FLOW.md` · `AUDIT_STAGE_MOVE.md` · `DESIGN_SP_SCHEMA.md` · `DESIGN_STOCK_OPNAME_SCHEMA.md` · `PREFLIGHT_LIFECYCLE.md` · `STATUS.md`. Target akhirnya sudah tertulis di `docs/Batch_FS_Peta_Struktur_Target.md` §Root ("Tidak ada lagi file seed, backup, atau dokumen audit lepas nangkring di root"). Pemindahan/penghapusan ketujuh file ini **adalah cakupan Fase 6 ("bersihkan root") — BELUM dieksekusi, sengaja ditunda**, sama seperti kedelapan folder `docs/` di §11.
 
 ---
 
@@ -289,6 +354,12 @@ Satu hal yang sengaja TIDAK masuk delapan fase Batch FS ini karena skalanya beda
 ---
 
 ## Catatan Terbuka yang Dibawa ke Fase Berikutnya
+
+### Pertentangan struktur belum diputuskan: `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` vs `docs/Batch_FS_Peta_Struktur_Target.md` (ditemukan 7 Okt 2026, doc-keeper)
+
+Keberadaan `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` (dibuat 25 Sep 2026, aktif dipakai sebagai daftar urut perubahan database yang belum berlaku di produksi) **BERTENTANGAN** dengan `docs/Batch_FS_Peta_Struktur_Target.md`, yang menyatakan `docs/Governance/` berisi **PERSIS 11 file** bernomor 00 sampai 10 (lihat bagian `## docs/` di peta itu — "Persis sebelas file, satu keluarga penomoran 00 sampai 10. Tidak ada file lepas di `docs/` di luar `Governance/` dan `archive/`."). File `12_ANTREAN_MIGRASI_PRODUCTION.md` ADA dan aktif dipakai, tapi tidak masuk hitungan itu.
+
+**Ini dicatat sebagai keputusan yang BELUM diambil** — apakah file ini diberi nomor resmi 11, atau digabung ke dokumen lain (kandidat: `09_ROADMAP.md`, karena isinya murni status eksekusi migrasi), atau peta targetnya direvisi untuk mengakui keberadaannya. **JANGAN diputuskan sepihak oleh agen dokumentasi** — JANGAN ubah `Batch_FS_Peta_Struktur_Target.md` atau pindahkan/rename `12_ANTREAN_MIGRASI_PRODUCTION.md` tanpa instruksi eksplisit Den.
 
 ### Status Fase 1 — buang dead code yang tidak terjadwal di rencana lain (21 Sep 2026)
 
@@ -908,6 +979,50 @@ Order Handover (sub-fungsi Level 2 CRM di Bagian 1) sudah punya jejak kode:
 Bagian struktural PDF (kop, footer, tanda tangan, watermark)
   -> audit dulu pemakaian printKit.jsx vs versi sendiri-sendiri di CRM,
      sebelum eksekusi Fase 7
+
+Kalender kunjungan dan modal tambah kunjungan (keputusan penempatan file,
+Okt 2026, keputusan 7): saat ini menumpang sebagai tab Calendar di
+CRMDashboardPage.jsx
+  -> dicatat saja sebagai bagian yang akan diekstrak ke sales-activity/
+     saat Batch DS 3, karena memisahkannya berarti mengubah kode, bukan
+     sekadar memindah file; Batch FS tidak mengeksekusinya sekarang
+
+CRMReportPage.jsx, Laporan Penjualan (keputusan penempatan file, Okt
+2026, keputusan 8): dijadwalkan dihapus setelah Sales Activity Report
+ada
+  -> sampai saat itu tetap di modules/crm/, diberi catatan di kepala
+     file; bukan entri Daftar Rename karena tujuannya penghapusan, bukan
+     pemindahan
+
+BTB Storbit (keputusan penempatan file, Okt 2026, keputusan 10): belum
+ada file komponen tersendiri, UI-nya (issueSpBtb, btbInput/btbDate,
+daftar nomor BTB) menyatu di dalam SalesOrderDetailPage.jsx yang pindah
+ke modules/crm/sales-order/pages/ (Bagian 10)
+  -> begitu diekstrak jadi komponen sendiri, rumahnya
+     modules/logistics-warehouse/warehouse/proof-of-delivery/ (nama
+     disamakan dengan freight/proof-of-delivery/ yang sudah dicadangkan
+     untuk bukti serah terima freight MSI). Waktunya TIDAK dikunci ke
+     Fase 7 — ekstraksi terjadi begitu halaman detail SP pertama kali
+     dikerjakan ulang, yaitu Batch DS 3 atau Fase 7, mana yang lebih
+     dulu tiba
+
+File pendamping SalesOrderDetailPage.jsx: spDetailKit.jsx,
+spDetailTokens.js, dan salesOrderDetail.module.css (keputusan
+penempatan file, Okt 2026): ini kit tampilan khas Storbit, dipakai
+halaman SP, delapan lebih halaman di modules/finance/ (InvoiceDetailPage,
+TtfDetailPage, InvoiceListPage, CollectionTrackingPage, ArAgingPage,
+ReadyToInvoicePage, TtfSubmissionPage, financeKit, useInvoiceWorkflow,
+invoiceStatus), dan StorbitDashboardPage.jsx
+  -> sesuai keputusan design system di CLAUDE.md, halaman-halaman ini
+     ikut penyatuan ke kit tunggal (src/kit/) di Batch DS. File-file ini
+     DIGANTI kit tunggal, bukan dipindah. Selama belum diganti, file
+     tetap di modules/logistics/ dan TIDAK dipindah di Batch FS
+
+Catatan terpisah, bukan perubahan aturan: ketiga file pendamping di atas
+dipakai tepat 2 modul (CRM dan Finance), sementara §5 baru membuka jalan
+ke src/lib atau src/hooks global pada ambang 3 modul atau lebih. Berkas
+yang dipakai pas 2 modul belum punya rumah yang jelas di aturan manapun.
+Dicatat sebagai celah untuk disadari, aturan §5 TIDAK diubah di sini.
 ```
 
 ---

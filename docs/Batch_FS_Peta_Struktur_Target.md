@@ -16,8 +16,9 @@ src/
   components/          komponen lintas MODUL saja
   contexts/
   hooks/               hook lintas MODUL saja
-  kit/                 design system (Batch DS), termasuk kit/print/ kalau
-                       audit bagian struktural PDF menyimpulkan perlu disatukan
+  kit/                 design system (Batch DS), termasuk kit/print/ —
+                       printKit.jsx dan printTokens.js, dipakai Invoice,
+                       Storbit Report, Picking List, dan Surat Jalan
   lib/                 utilitas lintas MODUL saja
 
   modules/
@@ -25,28 +26,35 @@ src/
       lead/
       inquiry/
         pages/
+        documents/          InquiryPDF
       feasibility/
         pages/
       quotation/
         pages/
         documents/
       sales-order/
+        pages/
+        documents/
       shipment-instruction/
       pipeline/
         pages/
       customer/
         pages/
+      sales-activity/
+        pages/
         documents/
       sales-target/
+        pages/
       handover/
         pages/
       components/       lintas 2+ sub-fitur CRM
 
     procurement/
       vendor/
-      rate-sourcing/
-      purchase-requisition/
         pages/
+      rate-sourcing/
+        pages/
+      purchase-requisition/
       purchase-order/
       trading-procurement/
       vendor-evaluation/
@@ -57,11 +65,8 @@ src/
         export-packing-list/
         shipment-execution/
         fleet-trucking/
-        proof-of-delivery/
+        proof-of-delivery/   dicadangkan untuk bukti serah terima freight MSI
       warehouse/
-        sales-order/
-          pages/
-          documents/
         goods-receiving/
           pages/
         bin-management/
@@ -72,11 +77,12 @@ src/
         delivery-note/
           pages/
           documents/
+        proof-of-delivery/   BTB Storbit, menyusul diekstrak dari
+                             SalesOrderDetailPage.jsx
         stock-transfer/
         stock-opname/
         stock-dashboard/
         barcode-label/
-      documents/          dokumen lintas sub-fitur (Invoice, Storbit Report)
 
     console/
       consolidation-planning/
@@ -96,7 +102,7 @@ src/
       cash-bank/
       accounts-receivable/
         pages/
-        documents/
+        documents/          InvoicePDF
       accounts-payable/
       general-ledger/
       tax-compliance/
