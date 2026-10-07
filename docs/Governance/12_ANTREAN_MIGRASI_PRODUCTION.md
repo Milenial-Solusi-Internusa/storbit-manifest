@@ -16,6 +16,8 @@
 > Kolom "staging" di bawah **diukur langsung** ke `nexus-staging` 25 Sep 2026, bukan diasumsikan dari laporan.
 >
 > ⏰ **[Klarifikasi 7 Okt 2026] Rencana rilis gabungan "15 Oktober 2026" (AR Tahap 1-3b + Batch Finance AR) punya DUA tanggal, jangan tertukar:** jendela **EKSEKUSI** SQL/deploy = **malam 14 Okt 2026** (sesudah jam kerja); **EFEKTIF** dipakai Finance = **pagi 15 Okt 2026**. "15 Oktober" di seluruh dokumen (`CLAUDE.md`, `PROGRESS.md`) merujuk tanggal EFEKTIF, bukan jendela eksekusi.
+>
+> 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), penanda langkah tak-bisa-di-rollback, titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
 
 ---
 
@@ -503,7 +505,19 @@ Sepuluh berkas `20260928*` lahir dari satu keputusan: **seluruh kolom form invoi
 
 ⚠️ **Seluruh sepuluh berkas dijalankan di STAGING 25 Sep 2026. Produksi belum satu pun.** Angka di bawah diukur di staging kecuali disebutkan lain.
 
-> ⚠️ **[7 Okt 2026] PERINGATAN RILIS — tabel tracking migrasi Supabase TIDAK BISA DIPERCAYA untuk rentang tanggal ini, belum diverifikasi penuh.** Temuan (read-only, lewat `list_migrations` Supabase dibandingkan file repo): kesepuluh migrasi invoice v2 di atas (`invoice_header_v2` dkk) tercatat di tabel `supabase_migrations.schema_migrations` **STAGING** dengan timestamp versi **25 September** (contoh: `20260925094015`), TAPI file-nya di repo bertanggal **28 September** (`20260928000001_invoice_header_v2.sql` dkk). **Penyebab paling mungkin** (belum diverifikasi penuh): migrasi pertama kali dijalankan ke staging 25 Sep (lewat `supabase db push` atau serupa, tercatat versi itu), lalu file-nya ditulis ulang/diberi nomor baru 3 hari kemudian (28 Sep) saat didokumentasikan ke repo, **tanpa memperbarui tabel tracking staging** supaya cocok. **Kita TIDAK bisa memverifikasi isi persis cocok** tanpa membandingkan SQL langsung (di luar scope read-only sesi ini) — ini adalah **asumsi, bukan fakta pasti**. ⛔ **SEBELUM rilis 14/15 Oktober: JANGAN menjalankan ulang `20260928000001` dkk ke staging** mengira belum jalan HANYA berdasarkan tabel tracking Supabase — **cek dulu apakah objeknya (fungsi/kolom/tabel) sudah ada di staging dengan query langsung**, karena tabel tracking staging **tidak bisa dipercaya** untuk rentang ini. Pola serupa juga ditemukan di **production** untuk migrasi 18 Sep (`20260918000001_set_sql_on_quotation_sent.sql` vs tracking versi `20260918100429`) — **TD-279** (`08_TECH_DEBT.md`) sudah menyinggung sebagian dari kelas masalah ini (drift staging vs produksi), ditautkan di sini sebagai kerabat, bukan duplikat.
+> ⚠️ **[7 Okt 2026] PERINGATAN RILIS — tabel tracking migrasi Supabase TIDAK BISA DIPERCAYA untuk rentang tanggal ini.** Temuan (read-only, lewat `list_migrations` Supabase dibandingkan file repo): kesepuluh migrasi invoice v2 di atas (`invoice_header_v2` dkk) tercatat di tabel `supabase_migrations.schema_migrations` **STAGING** dengan timestamp versi **25 September** (contoh: `20260925094015`), TAPI file-nya di repo bertanggal **28 September** (`20260928000001_invoice_header_v2.sql` dkk). **Penyebab paling mungkin:** migrasi pertama kali dijalankan ke staging 25 Sep (lewat `supabase db push` atau serupa, tercatat versi itu), lalu file-nya ditulis ulang/diberi nomor baru 3 hari kemudian (28 Sep) saat didokumentasikan ke repo, **tanpa memperbarui tabel tracking staging** supaya cocok.
+>
+> ✅ **[7 Okt 2026, lanjutan] DIVERIFIKASI — isinya IDENTIK, anomalinya murni kosmetik di tabel tracking.** Dibandingkan langsung (read-only `execute_sql` ke **staging**, `oovmlhilhqzejnawqkvt`, nol tulis) terhadap isi kesepuluh berkas repo saat ini:
+> - **`set_invoice_tax_info`** (butir 22, diamandemen butir 26) — `pg_get_functiondef` yang hidup di staging **byte-identik** dengan badan `CREATE OR REPLACE` di `20260928000011_invoice_coretax_code_whitelist.sql`, termasuk komentar inline-nya ("BARU di berkas 11: kode Coretax harus dari daftar 01..10", peringatan `substring` vs `LIKE '[0-9][0-9]%'`) — bukan cuma logiknya yang sama, teksnya sama sampai ke komentar.
+> - **10 fungsi lain yang diperiksa** (`invoice_dapat_dibaca`, `mark_invoice_printed`, `mark_invoice_emailed`, `link_replacement_invoice`, `add_invoice_attachment`, `delete_invoice_attachment`, `add_invoice_note`, `delete_invoice_note`, `get_mapped_account`, `compute_payment_term_days`) — semuanya ADA, nol yang hilang.
+> - **Kolom** `sp_invoices` (21 kolom baru dari butir 16) dan `sp_invoice_lines` (16 kolom dari butir 17, termasuk `qty` sudah `numeric` bukan `integer`) — seluruhnya ADA dengan tipe/default/nullable **persis** seperti yang ditulis di file.
+> - **14 CHECK constraint** (seluruh `*_terkunci` + `sp_invoices_source_type_check`/`sp_invoices_sp_order_id_wajib_utk_storbit`/`sp_invoices_print_to_check`/`sp_invoices_print_count_check`/`sp_invoices_total_currency_cocok`/`sp_invoice_lines_line_type_check`/`sp_invoice_lines_amount_rumus`/`sp_invoice_lines_shipping_bukan_basis_pajak`) — seluruhnya ADA dengan definisi yang cocok kata demi kata (`pg_get_constraintdef`).
+> - **3 tabel baru** (`invoice_notes` 7 kolom, `invoice_attachments` 10 kolom, `account_role_mappings` 7 kolom) + **bucket Storage `invoice-docs`** (privat, `public=false`) — seluruhnya ADA.
+> - **ACL write-lockdown (butir 19):** `sp_invoice_lines.authenticated` = `r` saja (nol insert/update/delete) · `sp_invoices.authenticated` = `rd` di level tabel (nol insert/update tabel) **ditambah tepat 9 kolom** ber-`UPDATE` kolom-spesifik untuk `authenticated` (`company_id`/`created_at`/`created_by`/`deleted_at`/`id`/`invoice_date`/`sp_order_id`/`submit_ref`/`updated_at`) — **`faktur_no` SENGAJA TIDAK ADA di daftar itu**, persis klaim butir 16/19 "9 kolom sesudah faktur_no dicabut".
+>
+> **Kesimpulan: anomali versi HANYA ADA di tabel tracking Supabase, BUKAN di isi objeknya.** SQL yang benar-benar jalan di staging 25 Sep = SQL yang hari ini tertulis di kesepuluh file repo bertanggal 28 Sep — tidak ada versi lain yang tercecer di antaranya.
+>
+> ⛔ **SEBELUM rilis 14/15 Oktober: JANGAN menjalankan ulang `20260928000001` dkk ke staging** mengira belum jalan HANYA berdasarkan tabel tracking Supabase. Kalau perlu memastikan lagi, **cek objeknya (fungsi/kolom/tabel), bukan tabel tracking** — cara itu sudah terbukti lewat verifikasi di atas. **Saat malam rilis, jalankan kesepuluh file ke PRODUCTION memakai NAMA FILE yang ada di repo sekarang** (`20260928000001` s/d `20260928000011`, kecuali `20260928000005` yang memang staging-only) — produksi belum pernah menjalankan satu pun darinya, jadi di sisi production tidak ada risiko dijalankan dua kali untuk batch ini; risiko "tertukar versi" hanya relevan kalau pola push-lalu-ganti-nama ini terulang untuk migrasi berikutnya, dan aturannya tetap sama: verifikasi dengan query ke objeknya. Pola serupa juga ditemukan di **production** untuk migrasi 18 Sep (`20260918000001_set_sql_on_quotation_sent.sql` vs tracking versi `20260918100429`) — **TD-279** (`08_TECH_DEBT.md`) sudah menyinggung sebagian dari kelas masalah ini (drift staging vs produksi), ditautkan di sini sebagai kerabat, bukan duplikat.
 
 ---
 
@@ -1354,6 +1368,291 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 **23 SP batch terakhir Fase C** ditahan karena bentrok dengan `STORBIT_SHIPPING_MANIFEST` (13 SP masih status Pending di manifest, 7 SP malah tidak ada di manifest sama sekali) — menunggu konfirmasi dari Gigih (pihak eksternal/Finance).
 
 > ⛔ **Aturan:** setiap perubahan manual terhadap data atau akses di production ke depan (SQL langsung, bukan lewat migrasi terkelola) wajib dicatat di bagian ini — tanggal, apa yang diubah, alasan, dan lewat mana dieksekusi.
+
+---
+
+## Naskah Eksekusi Malam Rilis — 14 Oktober 2026
+
+**Jendela eksekusi:** malam **14 Oktober 2026**, sesudah jam kerja. **Efektif dipakai Finance:** pagi **15 Oktober 2026**. Dua tanggal ini TIDAK boleh tertukar (klarifikasi 7 Okt 2026, lihat catatan di kepala dokumen).
+
+**Cakupan naskah ini: butir 6-46** (AR Tahap 1 sisa, AR Tahap 2 + Invoice Lengkap, Paket Keamanan TD-281 H1/H2/H3/H5 — sudah LIVE, hanya checkpoint, AR Tahap 3, AR Tahap 3b). **Butir 6, 7, 27-31, 45, 46 SUDAH LIVE** di kedua lingkungan — disebut di sini hanya sebagai checkpoint "pastikan masih utuh", bukan tindakan baru. ⛔ **TIDAK termasuk TD-300 Group E** — lihat penjelasan di penutup naskah ini.
+
+**Siapa menjalankan apa:** seluruh SQL di bawah dijalankan **Den** secara manual di SQL Editor/`execute_sql`, berurutan sesuai nomor. Naskah ini hanya urutan + apa yang harus dilihat di tiap langkah — bukan tombol otomatis.
+
+### Persiapan H-1 (13 Oktober 2026)
+
+**Tujuan: pindahkan sebanyak mungkin KEPUTUSAN keluar dari malam rilis.** Keempat langkah di bawah **read-only** (nol tabel diubah, aman dijalankan ke **production** kapan pun, termasuk hari ini) — hasilnya dipakai untuk meninjau angka lebih awal, BUKAN untuk menggantikan pengukuran ULANG di Langkah 0/1E malam itu (data bergerak setiap hari; angka H-1 adalah pratinjau, bukan angka final).
+
+#### H-1.1 — Pratinjau radius dampak butir 9
+
+Replika PERSIS logika tiga guard di `20260926000002_ar_single_issue_path.sql` (BTB ada → SJ tidak ada yang belum selesai → ada SJ `delivered` ber-`signed_date`), dengan urutan prioritas kategori sama dengan urutan pengecekan di fungsinya (kalau sebuah SP gagal di lebih dari satu guard, ia dihitung di guard yang PERTAMA kali ditolak fungsinya):
+
+```sql
+-- READ-ONLY. Aman di production kapan pun -- SELECT murni, nol tabel diubah.
+WITH kirim AS (
+  SELECT so.id, so.sp_no, so.company_id, so.customer_id,
+         COALESCE(SUM(soi.qty),0) AS ordered, COALESCE(SUM(soi.shipped_qty),0) AS shipped
+    FROM sp_orders so
+    JOIN sp_order_items soi ON soi.sp_order_id = so.id
+   WHERE so.deleted_at IS NULL
+   GROUP BY so.id, so.sp_no, so.company_id, so.customer_id
+),
+terkirim_penuh AS (
+  SELECT * FROM kirim WHERE ordered > 0 AND shipped = ordered
+),
+belum_invoice AS (
+  SELECT t.* FROM terkirim_penuh t
+   WHERE NOT EXISTS (SELECT 1 FROM sp_invoices i WHERE i.sp_order_id = t.id AND i.status <> 'void')
+),
+kategori AS (
+  SELECT b.*,
+    CASE
+      WHEN NOT EXISTS (SELECT 1 FROM sp_btb bt WHERE bt.sp_order_id = b.id AND bt.deleted_at IS NULL)
+        THEN '1_tertahan_btb'
+      WHEN EXISTS (SELECT 1 FROM delivery_notes d WHERE d.sp_order_id = b.id AND d.status NOT IN ('delivered','cancelled'))
+        THEN '2_tertahan_sj_belum_selesai'
+      WHEN NOT EXISTS (SELECT 1 FROM delivery_notes d WHERE d.sp_order_id = b.id AND d.status = 'delivered' AND d.signed_date IS NOT NULL)
+        THEN '3_tertahan_signed_date_kosong'
+      ELSE '4_lolos_bisa_ditagih'
+    END AS kategori
+  FROM belum_invoice b
+)
+SELECT kategori, count(*) AS jumlah_sp, string_agg(sp_no, ', ' ORDER BY sp_no) AS daftar_sp
+  FROM kategori
+ GROUP BY kategori
+ ORDER BY kategori;
+```
+
+**Cara membaca:** bandingkan total baris dengan angka 25 Sep 2026 (62 total → 5 lolos / 9 tertahan signed_date / 47 tertahan BTB / 1 tertahan SJ). Pergeseran kecil WAJAR (SP baru masuk/invoice baru terbit sejak 25 Sep); pergeseran BESAR (mis. "lolos" tiba-tiba 0 atau total jauh di luar ~60-an) layak ditanyakan sebelum malam rilis, bukan ditemukan saat itu.
+
+#### H-1.2 — Pratinjau data yang akan disentuh butir 37 (V0)
+
+Adaptasi V0 di `20260929000009_ar_tahap3_due_date_ttf_backfill.sql`, **TANPA bergantung pada `compute_payment_term_days`** (fungsi itu baru ada sesudah butir 32 dijalankan malam itu — di production HARI INI belum ada). Logika rantai termin di-inline persis dari `20260929000004` (override akun → `entity_finance_settings` → cadangan 30):
+
+```sql
+-- READ-ONLY. Aman di production kapan pun -- SELECT murni, nol tabel diubah.
+WITH ttf_pick AS (
+  SELECT DISTINCT ON (invoice_id) invoice_id, tanggal_ttf
+    FROM ar_ttfs
+   WHERE invoice_id IS NOT NULL
+   ORDER BY invoice_id, created_at ASC
+),
+term AS (
+  SELECT o.id AS sp_order_id,
+    COALESCE(
+      (SELECT invoice_payment_terms_days FROM accounts WHERE id = o.customer_id),
+      (SELECT CASE WHEN pt.is_active THEN pt.days_due ELSE NULL END
+         FROM entity_finance_settings efs
+         LEFT JOIN payment_terms pt ON pt.id = efs.default_payment_term_id
+        WHERE efs.company_id = o.company_id LIMIT 1),
+      (SELECT efs2.default_payment_terms FROM entity_finance_settings efs2
+        WHERE efs2.company_id = o.company_id LIMIT 1),
+      30
+    ) AS term_days
+  FROM sp_orders o
+),
+calon AS (
+  SELECT i.id, i.due_date AS due_date_lama, t.tanggal_ttf,
+         CASE WHEN t.tanggal_ttf IS NOT NULL THEN t.tanggal_ttf + tm.term_days ELSE NULL END AS due_date_baru
+    FROM sp_invoices i
+    JOIN sp_orders o ON o.id = i.sp_order_id
+    JOIN term tm ON tm.sp_order_id = o.id
+    LEFT JOIN ttf_pick t ON t.invoice_id = i.id
+   WHERE i.deleted_at IS NULL AND i.status <> 'void'
+)
+SELECT
+  count(*) AS invoice_hidup_non_void,
+  count(*) FILTER (WHERE tanggal_ttf IS NOT NULL) AS ada_ttf,
+  count(*) FILTER (WHERE tanggal_ttf IS NOT NULL AND due_date_lama IS DISTINCT FROM due_date_baru) AS due_date_berubah,
+  count(*) FILTER (WHERE tanggal_ttf IS NULL AND due_date_lama IS NOT NULL) AS hilang_jadi_belum_ttf,
+  count(*) FILTER (WHERE tanggal_ttf IS NULL AND due_date_lama IS NULL) AS tetap_null
+FROM calon;
+
+-- Pembanding -- invoice VOID, TIDAK disentuh backfill ini sama sekali:
+SELECT count(*) AS invoice_void FROM sp_invoices WHERE deleted_at IS NULL AND status = 'void';
+```
+
+⚠️ Angka H-1.2 ini **BUKAN pengganti V0 malam itu** — butir 37 TETAP wajib menjalankan V0 miliknya sendiri (di dalam berkas, sesudah butir 32 live) sebagai syarat menghapus blok STOP KERAS. Gunanya di sini murni supaya Den sudah punya gambaran kasar sebelum malam itu, bukan melihat angka ini untuk PERTAMA KALINYA sambil ditunggu.
+
+#### H-1.3 — Cek koneksi `pg_dump`/session pooler
+
+Memastikan jalur backup (Langkah 0.1) tidak gagal karena masalah jaringan/kredensial yang baru ketahuan malam itu:
+
+```bash
+pg_isready -h aws-1-ap-northeast-2.pooler.supabase.com -p 5432 -d postgres -U postgres.untmpqceexwxzuhlmyrg
+# atau, kalau pg_isready tidak tersedia:
+psql "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" -c "select version();"
+```
+
+Harapan: koneksi diterima (password akan diminta/`PGPASSWORD` — **jangan simpan di shell history**). Kalau gagal (timeout/connection refused), ini saatnya memperbaiki jaringan/VPN/kredensial — bukan di tengah Langkah 0 malam rilis.
+
+#### H-1.4 — Perkiraan durasi tiap kelompok migrasi
+
+**Perkiraan, bukan ukuran** — volume data di production kecil (ratusan baris per tabel yang disentuh, bukan jutaan), jadi waktu eksekusi SQL murni diperkirakan sub-detik sampai beberapa detik per berkas; durasi TOTAL malam itu didominasi **kecepatan Den membaca output dan mengeksekusi satu-per-satu**, bukan beban database.
+
+| Kelompok | Jumlah berkas | Perkiraan | Faktor yang bisa memperlambat |
+|---|---|---|---|
+| 1A (AR Tahap 1 sisa) | 2 | 2-5 menit | — |
+| 1B (AR Tahap 2) | 4 | 5-10 menit | Butir 11 (backfill ~508 invoice) sedikit lebih lama dari sekadar `CREATE FUNCTION`, tetap dalam hitungan detik |
+| 1C (Invoice Lengkap) | 10 | 15-25 menit | Paling banyak berkas; butir 19 mengambil lock singkat saat REVOKE jika ada transaksi lain sedang menulis tabel yang sama |
+| 1D (checkpoint, nol eksekusi) | 0 | 2-5 menit | Murni membaca & membandingkan, bukan menjalankan apa pun |
+| 1E (AR Tahap 3, + titik berhenti 37) | 6-7 | 10-20 menit **+ waktu review V0/diskusi** (tidak bisa diperkirakan) | Butir 37 (kalau dijalankan malam itu): `CREATE UNIQUE INDEX` setara di migrasi lain pernah mengambil ShareLock singkat — di sini hanya `UPDATE`, bukan `CREATE INDEX`, jadi serupa |
+| 1F (AR Tahap 3b) | 6 | 8-15 menit | — |
+| **Total Langkah 1 (tanpa hitung diskusi butir 37)** | **34-35** | **≈ 45-80 menit** | |
+| Langkah 2 (merge+deploy) | — | 5-15 menit | Tergantung CI (build+lint) dan apakah lewat PR atau merge langsung |
+| Langkah 3 (cek Vercel) | — | 2-5 menit | Build Vercel untuk app ini historisnya ~10 detik (lihat verifikasi rilis Bagian A 7 Okt), tapi beri jeda untuk propagasi alias |
+| Langkah 4 (smoke test + impor TTF) | — | 15-30 menit | Tergantung jumlah dokumen TTF yang diuji & ketersediaan Finance malam itu |
+
+**Perkiraan total malam itu (tanpa menghitung diskusi butir 37, yang bergantung keputusan real-time): ≈ 1,5-2,5 jam.**
+
+### Langkah 0 — Pra-penerbangan (wajib, sebelum butir 6 apa pun)
+
+| # | Langkah | Detail |
+|---|---|---|
+| 0.1 | Backup penuh production (schema + data) | `pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" --no-owner --no-privileges > backup_pre_launch_20261014.sql` — **TANPA** `--schema-only` (beda dari refresh `schema_snapshot.sql` yang memang schema-only). Simpan di luar repo. |
+| 0.2 | Catat posisi commit `main` SAAT INI (sebelum merge) | `git rev-parse main` — dibutuhkan kalau merge harus di-revert |
+| 0.3 | Catat posisi commit `develop` yang akan di-merge | `git rev-parse develop` |
+| 0.4 | `node scripts/qa/env-drift-check.mjs` sekali lagi | Harapan: hanya **ANTRE** (= butir 8-46 di bawah) + **SELAMANYA**, **0 DRIFT**. Kalau ada DRIFT tak dikenal, **berhenti dan selidiki** sebelum lanjut — lihat §RUTINITAS SEBELUM UAT di atas. |
+| 0.5 | Cadangan ACL segar untuk fungsi yang di-DROP+CREATE malam ini | Butir 9(f) dan 35 mengganti tanda tangan fungsi (gotcha #37) — cadangan ACL 25 Sep **sudah basi**. Ambil `pg_get_functiondef`/`proacl` untuk `create_invoice`, `create_invoice_for_sp`, `submit_invoice`, `record_payment`, `mark_delivery_delivered` **malam ini, sebelum butir 9 dijalankan**. |
+| 0.6 | ⛔ **BEKUKAN input Finance DAN input SP/Surat Jalan/BTB gudang** | Minta Finance berhenti menerbitkan/mengubah invoice & pembayaran, dan tim gudang berhenti menginput SP baru, Surat Jalan, dan BTB, **sebelum butir 6 pertama dijalankan**. Alasan: tiga migrasi malam ini (butir 9, 35, 40 — lihat tabel di Langkah 2) mengubah kontrak yang dipakai kode LAMA secara aktif; SP/invoice/pembayaran/BTB yang diinput TEPAT di jendela antara "migrasi commit" dan "kode baru live" berisiko mendarat dalam keadaan tidak konsisten (lihat Langkah 2). **Jendela beku: dari langkah ini sampai Langkah 4.4 (smoke test + `env-drift-check` ulang) selesai dan dinyatakan lolos** — baru sesudah itu Finance dan gudang boleh kembali bekerja normal. |
+
+### Langkah 1 — Migrasi database, urutan WAJIB per kelompok
+
+⚠️ **Tanda berhasil generik, berlaku untuk SEMUA berkas di bawah** (sudah dibangun ke dalam tiap file, tidak diulang per baris): migrasi **COMMIT** tanpa error = lolos. Setiap berkas punya blok `V-PRA` (prasyarat, menolak jalan dengan `RAISE EXCEPTION` kalau basis yang hidup bukan versi yang diharapkan) dan `V-POST` (mengasersi hasil, `RAISE EXCEPTION` kalau ada yang tidak sesuai) — **kalau transaksi COMMIT, blok-blok itu sudah lolos**. Baca `RAISE NOTICE` di output untuk detail yang dicetak (ACL sebelum/sesudah, jumlah baris tersentuh, dll).
+
+#### 1A. AR Tahap 1 sisa — butir 8 → 9
+
+| Urutan | Berkas | Prasyarat | Perhatian khusus |
+|---|---|---|---|
+| 8 | `20260926000001_set_delivery_signed_date.sql` | — (mandiri) | Aditif, boleh commit sendiri |
+| 9 | `20260926000002_ar_single_issue_path.sql` | Butir 6, 7 (✔ sudah live) + butir 8 | ⛔⏳ **Rollback MENYEMPIT sesudah ini jalan** — lihat §Langkah tak-bisa-di-rollback di bawah. **Radius dampak yang DITERIMA**: dari 62 SP terkirim-penuh-belum-invoice, hanya ~5+9=14 langsung bisa ditagih, 47 tertahan BTB (pekerjaan gudang, bukan bug) — **jangan melonggarkan guard kalau radius ini terlihat mengejutkan saat dijalankan, itu memang hasil yang diharapkan** |
+
+#### 1B. AR Tahap 2 — butir 11 → 12 → 13 → 14
+
+| Urutan | Berkas | Prasyarat |
+|---|---|---|
+| 11 | `20260927000001_invoice_due_date_backfill.sql` | sesudah butir 9 |
+| 12 | `20260927000002_account_role_mapping.sql` | — |
+| 13 | `20260927000003_journal_account_roles_and_readiness.sql` | butir 9 **dan** 12 |
+| 14 | `20260927000004_menu_grant_fin_invoice.sql` | — (tanpa ini, 6.2.1 hanya terlihat super_admin) |
+
+#### 1C. Invoice Lengkap — butir 16 → 17 → 18 → 19 → 21 → 22 → 23 → 24 → 25 → 26
+
+⚠️ **Lihat peringatan anomali versi di kepala bagian "Invoice lengkap (butir 16-25)" di atas — SUDAH DIVERIFIKASI 7 Okt 2026, isinya identik dengan repo, jalankan apa adanya.** ⛔ **`20260928000005` (butir 20) JANGAN dijalankan** — arahnya terbalik, staging-only selamanya.
+
+| Urutan | Berkas | Prasyarat |
+|---|---|---|
+| 16 | `20260928000001_invoice_header_v2.sql` | — |
+| 17 | `20260928000002_invoice_line_v2.sql` | butir 16 |
+| 18 | `20260928000003_invoice_issue_v2.sql` | butir 17 **dan** 9 |
+| 19 | `20260928000004_invoice_write_lockdown.sql` | butir 18 |
+| 21 | `20260928000006_invoice_line_tax_link.sql` | butir 17 |
+| 22 | `20260928000007_invoice_post_issue_rpcs.sql` | butir 16 |
+| 23 | `20260928000008_invoice_attachments.sql` | butir 16 (mandiri, boleh kapan saja sesudahnya) — **periksa bucket `invoice-docs` benar-benar terbuat** |
+| 24 | `20260928000009_invoice_notes.sql` | — (mandiri) |
+| 25 | `20260928000010_invoice_issue_tax_link.sql` | butir 18 **dan** 21 |
+| 26 | `20260928000011_invoice_coretax_code_whitelist.sql` | butir 22 |
+
+#### 1D. Checkpoint Paket Keamanan TD-281 (H1/H2/H3/H5 — sudah LIVE, nol tindakan baru)
+
+Sebelum lanjut ke AR Tahap 3, konfirmasi cepat objek-objek ini **masih seperti seharusnya** (sudah live sejak 28 & 30 Sep 2026, jadi ini checkpoint, bukan eksekusi):
+- `create_invoice`, `create_invoice_for_sp`, `submit_invoice` — ACL `authenticated`-only (butir 9 akan menyentuhnya lagi di langkah 1A, tidak masalah, `CREATE OR REPLACE` + ACL dipasang ulang eksplisit di berkasnya).
+- `increment_document_sequence`, `check_similar_accounts`, `complete_picking`, `attach_price_contract_info`, `is_admin_tier_role` — `authenticated`-only; `notify_sp_milestone` — nol grant.
+- `env-drift-check.mjs` kategori `hak`: nol drift untuk keenamnya + H3 (8 fungsi `search_path`) + H5 (TRUNCATE/REFERENCES/TRIGGER/MAINTAIN `anon`+`authenticated` di seluruh tabel).
+
+Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah di luar urutan dokumen ini sejak 30 Sep, selidiki dulu sebelum lanjut ke AR Tahap 3 (yang membangun di atas asumsi keadaan ini).
+
+#### 1E. AR Tahap 3 — butir 32 → 33 → 34 → 35 → 36 → **[BERHENTI — lihat 37]** → 38
+
+| Urutan | Berkas | Prasyarat |
+|---|---|---|
+| 32 | `20260929000004_ar_tahap3_compute_payment_term_days.sql` | — |
+| 33 | `20260929000005_ar_tahap3_account_role_mapping_potongan_pelanggan.sql` | butir 12 |
+| 34 | `20260929000006_ar_tahap3_sp_payments_potongan_kolom.sql` | — |
+| 35 | `20260929000007_ar_tahap3_record_payment_v3.sql` | butir 9, 13, 33, 34 — ⛔⏳ **rollback menyempit, lihat di bawah** |
+| 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql` | butir 18, 25, 32 |
+
+⛔⛔ **TITIK BERHENTI WAJIB — butir 37, `20260929000009_ar_tahap3_due_date_ttf_backfill.sql`.** Berkas ini punya `STOP KERAS` tertanam (blok `RAISE EXCEPTION` tanpa syarat) yang **harus tetap ada** sampai langkah ini dijalankan manual:
+1. Jalankan **HANYA** blok **V0** di kepala berkas (read-only, aman) — ini mengukur berapa invoice production yang `due_date`-nya akan berubah basis kalau backfill ini jalan.
+2. **Tunjukkan angka V0 ke Den dan tunggu persetujuan EKSPLISIT malam itu** — angkanya untuk DATA PRODUCTION saat itu, **bukan** angka staging 29 Sep (22 invoice) yang sudah basi untuk production.
+3. **Hanya sesudah disetujui**, hapus/lewati blok STOP KERAS untuk SESI eksekusi ini saja, lalu jalankan sisa berkas.
+4. Kalau TIDAK disetujui malam itu: **lewati butir 37 untuk sekarang**, lanjut ke butir 38 (tidak bergantung pada 37) — backfill ini bisa menyusul kapan saja, ia tidak memblokir apa pun yang lain.
+
+| Urutan | Berkas | Prasyarat |
+|---|---|---|
+| 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali.sql` | butir 36 (TIDAK butuh 37) |
+
+#### 1F. AR Tahap 3 bagian kedua — butir 39 → 40 → 41 → 42 → 43 → 44
+
+| Urutan | Berkas | Prasyarat |
+|---|---|---|
+| 39 | `20260930000001_ar_tahap3b_status_pending_approval.sql` | — |
+| 40 | `20260930000002_ar_tahap3b_create_invoice_for_sp_approval_gate.sql` | butir 39 — ⛔⏳ **rollback menyempit begitu ada invoice `pending_approval` hidup** |
+| 41 | `20260930000003_ar_tahap3b_approve_reject_invoice.sql` | butir 39, 40 |
+| 42 | `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard.sql` | butir 39 (boleh sebelum/sesudah 40-41) |
+| 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role.sql` | — (mandiri) |
+| 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail.sql` | — (mandiri, tapi diperlukan panel Riwayat FE) |
+
+### Langkah 2 — Merge `develop` → `main` dan deploy kode
+
+⛔ **Urutan ini DISENGAJA: migrasi DULU (Langkah 1), kode SESUDAH.** Sebagian besar butir 6-44 aditif/backward-compatible (kolom baru, fungsi baru). **TAPI tiga di antaranya BUKAN sepenuhnya aman untuk kode lama yang masih tayang di `main` selama jendela antara "migrasi commit" dan "kode baru live" — dan itulah alasan Langkah 0.6 (pembekuan) ada:**
+
+| Butir | Yang berubah | Dampak ke kode LAMA (`main`) selama jendela ini |
+|---|---|---|
+| **9** (`ar_single_issue_path`) | `create_invoice`/`create_invoice_for_sp` dapat 3 guard baru (BTB wajib, SJ harus `delivered`, invariant jurnal) | Signature TETAP sama (kode lama tetap bisa memanggilnya) — tapi tombol "Terbitkan Invoice" di UI LAMA (Detail SP) akan mulai **DITOLAK dengan error yang belum pernah terlihat** untuk SP yang tidak memenuhi guard baru (47 dari 62 SP per radius dampak di atas). **Terlihat jelas** (user dapat pesan error), tapi mengejutkan kalau tidak diberi tahu lebih dulu. |
+| **35** (`record_payment` v3) | Tanda tangan bertambah 2 parameter → **DROP signature 7-argumen, CREATE 9-argumen** (gotcha #37) | Kode lama memanggil versi 7-argumen. **Sesudah butir 35, signature itu TIDAK ADA LAGI** — setiap klik "Catat Pembayaran" di UI LAMA akan gagal KERAS (`42883 function does not exist`), bukan sekadar ditolak guard. **Fitur pencatatan pembayaran via UI lama benar-benar tidak bisa dipakai** selama jendela ini. |
+| **40** (`create_invoice_for_sp` approval-gate) | Fungsi berhenti langsung menerbitkan (`status='issued'`, `invoice_no` terisi, jurnal terposting) — sekarang berhenti di `status='pending_approval'`, `invoice_no` KOSONG, jurnal belum diposting; penyelesaiannya pindah ke fungsi BARU `approve_invoice_issue` yang tidak ada di UI lama | ⛔⛔ **PALING BERBAHAYA dari ketiganya karena SENYAP** — signature tetap sama, RPC tetap RETURN NORMAL (nol error terlihat), tapi invoice yang "diterbitkan" lewat UI LAMA selama jendela ini akan **tersangkut permanen** di `pending_approval` tanpa nomor invoice dan tanpa jurnal — UI lama tidak punya tombol "Approve" untuk menyelesaikannya. User mengira sudah terbit; Finance baru sadar saat membuka Finance baru dan melihat antrean approval, atau saat mengecek database. Badge status di UI lama untuk nilai `pending_approval` yang tidak dikenalinya akan jatuh ke badge netral/kosong (bukan crash, tapi membingungkan). |
+
+**Inilah sebab Langkah 0.6 mewajibkan pembekuan input Finance DAN input SP/Surat Jalan/BTB gudang SEBELUM butir 6 pertama dijalankan** — tanpa pembekuan, ketiga skenario di atas bisa benar-benar terjadi ke data nyata pada jendela antara commit Langkah 1 dan deploy Langkah 2-3. Dengan migrasi dulu (bukan kode dulu), jendela "kode baru mengharapkan skema yang belum ada" tetap nol detik — kebalikannya (kode dulu, migrasi menyusul) akan membuat SETIAP halaman Finance error, bukan cuma tiga fitur spesifik di atas.
+
+| # | Langkah |
+|---|---|
+| 2.1 | Buka PR `develop` → `main` di GitHub (disarankan, bukan wajib) — supaya CI (build+lint) jalan dan ada jejak audit; atau merge lokal langsung kalau waktu sempit |
+| 2.2 | Tunggu CI hijau (build clean, lint baseline) |
+| 2.3 | Merge dengan **merge commit biasa** (bukan squash, bukan rebase) — riwayat commit individual `develop` sudah berulang kali dirujuk per-hash di dokumen ini dan `PROGRESS.md`; squash akan memutus rujukan itu |
+| 2.4 | `git push origin main` |
+| 2.5 | Catat SHA commit merge yang baru masuk `main` |
+
+### Langkah 3 — Cek deploy Vercel (Production)
+
+| # | Langkah | Tanda berhasil |
+|---|---|---|
+| 3.1 | Tunggu Vercel build untuk `main` (otomatis dari push 2.4) | — |
+| 3.2 | Cek lewat Vercel API/Dashboard: deployment untuk SHA commit merge (2.5) | `state`/`readyState` = **READY**, `alias` mencakup **`nexus.msigroup.co.id`**, `aliasError` = **null** |
+| 3.3 | Kalau gagal/`aliasError` tidak null | **Berhenti** — jangan lanjut ke Langkah 4 (smoke test) dengan kode lama yang masih tayang; perbaiki deploy dulu. Migrasi DB di Langkah 1 **tidak perlu di-rollback** untuk ini — ia memang didesain aman dengan kode lama (lihat Langkah 2) |
+
+### Langkah 4 — Verifikasi pasca-deploy (kode + DB keduanya live)
+
+| # | Langkah | Pemilik |
+|---|---|---|
+| 4.1 | Login sebagai akun `finance`/`finance_controller` nyata, buka **Finance & Accounting › Accounts Receivable › Invoice Management** (6.2.1) | Finance |
+| 4.2 | Buka **Invoice Submission & Acknowledgement** (6.2.2), jalankan **"Proses Impor"** (impor TTF massal) dengan batch kecil dokumen TTF fisik yang sudah menumpuk — ini smoke test fitur HEADLINE rilis ini, bukan langkah DB. Konfirmasi status invoice yang diimpor berubah sesuai jumlah TTF yang benar-benar dicocokkan | Finance (Elvira) |
+| 4.3 | Terbitkan SATU invoice baru end-to-end (ajukan → approve → lihat jurnal) untuk membuktikan rantai AR Tahap 1/2/3/3b tersambung di production sungguhan, bukan cuma lolos `V-POST` | Finance/Finance Controller |
+| 4.4 | `node scripts/qa/env-drift-check.mjs` sekali lagi | Harapan: seluruh butir 8-44 yang baru dijalankan pindah dari **ANTRE** jadi **cocok** (nol DRIFT baru) |
+
+### Langkah 5 — Penutup
+
+| # | Langkah |
+|---|---|
+| 5.1 | Refresh `supabase/schema_snapshot.sql` (`pg_dump --schema-only --schema=public`, pooler Seoul) |
+| 5.2 | Update kolom **Production** di tabel Ringkasan (atas dokumen ini) + setiap butir 8-44 yang dijalankan malam ini jadi ✔ beserta tanggal |
+| 5.3 | Catat SHA commit `main` final (pasca-merge) di `PROGRESS.md` |
+| 5.4 | Kalau butir 37 DILEWATI (tidak disetujui malam itu), catat eksplisit sebagai **TERTUNDA**, bukan dihapus dari antrean |
+
+### Langkah yang TIDAK bisa di-rollback dengan aman
+
+| Butir | Kapan rollback berhenti aman | Kalau sudah lewat titik itu |
+|---|---|---|
+| 9(f) — DROP `mark_delivery_delivered(uuid)` | Begitu fungsi 2-argumen dipakai sesudahnya | Reversibel (buat ulang overload-nya), tapi pakai cadangan ACL **segar malam ini** (Langkah 0.5) — cadangan 25 Sep sudah basi |
+| 35 — `record_payment` v3 (`potongan_lain`) | Begitu SATU pembayaran nyata mencatat `potongan_lain > 0` | Rollback ke v2 akan menghapus kemampuan mencatat potongan itu untuk baris yang sudah terlanjur memakainya |
+| 37 — backfill `due_date` dari TTF | Begitu SIAPA PUN mengoreksi manual `due_date` sebuah invoice sesudah backfill jalan | Rollback hanya mengembalikan baris yang `due_date`-nya **masih sama** dengan hasil backfill — koreksi manual sesudahnya tidak ditimpa (ini FITUR rollback-nya, bukan celah) |
+| 40/41 — status `pending_approval` | Begitu SATU invoice nyata melalui alur ajukan→approve/reject | Rollback DROP fungsi/kolom akan menghapus jejak invoice yang sudah lewat alur baru itu |
+
+**Mitigasi untuk keempatnya: jalankan 9, 35, 40 secara berurutan TANPA jeda operasional di antaranya** (nol invoice/pembayaran nyata diproses user di sela-sela langkah migrasi) — menyempitkan jendela antara "migrasi commit" dan "rollback masih 100% bersih" serapat mungkin.
+
+### TD-300 Group E — SENGAJA DI LUAR jendela rilis ini
+
+⛔ **TD-300 Group E (lihat `08_TECH_DEBT.md` TD-300 dan migrasi `20261007000001_td300_group_e_revoke_public_execute.sql`) BUKAN bagian naskah malam ini.** Ia pemblokir keamanan yang **terpisah**, dengan keputusan go/no-go **sendiri** — bukan prasyarat, bukan dependensi fungsional AR Tahap 1-3b, dan tidak ada halaman/fitur rilis 14-15 Okt yang bergantung padanya. Alasan dipisah: cakupannya (sampai ~90 fungsi, badan belum dibaca satu-per-satu) jauh lebih besar dan lebih baru (ditulis 7 Okt 2026, belum pernah diuji sekali pun) dibanding rantai AR yang sudah lolos uji staging penuh berminggu-minggu. **Jangan jalankan di malam yang sama dengan Langkah 1-5 di atas** — jadwalkan sesi TERSENDIRI, hanya sesudah migrasi ini lolos SELURUH langkah uji staging (lihat ekor berkas migrasinya), termasuk dua uji nyata (signup user baru, DML pada tabel bertrigger) yang tidak bisa digantikan pembacaan kode.
 
 ---
 
