@@ -17,7 +17,7 @@
 >
 > ⏰ **[Klarifikasi 7 Okt 2026] Rencana rilis gabungan "15 Oktober 2026" (AR Tahap 1-3b + Batch Finance AR) punya DUA tanggal, jangan tertukar:** jendela **EKSEKUSI** SQL/deploy = **malam 14 Okt 2026** (sesudah jam kerja); **EFEKTIF** dipakai Finance = **pagi 15 Okt 2026**. "15 Oktober" di seluruh dokumen (`CLAUDE.md`, `PROGRESS.md`) merujuk tanggal EFEKTIF, bukan jendela eksekusi.
 >
-> 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), penanda langkah tak-bisa-di-rollback, titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
+> 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice, yang per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
 
 ---
 
@@ -1381,7 +1381,35 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 
 ### Persiapan H-1 (13 Oktober 2026)
 
-**Tujuan: pindahkan sebanyak mungkin KEPUTUSAN keluar dari malam rilis.** Keempat langkah di bawah **read-only** (nol tabel diubah, aman dijalankan ke **production** kapan pun, termasuk hari ini) — hasilnya dipakai untuk meninjau angka lebih awal, BUKAN untuk menggantikan pengukuran ULANG di Langkah 0/1E malam itu (data bergerak setiap hari; angka H-1 adalah pratinjau, bukan angka final).
+**Tujuan: pindahkan sebanyak mungkin KEPUTUSAN keluar dari malam rilis.** Kelima langkah di bawah **read-only** (nol tabel diubah, aman dijalankan ke **production** kapan pun, termasuk hari ini) — hasilnya dipakai untuk meninjau angka lebih awal, BUKAN untuk menggantikan pengukuran ULANG di Langkah 0/1E malam itu (data bergerak setiap hari; angka H-1 adalah pratinjau, bukan angka final).
+
+#### H-1.0 — Akun penyetuju
+
+⛔ **Temuan 7 Okt 2026: di production BELUM ADA SATU PUN akun aktif ber-role `finance_controller`.** Guard `approve_invoice_issue`/`reject_invoice_issue` (butir 41) — sengaja TANPA `is_manager_or_above()`, keputusan rapat 9/11/24 Sep 2026 — hanya meloloskan `super_admin`, `finance_controller`, atau `ceo` (lihat `src/lib/roles.js`, `canApproveInvoice`). Hari ini satu-satunya penyetuju yang tersedia di entitas SOA adalah **CEO (Azhar Malik)** dan **super_admin**.
+
+**Kenapa ini genting, bukan cuma catatan:** sejak butir 40 live, `create_invoice_for_sp` **berhenti** langsung menerbitkan — setiap invoice baru masuk `pending_approval` dan **menunggu** salah satu dari ketiga role itu menyetujuinya. **Tanpa penyetuju yang benar-benar tersedia malam/pagi itu, SETIAP invoice yang diajukan sesudah butir 40 akan menumpuk di `pending_approval` tanpa batas waktu** — bukan gagal, tapi juga tidak pernah selesai sampai ada yang membuka halaman Approval dan menekan Setujui.
+
+**Kueri read-only untuk mengecek** (aman di production kapan pun):
+
+```sql
+-- READ-ONLY. Aman di production kapan pun -- SELECT murni, nol tabel diubah.
+SELECT c.code AS entitas, r.code AS role, p.full_name AS nama, p.active AS profil_aktif,
+       ur.valid_from, ur.valid_until
+  FROM user_roles ur
+  JOIN roles r     ON r.id = ur.role_id
+  JOIN profiles p  ON p.id = ur.user_id
+  JOIN companies c ON c.id = ur.company_id
+ WHERE r.code IN ('finance', 'finance_controller', 'ceo', 'super_admin')
+   AND ur.is_active = true
+   AND ur.revoked_at IS NULL
+   AND (ur.valid_from  IS NULL OR ur.valid_from  <= current_date)
+   AND (ur.valid_until IS NULL OR ur.valid_until >= current_date)
+   AND p.active = true
+   AND r.is_active = true AND r.deleted_at IS NULL
+ ORDER BY entitas, role, nama;
+```
+
+**Tindakan sebelum rilis (keputusan Den, bukan sesuatu yang bisa saya putuskan):** pastikan minimal SATU akun `finance_controller` aktif di SOA sebelum butir 40 dijalankan — baik dengan mengaktifkan akun yang sudah ada atau menambah role `finance_controller` ke akun yang tepat (lewat Admin Settings/User Access, bukan SQL manual). Kalau tidak memungkinkan malam itu, pastikan CEO (Azhar Malik) ATAU pemegang `super_admin` benar-benar **siap dan terjaga** untuk membuka Approval di pagi 15 Okt — jangan asumsikan "ada penyetuju di kertas" berarti "ada yang akan benar-benar menyetujui".
 
 #### H-1.1 — Pratinjau radius dampak butir 9
 
@@ -1424,6 +1452,8 @@ SELECT kategori, count(*) AS jumlah_sp, string_agg(sp_no, ', ' ORDER BY sp_no) A
 ```
 
 **Cara membaca:** bandingkan total baris dengan angka 25 Sep 2026 (62 total → 5 lolos / 9 tertahan signed_date / 47 tertahan BTB / 1 tertahan SJ). Pergeseran kecil WAJAR (SP baru masuk/invoice baru terbit sejak 25 Sep); pergeseran BESAR (mis. "lolos" tiba-tiba 0 atau total jauh di luar ~60-an) layak ditanyakan sebelum malam rilis, bukan ditemukan saat itu.
+
+**Siapkan sebagai daftar kerja gudang, dikerjakan SESUDAH rilis.** Kolom `daftar_sp` pada kategori **`1_tertahan_btb`** dan **`3_tertahan_signed_date_kosong`** adalah SP yang akan tetap tidak bisa ditagih sesudah butir 9 live — bukan karena ada yang salah, tapi karena pekerjaan gudangnya memang belum tuntas (BTB belum terbit, atau Surat Jalan sudah `delivered` tapi tanggal tanda tangannya belum diisi lewat "Lengkapi Tanggal Ditandatangani"). **Salin kedua daftar itu sebelum rilis** dan serahkan ke tim gudang sebagai checklist pasca-rilis — begitu masing-masing item diselesaikan (BTB diterbitkan / tanggal diisi), SP itu otomatis pindah ke `4_lolos_bisa_ditagih` tanpa butuh migrasi atau tindakan DB apa pun lagi. Kategori **`2_tertahan_sj_belum_selesai`** TIDAK termasuk daftar ini — itu menunggu Surat Jalannya sendiri selesai dikirim, bukan tindakan administratif.
 
 #### H-1.2 — Pratinjau data yang akan disentuh butir 37 (V0)
 
@@ -1485,6 +1515,14 @@ psql "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.sup
 ```
 
 Harapan: koneksi diterima (password akan diminta/`PGPASSWORD` — **jangan simpan di shell history**). Kalau gagal (timeout/connection refused), ini saatnya memperbaiki jaringan/VPN/kredensial — bukan di tengah Langkah 0 malam rilis.
+
+**Cek versi `pg_dump` lokal terhadap versi server production.** `pg_dump` yang LEBIH LAMA dari server-nya bisa gagal atau diam-diam menghasilkan dump yang tidak lengkap untuk fitur/katalog yang lebih baru — ini WAJIB dicek sebelum malam rilis, bukan ditemukan saat backup Langkah 0.1 sedang berjalan.
+
+```bash
+pg_dump --version
+```
+
+**Server production (diukur via Supabase API, 7 Okt 2026): PostgreSQL 17.6** (`postgres_engine: 17`). Aturannya: `pg_dump` lokal **wajib versi major 17 atau lebih baru** (pg_dump versi 14/15/16 TIDAK dijamin mengerti seluruh fitur Postgres 17 — risikonya dump gagal keras ATAU "berhasil" tapi kehilangan sesuatu tanpa pesan jelas). Kalau versi lokal lebih lama, **upgrade `pg_dump` dulu** (lewat `brew upgrade libpq`/`postgresql@17` atau sejenisnya) — jangan memaksakan backup dengan versi yang lebih lama hanya karena "biasanya jalan".
 
 #### H-1.4 — Perkiraan durasi tiap kelompok migrasi
 
@@ -1629,6 +1667,12 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 4.2 | Buka **Invoice Submission & Acknowledgement** (6.2.2), jalankan **"Proses Impor"** (impor TTF massal) dengan batch kecil dokumen TTF fisik yang sudah menumpuk — ini smoke test fitur HEADLINE rilis ini, bukan langkah DB. Konfirmasi status invoice yang diimpor berubah sesuai jumlah TTF yang benar-benar dicocokkan | Finance (Elvira) |
 | 4.3 | Terbitkan SATU invoice baru end-to-end (ajukan → approve → lihat jurnal) untuk membuktikan rantai AR Tahap 1/2/3/3b tersambung di production sungguhan, bukan cuma lolos `V-POST` | Finance/Finance Controller |
 | 4.4 | `node scripts/qa/env-drift-check.mjs` sekali lagi | Harapan: seluruh butir 8-44 yang baru dijalankan pindah dari **ANTRE** jadi **cocok** (nol DRIFT baru) |
+| 4.5 | Login sebagai akun **Sales** (bukan super_admin), buka sidebar — konfirmasi **nol baris "Soon"** terlihat | Siapa pun yang pegang akun uji Sales |
+| 4.6 | Dari akun yang sama, konfirmasi kartu **"Layanan Karyawan"** tampil di Beranda dan kedua tombolnya ("Buat Permintaan"/"Permintaan Saya") membuka halaman HRGA | Siapa pun yang pegang akun uji Sales |
+| 4.7 | Login sebagai akun **gudang/Operations**, buka Detail SP yang Surat Jalannya sudah `delivered`, isi tanggal tanda tangan lewat **"Lengkapi Tanggal Ditandatangani"** — fitur ini BARU di production malam ini (butir 8) | Gudang |
+| 4.8 | Dari akun yang sama atau admin, buka **Edit Item SP**, ketik ongkir **`1.766.050`**, simpan, buka lagi — konfirmasi nilainya **tetap `1.766.050`**, BUKAN berubah jadi `1,77` (regresi lama yang baru ditutup di commit `4d81943`, 7 Okt 2026) | Gudang/Admin |
+
+⚠️ **Butir 4.3 memakai invoice SUNGGUHAN, bukan data uji yang bisa dihapus.** Nomor invoice yang keluar **permanen** (preseden: nomor 0012/0013 terpakai permanen dari insiden 7 Sep 2026), jurnalnya **benar-benar terposting**, dan **jalur void belum ada** di rilis ini — begitu terbit, tidak ada tombol untuk membatalkannya. **Wajib memakai SP yang memang sudah waktunya ditagih** (ambil dari kategori `4_lolos_bisa_ditagih` hasil H-1.1/pengukuran ulang malam itu) — JANGAN memakai SP sembarangan "cuma untuk tes".
 
 ### Langkah 5 — Penutup
 
@@ -1638,6 +1682,24 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 5.2 | Update kolom **Production** di tabel Ringkasan (atas dokumen ini) + setiap butir 8-44 yang dijalankan malam ini jadi ✔ beserta tanggal |
 | 5.3 | Catat SHA commit `main` final (pasca-merge) di `PROGRESS.md` |
 | 5.4 | Kalau butir 37 DILEWATI (tidak disetujui malam itu), catat eksplisit sebagai **TERTUNDA**, bukan dihapus dari antrean |
+
+### Kriteria batal dan titik tanpa jalan mundur
+
+**Titik tanpa jalan mundur malam ini = begitu butir 9 COMMIT.** Sebelum itu (butir 6-7 sudah live, butir 8 murni aditif), kontrak yang dipakai kode LAMA belum tersentuh sama sekali.
+
+**Kalau SATU berkas gagal SEBELUM butir 9 commit** (termasuk butir 9 itu sendiri, kalau ia gagal di tengah jalan — setiap berkas dibungkus `BEGIN...COMMIT` sendiri, jadi kegagalan `RAISE EXCEPTION` dari V-PRA/V-POST membatalkan TRANSAKSI ITU SENDIRI secara otomatis, nol perubahan tersisa):
+1. **BERHENTI.** Production = persis seperti sebelum malam ini dimulai.
+2. **JANGAN lanjut ke Langkah 2 (merge `develop` → `main`).**
+3. **Tunda rilis** — jadwalkan ulang, jangan dipaksakan malam itu.
+4. **Buka kembali pembekuan Langkah 0.6** — Finance dan gudang boleh kembali bekerja normal; belum ada satu pun kontrak yang berubah untuk mereka.
+
+**Begitu butir 9 COMMIT**, kode lama dan baru sama-sama tunduk pada tiga guard barunya, dan tabel "Langkah yang TIDAK bisa di-rollback dengan aman" di bawah mulai berlaku. Kalau SATU berkas gagal SESUDAH titik ini (di mana pun di Langkah 1B-1F):
+- Rollback per-berkas (kolom Rollback di tiap file migrasi) **TIDAK lagi mengembalikan production ke keadaan "fitur lama berfungsi penuh seperti sebelum malam ini"** — ia hanya membalikkan OBJEK database itu sendiri, bukan konsekuensi yang sudah terjadi di data nyata selama guard baru aktif (lihat tabel di Langkah 2: invoice/pembayaran yang sempat diproses lewat kode LAMA sesudah butir 9/35/40 commit tidak otomatis "benar lagi" hanya karena fungsinya dikembalikan).
+- **Pilihannya hanya DUA sejak titik ini:** (a) **perbaiki forward** — cari akar masalah berkas yang gagal, benahi, lanjutkan urutan Langkah 1 dari situ; atau (b) **pulihkan SELURUH production dari backup Langkah 0.1** (`backup_pre_launch_20261014.sql`) dan tunda rilis.
+
+**Siapa yang memutuskan antara (a) dan (b): Den.** Ini bukan keputusan teknis yang diambil sepihak di tengah eksekusi.
+
+⏱️ **Batas waktu yang saya usulkan: 30 menit** dari saat kegagalan pertama kali terlihat. Kalau dalam 30 menit itu akar masalahnya BELUM jelas (bukan "belum selesai diperbaiki" — tapi "belum tahu kenapa gagal"), **pindah ke opsi (b)** daripada terus mencoba menebak di bawah tekanan waktu tengah malam. Angka ini usulan, bisa Anda sesuaikan — alasannya: memulihkan dari backup punya durasi yang bisa diperkirakan dan PASTI selesai, sementara "terus mencoba memperbaiki" di tengah insiden tanpa tahu akar masalah punya risiko durasi tak terbatas, dan setiap menit tambahan memperpanjang jendela pembekuan Finance/gudang.
 
 ### Langkah yang TIDAK bisa di-rollback dengan aman
 
