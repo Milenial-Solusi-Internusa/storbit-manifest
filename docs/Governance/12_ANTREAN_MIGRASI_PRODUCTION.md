@@ -17,7 +17,7 @@
 >
 > ⏰ **[Klarifikasi 7 Okt 2026] Rencana rilis gabungan "15 Oktober 2026" (AR Tahap 1-3b + Batch Finance AR) punya DUA tanggal, jangan tertukar:** jendela **EKSEKUSI** SQL/deploy = **malam 14 Okt 2026** (sesudah jam kerja); **EFEKTIF** dipakai Finance = **pagi 15 Okt 2026**. "15 Oktober" di seluruh dokumen (`CLAUDE.md`, `PROGRESS.md`) merujuk tanggal EFEKTIF, bukan jendela eksekusi.
 >
-> 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice, yang per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
+> 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice — ~~per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production~~ **[✅ TERPENUHI 9 Okt 2026, lihat H-1.0 & §Koreksi Data dan Akses Manual]**), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
 
 ---
 
@@ -38,7 +38,7 @@
 | 11 | `20260927000001_invoice_due_date_backfill` | ✔ 25 Sep (fixture) | ⛔ belum | ⛔ **WAJIB** — AR Tahap 2 |
 | 12 | `20260927000002_account_role_mapping` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — AR Tahap 2, SEBELUM butir 13 |
 | 13 | `20260927000003_journal_account_roles_and_readiness` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 9 DAN butir 12 |
-| 14 | Grant menu `fin_invoice` (`20260927000004`) | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — tanpa ini halaman baru super_admin-only |
+| 14 | Grant menu `fin_invoice` (`20260927000004`) | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB, JALANKAN SEBELUM LANGKAH 4** — tanpa ini `finance_controller` terkunci TOTAL dari halaman Finance AR (bukan cuma "halaman baru super_admin-only") |
 | 15 | Parity staging: `20260902000006` + `20260910000001` | ✔ 25 Sep | ✔ sudah sejak 2-11 Sep | — **nol** — arah terbalik |
 | 16 | `20260928000001_invoice_header_v2` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — invoice lengkap, PERTAMA |
 | 17 | `20260928000002_invoice_line_v2` | ✔ 25 Sep | ⛔ belum | ⛔ **WAJIB** — sesudah butir 16 |
@@ -422,6 +422,8 @@ Tanpa baris itu berkas ini berhenti dan tidak mengubah apa pun — diuji 25 Sep 
 **Tidak ada key menu baru.** `fin_invoice` ("Billing / Invoice", modul `finance`) sudah ada di katalog; sebelum ini ia punya **nol grant role** karena id menu `billing` terparkir di `PLANNED_MENU_IDS` dan tidak dipasang di tab mana pun. AR Tahap 2 memasangnya di tab **6.2.1**, jadi gate-nya cuma soal grant.
 
 ⚠️ **IZIN MENU BUKAN IZIN AKSI.** Role `finance` akan MELIHAT halaman ini, tapi DB tetap menolaknya menerbitkan invoice, submit, dan mencatat pembayaran. Itu DISENGAJA (keputusan Den K-6): FE menampilkan tombolnya **nonaktif beserta alasannya**, bukan menyembunyikannya — supaya orang tahu jalurnya ada dan siapa yang bisa memakainya. Terbukti runtime di staging: `zzztest.finance` ditolak peran untuk terbit DAN bayar, `zzztest.controller` diterima keduanya, dan tebakan FE cocok dengan hasil DB **8 dari 8**.
+
+⛔ **WAJIB JALAN SEBELUM LANGKAH 4 (smoke test pasca-deploy) — bukan sekadar "wajib jalankan" generik.** Migrasi ini SATU-SATUNYA izin menu modul Finance untuk peran `finance_controller`. Kalau terlewat di tengah 30+ migrasi malam itu, peran `finance_controller` akan terkunci TOTAL dari seluruh halaman Finance AR (Invoice Management, Submission/TTF, AR Aging, Payment & Collection — keempatnya satu menu `billing`→`fin_invoice`) **walau peran dan RPC approval-nya sendiri sudah benar** — role check `finance_controller` di `approve_invoice_issue`/`reject_invoice_issue` (butir 41) TIDAK bergantung pada menu permission, jadi **nol error terlihat** sampai ada yang mencoba membuka halamannya. Ini sudah TERUJI di staging — 3 baris grant (`ceo`, `finance`, `finance_controller`) dipasang 25 Sep 2026 (lihat baris "Staging" di atas), bukan migrasi yang belum pernah dicoba.
 
 ⚠️ **Tidak menggeser baseline sweep QA.** Kelima akun sweep memegang `bd_sales_executive` / `operations` / `hcga_personel` / `proc_staff` / `viewer` — diukur 25 Sep 2026, nol di antaranya `finance`, `finance_controller`, atau `ceo`.
 
@@ -1354,6 +1356,7 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 | 18 Sep 2026 | UPDATE `roles` (level 7→6) + INSERT 6 baris `role_menu_permissions` untuk role `bd_digital_marketing_spv` ("Digital Marketing Supervisor") — enam izin VIEW: `crm_dashboard`, `crm_pipeline`, `crm_prospects`, `crm_inquiry`, `crm_quotation`, `crm_customers` | Supaya role ini lolos `is_manager_or_above()` dan sejajar dengan Sales Supervisor | Claude chat + connector Supabase | Permanen. |
 | ~2 Sep 2026 (tanggal eksekusi tidak presisi, ditemukan lewat diff snapshot 5 Sep) | REVOKE akses `anon` pada fungsi `get_table_columns` | Pengerasan akses — fungsi itu tak seharusnya terbuka untuk `anon` | Tidak diketahui persis (ditemukan dari diff snapshot, bukan dicatat saat eksekusi) | Permanen. Sudah tercatat `08_TECH_DEBT.md` **TD-24 RESOLVED** / `03_DATA_MODEL.md` **gotcha #23** — ditautkan di sini karena ini JUGA contoh akses manual tanpa jejak git. |
 | 6 Okt 2026, 08:04 UTC | UPDATE `accounts.source`: akun "HOME WELL INDONESIA" (`id = 40808722-7a4a-4756-9061-c002692a685c`, company MSI) diubah dari `sales_visit` ke `whatsapp` | Salah pilih saat input awal | Claude chat + connector Supabase | Permanen. Terkait **TD-307** (`08_TECH_DEBT.md`) — field `source` di `ProspectFormPage.jsx` punya nilai DEFAULT diam-diam, bukan field wajib tanpa pilihan, yang sedang memicu kesalahan input seperti ini. |
+| 9 Okt 2026 | Akun baru **Bagus Putra Kurnia** (`bagus.putra@msigroup.co.id`) dibuat lewat Admin Settings dengan peran `finance_controller`@MSI; peran `finance_controller`@SOA ditambahkan manual (`INSERT user_roles`, `granted_by` = Den) | Penyetuju invoice Storbit tersedia sebelum rilis 14 Okt — gerbang approval RPC `approve_invoice_issue`/`reject_invoice_issue` (butir 40-41) tanpa penyetuju aktif berarti setiap invoice baru menumpuk tak terbatas di `pending_approval` | Admin Settings (akun) + Claude chat + connector Supabase (role @SOA) | Permanen. Diverifikasi: 2 baris `user_roles` aktif (`finance_controller`@MSI, `finance_controller`@SOA). **Butir H-1.0 di bawah ("cek akun penyetuju") kini TERPENUHI** — lihat anotasi koreksi di sana. |
 
 ### Backfill Fase B — 68 SP historis Storbit-Indomarco (23-24 Sep 2026)
 
@@ -1385,7 +1388,7 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 
 #### H-1.0 — Akun penyetuju
 
-⛔ **Temuan 7 Okt 2026: di production BELUM ADA SATU PUN akun aktif ber-role `finance_controller`.** Guard `approve_invoice_issue`/`reject_invoice_issue` (butir 41) — sengaja TANPA `is_manager_or_above()`, keputusan rapat 9/11/24 Sep 2026 — hanya meloloskan `super_admin`, `finance_controller`, atau `ceo` (lihat `src/lib/roles.js`, `canApproveInvoice`). Hari ini satu-satunya penyetuju yang tersedia di entitas SOA adalah **CEO (Azhar Malik)** dan **super_admin**.
+~~⛔ **Temuan 7 Okt 2026: di production BELUM ADA SATU PUN akun aktif ber-role `finance_controller`.**~~ **[✅ TERPENUHI 9 Okt 2026: akun Bagus Putra Kurnia (`finance_controller`@MSI + @SOA) dibuat, lihat tabel §Koreksi Data dan Akses Manual di atas. Teks temuan asli di bawah dipertahankan sebagai jejak — SOA kini punya penyetuju aktif di luar CEO/super_admin, tapi baca tetap seluruh paragraf ini untuk konteksnya.]** Guard `approve_invoice_issue`/`reject_invoice_issue` (butir 41) — sengaja TANPA `is_manager_or_above()`, keputusan rapat 9/11/24 Sep 2026 — hanya meloloskan `super_admin`, `finance_controller`, atau `ceo` (lihat `src/lib/roles.js`, `canApproveInvoice`). Hari ini satu-satunya penyetuju yang tersedia di entitas SOA adalah **CEO (Azhar Malik)** dan **super_admin**.
 
 **Kenapa ini genting, bukan cuma catatan:** sejak butir 40 live, `create_invoice_for_sp` **berhenti** langsung menerbitkan — setiap invoice baru masuk `pending_approval` dan **menunggu** salah satu dari ketiga role itu menyetujuinya. **Tanpa penyetuju yang benar-benar tersedia malam/pagi itu, SETIAP invoice yang diajukan sesudah butir 40 akan menumpuk di `pending_approval` tanpa batas waktu** — bukan gagal, tapi juga tidak pernah selesai sampai ada yang membuka halaman Approval dan menekan Setujui.
 
@@ -1572,7 +1575,7 @@ pg_dump --version
 | 11 | `20260927000001_invoice_due_date_backfill.sql` | sesudah butir 9 |
 | 12 | `20260927000002_account_role_mapping.sql` | — |
 | 13 | `20260927000003_journal_account_roles_and_readiness.sql` | butir 9 **dan** 12 |
-| 14 | `20260927000004_menu_grant_fin_invoice.sql` | — (tanpa ini, 6.2.1 hanya terlihat super_admin) |
+| 14 | `20260927000004_menu_grant_fin_invoice.sql` | — (tanpa ini, 6.2.1 hanya terlihat super_admin) ⛔ **JALANKAN SEBELUM LANGKAH 4** — satu-satunya izin menu Finance untuk `finance_controller`, lihat ## 14 |
 
 #### 1C. Invoice Lengkap — butir 16 → 17 → 18 → 19 → 21 → 22 → 23 → 24 → 25 → 26
 
@@ -1671,6 +1674,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 4.6 | Dari akun yang sama, konfirmasi kartu **"Layanan Karyawan"** tampil di Beranda dan kedua tombolnya ("Buat Permintaan"/"Permintaan Saya") membuka halaman HRGA | Siapa pun yang pegang akun uji Sales |
 | 4.7 | Login sebagai akun **gudang/Operations**, buka Detail SP yang Surat Jalannya sudah `delivered`, isi tanggal tanda tangan lewat **"Lengkapi Tanggal Ditandatangani"** — fitur ini BARU di production malam ini (butir 8) | Gudang |
 | 4.8 | Dari akun yang sama atau admin, buka **Edit Item SP**, ketik ongkir **`1.766.050`**, simpan, buka lagi — konfirmasi nilainya **tetap `1.766.050`**, BUKAN berubah jadi `1,77` (regresi lama yang baru ditutup di commit `4d81943`, 7 Okt 2026) | Gudang/Admin |
+| 4.9 | Login sebagai akun **Bagus Putra Kurnia** (`finance_controller`), pastikan menu "Billing / Invoice" tampil di sidebar dan tab invoice **"Menunggu Persetujuan"** (`pending_approval`) bisa dibuka. ⚠️ **JANGAN tekan tombol Setujui atau Tolak pada invoice ASLI selama smoke test ini** — persetujuan nyata PERTAMA dilakukan Pak Bagus sendiri pada 15 Okt (bukan bagian smoke test malam rilis) | Finance Controller (Bagus) |
 
 ⚠️ **Butir 4.3 memakai invoice SUNGGUHAN, bukan data uji yang bisa dihapus.** Nomor invoice yang keluar **permanen** (preseden: nomor 0012/0013 terpakai permanen dari insiden 7 Sep 2026), jurnalnya **benar-benar terposting**, dan **jalur void belum ada** di rilis ini — begitu terbit, tidak ada tombol untuk membatalkannya. **Wajib memakai SP yang memang sudah waktunya ditagih** (ambil dari kategori `4_lolos_bisa_ditagih` hasil H-1.1/pengukuran ulang malam itu) — JANGAN memakai SP sembarangan "cuma untuk tes".
 

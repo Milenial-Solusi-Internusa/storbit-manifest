@@ -335,7 +335,7 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 
 ## Branch Aktif (belum merge)
 
-> Branch kerja yang belum masuk `main` — dicatat agar tidak "hilang" dari governance. **Kosong per 17 Jul 2026: tak ada branch kerja yang menggantung — semua sudah merge ke `main`.** Section dipertahankan sbg placeholder untuk pencatatan branch mendatang.
+> Branch kerja yang belum masuk `main` — dicatat agar tidak "hilang" dari governance. ~~**Kosong per 17 Jul 2026: tak ada branch kerja yang menggantung — semua sudah merge ke `main`.**~~ **[Diperbarui 9 Okt 2026, doc-keeper] Masih kosong per 9 Okt 2026** — diukur ulang via `git merge-base --is-ancestor <branch> origin/develop` untuk seluruh 41 branch lokal lain selain `main`/`develop` (termasuk seluruh `feat/*`/`fix/*`/`hotfix/td281-*`/`feature/crm-v3-batch-persiapan`): **ke-41 branch itu SEMUANYA ancestor `develop`** — nol commit unik tersisa, nol yang menggantung. Angka totalnya saja yang dicatat di sini (bukan nama tiap cabang) — status commit/merge git-level sudah cukup dibaca langsung dari `git branch --merged`, menyalinnya satu-satu ke dokumen cuma akan basi lagi. Section dipertahankan sbg placeholder untuk pencatatan branch mendatang.
 
 - **`feat/detail-sp-reskin`** (UI-only, 1 file: `src/modules/logistics/SalesOrderDetailPage.jsx`) — re-skin halaman Detail Sales Order dari palet warm/cream → cool/navy brand (navy `#1B4D8A`/orange `#E85A1E`/amber), heading font Space Grotesk (keputusan final — lihat pengecualian di **TD-70**), reposisi header card, + **soft-tone pass** (indigo→slate soft, badge `TERKIRIM_PENUH`/`LUNAS` solid→tint, tombol primer orange solid→soft; tombol DANGER sengaja tetap solid merah). **Status: ✅ SUDAH MERGE ke `main` (`1ff0ffb`)** (koreksi 17 Jul — klaim lama "BELUM merge" **SALAH**); **BELUM tes runtime** (build clean). Detail kronologis: `00_DEV_JOURNEY.md` (Bagian 1, 2026-07-15).
 
@@ -455,6 +455,26 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 >
 > ⚠️ **Yang BELUM diputuskan (tetap terbuka, kini dengan dua preseden):** konvensi penomoran migrasi untuk dua jalur kerja aktif. Ini **kejadian ketiga** dari kelas "dua jalur menomori tanpa saling melihat" (7 Sep migrasi lintas-branch · 6-10 Sep register TD/Keputusan Terbuka · 29 Sep migrasi di dalam `main`), dan **kejadian keempat** muncul di sumbu register TD pada hari yang sama (lompatan TD-274…TD-284, `08_TECH_DEBT.md`). Satu-satunya penjaga hari ini tetap **kebiasaan memeriksa lebih dulu**, bukan mekanisme. → **Keputusan Terbuka #66**.
 
+### ⛔ TABRAKAN NOMOR MIGRASI — KEJADIAN KETIGA, ditemukan 9 Okt 2026: `20260928000001`–`20260928000004` DIPAKAI DUA KALI
+
+> **[Ditemukan sesi audit lanjutan 9 Okt 2026, di luar brief sesi.]** Keempat prefix 28 Sep ini ternyata masing-masing dipakai **dua** berkas — bukan satu seperti tersirat dari catatan di ekor bagian "KEJADIAN KEDUA" di atas (yang membandingkan seri koreksi ongkir dengan seri TD-281 `…00012`+ dan menyimpulkan "tidak bertabrakan"). Perbandingan itu **benar untuk pasangan yang dibandingkannya** — tapi tidak memeriksa seri ketiga yang hidup di rentang nomor yang sama.
+>
+> | prefix | seri "invoice v2" (AR Tahap 2, `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 16-19) | seri "ongkir fix" (rekonsiliasi AR Storbit, LIVE produksi 28-29 Sep) |
+> |---|---|---|
+> | `20260928000001` | `_invoice_header_v2.sql` | `_ongkir_fix_tahap2.sql` |
+> | `20260928000002` | `_invoice_line_v2.sql` | `_ongkir_fix_tahap3.sql` |
+> | `20260928000003` | `_invoice_issue_v2.sql` | `_ongkir_fix_tahap4.sql` |
+> | `20260928000004` | `_invoice_write_lockdown.sql` | `_fix_pengait_tahap5.sql` |
+>
+> Verifikasi: `ls supabase/migrations/ | grep "^20260928000001\|^20260928000002\|^20260928000003\|^20260928000004"` → delapan berkas, empat prefix, masing-masing dua.
+>
+> **Sebabnya sama seperti dua kejadian sebelumnya** — dua jalur kerja (AR Tahap 2 "invoice lengkap" dan rekonsiliasi ongkir/AR Storbit) menomori migrasi per-tanggal pada hari yang sama, tanpa saling melihat.
+>
+> ⛔ **Mengikuti keputusan Den 29 Sep 2026 untuk kejadian serupa: JANGAN RENAME.** Seri ongkir sudah LIVE produksi dari nomornya sendiri (28-29 Sep); seri invoice v2 masih tercatat di `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 16-19, BELUM dijalankan di produksi. Dicatat saja, bukan diubah.
+>
+> ⚠️ **Konsekuensi yang harus dibawa pembaca berikutnya: sebut NAMA LENGKAP berkas saat merujuk salah satu dari kedelapan ini** (`20260928000001_invoice_header_v2.sql` atau `20260928000001_ongkir_fix_tahap2.sql`), jangan prefiksnya saja — rujukan prefix-saja ("`20260928000001`") kini punya DUA arti berbeda.
+>
+> ⚠️ **Koreksi atas catatan di ekor bagian "KEJADIAN KEDUA" di atas:** kalimat *"di rentang 28 Sep nomornya TIDAK bertabrakan (seri TD-281 memakai `…00012`+)"* **masih benar untuk perbandingan yang dibuatnya** (seri ongkir vs seri TD-281) — tapi **tidak berlaku untuk seri invoice v2**, yang ternyata memakai prefix identik dengan seri ongkir di `…000001`–`…000004`. Jangan baca kalimat itu sebagai "seluruh rentang 28 Sep bebas tabrakan".
 
 ### ⛔ TABRAKAN NOMOR — SUMBU KETIGA & KEEMPAT: register TD dan Keputusan Terbuka (diukur 10 Sep 2026)
 
