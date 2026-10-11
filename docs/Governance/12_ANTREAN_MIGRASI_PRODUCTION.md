@@ -1357,6 +1357,7 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 | ~2 Sep 2026 (tanggal eksekusi tidak presisi, ditemukan lewat diff snapshot 5 Sep) | REVOKE akses `anon` pada fungsi `get_table_columns` | Pengerasan akses — fungsi itu tak seharusnya terbuka untuk `anon` | Tidak diketahui persis (ditemukan dari diff snapshot, bukan dicatat saat eksekusi) | Permanen. Sudah tercatat `08_TECH_DEBT.md` **TD-24 RESOLVED** / `03_DATA_MODEL.md` **gotcha #23** — ditautkan di sini karena ini JUGA contoh akses manual tanpa jejak git. |
 | 6 Okt 2026, 08:04 UTC | UPDATE `accounts.source`: akun "HOME WELL INDONESIA" (`id = 40808722-7a4a-4756-9061-c002692a685c`, company MSI) diubah dari `sales_visit` ke `whatsapp` | Salah pilih saat input awal | Claude chat + connector Supabase | Permanen. Terkait **TD-307** (`08_TECH_DEBT.md`) — field `source` di `ProspectFormPage.jsx` punya nilai DEFAULT diam-diam, bukan field wajib tanpa pilihan, yang sedang memicu kesalahan input seperti ini. |
 | 9 Okt 2026 | Akun baru **Bagus Putra Kurnia** (`bagus.putra@msigroup.co.id`) dibuat lewat Admin Settings dengan peran `finance_controller`@MSI; peran `finance_controller`@SOA ditambahkan manual (`INSERT user_roles`, `granted_by` = Den) | Penyetuju invoice Storbit tersedia sebelum rilis 14 Okt — gerbang approval RPC `approve_invoice_issue`/`reject_invoice_issue` (butir 40-41) tanpa penyetuju aktif berarti setiap invoice baru menumpuk tak terbatas di `pending_approval` | Admin Settings (akun) + Claude chat + connector Supabase (role @SOA) | Permanen. Diverifikasi: 2 baris `user_roles` aktif (`finance_controller`@MSI, `finance_controller`@SOA). **Butir H-1.0 di bawah ("cek akun penyetuju") kini TERPENUHI** — lihat anotasi koreksi di sana. |
+| 11 Okt 2026 | **`cron.alter_job(1, active := false)`** menonaktifkan job **`aging-pipeline-harian`** (jobid 1) — schedule dan command-nya TETAP tersimpan, hanya flag aktifnya dimatikan; terpisah, UPDATE **`companies.aging_enabled`** = `false` untuk entitas **MSI** | Mengikuti temuan audit mekanisme aging (dikerjakan sesi Claude Code sebelumnya) — Lead Pool aging otomatis dihentikan SEMENTARA, dieksekusi atas persetujuan eksplisit Den sebelum dijalankan | Claude chat + connector Supabase (MCP) | ⚠️ **[SEMENTARA, PERLU DITINJAU]** **Data pool TIDAK disentuh/diubah sama sekali** — hanya dua pengaturan di atas (job cron + flag entitas). Cara membalikkan: `cron.alter_job(1, active := true)` + set `companies.aging_enabled` MSI kembali `true`. |
 
 ### Backfill Fase B — 68 SP historis Storbit-Indomarco (23-24 Sep 2026)
 
@@ -1381,6 +1382,16 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 **Cakupan naskah ini: butir 6-46** (AR Tahap 1 sisa, AR Tahap 2 + Invoice Lengkap, Paket Keamanan TD-281 H1/H2/H3/H5 — sudah LIVE, hanya checkpoint, AR Tahap 3, AR Tahap 3b). **Butir 6, 7, 27-31, 45, 46 SUDAH LIVE** di kedua lingkungan — disebut di sini hanya sebagai checkpoint "pastikan masih utuh", bukan tindakan baru. ⛔ **TIDAK termasuk TD-300 Group E** — lihat penjelasan di penutup naskah ini.
 
 **Siapa menjalankan apa:** seluruh SQL di bawah dijalankan **Den** secara manual di SQL Editor/`execute_sql`, berurutan sesuai nomor. Naskah ini hanya urutan + apa yang harus dilihat di tiap langkah — bukan tombol otomatis.
+
+### Tata kelola branch `release/2026-10-14`
+
+**Sejak 11 Oktober 2026**, isi rilis ini dikunci di branch **`release/2026-10-14`** (dicabangkan dari `develop`@`1176df7`) — `develop` sendiri dibuka kembali hari yang sama untuk pekerjaan baru (Batch DS 3 dkk) yang **bukan** bagian rilis ini. Tiga aturan berlaku sampai rilis ini benar-benar terkirim:
+
+1. **Perbaikan terhadap isi rilis ini** (dari sekarang sampai malam 14 Okt) **di-commit ke `release/2026-10-14` dulu, lalu di-merge balik ke `develop`** — supaya `develop` tidak kehilangan perbaikan itu.
+2. **Perubahan yang berdampak ke STAGING dari pekerjaan `develop` yang berjalan** (Batch DS 3 dkk, atau apa pun yang mendarat di `develop` di periode ini) **wajib murni ADITIF** sampai rilis ini terkirim — tidak boleh ada yang mengubah atau mengganggu apa pun yang sudah terkunci di `release/2026-10-14` dan siap kirim 14 Okt.
+3. **Sesudah rilis ini sukses dikirim, `main` di-merge balik ke `develop`** (supaya `develop` menyerap apa pun yang mendarat di `main` selama rilis), dan **hanya sesudah itu** `release/2026-10-14` boleh dihapus.
+
+**Konsekuensi untuk naskah di bawah:** setiap langkah yang dulu menyebut "merge `develop` → `main`" sekarang berarti **merge `release/2026-10-14` → `main`** (merge commit biasa, bukan squash, bukan fast-forward-only) — lihat Langkah 2.
 
 ### Persiapan H-1 (13 Oktober 2026)
 
@@ -1552,7 +1563,7 @@ pg_dump --version
 |---|---|---|
 | 0.1 | Backup penuh production (schema + data) | `pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" --no-owner --no-privileges > backup_pre_launch_20261014.sql` — **TANPA** `--schema-only` (beda dari refresh `schema_snapshot.sql` yang memang schema-only). Simpan di luar repo. |
 | 0.2 | Catat posisi commit `main` SAAT INI (sebelum merge) | `git rev-parse main` — dibutuhkan kalau merge harus di-revert |
-| 0.3 | Catat posisi commit `develop` yang akan di-merge | `git rev-parse develop` |
+| 0.3 | Catat posisi commit `release/2026-10-14` yang akan di-merge | `git rev-parse release/2026-10-14` |
 | 0.4 | `node scripts/qa/env-drift-check.mjs` sekali lagi | Harapan: hanya **ANTRE** (= butir 8-46 di bawah) + **SELAMANYA**, **0 DRIFT**. Kalau ada DRIFT tak dikenal, **berhenti dan selidiki** sebelum lanjut — lihat §RUTINITAS SEBELUM UAT di atas. |
 | 0.5 | Cadangan ACL segar untuk fungsi yang di-DROP+CREATE malam ini | Butir 9(f) dan 35 mengganti tanda tangan fungsi (gotcha #37) — cadangan ACL 25 Sep **sudah basi**. Ambil `pg_get_functiondef`/`proacl` untuk `create_invoice`, `create_invoice_for_sp`, `submit_invoice`, `record_payment`, `mark_delivery_delivered` **malam ini, sebelum butir 9 dijalankan**. |
 | 0.6 | ⛔ **BEKUKAN input Finance DAN input SP/Surat Jalan/BTB gudang** | Minta Finance berhenti menerbitkan/mengubah invoice & pembayaran, dan tim gudang berhenti menginput SP baru, Surat Jalan, dan BTB, **sebelum butir 6 pertama dijalankan**. Alasan: tiga migrasi malam ini (butir 9, 35, 40 — lihat tabel di Langkah 2) mengubah kontrak yang dipakai kode LAMA secara aktif; SP/invoice/pembayaran/BTB yang diinput TEPAT di jendela antara "migrasi commit" dan "kode baru live" berisiko mendarat dalam keadaan tidak konsisten (lihat Langkah 2). **Jendela beku: dari langkah ini sampai Langkah 4.4 (smoke test + `env-drift-check` ulang) selesai dan dinyatakan lolos** — baru sesudah itu Finance dan gudang boleh kembali bekerja normal. |
@@ -1634,7 +1645,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role.sql` | — (mandiri) |
 | 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail.sql` | — (mandiri, tapi diperlukan panel Riwayat FE) |
 
-### Langkah 2 — Merge `develop` → `main` dan deploy kode
+### Langkah 2 — Merge `release/2026-10-14` → `main` dan deploy kode
 
 ⛔ **Urutan ini DISENGAJA: migrasi DULU (Langkah 1), kode SESUDAH.** Sebagian besar butir 6-44 aditif/backward-compatible (kolom baru, fungsi baru). **TAPI tiga di antaranya BUKAN sepenuhnya aman untuk kode lama yang masih tayang di `main` selama jendela antara "migrasi commit" dan "kode baru live" — dan itulah alasan Langkah 0.6 (pembekuan) ada:**
 
@@ -1648,9 +1659,9 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 
 | # | Langkah |
 |---|---|
-| 2.1 | Buka PR `develop` → `main` di GitHub (disarankan, bukan wajib) — supaya CI (build+lint) jalan dan ada jejak audit; atau merge lokal langsung kalau waktu sempit |
+| 2.1 | Buka PR `release/2026-10-14` → `main` di GitHub (disarankan, bukan wajib) — supaya CI (build+lint) jalan dan ada jejak audit; atau merge lokal langsung kalau waktu sempit |
 | 2.2 | Tunggu CI hijau (build clean, lint baseline) |
-| 2.3 | Merge dengan **merge commit biasa** (bukan squash, bukan rebase) — riwayat commit individual `develop` sudah berulang kali dirujuk per-hash di dokumen ini dan `PROGRESS.md`; squash akan memutus rujukan itu |
+| 2.3 | Merge dengan **merge commit biasa** (bukan squash, bukan rebase, bukan fast-forward-only) — riwayat commit individual yang dibawa `release/2026-10-14` (persis commit-commit yang sampai 11 Okt 2026 masih disebut `develop`, sebelum branch rilis ini dikunci) sudah berulang kali dirujuk per-hash di dokumen ini dan `PROGRESS.md`; squash akan memutus rujukan itu |
 | 2.4 | `git push origin main` |
 | 2.5 | Catat SHA commit merge yang baru masuk `main` |
 
@@ -1693,7 +1704,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 
 **Kalau SATU berkas gagal SEBELUM butir 9 commit** (termasuk butir 9 itu sendiri, kalau ia gagal di tengah jalan — setiap berkas dibungkus `BEGIN...COMMIT` sendiri, jadi kegagalan `RAISE EXCEPTION` dari V-PRA/V-POST membatalkan TRANSAKSI ITU SENDIRI secara otomatis, nol perubahan tersisa):
 1. **BERHENTI.** Production = persis seperti sebelum malam ini dimulai.
-2. **JANGAN lanjut ke Langkah 2 (merge `develop` → `main`).**
+2. **JANGAN lanjut ke Langkah 2 (merge `release/2026-10-14` → `main`).**
 3. **Tunda rilis** — jadwalkan ulang, jangan dipaksakan malam itu.
 4. **Buka kembali pembekuan Langkah 0.6** — Finance dan gudang boleh kembali bekerja normal; belum ada satu pun kontrak yang berubah untuk mereka.
 
