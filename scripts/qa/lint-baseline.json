@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-30T04:59:16.168Z",
-  "errors": 139,
-  "warnings": 21,
+  "generatedAt": "2026-10-11T19:59:35.601Z",
+  "errors": 132,
+  "warnings": 19,
   "files": {
     "src/App.jsx": {
       "errors": 5,
@@ -126,14 +126,6 @@
     "src/modules/crm/LeadPoolPage.jsx": {
       "errors": 2,
       "warnings": 0
-    },
-    "src/modules/crm/ProspectFormPage.jsx": {
-      "errors": 4,
-      "warnings": 1
-    },
-    "src/modules/crm/ProspectListPage.jsx": {
-      "errors": 3,
-      "warnings": 1
     },
     "src/modules/crm/QuotationDetailPage.jsx": {
       "errors": 2,

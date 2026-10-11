@@ -52,10 +52,9 @@ import Boundary from './Boundary.jsx';
 import ModuleShell from './ModuleShell.jsx';
 import RecordNotFound from './RecordNotFound.jsx';
 
-// ProspectListPage.jsx/ProspectFormPage.jsx TIDAK lagi dimount di sini --
-// diganti LeadCapturePage (Batch DS 3 Lead Management, Paket 1 irisan 4).
-// File lamanya SENGAJA belum dihapus (keputusan Den, menunggu irisan 5
-// menyelesaikan LeadDetailPage dulu) -- nol importir lain, aman dibiarkan.
+// ProspectListPage.jsx/ProspectFormPage.jsx diganti LeadCapturePage/
+// LeadDetailPage (Batch DS 3 Lead Management, Paket 1 irisan 4-5) dan
+// DIHAPUS di irisan 5 (nol importir tersisa).
 const LeadCapturePage         = lazy(() => import('@/modules/crm/lead/pages/LeadCapturePage'));
 const LeadDetailPage         = lazy(() => import('@/modules/crm/lead/pages/LeadDetailPage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
