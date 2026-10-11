@@ -43,7 +43,7 @@
 //     Templatnya dibiarkan di kontrak sampai ada pintu masuk edit yang nyata.
 // ============================================================================
 import { lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAppShell } from '@/contexts/useAppShell';
 import { supabase } from '@/lib/supabase';
 import { AccessDeniedPage } from '@/App.jsx';
@@ -52,8 +52,11 @@ import Boundary from './Boundary.jsx';
 import ModuleShell from './ModuleShell.jsx';
 import RecordNotFound from './RecordNotFound.jsx';
 
-const ProspectListPage       = lazy(() => import('@/modules/crm/ProspectListPage'));
-const ProspectFormPage       = lazy(() => import('@/modules/crm/ProspectFormPage'));
+// ProspectListPage.jsx/ProspectFormPage.jsx TIDAK lagi dimount di sini --
+// diganti LeadCapturePage (Batch DS 3 Lead Management, Paket 1 irisan 4).
+// File lamanya SENGAJA belum dihapus (keputusan Den, menunggu irisan 5
+// menyelesaikan LeadDetailPage dulu) -- nol importir lain, aman dibiarkan.
+const LeadCapturePage         = lazy(() => import('@/modules/crm/lead/pages/LeadCapturePage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
@@ -160,46 +163,43 @@ function RateListRoute() {
 }
 
 // ============================================================================
-// Account (Prospects / Lead Pool) — tab bar + Approval di luar tab
+// Lead Capture (ex-Account/Prospects) — Batch DS 3 Lead Management irisan 4
 // ============================================================================
-/** Tab bar Account disembunyikan saat form Prospect terbuka (sub-view satu
- *  halaman penuh) supaya form tak hilang karena salah pencet tab — perilaku
- *  lama; di sini "form terbuka" = rute /crm/lead/new, bukan lagi state. */
-function ProspectListRoute() {
+/** "Capture Lead" kini MODAL di dalam LeadCapturePage, bukan rute terpisah
+ *  (keputusan Den atas plan Lead Management, Perbedaan Visual #1 — pola baru
+ *  di app, menyimpang sengaja dari konvensi form-halaman-penuh). Handoff dari
+ *  ActivitiesPage (draft { name }, via rute lama `${P_LEAD}/new`) dibawa lewat
+ *  location.state ke sini supaya modal auto-terbuka ter-prefill — lihat
+ *  LeadNewRedirect di bawah. */
+function LeadCaptureRoute() {
   const { showToast, navigateToCustomerDetail } = useAppShell();
   const navigate = useNavigate();
+  const location = useLocation();
+  const openCapture = !!location.state?.openCapture;
+  const from = location.state?.from;
   return (
     <div>
       <Boundary title="CRM Prospects temporarily unavailable">
-        <ProspectListPage
-          onAddProspect={() => navigate(`${P_LEAD}/new`)}
+        <LeadCapturePage
           onSelectProspect={(p) => navigateToCustomerDetail(p.id)}
           showToast={showToast}
+          openCaptureOnMount={openCapture}
+          captureInitialName={location.state?.captureName || ''}
+          onCaptureClosed={() => { if (openCapture && from === 'activity') navigate(MENU_PATHS['crm-calls']); }}
         />
       </Boundary>
     </div>
   );
 }
 
-function ProspectFormRoute() {
-  const { showToast } = useAppShell();
-  const navigate = useNavigate();
+/** Rute lama `/crm/lead/capture/new` (dan `?from=activity` dari Activities)
+ *  TETAP BERFUNGSI — dialihkan ke daftar dengan modal Capture Lead terbuka,
+ *  bukan lagi ke ProspectFormPage. Nol pemanggil lain diukur (satu-satunya:
+ *  ActivitiesRoute di bawah). */
+function LeadNewRedirect() {
   const [sp] = useSearchParams();
-  // Draft dari ActivitiesPage dititipkan lewat location.state (bukan baris
-  // tersimpan → tak ada yang bisa di-fetch; refresh = form kosong, dan itu
-  // tetap lebih baik daripada perilaku lama yang melempar keluar form).
-  const draft = useLocation().state?.row ?? null;
-  return (
-    <div>
-      <Boundary title="Prospect Form temporarily unavailable">
-        <ProspectFormPage
-          prospect={draft}
-          onBack={() => navigate(sp.get('from') === 'activity' ? MENU_PATHS['crm-calls'] : P_LEAD)}
-          showToast={showToast}
-        />
-      </Boundary>
-    </div>
-  );
+  const draftName = useLocation().state?.row?.name ?? null;
+  return <Navigate to={P_LEAD} replace state={{ openCapture: true, captureName: draftName, from: sp.get('from') }} />;
 }
 
 function LeadPoolRoute() {
@@ -586,8 +586,8 @@ export const crmRoutes = [
       { path: MENU_PATHS['indomarco-dashboard'],    handle: { menuId: 'indomarco-dashboard' },    element: <IndomarcoDashboardRoute /> },
       { path: MENU_PATHS['crm-pipeline'],           handle: { menuId: 'crm-pipeline' },           element: <PipelineRoute /> },
 
-      { path: P_LEAD,                               handle: { menuId: 'crm-prospects' },          element: <ProspectListRoute /> },
-      { path: `${P_LEAD}/new`,                      handle: { menuId: 'crm-prospects' },          element: <ProspectFormRoute /> },
+      { path: P_LEAD,                               handle: { menuId: 'crm-prospects' },          element: <LeadCaptureRoute /> },
+      { path: `${P_LEAD}/new`,                      handle: { menuId: 'crm-prospects' },          element: <LeadNewRedirect /> },
       { path: MENU_PATHS['crm-lead-pool'],          handle: { menuId: 'crm-lead-pool' },          element: <LeadPoolRoute /> },
       { path: MENU_PATHS['crm-lead-pool-approval'], handle: { menuId: 'crm-lead-pool-approval' }, element: <LeadPoolApprovalRoute /> },
 
