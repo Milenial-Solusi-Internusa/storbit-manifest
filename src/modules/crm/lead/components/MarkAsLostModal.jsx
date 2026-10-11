@@ -15,7 +15,7 @@
 // saat alasannya 'lost_to_competitor', sama persis slug seed-nya.
 import { useState } from 'react';
 import { Modal, Textarea, FloatingInput, MasterSelect, Button, OutlineBtn } from '../../../../kit';
-import { INK_SOFT, LINE, FONT_MONO, SP } from '../../../../kit/tokens';
+import { INK, INK_SOFT, LINE, SEMANTIC, FONT_BODY, FONT_MONO, RADIUS, SP } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 
@@ -25,10 +25,12 @@ const COMPETITOR_VALUE = 'lost_to_competitor';
  * @param {boolean} open
  * @param {() => void} onClose
  * @param {Array<{id:string, name:string, code?:string, company_id:string}>} accounts
+ * @param {number} [skippedCount=0] - baris terpilih yang DIKELUARKAN sebelum sampai ke sini (mis. sudah Customer)
+ * @param {string} [skippedReason] - alasan manusiawi, ditampilkan apa adanya
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onMarked
  */
-export default function MarkAsLostModal({ open, onClose, accounts = [], showToast, onMarked }) {
+export default function MarkAsLostModal({ open, onClose, accounts = [], skippedCount = 0, skippedReason, showToast, onMarked }) {
   const { profile } = useAuth();
   const [reasonOptions, setReasonOptions] = useState([]);
   const [lostReason, setLostReason] = useState('');
@@ -75,28 +77,48 @@ export default function MarkAsLostModal({ open, onClose, accounts = [], showToas
     onMarked?.();
   }
 
-  if (!accounts.length) return null;
+  // `accounts` boleh kosong SAAT `open` -- itu berarti seluruh baris
+  // terpilih dikeluarkan pemanggil (mis. semuanya sudah Customer); modal
+  // tetap dirender supaya skippedCount di bawah terlihat, bukan diam-diam
+  // tak terjadi apa-apa. Hanya bail kalau `open` sendiri false.
+  if (!open && !accounts.length) return null;
+  const noneEligible = accounts.length === 0;
 
   return (
     <Modal open={open} onClose={onClose} title="Mark as Lost" width={480} footer={(
       <>
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
-        <Button variant="danger" loading={saving} disabled={!lostReason} onClick={handleConfirm}>Mark as Lost</Button>
+        {!noneEligible && <Button variant="danger" loading={saving} disabled={!lostReason} onClick={handleConfirm}>Mark as Lost</Button>}
       </>
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT, border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px' }}>
-          {bulk ? `${accounts.length} leads selected` : `${accounts[0].code ? `${accounts[0].code}, ` : ''}${accounts[0].name}`}
-        </div>
-
-        <MasterSelect label="Lost Reason" value={lostReason} onChange={setLostReason}
-          options={reasonOptions.map((o) => ({ value: o.value, label: o.label }))} />
-
-        {lostReason === COMPETITOR_VALUE && (
-          <FloatingInput label="Competitor Name" value={competitorName} onChange={setCompetitorName} />
+        {skippedCount > 0 && (
+          <div style={{
+            background: SEMANTIC.warn.bg, border: `1px solid ${SEMANTIC.warn.bd}`, borderRadius: RADIUS.md,
+            padding: '10px 14px', fontSize: 12.5, color: SEMANTIC.warn.fg, fontFamily: FONT_BODY,
+          }}>
+            {skippedCount} {skippedCount === 1 ? 'lead' : 'leads'} skipped{skippedReason ? ` (${skippedReason})` : ''}.
+          </div>
         )}
 
-        <Textarea label="Notes" value={notes} onChange={setNotes} rows={3} hint="Optional" />
+        {noneEligible ? (
+          <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY }}>No eligible leads left to mark as lost.</div>
+        ) : (
+          <>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT, border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px' }}>
+              {bulk ? `${accounts.length} leads selected` : `${accounts[0].code ? `${accounts[0].code}, ` : ''}${accounts[0].name}`}
+            </div>
+
+            <MasterSelect label="Lost Reason" value={lostReason} onChange={setLostReason}
+              options={reasonOptions.map((o) => ({ value: o.value, label: o.label }))} />
+
+            {lostReason === COMPETITOR_VALUE && (
+              <FloatingInput label="Competitor Name" value={competitorName} onChange={setCompetitorName} />
+            )}
+
+            <Textarea label="Notes" value={notes} onChange={setNotes} rows={3} hint="Optional" />
+          </>
+        )}
       </div>
     </Modal>
   );

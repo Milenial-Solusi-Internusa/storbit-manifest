@@ -32,6 +32,7 @@ import { LEAD_STATUS_META, deriveLeadStatus } from '../lib/leadStatus';
 import { SOURCES, SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
 import { ACTIVITY_TYPE_LABEL, listLeadActivities, addLeadNote, scheduleLeadFollowUp } from '../lib/leadActivity';
 import RequestNewOptionModal from '../../components/RequestNewOptionModal';
+import ContactModal from '../components/ContactModal';
 import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
@@ -105,6 +106,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const [contacts, setContacts] = useState([]);
   const [activities, setActivities] = useState([]);
   const [actorMap, setActorMap] = useState({});
+  const [inquiries, setInquiries] = useState([]);
   const [latestInquiry, setLatestInquiry] = useState(null);
   const [latestQuotation, setLatestQuotation] = useState(null);
   const [industryOptions, setIndustryOptions] = useState([]);
@@ -151,10 +153,15 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   }, [id, showToast]);
   useEffect(() => { Promise.resolve().then(fetchActivities); }, [fetchActivities]);
 
+  // Tab History (koreksi Den atas mockup 20): SELURUH inquiry akun ini,
+  // bukan cuma yang terbaru -- `inquiries` dipakai HistoryTab, `latestInquiry`
+  // (= inquiries[0]) tetap dipakai Related Documents (satu baris terbaru,
+  // anatomi panel itu tak berubah).
   const fetchHistory = useCallback(async () => {
     if (!id) return;
     const { data: inqs } = await supabase.from('inquiries').select('id, inquiry_no, status, created_at')
-      .eq('prospect_id', id).is('deleted_at', null).order('created_at', { ascending: false }).limit(1);
+      .eq('prospect_id', id).is('deleted_at', null).order('created_at', { ascending: false }).limit(200);
+    setInquiries(inqs || []);
     const inq = inqs?.[0] || null;
     setLatestInquiry(inq);
     if (inq) {
@@ -305,13 +312,15 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               showToast={showToast}
             />
           )}
-          {tab === 'contacts' && <ContactsTab contacts={contacts} />}
+          {tab === 'contacts' && (
+            <ContactsTab contacts={contacts} accountId={id} companyId={companyId} showToast={showToast} onChanged={fetchContacts} />
+          )}
           {tab === 'activity' && (
             <ActivityTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
               profile={profile} showToast={showToast} onChanged={fetchActivities} />
           )}
           {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
-          {tab === 'history' && <HistoryTab inquiry={latestInquiry} onOpenInquiry={onOpenInquiry} />}
+          {tab === 'history' && <HistoryTab inquiries={inquiries} onOpenInquiry={onOpenInquiry} />}
           {tab === 'notes' && (
             <NotesTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
               profile={profile} showToast={showToast} onChanged={fetchActivities} />
@@ -522,38 +531,81 @@ function OverviewTab({ account, setAccount, id, companyId, industryOptions, cate
 }
 
 /* =========================================================================
-   CONTACTS -- read-only (nol "+ Add Contact"/edit-per-kontak di irisan ini;
-   belum ada modal yang memintanya secara eksplisit -- lihat laporan akhir).
+   CONTACTS -- koreksi Den atas mockup 17: Add Contact + edit kontak (semula
+   read-only di irisan 5 asli). "Set as Primary" aksi langsung (tanpa form)
+   seperti link "Reassign" di Owner -- dua UPDATE berurutan (lepas primary
+   lama, pasang primary baru), bukan RPC baru (tabel kecil, konsekuensi
+   gagal-di-tengah = pengulangan klik, bukan data rusak permanen).
    ========================================================================= */
-function ContactsTab({ contacts }) {
-  if (!contacts.length) return <EmptyState icon="users" title="No contacts yet" sub="Contacts captured for this lead will appear here." />;
+function ContactsTab({ contacts, accountId, companyId, showToast, onChanged }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState(null); // null = Add baru
+  const [settingPrimaryId, setSettingPrimaryId] = useState(null);
+
+  async function setPrimary(contactId) {
+    setSettingPrimaryId(contactId);
+    const { error: e1 } = await supabase.from('contacts').update({ is_primary: false }).eq('account_id', accountId).eq('is_primary', true);
+    const { error: e2 } = e1 ? { error: e1 } : await supabase.from('contacts').update({ is_primary: true }).eq('id', contactId);
+    setSettingPrimaryId(null);
+    if (e1 || e2) { showToast?.('Failed to set primary contact: ' + (e1 || e2).message, 'error'); return; }
+    onChanged?.();
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: SP.s4 }}>
-      {contacts.map((c) => {
-        const tone = avatarToneFor(c.id);
-        const initials = c.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-        return (
-          <div key={c.id} style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: SP.s4, background: CARD }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SP.s3 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 28, height: 28, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD }}>{initials}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{c.name}</span>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: SP.s4 }}>
+        <PrimaryBtn onClick={() => { setEditingContact(null); setModalOpen(true); }}>+ Add Contact</PrimaryBtn>
+      </div>
+
+      {!contacts.length ? (
+        <EmptyState icon="users" title="No contacts yet" sub="Contacts captured for this lead will appear here." />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: SP.s4 }}>
+          {contacts.map((c) => {
+            const tone = avatarToneFor(c.id);
+            const initials = c.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+            return (
+              <div key={c.id} style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: SP.s4, background: CARD }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SP.s3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 28, height: 28, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD }}>{initials}</span>
+                    <span style={{ fontSize: 14.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{c.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {c.is_primary
+                      ? <Badge tone="info">Primary</Badge>
+                      : (
+                        <button type="button" disabled={settingPrimaryId === c.id} onClick={() => setPrimary(c.id)}
+                          style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 12.5, textDecoration: 'underline', cursor: settingPrimaryId === c.id ? 'default' : 'pointer', fontFamily: FONT_BODY }}>
+                          {settingPrimaryId === c.id ? 'Saving…' : 'Set as Primary'}
+                        </button>
+                      )}
+                    <OutlineBtn size="xs" onClick={() => { setEditingContact(c); setModalOpen(true); }}>Edit</OutlineBtn>
+                  </div>
+                </div>
+                <div style={grid2}>
+                  <ViewField label="Position" value={c.position} />
+                  <ViewField label="Role" value={c.role_type} />
+                  <ViewField label="Phone" value={c.phone} mono />
+                  <ViewField label="WhatsApp" value={c.whatsapp} mono />
+                </div>
+                <div style={{ marginTop: SP.s4, display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
+                  <ViewField label="Email" value={c.email} full />
+                  <ViewField label="Preferred Channel" value={c.preferred_channel ? (c.preferred_channel === 'whatsapp' ? 'WhatsApp' : c.preferred_channel === 'call' ? 'Call' : 'Email') : null} full />
+                </div>
               </div>
-              {c.is_primary && <Badge tone="info">Primary</Badge>}
-            </div>
-            <div style={grid2}>
-              <ViewField label="Position" value={c.position} />
-              <ViewField label="Role" value={c.role_type} />
-              <ViewField label="Phone" value={c.phone} mono />
-              <ViewField label="WhatsApp" value={c.whatsapp} mono />
-            </div>
-            <div style={{ marginTop: SP.s4, display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-              <ViewField label="Email" value={c.email} full />
-              <ViewField label="Preferred Channel" value={c.preferred_channel ? (c.preferred_channel === 'whatsapp' ? 'WhatsApp' : c.preferred_channel === 'call' ? 'Call' : 'Email') : null} full />
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
+
+      <ContactModal
+        open={modalOpen} onClose={() => setModalOpen(false)}
+        accountId={accountId} companyId={companyId} contact={editingContact}
+        makePrimaryDefault={contacts.length === 0}
+        showToast={showToast}
+        onSaved={() => { setModalOpen(false); showToast?.(editingContact ? 'Contact updated' : 'Contact added'); onChanged?.(); }}
+      />
     </div>
   );
 }
@@ -703,6 +755,13 @@ function NotesTab({ activities, actorMap, accountId, companyId, profile, showToa
    menandai sebagai tech debt bukan pekerjaan yang diminta; dicatat di
    laporan akhir sebagai deviasi sadar dari mockup.
    ========================================================================= */
+const QUALIFICATION_FIELDS = [
+  { label: 'Commodity', key: 'bant_commodity' }, { label: 'Origin', key: 'bant_origin' },
+  { label: 'Destination', key: 'bant_destination' }, { label: 'Shipping Frequency', key: 'bant_frequency' },
+  { label: 'Current Vendor', key: 'bant_current_vendor' }, { label: 'Payment Method', key: 'bant_payment' },
+  { label: 'Decision Maker', key: 'bant_decision_maker' },
+];
+
 function BantTab({ account, id, setAccount, showToast }) {
   const score = calcBantScore(account);
   async function setDim(key, value) {
@@ -711,12 +770,34 @@ function BantTab({ account, id, setAccount, showToast }) {
     const { error } = await supabase.from('accounts').update({ [key]: value, last_activity_at: new Date().toISOString() }).eq('id', id);
     if (error) { setAccount((a) => ({ ...a, [key]: prev })); showToast?.('Failed to update BANT: ' + error.message, 'error'); }
   }
-  const legacy = [
-    { label: 'Commodity', key: 'bant_commodity' }, { label: 'Origin', key: 'bant_origin' },
-    { label: 'Destination', key: 'bant_destination' }, { label: 'Shipping Frequency', key: 'bant_frequency' },
-    { label: 'Current Vendor', key: 'bant_current_vendor' }, { label: 'Payment Method', key: 'bant_payment' },
-    { label: 'Decision Maker', key: 'bant_decision_maker' },
-  ];
+
+  // Qualification Data (7 kolom legacy bant_commodity dkk) -- SEKARANG bisa
+  // diedit sesuai koreksi Den atas mockup 19 (sebelumnya read-only di
+  // irisan 5 asli, dengan alasan "kolom tech-debt" -- Den menilai itu salah
+  // baca mockup: Edit di sana memang untuk ketujuh field ini, bukan kolom
+  // bant_budget/dkk yang skornya 0-3). Teks bebas (FloatingInput) mengikuti
+  // persis nilai tampilan mockup ("2 × 40ft per month", "Credit 30 days") --
+  // keduanya TIDAK cocok dengan opsi dropdown lama BANT_FREQUENCY_OPTIONS/
+  // BANT_PAYMENT_OPTIONS (bant.js, ditandai "kompatibilitas impor lama"),
+  // jadi field ini sengaja teks bebas, bukan dropdown lama yang dibangkitkan.
+  const [qualEdit, setQualEdit] = useState(false);
+  const [qualDraft, setQualDraft] = useState(null);
+  function startQualEdit() {
+    const draft = {};
+    QUALIFICATION_FIELDS.forEach((f) => { draft[f.key] = account[f.key] || ''; });
+    setQualDraft(draft);
+    setQualEdit(true);
+  }
+  async function saveQual() {
+    const payload = {};
+    QUALIFICATION_FIELDS.forEach((f) => { payload[f.key] = qualDraft[f.key].trim() || null; });
+    const { error } = await supabase.from('accounts').update(payload).eq('id', id);
+    if (error) return { error };
+    setAccount((a) => ({ ...a, ...payload }));
+    setQualEdit(false);
+    return undefined;
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s5 }}>
       <div>
@@ -751,29 +832,61 @@ function BantTab({ account, id, setAccount, showToast }) {
         </div>
       </div>
 
-      <Card title="Qualification Data">
-        <div style={grid3}>
-          {legacy.map((f) => <ViewField key={f.key} label={f.label} value={account[f.key]} />)}
-        </div>
+      <Card title="Qualification Data" right={!qualEdit && <OutlineBtn size="sm" onClick={startQualEdit}>Edit</OutlineBtn>}>
+        {qualEdit ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
+            <div style={grid3}>
+              {QUALIFICATION_FIELDS.map((f) => (
+                <FloatingInput key={f.key} label={f.label} value={qualDraft[f.key]}
+                  onChange={(v) => setQualDraft((d) => ({ ...d, [f.key]: v }))} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
+              <OutlineBtn size="sm" onClick={() => setQualEdit(false)}>Cancel</OutlineBtn>
+              <SaveButton size="sm" onSave={saveQual} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
+            </div>
+          </div>
+        ) : (
+          <div style={grid3}>
+            {QUALIFICATION_FIELDS.map((f) => <ViewField key={f.key} label={f.label} value={account[f.key]} />)}
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
 /* =========================================================================
-   HISTORY -- disederhanakan jadi inquiry TERBARU untuk akun ini (bukan
-   daftar lengkap riwayat quotation bersarang) -- lihat laporan akhir.
+   HISTORY -- koreksi Den atas mockup 20: SELURUH inquiry akun ini (Inquiry
+   No, tanggal, status), bukan cuma yang terbaru. Tanpa daftar quotation
+   bersarang per inquiry (instruksi eksplisit).
    ========================================================================= */
-function HistoryTab({ inquiry, onOpenInquiry }) {
-  if (!inquiry) return <EmptyState icon="inbox" title="No inquiry history for this account yet." />;
+function HistoryTab({ inquiries, onOpenInquiry }) {
+  if (!inquiries.length) return <EmptyState icon="inbox" title="No inquiry history for this account yet." />;
+  const th = { padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY };
+  const td = { padding: '10px 12px', fontSize: 13.5, color: INK, fontFamily: FONT_BODY };
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: onOpenInquiry ? 'pointer' : 'default' }}
-      onClick={() => onOpenInquiry?.(inquiry.id)}>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY }}>Inquiry</div>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 14, color: INK, fontWeight: 600 }}>{inquiry.inquiry_no}</div>
-      </div>
-      <Badge tone="neutral">{inquiry.status}</Badge>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: HEAD_BG, borderBottom: `1px solid ${LINE}` }}>
+            <th style={th}>Inquiry No</th>
+            <th style={th}>Date</th>
+            <th style={th}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {inquiries.map((inq, i) => (
+            <tr key={inq.id}
+              onClick={() => onOpenInquiry?.(inq.id)}
+              style={{ borderBottom: i < inquiries.length - 1 ? `1px solid ${LINE_SOFT}` : 'none', cursor: onOpenInquiry ? 'pointer' : 'default' }}>
+              <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>{inq.inquiry_no}</td>
+              <td style={{ ...td, color: INK_SOFT }}>{fmtDate(inq.created_at)}</td>
+              <td style={td}><Badge tone="neutral">{inq.status}</Badge></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

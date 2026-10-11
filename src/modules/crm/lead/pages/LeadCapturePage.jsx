@@ -305,15 +305,19 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
               <OutlineBtn size="sm" onClick={() => setModalAction({ type: 'archive', accounts: leads.filter((l) => selected.has(l.id)) })}>Archive</OutlineBtn>
             )}
             {canMarkLost && (
-              <OutlineBtn size="sm" style={{ color: '#B4432A', borderColor: '#B4432A' }} onClick={() => setModalAction({
+              <OutlineBtn size="sm" style={{ color: '#B4432A', borderColor: '#B4432A' }} onClick={() => {
                 // Baris 'customer'/'lost' dikeluarkan dari target -- bulk select bisa
                 // mencampur status, dan menandai akun yang sudah jadi customer sebagai
                 // Lost tidak masuk akal (sama seperti penjagaan rowCanMarkLost di
                 // menu baris '⋮'). Baris yang dikeluarkan tetap TERPILIH di tabel
-                // (selected tak diubah) -- pemanggil cukup lihat sendiri baris mana
-                // yang tak ikut lewat Related Documents/status sesudahnya.
-                type: 'lost', accounts: leads.filter((l) => selected.has(l.id) && deriveLeadStatus(l) !== 'customer' && deriveLeadStatus(l) !== 'lost'),
-              })}>
+                // (selected tak diubah) -- jumlah & alasannya ditampilkan di modal
+                // lewat skippedCount/skippedReason (koreksi Den), bukan dibiarkan
+                // hilang diam-diam.
+                const selectedRows = leads.filter((l) => selected.has(l.id));
+                const eligible = selectedRows.filter((l) => deriveLeadStatus(l) !== 'customer' && deriveLeadStatus(l) !== 'lost');
+                const skippedCount = selectedRows.length - eligible.length;
+                setModalAction({ type: 'lost', accounts: eligible, skippedCount, skippedReason: 'already Customer or already Lost' });
+              }}>
                 Mark as Lost
               </OutlineBtn>
             )}
@@ -446,7 +450,9 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
 
       <ReassignModal open={modalAction?.type === 'reassign'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'reassign' ? modalAction.accounts : []} showToast={showToast}
         onReassigned={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead reassigned'); fetchLeads(); }} />
-      <MarkAsLostModal open={modalAction?.type === 'lost'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'lost' ? modalAction.accounts : []} showToast={showToast}
+      <MarkAsLostModal open={modalAction?.type === 'lost'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'lost' ? modalAction.accounts : []}
+        skippedCount={modalAction?.type === 'lost' ? modalAction.skippedCount : 0} skippedReason={modalAction?.skippedReason}
+        showToast={showToast}
         onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
       <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
         onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />

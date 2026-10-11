@@ -36,6 +36,11 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
   const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [form, setForm] = useState(() => emptyForm(profile?.company_id));
+  // WhatsApp mengikuti Phone SAMPAI user mengetik langsung di WhatsApp --
+  // begitu disentuh, berhenti mengikuti (pola "alamat penagihan = alamat
+  // kirim" standar: auto-isi default, bukan kunci permanen). Direset
+  // bersama form saat modal dibuka ulang.
+  const [whatsappTouched, setWhatsappTouched] = useState(false);
   const [similar, setSimilar] = useState([]);
   const [requestOptionFor, setRequestOptionFor] = useState(null); // 'industry' | 'lead_category' | null
   const [industryOptions, setIndustryOptions] = useState([]);
@@ -52,8 +57,12 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
     if (open) {
       setForm({ ...emptyForm(profile?.company_id), name: initialName || '' });
       setSimilar([]);
+      setWhatsappTouched(false);
     }
   }
+
+  const setPhone = (v) => setForm((f) => ({ ...f, contact_phone: v, contact_whatsapp: whatsappTouched ? f.contact_whatsapp : v }));
+  const setWhatsapp = (v) => { setWhatsappTouched(true); setForm((f) => ({ ...f, contact_whatsapp: v })); };
 
   const fetchOptions = (listKey, setter) => {
     supabase.from('dropdown_options').select('id, label, value')
@@ -169,8 +178,8 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
                 <FloatingInput label="Position" value={form.contact_position} onChange={set('contact_position')} />
               </div>
               <div style={grid2}>
-                <FloatingInput label="Phone" value={form.contact_phone} onChange={set('contact_phone')} />
-                <FloatingInput label="WhatsApp" value={form.contact_whatsapp} onChange={set('contact_whatsapp')} />
+                <FloatingInput label="Phone" value={form.contact_phone} onChange={setPhone} />
+                <FloatingInput label="WhatsApp" value={form.contact_whatsapp} onChange={setWhatsapp} />
               </div>
               <FloatingInput label="Email" full type="email" value={form.contact_email} onChange={set('contact_email')} />
             </div>
