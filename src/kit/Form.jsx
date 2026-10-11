@@ -109,14 +109,22 @@ export function FloatingSelect({ label, value, onChange, options = [], half, thi
           boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
         }}
       >
-        {/* Placeholder kosong SAAT `value` belum ada nilai yang cocok di antara
-            `options` -- tanpa ini, <select> terkontrol dengan value="" yang
-            tak punya opsi value="" menampilkan opsi PERTAMA secara visual
-            (kuirk HTML native) padahal React state-nya tetap kosong, sehingga
-            memilih ulang opsi yang "sudah terlihat terpilih" itu tidak memicu
-            onChange sama sekali -- kebuntuan yang ditemukan di CaptureLeadModal
-            (field Source). Pola sama dengan MasterSelect.jsx. */}
-        {!value && <option value="" />}
+        {/* Placeholder kosong SAAT `value` belum ada nilai yang cocok DAN
+            `options` sendiri belum punya opsi value="" -- tanpa guard
+            pertama, <select> terkontrol dengan value="" yang tak punya opsi
+            value="" menampilkan opsi PERTAMA secara visual (kuirk HTML
+            native) padahal React state-nya tetap kosong, sehingga memilih
+            ulang opsi yang "sudah terlihat terpilih" itu tidak memicu
+            onChange sama sekali -- kebuntuan yang ditemukan di
+            CaptureLeadModal (field Source). Pola sama dengan
+            MasterSelect.jsx. Guard KEDUA (`!options.some(...)`) ditambahkan
+            setelah audit menemukan 8 dari 17 pemakai FloatingSelect sudah
+            menyertakan opsi value="" miliknya sendiri (mis. "— Pilih
+            entitas —") -- tanpa guard kedua, placeholder di sini jadi OPSI
+            KOSONG KEDUA yang tak berlabel, duplikat yang terlihat di
+            dropdown. Dua guard sekaligus = aman untuk pemakai yang SUDAH
+            menjaga sendiri maupun yang BELUM. */}
+        {!value && !options.some((o) => optVal(o) === '') && <option value="" />}
         {options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
       </select>
       <span style={{ position: 'absolute', right: 14, top: 20, color: INK_SOFT, pointerEvents: 'none' }}><ChevronDown size={16} /></span>
