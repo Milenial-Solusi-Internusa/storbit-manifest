@@ -3,7 +3,7 @@
 // Montserrat/Inter/IBM Plex Mono). Logic, fetch, fields, save, and BANT (4 dim 0–3)
 // are unchanged — only the visual layer was reworked.
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronDown, Save, UserPlus, X, DollarSign, Users, Target, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Save, UserPlus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, isSalesOnly } from '../../lib/roles';
@@ -11,9 +11,10 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
-import { BANT_DIMENSIONS, calcBantScore, bantQualifyGate, BANT_FREQUENCY_OPTIONS } from './bant';
+import { BANT_DIMENSIONS, calcBantScore, bantQualifyGate, BANT_FREQUENCY_OPTIONS } from './lib/bant';
 import { ACTIVE_STAGE_KEYS, isActiveStage, isKnownStage } from './DealPanels';
-import BantScoreBar from './BantScoreBar';
+import BantScoreBar from './components/BantScoreBar';
+import { BantCard } from './components/BantCard';
 
 /* ---------- design tokens (Lovable) ---------- */
 const C = {
@@ -44,8 +45,6 @@ const SOURCE_LABELS = {
   existing_network: 'Existing Network', exhibition: 'Exhibition / Pameran', instagram: 'Instagram',
   linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
-const BANT_ICON = { bant_budget: DollarSign, bant_authority: Users, bant_need: Target, bant_timeline: Clock };
-
 const S = {
   page: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
   headerCard: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', padding: '22px 26px', marginBottom: 22, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' },
@@ -560,33 +559,7 @@ function PrefixNameField({ prefix, onPrefix, name, onName, onNameBlur, error }) 
   );
 }
 
-/* ---------- BANT card ---------- */
-// Diekspor supaya bisa dipakai ulang di CustomerDetailPage.jsx (mode edit inline
-// BANT & Pipeline) — perilaku/tampilan di file ini sendiri tidak berubah.
-export function BantCard({ dim, value, onChange }) {
-  const [h, setH] = useState(false);
-  const DimIcon = BANT_ICON[dim.key] || Target;
-  const selected = dim.options.find(o => o.value === value);
-  return (
-    <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ border: '1px solid ' + (h ? C.borderStrong : C.border), borderRadius: 14, padding: 18, background: h ? '#FCFDFE' : '#fff', transition: 'border-color .16s ease, background .16s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 32px' }}><DimIcon size={17} /></div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14.5, color: C.text }}>{dim.label}</div>
-        <div style={{ marginLeft: 'auto', fontFamily: "'IBM Plex Mono',monospace", fontWeight: 700, fontSize: 13, color: value > 0 ? C.navy : C.muted }}>{value}<span style={{ color: C.muted, fontWeight: 500 }}>/3</span></div>
-      </div>
-      <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.45, marginBottom: 13, minHeight: 34 }}>{dim.description}</div>
-      <div style={{ position: 'relative' }}>
-        <select value={value} onChange={onChange} style={{ ...S.input, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 38, cursor: 'pointer' }}>
-          {dim.options.map(o => <option key={o.value} value={o.value}>{o.value} — {o.label}</option>)}
-        </select>
-        <SelectChevron />
-      </div>
-      {selected && (
-        <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: C.orange, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 6, height: 6, borderRadius: 999, background: C.orange, flex: '0 0 6px' }} />{selected.label}
-        </div>
-      )}
-    </div>
-  );
-}
+// BantCard pindah ke ./components/BantCard.jsx (Batch DS 3 Lead Management,
+// Paket 1 irisan 2) -- dipakai lewat import di kepala file, tidak lagi
+// didefinisikan di sini. Lihat komentar di file barunya untuk alasan naik
+// level (dipakai ≥2 sub-fitur CRM: lead dan customer).

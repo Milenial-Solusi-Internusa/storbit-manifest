@@ -1,8 +1,14 @@
-// src/modules/crm/bant.js
+// src/modules/crm/lib/bant.js
 // BANT qualification — sumber kebenaran scoring (no JSX).
 // Model baru: 4 dimensi (Budget / Authority / Need / Timeline), tiap dimensi
-// rubric 0–3 → skor 0–12. Dipakai ProspectFormPage (capture), BantScoreBar
-// (visual), PipelineKanbanPage (gate CONTACTED→QUALIFIED).
+// rubric 0–3 → skor 0–12. Dipakai LeadDetailPage/LeadCapturePage (capture),
+// BantScoreBar (visual), PipelineKanbanPage (gate CONTACTED→QUALIFIED).
+//
+// Pindah dari src/modules/crm/bant.js (Batch DS 3 Lead Management, Paket 1
+// irisan 2) ke sini karena dipakai ≥2 sub-fitur CRM (lead DAN customer) —
+// aturan Batch_FS_Fase_0_Aturan_Struktur.md §5: naik ke level MODUL
+// (modules/crm/lib/), bukan tetap di lead/ atau di root crm/. Isi file
+// byte-identik, nol perubahan perilaku.
 
 export const BANT_DIMENSIONS = [
   {

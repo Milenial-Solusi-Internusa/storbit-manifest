@@ -8,12 +8,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { canCreatePrf } from '../../lib/roles';
-import BantScoreBar from './BantScoreBar';
-import { calcBantScore, bantQualifyGate, BANT_DIMENSIONS } from './bant';
+import BantScoreBar from './components/BantScoreBar';
+import { calcBantScore, bantQualifyGate, BANT_DIMENSIONS } from './lib/bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
-import { BantCard } from './ProspectFormPage';
+import { BantCard } from './components/BantCard';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import {
   DealStepper, DealHeaderControls, EditDealModal, PrfListCard, Tab,

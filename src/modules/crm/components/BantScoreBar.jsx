@@ -1,8 +1,13 @@
-// src/modules/crm/BantScoreBar.jsx
+// src/modules/crm/components/BantScoreBar.jsx
 // BANT score bar — used in both the prospect form and the read-only detail modal.
 // Model 0–12 (4 dimensi × 0–3). Warna/label dari bantScoreMeta (≥8 hijau, ≥5
 // amber, <5 merah).
-import { bantScoreMeta, BANT_MAX_SCORE } from './bant';
+//
+// Pindah dari src/modules/crm/BantScoreBar.jsx (Batch DS 3 Lead Management,
+// Paket 1 irisan 2) — dipakai ≥2 sub-fitur CRM (lead DAN customer), lihat
+// Batch_FS_Fase_0_Aturan_Struktur.md §5. Isi byte-identik kecuali path impor
+// bant.js yang ikut pindah ke lib/.
+import { bantScoreMeta, BANT_MAX_SCORE } from '../lib/bant';
 
 export default function BantScoreBar({ score, max = BANT_MAX_SCORE }) {
   const meta = bantScoreMeta(score);
