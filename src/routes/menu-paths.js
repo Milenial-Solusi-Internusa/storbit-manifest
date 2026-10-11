@@ -95,7 +95,7 @@ const P = MENU_PATHS;
 export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
   'crm-inquiry':        [`${P['crm-inquiry']}/new`, `${P['crm-inquiry']}/:id`, `${P['crm-inquiry']}/:id/edit`],
   'quotation-draft':    [`${P['quotation-draft']}/new`, `${P['quotation-draft']}/:id`, `${P['quotation-draft']}/:id/edit`],
-  'crm-prospects':      [`${P['crm-prospects']}/new`, `${P['crm-prospects']}/:id/edit`],
+  'crm-prospects':      [`${P['crm-prospects']}/new`, `${P['crm-prospects']}/:id`, `${P['crm-prospects']}/:id/edit`],
   // Dua bentuk BERSARANG lahir di G3 sebagai konsekuensi keputusan Den
   // "kembali ke customer yang membukanya": tujuan itu hanya deterministik
   // kalau ASAL-USULNYA ada di URL. Kalau dititipkan ke location.state,

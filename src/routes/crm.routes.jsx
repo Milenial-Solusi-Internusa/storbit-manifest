@@ -57,6 +57,7 @@ import RecordNotFound from './RecordNotFound.jsx';
 // File lamanya SENGAJA belum dihapus (keputusan Den, menunggu irisan 5
 // menyelesaikan LeadDetailPage dulu) -- nol importir lain, aman dibiarkan.
 const LeadCapturePage         = lazy(() => import('@/modules/crm/lead/pages/LeadCapturePage'));
+const LeadDetailPage         = lazy(() => import('@/modules/crm/lead/pages/LeadDetailPage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
@@ -170,9 +171,14 @@ function RateListRoute() {
  *  di app, menyimpang sengaja dari konvensi form-halaman-penuh). Handoff dari
  *  ActivitiesPage (draft { name }, via rute lama `${P_LEAD}/new`) dibawa lewat
  *  location.state ke sini supaya modal auto-terbuka ter-prefill — lihat
- *  LeadNewRedirect di bawah. */
+ *  LeadNewRedirect di bawah.
+ *
+ *  Klik baris -> `${P_LEAD}/:id` (LeadDetailRoute, irisan 5) untuk SEMUA
+ *  baris, termasuk yang sudah lifecycle_stage='customer' -- LeadDetailRoute
+ *  sendiri yang mengalihkan ke /crm/customer/:id begitu baris itu dibuka
+ *  (satu titik keputusan, bukan dua: lihat komentar kepala LeadDetailRoute). */
 function LeadCaptureRoute() {
-  const { showToast, navigateToCustomerDetail } = useAppShell();
+  const { showToast } = useAppShell();
   const navigate = useNavigate();
   const location = useLocation();
   const openCapture = !!location.state?.openCapture;
@@ -181,7 +187,7 @@ function LeadCaptureRoute() {
     <div>
       <Boundary title="CRM Prospects temporarily unavailable">
         <LeadCapturePage
-          onSelectProspect={(p) => navigateToCustomerDetail(p.id)}
+          onSelectProspect={(p) => navigate(`${P_LEAD}/${p.id}`)}
           showToast={showToast}
           openCaptureOnMount={openCapture}
           captureInitialName={location.state?.captureName || ''}
@@ -189,6 +195,38 @@ function LeadCaptureRoute() {
         />
       </Boundary>
     </div>
+  );
+}
+
+/** Detail Lead (irisan 5) -- GUARD "sudah customer" dilakukan DI SINI, bukan
+ *  di dalam LeadDetailPage: `useRecord` sudah hidup di file ini (dipakai
+ *  CustomerDetailRoute dkk), jadi memakainya ulang untuk satu-satunya
+ *  keputusan "alihkan atau render" tetap satu sumber kebenaran, dan
+ *  LeadDetailPage sendiri tak perlu tahu apa pun soal react-router. */
+function LeadDetailRoute() {
+  const { id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { showToast, hasMenuPermission, setInquiryPrefill } = useAppShell();
+  const { row, loading } = useRecord('accounts', id, location.state?.row);
+
+  if (loading) return <Boundary title="Lead Detail temporarily unavailable"><div style={{ padding: '3rem', textAlign: 'center' }}>Loading data…</div></Boundary>;
+  if (!row) return <RecordNotFound label="Lead not found." onBack={() => navigate(P_LEAD)} backLabel="Back to list" />;
+  if (row.lifecycle_stage === 'customer') return <Navigate to={`${P_CUSTOMER}/${id}`} replace />;
+
+  return (
+    <Boundary title="Lead Detail temporarily unavailable">
+      <LeadDetailPage
+        id={id}
+        onBack={() => navigate(P_LEAD)}
+        showToast={showToast}
+        onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
+          ? () => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`); }
+          : undefined}
+        onOpenInquiry={(inquiryId) => navigate(`${P_INQUIRY}/${inquiryId}`)}
+        onOpenQuotation={(quotationId) => navigate(`${P_QUOTATION}/${quotationId}`)}
+      />
+    </Boundary>
   );
 }
 
@@ -588,6 +626,7 @@ export const crmRoutes = [
 
       { path: P_LEAD,                               handle: { menuId: 'crm-prospects' },          element: <LeadCaptureRoute /> },
       { path: `${P_LEAD}/new`,                      handle: { menuId: 'crm-prospects' },          element: <LeadNewRedirect /> },
+      { path: `${P_LEAD}/:id`,                      handle: { menuId: 'crm-prospects' },          element: <LeadDetailRoute /> },
       { path: MENU_PATHS['crm-lead-pool'],          handle: { menuId: 'crm-lead-pool' },          element: <LeadPoolRoute /> },
       { path: MENU_PATHS['crm-lead-pool-approval'], handle: { menuId: 'crm-lead-pool-approval' }, element: <LeadPoolApprovalRoute /> },
 
