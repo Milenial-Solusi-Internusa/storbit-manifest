@@ -108,3 +108,17 @@ export const BANT_FREQUENCY_OPTIONS = [
 export const BANT_PAYMENT_OPTIONS = [
   '', 'Cash Before Delivery (CBD)', 'TOP 7', 'TOP 14', 'TOP 30', 'TOP 45', 'TOP 60',
 ];
+
+// Katalog label+kolom "Qualification Data" (BANT_SCORE_FIELDS di atas +
+// label manusiawi) — SATU sumber dipakai LeadDetailPage (tab BANT &
+// Pipeline) dan LeadQualificationPage (panel per baris, Paket 1 irisan 6)
+// supaya field/urutan/label tidak bisa melenceng antar halaman. Teks bebas
+// (FloatingInput), BUKAN dropdown BANT_FREQUENCY_OPTIONS/BANT_PAYMENT_OPTIONS
+// di atas -- nilai contoh mockup ("2 × 40ft per month", "Credit 30 days")
+// tidak cocok opsi dropdown legacy itu.
+export const QUALIFICATION_FIELDS = [
+  { label: 'Commodity', key: 'bant_commodity' }, { label: 'Origin', key: 'bant_origin' },
+  { label: 'Destination', key: 'bant_destination' }, { label: 'Shipping Frequency', key: 'bant_frequency' },
+  { label: 'Current Vendor', key: 'bant_current_vendor' }, { label: 'Payment Method', key: 'bant_payment' },
+  { label: 'Decision Maker', key: 'bant_decision_maker' },
+];

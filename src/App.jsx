@@ -453,6 +453,14 @@ const CRM_MENU_ITEMS = [
   // Keputusan bisnis "diganti alur tarik-langsung" BELUM dikonfirmasi/
   // dieksekusi — menu ini dipertahankan apa adanya.
   { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck },
+  // Batch DS 3 Lead Management, Paket 1 irisan 6: menu BARU 1.1.3 (Lead
+  // Qualification to Inquiry). Entri registry ini WAJIB ada supaya
+  // isMenuAccessible/navChildGate menggerbang id ini secara SPESIFIK (lewat
+  // MENU_KEY_MAP di atas) -- tanpa entri di sini, id yang tak dikenal
+  // findMenuItemById jatuh ke fallback "ikuti visibilitas modul" (lihat
+  // isMenuAccessible), yang terlalu longgar (siapa pun dengan izin CRM APA
+  // PUN akan lolos, bukan khusus crm_prospects).
+  { id: 'crm-lead-qualification', label: 'Lead Qualification to Inquiry', icon: ClipboardCheck },
 ];
 
 // Tahap 2b/2c: dua menu CRM bertab ('crm-account' = Account, 'crm-aktivitas' =
@@ -1037,6 +1045,9 @@ const MENU_KEY_MAP = {
   'crm-dashboard':   'crm_dashboard',
   'crm-pipeline':    'crm_pipeline',
   'crm-prospects':   'crm_prospects',
+  // Batch DS 3 Lead Management, Paket 1 irisan 6: menu BARU 1.1.3, gerbang
+  // SAMA dengan Capture (nol izin baru, keputusan Den).
+  'crm-lead-qualification': 'crm_prospects',
   'crm-inquiry':     'crm_inquiry',
   'quotation-draft': 'crm_quotation',
   'crm-customers':       'crm_customers',

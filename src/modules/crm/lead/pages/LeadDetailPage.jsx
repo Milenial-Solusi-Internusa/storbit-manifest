@@ -27,7 +27,7 @@ import { useAuth } from '../../../../contexts/useAuth';
 import { isManagerOrAbove } from '../../../../lib/roles';
 import { ENTITIES } from '../../../../lib/entities';
 import { readMoneyInput, formatIdNumber } from '../../../../lib/numberFormat';
-import { BANT_DIMENSIONS, BANT_MAX_SCORE, calcBantScore } from '../../lib/bant';
+import { BANT_DIMENSIONS, BANT_MAX_SCORE, calcBantScore, QUALIFICATION_FIELDS } from '../../lib/bant';
 import { LEAD_STATUS_META, deriveLeadStatus } from '../lib/leadStatus';
 import { SOURCES, SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
 import { ACTIVITY_TYPE_LABEL, listLeadActivities, addLeadNote, scheduleLeadFollowUp } from '../lib/leadActivity';
@@ -93,7 +93,7 @@ function OwnerLine({ id, name, canReassign, onReassign }) {
 /**
  * @param {string} id
  * @param {() => void} onBack
- * @param {() => void} [onCreateInquiry]
+ * @param {(account: Object) => void} [onCreateInquiry]
  * @param {(inquiryId:string) => void} [onOpenInquiry]
  * @param {(quotationId:string) => void} [onOpenQuotation]
  * @param {(msg:string, type?:string)=>void} [showToast]
@@ -246,7 +246,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               <SaveButton onSave={handleMarkQualified} variant="secondary" label="Mark Qualified" savedLabel="Qualified!"
                 onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
             )}
-            {onCreateInquiry && <PrimaryBtn onClick={onCreateInquiry}>Create Inquiry</PrimaryBtn>}
+            {onCreateInquiry && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
             {(canMarkLost || canArchive) && (
               <>
                 <IconButton icon={<MoreVertical size={16} />} label="More actions" onClick={() => setMenuOpen((o) => !o)} />
@@ -749,18 +749,10 @@ function NotesTab({ activities, actorMap, accountId, companyId, profile, showToa
    BANT & PIPELINE -- empat skor 0-3 klik-langsung (bant_budget/authority/
    need/timeline, nol konfirmasi -- sama ringannya dgn klik di
    LeadCapturePage/BantCell). "Qualification Data" (7 kolom legacy
-   bant_commodity dkk, lihat lib/bant.js "Legacy compatibility — kolom lama
-   dipertahankan di DB [tech debt]") SENGAJA read-only tanpa Edit di irisan
-   ini -- menulis UI edit baru untuk kolom yang kodenya sendiri sudah
-   menandai sebagai tech debt bukan pekerjaan yang diminta; dicatat di
-   laporan akhir sebagai deviasi sadar dari mockup.
+   bant_commodity dkk) bisa diedit (koreksi Den atas mockup 19) --
+   QUALIFICATION_FIELDS kini di lib/bant.js, satu sumber dengan
+   LeadQualificationPage (irisan 6).
    ========================================================================= */
-const QUALIFICATION_FIELDS = [
-  { label: 'Commodity', key: 'bant_commodity' }, { label: 'Origin', key: 'bant_origin' },
-  { label: 'Destination', key: 'bant_destination' }, { label: 'Shipping Frequency', key: 'bant_frequency' },
-  { label: 'Current Vendor', key: 'bant_current_vendor' }, { label: 'Payment Method', key: 'bant_payment' },
-  { label: 'Decision Maker', key: 'bant_decision_maker' },
-];
 
 function BantTab({ account, id, setAccount, showToast }) {
   const score = calcBantScore(account);

@@ -76,6 +76,16 @@ export const MENU_PATHS = Object.freeze({
   // (`ph-*`), dan 11 id stub AssetShell.
   ...SKELETON_MENU_PATHS,
 
+  // Approval Lead Pool (tarikan) — Batch DS 3 Lead Management, Paket 1 irisan
+  // 6: dilepas dari slot 1.1.3 (digantikan crm-lead-qualification) SAMPAI
+  // Paket 2 (Lead Pool & penuaan) rilis. Pola sama dengan 'customers' di
+  // atas — rute + gate (`crm_lead_pool_approval`, menuId tak berubah) tetap
+  // apa adanya, hanya leaf sidebar-nya yang hilang; dijangkau lewat tautan
+  // di LeadPoolPage (slot 1.1.2). Path BARU (bukan lagi /crm/lead/qualification,
+  // yang sekarang milik LeadQualificationPage) — LEGACY_PATH_REDIRECTS
+  // (menu-skeleton.js) disesuaikan supaya bookmark lama tetap mendarat di sini.
+  'crm-lead-pool-approval':  '/crm/lead/assignment/approval',
+
   // ── Id sintetis halaman DETAIL (dinavigasi programatik, tanpa id record di
   //    URL hari ini). Dari `?menu=<id>` lama tanpa record → mendarat di DAFTAR
   //    induknya; template detail ber-`:id` ada di DETAIL_ROUTE_TEMPLATES. ─────

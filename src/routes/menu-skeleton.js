@@ -59,8 +59,18 @@ export const SKELETON = [
             ] },
           { code: "1.1.3", label: "Lead Qualification to Inquiry", slug: "qualification", path: "/crm/lead/qualification",
             desc: "menyaring lead yang sudah layak untuk naik status jadi Inquiry resmi.",
+            // Batch DS 3 Lead Management, Paket 1 irisan 6: LeadQualificationPage
+            // BARU mengambil alih slot ini. Halaman LAMA yang dulu duduk di sini
+            // (crm-lead-pool-approval, approval tarikan Lead Pool) TIDAK hilang --
+            // ia dipindah KELUAR dari kerangka tab (pola sama dgn 'customers':
+            // rute + izin tetap, sengaja tanpa leaf sidebar sendiri) dan disurface
+            // sebagai tautan di dalam LeadPoolPage (slot 1.1.2) sampai Paket 2
+            // (Lead Pool & penuaan) rilis. Path barunya: lihat MENU_PATHS di
+            // menu-paths.js (literal, bukan lagi dari skeleton ini) +
+            // LEGACY_PATH_REDIRECTS di bawah (disesuaikan supaya bookmark lama
+            // tetap mendarat di approval, bukan ikut ke halaman baru ini).
             mounts: [
-              { menuId: "crm-lead-pool-approval", path: "/crm/lead/qualification" },
+              { menuId: "crm-lead-qualification", path: "/crm/lead/qualification" },
             ] },
         ],
       },
@@ -1288,7 +1298,10 @@ export const SKELETON_STUB_IDS = Object.freeze(
 export const LEGACY_PATH_REDIRECTS = Object.freeze([
   ["/crm/lead", "/crm/lead/capture"],
   ["/crm/lead/pool", "/crm/lead/assignment"],
-  ["/crm/lead/pool/approval", "/crm/lead/qualification"],
+  // Target disesuaikan irisan 6: /crm/lead/qualification kini LeadQualificationPage
+  // (menu baru), bukan lagi approval -- bookmark lama harus tetap mendarat di
+  // approval, yang pindah ke /crm/lead/assignment/approval (lihat menu-paths.js).
+  ["/crm/lead/pool/approval", "/crm/lead/assignment/approval"],
   ["/crm/inquiry", "/crm/inquiry/status-history"],
   ["/crm/quotation", "/crm/quotation/builder"],
   ["/logistics-warehouse/warehouse/sales-order/new", "/crm/sales-order/customer-po"],

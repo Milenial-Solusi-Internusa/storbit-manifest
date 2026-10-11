@@ -57,6 +57,7 @@ import RecordNotFound from './RecordNotFound.jsx';
 // DIHAPUS di irisan 5 (nol importir tersisa).
 const LeadCapturePage         = lazy(() => import('@/modules/crm/lead/pages/LeadCapturePage'));
 const LeadDetailPage         = lazy(() => import('@/modules/crm/lead/pages/LeadDetailPage'));
+const LeadQualificationPage  = lazy(() => import('@/modules/crm/lead/pages/LeadQualificationPage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
@@ -220,10 +221,31 @@ function LeadDetailRoute() {
         onBack={() => navigate(P_LEAD)}
         showToast={showToast}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? () => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`); }
+          ? (account) => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
           : undefined}
         onOpenInquiry={(inquiryId) => navigate(`${P_INQUIRY}/${inquiryId}`)}
         onOpenQuotation={(quotationId) => navigate(`${P_QUOTATION}/${quotationId}`)}
+      />
+    </Boundary>
+  );
+}
+
+/** Lead Qualification to Inquiry (1.1.3, irisan 6) -- gerbang `crm_prospects`
+ *  (MENU_KEY_MAP + CRM_MENU_ITEMS di App.jsx), SAMA dengan Capture. Baris
+ *  "Create Inquiry" memakai jalur prefill yang SUDAH ADA, identik
+ *  LeadDetailRoute di atas -- satu sumber kebenaran untuk "bagaimana lead
+ *  jadi Inquiry", bukan dua implementasi yang bisa melenceng. */
+function LeadQualificationRoute() {
+  const { showToast, hasMenuPermission, setInquiryPrefill } = useAppShell();
+  const navigate = useNavigate();
+  return (
+    <Boundary title="Lead Qualification temporarily unavailable">
+      <LeadQualificationPage
+        showToast={showToast}
+        onSelectLead={(account) => navigate(`${P_LEAD}/${account.id}`, { state: { row: account } })}
+        onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
+          ? (account) => { setInquiryPrefill({ accountId: account.id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
+          : undefined}
       />
     </Boundary>
   );
@@ -240,10 +262,18 @@ function LeadNewRedirect() {
 }
 
 function LeadPoolRoute() {
-  const { showToast } = useAppShell();
+  const { showToast, hasMenuPermission } = useAppShell();
+  const navigate = useNavigate();
   return (
     <div>
-      <Boundary title="Lead Pool temporarily unavailable"><LeadPoolPage showToast={showToast} /></Boundary>
+      <Boundary title="Lead Pool temporarily unavailable">
+        <LeadPoolPage
+          showToast={showToast}
+          onOpenApprovals={hasMenuPermission('crm_lead_pool_approval', 'view')
+            ? () => navigate(MENU_PATHS['crm-lead-pool-approval'])
+            : undefined}
+        />
+      </Boundary>
     </div>
   );
 }
@@ -276,13 +306,22 @@ function InquiryListRoute() {
   );
 }
 
+/** `inquiryPrefill` (state App.jsx, dipakai InquiryFormPage lewat prop --
+ *  "rute yang SUDAH ADA", TIDAK disentuh) tetap satu-satunya yang DIBACA
+ *  halaman. `location.state.leadAccount` (Lead Qualification/Detail Lead,
+ *  irisan 6) ikut dikirim sebagai cadangan -- pola hybrid yang sama dengan
+ *  useRecord di file ini (state = cache, bukan sumber wajib): kalau
+ *  `inquiryPrefill` context kosong tapi location.state masih ada (mis.
+ *  balik lewat tombol Back/Forward browser), id akunnya tetap ketemu. */
 function InquiryNewRoute() {
   const { showToast, inquiryPrefill, setInquiryPrefill } = useAppShell();
   const navigate = useNavigate();
+  const location = useLocation();
+  const accountId = inquiryPrefill?.accountId || location.state?.leadAccount?.id || null;
   return (
     <Boundary title="Inquiry Form temporarily unavailable">
       <InquiryFormPage
-        prefillAccountId={inquiryPrefill?.accountId || null}
+        prefillAccountId={accountId}
         prefillContactId={inquiryPrefill?.contactId || null}
         onBack={() => { setInquiryPrefill(null); navigate(P_INQUIRY); }}
         showToast={showToast}
@@ -609,7 +648,7 @@ function SalesOrderDocDetailRoute() {
  *  bukan cuma router). */
 export const CRM_MENU_IDS = Object.freeze([
   'crm-dashboard', 'indomarco-dashboard', 'crm-pipeline',
-  'crm-prospects', 'crm-lead-pool', 'crm-lead-pool-approval',
+  'crm-prospects', 'crm-lead-qualification', 'crm-lead-pool', 'crm-lead-pool-approval',
   'crm-inquiry', 'quotation-draft', 'crm-customers', 'customer-detail',
   'crm-calls', 'crm-activity-log', 'riwayat-visit',
   'reporting-sales', 'crm-rate-list', 'crm-sales-order',
@@ -626,6 +665,7 @@ export const crmRoutes = [
       { path: P_LEAD,                               handle: { menuId: 'crm-prospects' },          element: <LeadCaptureRoute /> },
       { path: `${P_LEAD}/new`,                      handle: { menuId: 'crm-prospects' },          element: <LeadNewRedirect /> },
       { path: `${P_LEAD}/:id`,                      handle: { menuId: 'crm-prospects' },          element: <LeadDetailRoute /> },
+      { path: MENU_PATHS['crm-lead-qualification'], handle: { menuId: 'crm-lead-qualification' }, element: <LeadQualificationRoute /> },
       { path: MENU_PATHS['crm-lead-pool'],          handle: { menuId: 'crm-lead-pool' },          element: <LeadPoolRoute /> },
       { path: MENU_PATHS['crm-lead-pool-approval'], handle: { menuId: 'crm-lead-pool-approval' }, element: <LeadPoolApprovalRoute /> },
 

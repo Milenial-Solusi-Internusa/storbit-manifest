@@ -95,7 +95,7 @@ function PullModal({ account, onClose, onSubmit }) {
   );
 }
 
-export default function LeadPoolPage({ showToast }) {
+export default function LeadPoolPage({ showToast, onOpenApprovals }) {
   const { profile, erpRole, user, erpRoles } = useAuth();
   const isAllEntities = isAllEntitiesRole(erpRoles);
   const isSalesOnly = isSalesOnlyRole(erpRole);
@@ -193,6 +193,21 @@ export default function LeadPoolPage({ showToast }) {
           <h1 style={{ fontFamily: "'Montserrat',sans-serif", fontSize: 24, fontWeight: 800, color: C.navy, margin: 0, letterSpacing: '-.4px' }}>Lead Pool</h1>
           <p style={{ fontSize: 13.5, color: C.inkSoft, margin: '4px 0 0' }}>Prospect ter-aging menunggu di-tarik kembali · {loading ? '…' : `${rows.length} prospect`}</p>
         </div>
+        {/* Batch DS 3 Lead Management, Paket 1 irisan 6: Approval Lead Pool
+            dilepas dari slot sidebar 1.1.3 (digantikan Lead Qualification)
+            SAMPAI Paket 2 rilis -- tautan ini satu-satunya jalan masuk
+            sekarang selain ?menu=/deep-link lama. Gerbangnya di LeadPoolRoute
+            (hasMenuPermission('crm_lead_pool_approval','view')) -- sengaja
+            TIDAK dicek ulang di sini, satu sumber kebenaran. */}
+        {onOpenApprovals && (
+          <button type="button" onClick={onOpenApprovals} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 16px', borderRadius: 10,
+            border: `1px solid ${C.line}`, background: C.surface, color: C.navy, fontFamily: "'Inter',system-ui,sans-serif",
+            fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>
+            Approval Requests <ArrowRight size={14} />
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
