@@ -8,9 +8,9 @@
 -- file ini menambah jalur pengajuan + persetujuan, TANPA mengubah tabel
 -- dropdown_options maupun RLS-nya yang sudah ada.
 --
--- Status: BELUM DIJALANKAN -- ditulis 11 Okt 2026, menunggu dijalankan Den
---         di staging dulu. Prasyarat: TIDAK bergantung pada migrasi lain
---         yang belum jalan.
+-- Status: SUDAH DIJALANKAN DI STAGING 11 Okt 2026 (Den), terverifikasi via
+--         query verifikasi di bawah. BELUM DI PRODUCTION. Prasyarat: TIDAK
+--         bergantung pada migrasi lain yang belum jalan.
 --
 -- -- Tabel baru: dropdown_option_requests -----------------------------------
 -- Permintaan opsi baru dari sales, menunggu disetujui manager. TIDAK
@@ -36,11 +36,16 @@
 -- per-entitas, fungsi ini yang pertama perlu diubah -- dicatat di sini
 -- supaya tidak terlupakan saat itu.
 --
--- -- Seed: HANYA lead_industry -----------------------------------------------
--- 12 nilai disalin APA ADANYA dari dropdown Industry di
+-- -- Seed: lead_industry, lead_category, lost_reason --------------------------
+-- lead_industry: 12 nilai disalin APA ADANYA dari dropdown Industry di
 -- design-handoff/crm-2026-10-11/Lead Management.dc.html (bukan dikarang).
--- lead_category dan lost_reason SENGAJA TIDAK diseed -- daftarnya menunggu
--- konfirmasi Den, tabel+RPC di file ini sudah siap menampungnya begitu ada.
+-- lead_category (3 nilai) dan lost_reason (6 nilai) dikonfirmasi Den
+-- 11 Okt 2026 -- ditulis di sini belakangan (SESUDAH migrasi ini sudah
+-- dijalankan di staging tanpa keduanya), supaya file migrasi mencerminkan
+-- keadaan DB yang sebenarnya. INSERT-nya sendiri sudah terjadi lewat SQL
+-- manual di staging, BUKAN lewat COMMIT blok ini -- ON CONFLICT di bawah
+-- karena itu idempoten kalau file ini dijalankan ulang di environment lain
+-- (mis. production) yang belum punya baris-baris ini.
 --
 -- Kunci unik dropdown_options ADALAH index PARSIAL:
 --   dropdown_options_global_unique ON (list_key, value) WHERE company_id IS NULL
@@ -168,10 +173,22 @@ INSERT INTO public.dropdown_options (group_key, list_key, label, value, sort_ord
   ('crm', 'lead_industry', 'Furniture',           'furniture',          12, NULL)
 ON CONFLICT (list_key, value) WHERE company_id IS NULL DO NOTHING;
 
--- lead_category, lost_reason: SENGAJA NOL baris -- menunggu daftar dari Den.
--- Struktur (list_key sudah dipakai di kolom accounts.lead_category dan di
--- Mark as Lost modal) siap menampung begitu daftarnya ada, lewat
--- add_dropdown_option_direct atau INSERT manual oleh Den.
+-- Seed lead_category -- 3 nilai dikonfirmasi Den 11 Okt 2026, company_id NULL (global).
+INSERT INTO public.dropdown_options (group_key, list_key, label, value, sort_order, company_id) VALUES
+  ('crm', 'lead_category', 'Corporate',   'corporate',   1, NULL),
+  ('crm', 'lead_category', 'SME',         'sme',         2, NULL),
+  ('crm', 'lead_category', 'Individual',  'individual',  3, NULL)
+ON CONFLICT (list_key, value) WHERE company_id IS NULL DO NOTHING;
+
+-- Seed lost_reason -- 6 nilai dikonfirmasi Den 11 Okt 2026, company_id NULL (global).
+INSERT INTO public.dropdown_options (group_key, list_key, label, value, sort_order, company_id) VALUES
+  ('crm', 'lost_reason', 'Price',                 'price',                 1, NULL),
+  ('crm', 'lost_reason', 'Lost to Competitor',     'lost_to_competitor',    2, NULL),
+  ('crm', 'lost_reason', 'No Response',            'no_response',           3, NULL),
+  ('crm', 'lost_reason', 'Requirement Changed',    'requirement_changed',   4, NULL),
+  ('crm', 'lost_reason', 'Service Not Offered',    'service_not_offered',   5, NULL),
+  ('crm', 'lost_reason', 'Other',                  'other',                 6, NULL)
+ON CONFLICT (list_key, value) WHERE company_id IS NULL DO NOTHING;
 
 COMMIT;
 
@@ -196,16 +213,14 @@ COMMIT;
 -- -- Harap: authenticated = INSERT,SELECT ; anon = tidak muncul sama sekali.
 --
 -- SELECT list_key, count(*) FROM public.dropdown_options
---  WHERE list_key = 'lead_industry' AND company_id IS NULL GROUP BY 1;
--- -- Harap: 1 baris, count = 12.
---
--- SELECT count(*) FROM public.dropdown_options WHERE list_key IN ('lead_category','lost_reason');
--- -- Harap: 0 (sengaja belum diseed).
+--  WHERE list_key IN ('lead_industry','lead_category','lost_reason') AND company_id IS NULL
+--  GROUP BY 1 ORDER BY 1;
+-- -- Harap: 3 baris -- lead_category=3, lead_industry=12, lost_reason=6.
 -- =============================================================================
 
 -- =============================================================================
 -- ROLLBACK (kalau perlu dibatalkan sebelum ada baris pengajuan/penolakan):
---   DELETE FROM public.dropdown_options WHERE list_key = 'lead_industry' AND company_id IS NULL;
+--   DELETE FROM public.dropdown_options WHERE list_key IN ('lead_industry','lead_category','lost_reason') AND company_id IS NULL;
 --   DROP FUNCTION public.reject_dropdown_option_request(uuid, text);
 --   DROP FUNCTION public.approve_dropdown_option_request(uuid);
 --   DROP FUNCTION public.add_dropdown_option_direct(text, text, uuid);

@@ -6,8 +6,8 @@
 -- mockup design-handoff/crm-2026-10-11/Lead Management.dc.html. Aditif
 -- murni -- nol kolom diubah/di-drop, nol tabel baru di file ini.
 --
--- Status: BELUM DIJALANKAN -- ditulis 11 Okt 2026, menunggu dijalankan Den
---         di staging dulu.
+-- Status: SUDAH DIJALANKAN DI STAGING 11 Okt 2026 (Den), terverifikasi via
+--         query verifikasi di bawah. BELUM DI PRODUCTION.
 --
 -- -- accounts --------------------------------------------------------------
 -- industry, lead_category, priority, website, description, qualified_reason,
