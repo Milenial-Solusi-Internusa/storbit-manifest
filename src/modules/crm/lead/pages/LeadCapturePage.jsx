@@ -16,18 +16,21 @@
 // beda per orang lewat avatarToneFor() (src/kit/tokens.js) -- lihat laporan
 // akhir untuk rincian + perbedaan visual yang MASIH tersisa.
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Upload as UploadIcon, ChevronRight } from 'lucide-react';
-import { PageHeader, Card, EmptyState, Select, SearchInput, Segmented, Slider, Badge, PrimaryBtn, OutlineBtn } from '../../../../kit';
-import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP, fmtRp, avatarToneFor } from '../../../../kit/tokens';
+import { Plus, Upload as UploadIcon, ChevronRight, MoreVertical, UserPlus } from 'lucide-react';
+import { PageHeader, Card, EmptyState, Select, SearchInput, Segmented, Slider, Badge, PrimaryBtn, OutlineBtn, IconButton } from '../../../../kit';
+import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER, CARD, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP, fmtRp, avatarToneFor } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
-import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../../../lib/roles';
+import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole, isManagerOrAbove } from '../../../../lib/roles';
 import { ENTITIES } from '../../../../lib/entities';
 import { bantScoreMeta, BANT_MAX_SCORE } from '../../lib/bant';
 import { SOURCES, SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
 import { LEAD_STATUSES, LEAD_STATUS_META, deriveLeadStatus, applyLeadStatusFilter } from '../lib/leadStatus';
 import CaptureLeadModal from '../components/CaptureLeadModal';
 import ImportLeadsModal from '../components/ImportLeadsModal';
+import ReassignModal from '../components/ReassignModal';
+import MarkAsLostModal from '../components/MarkAsLostModal';
+import ArchiveModal from '../components/ArchiveModal';
 
 const PAGE_SIZE = 20;
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
@@ -85,6 +88,11 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
   const { profile, erpRole, erpRoles } = useAuth();
   const isAllEntities = isAllEntitiesRole(erpRoles);
   const isSalesOnly = isSalesOnlyRole(erpRole);
+  const canManage = isManagerOrAbove(erpRoles);
+  // Baris 'mine' selalu milik sendiri bagi isSalesOnly (query sudah
+  // .eq('assigned_to', profile.id) di fetchLeads) -- jadi Mark as Lost di
+  // bulk bar/menu baris aman tanpa cek kepemilikan per baris di sini.
+  const canMarkLost = isSalesOnly || canManage;
 
   const [scope, setScope] = useState('all'); // 'mine' | 'all' -- paksa 'mine' kalau isSalesOnly
   const [leads, setLeads] = useState([]);
@@ -114,6 +122,13 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
   const [captureOpen, setCaptureOpen] = useState(() => !!openCaptureOnMount);
   const [captureName, setCaptureName] = useState(() => (openCaptureOnMount ? (captureInitialName || '') : ''));
   const [importOpen, setImportOpen] = useState(false);
+  // Satu state untuk ketiga modal aksi (Reassign/Assign to Sales, Mark as
+  // Lost, Archive) -- dipicu DUA jalur: bulk bar (accounts = baris
+  // terpilih) dan menu baris "⋮" (accounts = satu baris itu saja). Modal
+  // itu sendiri (src/modules/crm/lead/components/) sudah menerima array,
+  // jadi satu negara cukup untuk keduanya.
+  const [modalAction, setModalAction] = useState(null); // { type:'reassign'|'lost'|'archive', accounts:[...] } | null
+  const [rowMenuFor, setRowMenuFor] = useState(null);
 
   const effectiveScope = isSalesOnly ? 'mine' : scope;
 
@@ -276,12 +291,25 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
 
       {selected.size > 0 && (
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s3,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s3, flexWrap: 'wrap',
           background: ROW_HOVER, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 16px', marginBottom: SP.s3,
         }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{selected.size} selected</span>
-          {/* Tombol aksi (Mark as Lost / Assign to Sales / Archive) BELUM ADA --
-              butuh modal irisan 5, lihat komentar kepala file. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{selected.size} selected</span>
+            {canManage && (
+              <OutlineBtn size="sm" icon={<UserPlus size={14} />} onClick={() => setModalAction({ type: 'reassign', accounts: leads.filter((l) => selected.has(l.id)) })}>
+                Assign to Sales
+              </OutlineBtn>
+            )}
+            {canManage && (
+              <OutlineBtn size="sm" onClick={() => setModalAction({ type: 'archive', accounts: leads.filter((l) => selected.has(l.id)) })}>Archive</OutlineBtn>
+            )}
+            {canMarkLost && (
+              <OutlineBtn size="sm" style={{ color: '#B4432A', borderColor: '#B4432A' }} onClick={() => setModalAction({ type: 'lost', accounts: leads.filter((l) => selected.has(l.id)) })}>
+                Mark as Lost
+              </OutlineBtn>
+            )}
+          </div>
           <button type="button" onClick={() => setSelected(new Set())} style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 13, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>Clear selection</button>
         </div>
       )}
@@ -316,12 +344,15 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                   <th style={th}>Owner</th>
                   <th style={th}>Estimated Value</th>
                   <th style={th}>Last Touched</th>
+                  <th style={{ ...th, width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {leads.map((l, i) => {
                   const lstatus = deriveLeadStatus(l);
                   const meta = lstatus ? LEAD_STATUS_META[lstatus] : null;
+                  const rowCanMarkLost = canMarkLost && lstatus !== 'lost';
+                  const rowMenuOpen = rowMenuFor === l.id;
                   return (
                     <tr key={l.id}
                       onClick={() => onSelectProspect?.(l)}
@@ -341,7 +372,39 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                       <td style={td}><OwnerCell id={l.assigned_to} name={l.assigned_profile?.full_name} /></td>
                       <td style={{ ...td, fontFamily: FONT_MONO }}>{l.estimated_value != null ? fmtRp(l.estimated_value) : '—'}</td>
                       <td style={{ ...td, color: INK_FAINT, fontSize: 12.5 }}>{fmtDate(l.last_activity_at)}</td>
-                      <td style={{ ...td, width: 24 }}><ChevronRight size={15} color={INK_FAINT} /></td>
+                      <td style={{ ...td, width: 60, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+                          {(rowCanMarkLost || canManage) && (
+                            <IconButton size="xs" variant="ghost" icon={<MoreVertical size={14} />} label="Row actions" onClick={() => setRowMenuFor(rowMenuOpen ? null : l.id)} />
+                          )}
+                          {rowMenuOpen && (
+                            <>
+                              <div onClick={() => setRowMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
+                              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 150, zIndex: 10, overflow: 'hidden' }}>
+                                {canManage && (
+                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'reassign', accounts: [l] }); }}
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                    Reassign
+                                  </button>
+                                )}
+                                {canManage && (
+                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'archive', accounts: [l] }); }}
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                    Archive
+                                  </button>
+                                )}
+                                {rowCanMarkLost && (
+                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'lost', accounts: [l] }); }}
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: '#B4432A' }}>
+                                    Mark as Lost
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          <ChevronRight size={15} color={INK_FAINT} />
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -367,6 +430,13 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
         onSaved={(account) => { setCaptureOpen(false); showToast?.('Lead captured'); fetchLeads(); onSelectProspect?.(account); }}
       />
       <ImportLeadsModal open={importOpen} onClose={() => setImportOpen(false)} showToast={showToast} onImported={fetchLeads} />
+
+      <ReassignModal open={modalAction?.type === 'reassign'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'reassign' ? modalAction.accounts : []} showToast={showToast}
+        onReassigned={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead reassigned'); fetchLeads(); }} />
+      <MarkAsLostModal open={modalAction?.type === 'lost'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'lost' ? modalAction.accounts : []} showToast={showToast}
+        onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
+      <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
+        onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />
     </div>
   );
 }

@@ -1,7 +1,10 @@
 // src/modules/crm/lead/components/ArchiveModal.jsx
 // "Archive this lead?" -- design-handoff/crm-2026-10-11/shots/lead/32-modal-archive-supervisor.png.
 // Batch DS 3 Lead Management, Paket 1 irisan 5. Supervisor ke atas saja
-// (gate di LeadDetailPage).
+// (gate di pemanggil -- LeadDetailPage/LeadCapturePage).
+//
+// Prop `accounts` SELALU array -- satu elemen dari header/menu baris, >1
+// dari bulk bar (tombol bulk bar "Archive" sama persis).
 //
 // TIDAK ADA MIGRASI BARU di irisan ini untuk fitur ini -- diperiksa dulu
 // (instruksi Den): soft-delete `accounts.deleted_at` yang SUDAH ADA (dipakai
@@ -24,25 +27,26 @@ import { supabase } from '../../../../lib/supabase';
 /**
  * @param {boolean} open
  * @param {() => void} onClose
- * @param {{id:string, name:string, code?:string}} account
+ * @param {Array<{id:string, name:string, code?:string}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onArchived
  */
-export default function ArchiveModal({ open, onClose, account, showToast, onArchived }) {
+export default function ArchiveModal({ open, onClose, accounts = [], showToast, onArchived }) {
   const [saving, setSaving] = useState(false);
+  const bulk = accounts.length > 1;
 
   async function handleConfirm() {
     setSaving(true);
-    const { error } = await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', account.id);
+    const { error } = await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).in('id', accounts.map((a) => a.id));
     setSaving(false);
     if (error) { showToast?.('Failed to archive: ' + error.message, 'error'); return; }
     onArchived?.();
   }
 
-  if (!account) return null;
+  if (!accounts.length) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Archive this lead?" width={460} footer={(
+    <Modal open={open} onClose={onClose} title={bulk ? `Archive ${accounts.length} leads?` : 'Archive this lead?'} width={460} footer={(
       <>
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
         <Button variant="danger" loading={saving} onClick={handleConfirm}>Archive</Button>
@@ -50,10 +54,10 @@ export default function ArchiveModal({ open, onClose, account, showToast, onArch
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
         <div style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
-          The lead will be hidden from all lists and can be restored by an admin.
+          {bulk ? 'The leads will be hidden from all lists and can be restored by an admin.' : 'The lead will be hidden from all lists and can be restored by an admin.'}
         </div>
         <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT }}>
-          {account.code ? `${account.code}, ` : ''}{account.name}
+          {bulk ? accounts.map((a) => a.name).join(', ') : `${accounts[0].code ? `${accounts[0].code}, ` : ''}${accounts[0].name}`}
         </div>
       </div>
     </Modal>

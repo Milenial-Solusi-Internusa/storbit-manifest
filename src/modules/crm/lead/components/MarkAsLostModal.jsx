@@ -1,8 +1,12 @@
 // src/modules/crm/lead/components/MarkAsLostModal.jsx
 // "Mark as Lost" -- design-handoff/crm-2026-10-11/shots/lead/23-modal-mark-as-lost.png.
 // Batch DS 3 Lead Management, Paket 1 irisan 5. Gate (pemilik lead ATAU
-// supervisor ke atas) diputuskan oleh pemanggil (LeadDetailPage), modal ini
-// hanya dirender.
+// supervisor ke atas) diputuskan oleh pemanggil (LeadDetailPage/
+// LeadCapturePage), modal ini hanya dirender.
+//
+// Prop `accounts` SELALU array -- satu elemen dari header/menu baris, >1
+// dari bulk bar (tombol bulk bar JUGA berlabel "Mark as Lost", mekanisme
+// sama persis).
 //
 // lifecycle_stage -> 'lost'; lost_reason dari MasterSelect (list_key
 // 'lost_reason', 6 nilai global, migrasi 20261011000002) -- kolom
@@ -20,17 +24,18 @@ const COMPETITOR_VALUE = 'lost_to_competitor';
 /**
  * @param {boolean} open
  * @param {() => void} onClose
- * @param {{id:string, name:string, code?:string, company_id:string}} account
+ * @param {Array<{id:string, name:string, code?:string, company_id:string}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onMarked
  */
-export default function MarkAsLostModal({ open, onClose, account, showToast, onMarked }) {
+export default function MarkAsLostModal({ open, onClose, accounts = [], showToast, onMarked }) {
   const { profile } = useAuth();
   const [reasonOptions, setReasonOptions] = useState([]);
   const [lostReason, setLostReason] = useState('');
   const [competitorName, setCompetitorName] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const bulk = accounts.length > 1;
 
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -43,7 +48,7 @@ export default function MarkAsLostModal({ open, onClose, account, showToast, onM
   }
 
   async function handleConfirm() {
-    if (!lostReason) { showToast?.('Select a Lost Reason', 'error'); return; }
+    if (!lostReason || !accounts.length) { showToast?.('Select a Lost Reason', 'error'); return; }
     setSaving(true);
     const reasonLabel = reasonOptions.find((o) => o.value === lostReason)?.label || lostReason;
     const { error } = await supabase.from('accounts').update({
@@ -51,7 +56,7 @@ export default function MarkAsLostModal({ open, onClose, account, showToast, onM
       lost_reason: lostReason,
       competitor_name: lostReason === COMPETITOR_VALUE ? (competitorName.trim() || null) : null,
       last_activity_at: new Date().toISOString(),
-    }).eq('id', account.id);
+    }).in('id', accounts.map((a) => a.id));
     if (error) {
       setSaving(false);
       showToast?.('Failed to mark as lost: ' + error.message, 'error');
@@ -60,16 +65,17 @@ export default function MarkAsLostModal({ open, onClose, account, showToast, onM
     const logNotes = [`Marked as Lost. Reason: ${reasonLabel}.`];
     if (lostReason === COMPETITOR_VALUE && competitorName.trim()) logNotes.push(`Competitor: ${competitorName.trim()}.`);
     if (notes.trim()) logNotes.push(notes.trim());
-    const { error: logErr } = await supabase.from('activities').insert({
-      account_id: account.id, company_id: account.company_id, type: 'lead_lost', status: 'done',
+    const logRows = accounts.map((a) => ({
+      account_id: a.id, company_id: a.company_id, type: 'lead_lost', status: 'done',
       notes: logNotes.join(' '), created_by: profile.id, completed_at: new Date().toISOString(),
-    });
+    }));
+    const { error: logErr } = await supabase.from('activities').insert(logRows);
     if (logErr) console.error('[lead] mark-as-lost activity log failed:', logErr.message);
     setSaving(false);
     onMarked?.();
   }
 
-  if (!account) return null;
+  if (!accounts.length) return null;
 
   return (
     <Modal open={open} onClose={onClose} title="Mark as Lost" width={480} footer={(
@@ -80,7 +86,7 @@ export default function MarkAsLostModal({ open, onClose, account, showToast, onM
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
         <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT, border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px' }}>
-          {account.code ? `${account.code}, ` : ''}{account.name}
+          {bulk ? `${accounts.length} leads selected` : `${accounts[0].code ? `${accounts[0].code}, ` : ''}${accounts[0].name}`}
         </div>
 
         <MasterSelect label="Lost Reason" value={lostReason} onChange={setLostReason}

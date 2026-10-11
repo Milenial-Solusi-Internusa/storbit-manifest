@@ -323,11 +323,11 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
           onOpenInquiry={onOpenInquiry} onOpenQuotation={onOpenQuotation} />
       </FormSheet>
 
-      <ReassignModal open={reassignOpen} onClose={() => setReassignOpen(false)} account={account} showToast={showToast}
+      <ReassignModal open={reassignOpen} onClose={() => setReassignOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onReassigned={() => { setReassignOpen(false); showToast?.('Lead reassigned'); fetchAccount(); fetchActivities(); }} />
-      <MarkAsLostModal open={lostOpen} onClose={() => setLostOpen(false)} account={account} showToast={showToast}
+      <MarkAsLostModal open={lostOpen} onClose={() => setLostOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onMarked={() => { setLostOpen(false); showToast?.('Lead marked as Lost'); fetchAccount(); fetchActivities(); }} />
-      <ArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} account={account} showToast={showToast}
+      <ArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onArchived={() => { setArchiveOpen(false); showToast?.('Lead archived'); onBack?.(); }} />
       <RequestNewOptionModal
         open={!!requestOptionFor} onClose={() => setRequestOptionFor(null)}
