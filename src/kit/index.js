@@ -17,7 +17,7 @@
 export { Button, SaveButton, IconButton } from './Button';
 export {
   FloatingInput, FloatingSelect, Select, Textarea, SearchInput,
-  Toggle, NumberStepper, Segmented, PillToggle, EntitySwitcher,
+  Toggle, NumberStepper, Slider, Segmented, PillToggle, EntitySwitcher,
 } from './Form';
 export { PageHeader, SectionLabel, Card, EmptyState, Skeleton, DocNo, FormSheet, Notebook } from './Layout';
 export { Badge, StatusBar, ListView } from './Data';

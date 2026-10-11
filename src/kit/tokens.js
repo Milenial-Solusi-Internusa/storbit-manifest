@@ -169,6 +169,21 @@ export const closedFrom = (stage, labelMap = {}) =>
   (stage ? { stage, label: labelMap[stage] || stage } : null);
 export const isClosedStage = (stage) => CLOSED_STAGES.includes(stage);
 
+/* AVATAR_TONES — palet untuk MEMBEDAKAN orang/kategori di avatar bulat (mis.
+   kolom Owner tabel Lead Capture), BUKAN status/semantik seperti SEMANTIC/
+   DEAL_STATUS. Disusun dari trio SEMANTIC+TONE yang sudah ada (nol hex baru)
+   supaya tidak melahirkan palet KEENAM di luar sage -- lihat larangan di
+   CLAUDE.md §Brand. `avatarToneFor(id)` memetakan string apa pun (uuid/nama)
+   ke salah satu entri secara STABIL (hash sederhana, bukan acak) supaya
+   orang yang sama selalu dapat warna yang sama di render manapun. */
+export const AVATAR_TONES = [TONE.navy, SEMANTIC.info, TONE.brick, SEMANTIC.warn, TONE.orange, SEMANTIC.danger, TONE.slate, SEMANTIC.ok];
+export function avatarToneFor(id) {
+  const s = String(id || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
+
 /* ---------- 5. Helper format (kompatibilitas AdminKit) ----------
    Bukan token, tapi tiga halaman admin mengimpornya dari `tokens.js` lama;
    ditaruh di sini supaya Batch DS 2 cukup mengganti path impor. Rumah

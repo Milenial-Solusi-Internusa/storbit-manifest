@@ -22,7 +22,7 @@ import { ENTITIES } from '../lib/entities';
 import {
   ACCENT, ACCENT_HOVER, INK, INK_SOFT, INK_FAINT, LINE, HEAD_BG, ROW_HOVER, INPUT_BG,
   DISABLED_BG, DISABLED_INK, FOCUS_RING, SHADOW_1, SEMANTIC,
-  FONT_HEAD, FONT_BODY, FONT_MONO, RADIUS, SIZE, MOTION,
+  FONT_HEAD, FONT_BODY, FONT_MONO, RADIUS, SIZE, SP, MOTION,
 } from './tokens';
 
 const flexOf = (full, half, third) =>
@@ -109,6 +109,14 @@ export function FloatingSelect({ label, value, onChange, options = [], half, thi
           boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
         }}
       >
+        {/* Placeholder kosong SAAT `value` belum ada nilai yang cocok di antara
+            `options` -- tanpa ini, <select> terkontrol dengan value="" yang
+            tak punya opsi value="" menampilkan opsi PERTAMA secara visual
+            (kuirk HTML native) padahal React state-nya tetap kosong, sehingga
+            memilih ulang opsi yang "sudah terlihat terpilih" itu tidak memicu
+            onChange sama sekali -- kebuntuan yang ditemukan di CaptureLeadModal
+            (field Source). Pola sama dengan MasterSelect.jsx. */}
+        {!value && <option value="" />}
         {options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
       </select>
       <span style={{ position: 'absolute', right: 14, top: 20, color: INK_SOFT, pointerEvents: 'none' }}><ChevronDown size={16} /></span>
@@ -268,6 +276,33 @@ export function NumberStepper({ value, onChange, suffix, min = 0, max = 9999, st
         {suffix && <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT }}>{suffix}</span>}
       </div>
       <div style={{ width: 30, height: '100%', transition: 'opacity .18s', opacity: show ? 1 : 0, pointerEvents: show ? 'auto' : 'none' }}>{show && stepBtn(1)}</div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   SLIDER — <input type="range"> bertoken, dua-baris label (judul kiri · nilai
+   kini kanan, sama persis susunan "Estimated Value, up to / Rp 600 million"
+   mockup Lead Management). `formatValue` memformat nilai mentah utk baris
+   kanan (default: angka polos); `accentColor` CSS native dipakai utk mewarnai
+   track/thumb -- lolos Chrome/Edge/Firefox terkini, satu-satunya cara
+   mewarnai <input type="range"> tanpa membangun ulang thumb custom.
+   ========================================================================= */
+export function Slider({ label, value, onChange, min = 0, max = 100, step = 1, formatValue, full, half, id, ariaLabel }) {
+  const shown = formatValue ? formatValue(value) : value;
+  return (
+    <div style={{ flex: flexOf(full, half, false), minWidth: 160 }}>
+      {label && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: SP.s2, marginBottom: 8 }}>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT }}>{label}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: INK, whiteSpace: 'nowrap' }}>{shown}</span>
+        </div>
+      )}
+      <input
+        type="range" id={id} aria-label={ariaLabel || label} min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: INK_SOFT, cursor: 'pointer', height: 20 }}
+      />
     </div>
   );
 }

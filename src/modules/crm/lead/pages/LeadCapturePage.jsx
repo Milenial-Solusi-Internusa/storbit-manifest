@@ -6,14 +6,19 @@
 // Acuan visual: design-handoff/crm-2026-10-11/shots/lead/01,02,04,24,25.
 // SENGAJA BELUM ADA di irisan ini (aksi butuh modal irisan 5 -- Reassign/
 // MarkAsLost/Archive/Assign to Sales): tombol aksi di bulk bar, menu baris
-// "⋮", filter slider Estimated Value (kit tak punya komponen slider). Bulk
-// bar tetap tampil (checkbox + "N selected" + Clear) supaya pemilihan baris
-// sudah berfungsi begitu irisan 5 menambah tombol aksinya -- lihat laporan
-// akhir untuk daftar perbedaan visual lengkap.
+// "⋮". Bulk bar tetap tampil (checkbox + "N selected" + Clear) supaya
+// pemilihan baris sudah berfungsi begitu irisan 5 menambah tombol aksinya.
+//
+// Dua deviasi dari batas awal irisan ini, DIPUTUSKAN Den sesudah verifikasi
+// visual (ikut mockup, bukan lagi dicatat sebagai "tidak ada"): filter
+// Estimated Value kini pakai Slider BARU di src/kit/Form.jsx (kit memang
+// belum punya komponen ini sebelum sesi ini), dan avatar Owner berwarna
+// beda per orang lewat avatarToneFor() (src/kit/tokens.js) -- lihat laporan
+// akhir untuk rincian + perbedaan visual yang MASIH tersisa.
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Upload as UploadIcon, ChevronRight } from 'lucide-react';
-import { PageHeader, Card, EmptyState, Select, SearchInput, Segmented, Badge, PrimaryBtn, OutlineBtn } from '../../../../kit';
-import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ACCENT, ROW_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP, fmtRp } from '../../../../kit/tokens';
+import { PageHeader, Card, EmptyState, Select, SearchInput, Segmented, Slider, Badge, PrimaryBtn, OutlineBtn } from '../../../../kit';
+import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP, fmtRp, avatarToneFor } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../../../lib/roles';
@@ -25,6 +30,7 @@ import CaptureLeadModal from '../components/CaptureLeadModal';
 import ImportLeadsModal from '../components/ImportLeadsModal';
 
 const PAGE_SIZE = 20;
+const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
 const DATE_BUCKETS = [
   { value: 'all', label: 'Any time' },
   { value: '7', label: 'Last 7 days' },
@@ -41,12 +47,16 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function OwnerCell({ name }) {
+// Warna avatar BEDA per orang, KONSISTEN untuk orang yang sama (keputusan
+// Den, deviasi dari batas awal irisan 4) -- avatarToneFor(id) hash stabil
+// dari id (bukan nama, supaya dua orang bernama sama tak pernah bentrok).
+function OwnerCell({ id, name }) {
   if (!name) return <span style={{ color: INK_FAINT, fontSize: 13 }}>Unassigned</span>;
   const initials = name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const tone = avatarToneFor(id);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ width: 22, height: 22, borderRadius: 999, background: ACCENT, color: INK, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>{initials}</span>
+      <span style={{ width: 22, height: 22, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>{initials}</span>
       <span style={{ fontSize: 13, color: INK }}>{name}</span>
     </div>
   );
@@ -91,6 +101,10 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
   const [industry, setIndustry] = useState('all');
   const [priority, setPriority] = useState('all');
   const [touchedBucket, setTouchedBucket] = useState('all');
+  // Ujung kanan slider (Rp 600 juta) = "tanpa batas" (persis posisi default
+  // mockup), BUKAN "maksimal persis 600jt" -- filter hanya diterapkan saat
+  // digeser di BAWAH ujung kanan. ESTIMATED_MAX_JUTA juga dipakai "Clear all".
+  const [estimatedMaxJuta, setEstimatedMaxJuta] = useState(ESTIMATED_MAX_JUTA);
   const [industryOptions, setIndustryOptions] = useState([]);
   const [owners, setOwners] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
@@ -148,6 +162,7 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
       if (priority !== 'all') query = query.eq('priority', priority);
       if (createdBucket !== 'all') query = query.gte('created_at', daysAgoIso(Number(createdBucket)));
       if (touchedBucket !== 'all') query = query.gte('last_activity_at', daysAgoIso(Number(touchedBucket)));
+      if (estimatedMaxJuta < ESTIMATED_MAX_JUTA) query = query.lte('estimated_value', estimatedMaxJuta * 1_000_000);
       if (search.trim()) query = query.or(`name.ilike.%${search.trim()}%,code.ilike.%${search.trim()}%`);
 
       query = query.order('last_activity_at', { ascending: false, nullsFirst: false }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
@@ -166,7 +181,7 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
     // React Compiler menyimpulkan dependensinya sebagai objek `profile` (bukan
     // sub-path-nya), dan menyebut keduanya "kurang spesifik dari sumber" kalau
     // dibiarkan optional-chained (react-hooks/preserve-manual-memoization).
-  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, touchedBucket, search, page, showToast]);
+  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, touchedBucket, estimatedMaxJuta, search, page, showToast]);
 
   // Promise.resolve().then(...) -- pola yang sudah dipakai di tempat lain
   // (AssetDetailITPage.jsx, useHrgaRequests.js) untuk menghindari
@@ -176,7 +191,7 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
 
   // Halaman kembali ke 0 tiap filter berubah -- pola "adjust state during
   // render" (bukan effect terpisah), sama dengan ImportLeadsModal.previewKey.
-  const filterKey = `${effectiveScope}|${status}|${source}|${owner}|${entity}|${industry}|${priority}|${createdBucket}|${touchedBucket}|${search}`;
+  const filterKey = `${effectiveScope}|${status}|${source}|${owner}|${entity}|${industry}|${priority}|${createdBucket}|${touchedBucket}|${estimatedMaxJuta}|${search}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
@@ -195,8 +210,12 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
 
   return (
     <div>
+      {/* TANPA `crumbs`: breadcrumb "Modul > Level 2 > Level 3" sudah dirender
+          SEKALI oleh ContextHeader (route-table.jsx, layout bersama seluruh
+          halaman Kerangka Bagian 1) -- mengirim crumbs di sini menghasilkan
+          breadcrumb GANDA (ditemukan saat verifikasi visual terhadap staging,
+          bukan dari pembacaan mockup/kode saja). */}
       <PageHeader
-        crumbs={[{ label: 'CRM (Business Development)' }, { label: 'Lead Management' }, { label: 'Multi-channel Lead Capture' }]}
         title="Multi-channel Lead Capture"
         right={(
           <div style={{ display: 'flex', gap: SP.s2 }}>
@@ -227,8 +246,8 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
             display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', borderRadius: RADIUS.md,
             border: `1px solid ${LINE}`, background: advancedOpen ? ROW_HOVER : '#fff', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK, cursor: 'pointer',
           }}>Advanced</button>
-          {(status !== 'all' || source !== 'all' || owner !== 'all' || entity !== 'all' || industry !== 'all' || priority !== 'all' || touchedBucket !== 'all' || search) && (
-            <button type="button" onClick={() => { setStatus('all'); setSource('all'); setOwner('all'); setEntity('all'); setIndustry('all'); setPriority('all'); setTouchedBucket('all'); setSearch(''); }}
+          {(status !== 'all' || source !== 'all' || owner !== 'all' || entity !== 'all' || industry !== 'all' || priority !== 'all' || touchedBucket !== 'all' || estimatedMaxJuta !== ESTIMATED_MAX_JUTA || search) && (
+            <button type="button" onClick={() => { setStatus('all'); setSource('all'); setOwner('all'); setEntity('all'); setIndustry('all'); setPriority('all'); setTouchedBucket('all'); setEstimatedMaxJuta(ESTIMATED_MAX_JUTA); setSearch(''); }}
               style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 13, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>Clear all</button>
           )}
         </div>
@@ -237,6 +256,13 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s3, marginTop: SP.s3, paddingTop: SP.s3, borderTop: `1px solid ${LINE_SOFT}` }}>
             <Field label="Industry"><Select value={industry} onChange={setIndustry} width={160} options={[{ value: 'all', label: 'All' }, ...industryOptions.map((o) => ({ value: o.value, label: o.label }))]} /></Field>
             <Field label="Priority"><Select value={priority} onChange={setPriority} width={120} options={[{ value: 'all', label: 'All' }, ...PRIORITIES.map((p) => ({ value: p, label: p }))]} /></Field>
+            <div style={{ width: 200 }}>
+              <Slider
+                label="Estimated Value, up to" value={estimatedMaxJuta} onChange={setEstimatedMaxJuta}
+                min={0} max={ESTIMATED_MAX_JUTA} step={10}
+                formatValue={(v) => `Rp ${v} million`}
+              />
+            </div>
             <Field label="Last Touched"><Select value={touchedBucket} onChange={setTouchedBucket} width={150} options={DATE_BUCKETS} /></Field>
           </div>
         )}
@@ -312,7 +338,7 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                       <td style={{ ...td, color: INK_SOFT }}>{primaryContactOf(l)?.name || '—'}</td>
                       <td style={td}>{meta ? <Badge tone={meta.tone}>{meta.label}</Badge> : '—'}</td>
                       <td style={td}><BantCell score={calcBantScoreSafe(l)} /></td>
-                      <td style={td}><OwnerCell name={l.assigned_profile?.full_name} /></td>
+                      <td style={td}><OwnerCell id={l.assigned_to} name={l.assigned_profile?.full_name} /></td>
                       <td style={{ ...td, fontFamily: FONT_MONO }}>{l.estimated_value != null ? fmtRp(l.estimated_value) : '—'}</td>
                       <td style={{ ...td, color: INK_FAINT, fontSize: 12.5 }}>{fmtDate(l.last_activity_at)}</td>
                       <td style={{ ...td, width: 24 }}><ChevronRight size={15} color={INK_FAINT} /></td>
