@@ -123,7 +123,9 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
         </div>
 
         <FloatingSelect label="New Owner" value={newOwner} onChange={setNewOwner}
-          options={profiles.map((p) => ({ value: p.id, label: p.full_name }))} />
+          options={profiles
+            .filter((p) => bulk || p.id !== accounts[0].assigned_to)
+            .map((p) => ({ value: p.id, label: p.full_name }))} />
 
         <Textarea label="Reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this lead being reassigned?" />
         <div style={{ fontSize: 11.5, color: INK_SOFT, fontFamily: FONT_BODY, marginTop: -SP.s2 }}>Recorded in the activity timeline.</div>

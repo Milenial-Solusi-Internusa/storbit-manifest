@@ -305,7 +305,15 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
               <OutlineBtn size="sm" onClick={() => setModalAction({ type: 'archive', accounts: leads.filter((l) => selected.has(l.id)) })}>Archive</OutlineBtn>
             )}
             {canMarkLost && (
-              <OutlineBtn size="sm" style={{ color: '#B4432A', borderColor: '#B4432A' }} onClick={() => setModalAction({ type: 'lost', accounts: leads.filter((l) => selected.has(l.id)) })}>
+              <OutlineBtn size="sm" style={{ color: '#B4432A', borderColor: '#B4432A' }} onClick={() => setModalAction({
+                // Baris 'customer'/'lost' dikeluarkan dari target -- bulk select bisa
+                // mencampur status, dan menandai akun yang sudah jadi customer sebagai
+                // Lost tidak masuk akal (sama seperti penjagaan rowCanMarkLost di
+                // menu baris '⋮'). Baris yang dikeluarkan tetap TERPILIH di tabel
+                // (selected tak diubah) -- pemanggil cukup lihat sendiri baris mana
+                // yang tak ikut lewat Related Documents/status sesudahnya.
+                type: 'lost', accounts: leads.filter((l) => selected.has(l.id) && deriveLeadStatus(l) !== 'customer' && deriveLeadStatus(l) !== 'lost'),
+              })}>
                 Mark as Lost
               </OutlineBtn>
             )}
@@ -351,7 +359,12 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                 {leads.map((l, i) => {
                   const lstatus = deriveLeadStatus(l);
                   const meta = lstatus ? LEAD_STATUS_META[lstatus] : null;
-                  const rowCanMarkLost = canMarkLost && lstatus !== 'lost';
+                  // 'customer' dikecualikan juga -- akun yang sudah jadi customer tak
+                  // boleh ditandai Lost dari sini (LeadDetailPage sendiri tak bisa
+                  // dibuka untuk akun ini sama sekali, redirect ke /crm/customer/:id,
+                  // tapi menu baris '⋮' di daftar ini jalur TERPISAH yang butuh
+                  // penjagaan sendiri).
+                  const rowCanMarkLost = canMarkLost && lstatus !== 'lost' && lstatus !== 'customer';
                   const rowMenuOpen = rowMenuFor === l.id;
                   return (
                     <tr key={l.id}
