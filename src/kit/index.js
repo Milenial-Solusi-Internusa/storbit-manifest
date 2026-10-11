@@ -22,6 +22,7 @@ export {
 export { PageHeader, SectionLabel, Card, EmptyState, Skeleton, DocNo, FormSheet, Notebook } from './Layout';
 export { Badge, StatusBar, ListView } from './Data';
 export { Modal, SlideOver, Tooltip } from './Overlay';
+export { MasterSelect } from './MasterSelect';
 export { DropZone, UploadBox } from './Upload';
 export { default as Icon } from './Icon';
 export { default as useToast } from './useToast';
