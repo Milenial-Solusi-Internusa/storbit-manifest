@@ -19,7 +19,7 @@ import {
   FloatingInput, FloatingSelect, MasterSelect, Textarea, IconButton,
 } from '../../../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, SEMANTIC, FONT_BODY, FONT_HEAD, FONT_MONO,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, SEMANTIC, ACCENT, ACCENT_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO,
   RADIUS, SP, fmtRp, avatarToneFor,
 } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
@@ -352,30 +352,37 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
       </Card>
 
       <div style={{ marginTop: SP.s6 }}>
-        <Notebook tabs={tabs} value={tab} onChange={setTab}>
-          {tab === 'overview' && (
-            <OverviewTab
-              account={account} setAccount={setAccount} id={id} companyId={companyId} status={status}
-              industryOptions={industryOptions} categoryOptions={categoryOptions} lostReasonOptions={lostReasonOptions}
-              canManage={canManage} onReassign={() => setReassignOpen(true)}
-              onRequestNewOption={(key) => setRequestOptionFor(key)}
-              showToast={showToast}
-            />
-          )}
-          {tab === 'contacts' && (
-            <ContactsTab contacts={contacts} accountId={id} companyId={companyId} showToast={showToast} onChanged={fetchContacts} />
-          )}
-          {tab === 'activity' && (
-            <ActivityTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
-              profile={profile} showToast={showToast} onChanged={fetchActivities} />
-          )}
-          {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
-          {tab === 'history' && <HistoryTab inquiries={inquiries} onOpenInquiry={onOpenInquiry} />}
-          {tab === 'notes' && (
-            <NotesTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
-              profile={profile} showToast={showToast} onChanged={fetchActivities} />
-          )}
-        </Notebook>
+        {/* Notebook dibungkus Card -- mockup (17/19-detail-*.png) merender
+            tab bar + isi tab di dalam SATU kartu putih berbingkai, terpisah
+            dari Related Documents (kartu sendiri di bawahnya, RelatedDocuments
+            sudah membungkus dirinya sendiri). Sebelumnya Notebook dirender
+            telanjang tanpa bingkai sama sekali. */}
+        <Card>
+          <Notebook tabs={tabs} value={tab} onChange={setTab}>
+            {tab === 'overview' && (
+              <OverviewTab
+                account={account} setAccount={setAccount} id={id} companyId={companyId} status={status}
+                industryOptions={industryOptions} categoryOptions={categoryOptions} lostReasonOptions={lostReasonOptions}
+                canManage={canManage} onReassign={() => setReassignOpen(true)}
+                onRequestNewOption={(key) => setRequestOptionFor(key)}
+                showToast={showToast}
+              />
+            )}
+            {tab === 'contacts' && (
+              <ContactsTab contacts={contacts} accountId={id} companyId={companyId} showToast={showToast} onChanged={fetchContacts} />
+            )}
+            {tab === 'activity' && (
+              <ActivityTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
+                profile={profile} showToast={showToast} onChanged={fetchActivities} />
+            )}
+            {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
+            {tab === 'history' && <HistoryTab inquiries={inquiries} onOpenInquiry={onOpenInquiry} />}
+            {tab === 'notes' && (
+              <NotesTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
+                profile={profile} showToast={showToast} onChanged={fetchActivities} />
+            )}
+          </Notebook>
+        </Card>
 
         <RelatedDocuments account={account} statusMeta={statusMeta}
           inquiry={latestInquiry} quotation={latestQuotation}
@@ -854,15 +861,24 @@ function NotesTab({ activities, actorMap, accountId, companyId, profile, showToa
         <EmptyState icon="inbox" title="No notes yet" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {notes.map((n, i) => (
-            <div key={n.id} style={{ padding: '14px 0', borderBottom: i < notes.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{n.created_by ? (actorMap[n.created_by] || '—') : '—'}</span>
-                <span style={{ fontSize: 12, color: INK_FAINT, fontFamily: FONT_BODY }}>{fmtDateTime(n.created_at)}</span>
+          {notes.map((n, i) => {
+            const actorName = n.created_by ? (actorMap[n.created_by] || '—') : '—';
+            const tone = avatarToneFor(n.created_by);
+            return (
+              <div key={n.id} style={{ display: 'flex', gap: SP.s2, padding: '14px 0', borderBottom: i < notes.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' }}>
+                <span style={{ width: 24, height: 24, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 24px' }}>
+                  {actorName !== '—' ? actorName.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() : '?'}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{actorName}</span>
+                    <span style={{ fontSize: 12, color: INK_FAINT, fontFamily: FONT_BODY }}>{fmtDateTime(n.created_at)}</span>
+                  </div>
+                  <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY, marginTop: 4 }}>{n.notes}</div>
+                </div>
               </div>
-              <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY, marginTop: 4 }}>{n.notes}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -935,8 +951,8 @@ function BantTab({ account, id, setAccount, showToast }) {
                   return (
                     <button key={o.value} type="button" onClick={() => setDim(dim.key, o.value)}
                       style={{
-                        width: 34, height: 34, borderRadius: RADIUS.md, border: `1px solid ${active ? INK : LINE}`,
-                        background: active ? HEAD_BG : CARD, color: INK, fontFamily: FONT_MONO, fontSize: 13, fontWeight: active ? 700 : 500, cursor: 'pointer',
+                        width: 34, height: 34, borderRadius: RADIUS.md, border: `1px solid ${active ? ACCENT_HOVER : LINE}`,
+                        background: active ? ACCENT : CARD, color: INK, fontFamily: FONT_MONO, fontSize: 13, fontWeight: active ? 600 : 400, cursor: 'pointer',
                       }}>
                       {o.value}
                     </button>
@@ -978,7 +994,12 @@ function BantTab({ account, id, setAccount, showToast }) {
    bersarang per inquiry (instruksi eksplisit).
    ========================================================================= */
 function HistoryTab({ inquiries, onOpenInquiry }) {
-  if (!inquiries.length) return <EmptyState icon="inbox" title="No inquiry history for this account yet." />;
+  // Mockup (20-detail-history.png): keadaan kosong di tab ini HANYA teks
+  // tengah polos, bukan EmptyState berikon -- beda dari tab lain (Contacts/
+  // Activity) yang memang memakai EmptyState berikon.
+  if (!inquiries.length) {
+    return <div style={{ padding: `${SP.s6}px 0`, textAlign: 'center', fontSize: 13.5, color: INK_SOFT, fontFamily: FONT_BODY }}>No inquiry history for this account yet.</div>;
+  }
   const th = { padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY };
   const td = { padding: '10px 12px', fontSize: 13.5, color: INK, fontFamily: FONT_BODY };
   return (
