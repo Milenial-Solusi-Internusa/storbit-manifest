@@ -40,6 +40,12 @@ import Pager from '../components/Pager';
 import AddNoteModal from '../components/AddNoteModal';
 
 const PAGE_SIZE = 20;
+// Sentinel filter Owner (irisan 7 Bagian 2, poin 3 Paket 2) -- bukan id
+// profil sungguhan (profiles.id selalu uuid), jadi tak pernah bentrok.
+// Predikat: assigned_to IS NULL DAN is_in_lead_pool = false -- akun yang
+// sudah masuk Lead Pool punya halamannya sendiri (LeadPoolPage), sengaja
+// TIDAK ikut muncul di sini.
+const OWNER_UNASSIGNED = '__unowned__';
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
 const DATE_BUCKETS = [
   { value: 'all', label: 'Any time' },
@@ -188,7 +194,8 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
       if (status !== 'all') query = applyLeadStatusFilter(query, status);
       if (source !== 'all') query = query.eq('source', source);
-      if (owner !== 'all') query = query.eq('assigned_to', owner);
+      if (owner === OWNER_UNASSIGNED) query = query.is('assigned_to', null).eq('is_in_lead_pool', false);
+      else if (owner !== 'all') query = query.eq('assigned_to', owner);
       if (industry !== 'all') query = query.eq('industry', industry);
       if (priority !== 'all') query = query.eq('priority', priority);
       if (createdBucket !== 'all') query = query.gte('created_at', daysAgoIso(Number(createdBucket)));
@@ -261,7 +268,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
           <Field label="Status"><Select value={status} onChange={setStatus} width={140} options={[{ value: 'all', label: 'All' }, ...LEAD_STATUSES.map((s) => ({ value: s, label: LEAD_STATUS_META[s].label }))]} /></Field>
           <Field label="Source"><Select value={source} onChange={setSource} width={150} options={[{ value: 'all', label: 'All sources' }, ...SOURCES.map((s) => ({ value: s, label: SOURCE_LABELS[s] }))]} /></Field>
           {!isSalesOnly && (
-            <Field label="Owner"><Select value={owner} onChange={setOwner} width={160} options={[{ value: 'all', label: 'All' }, ...owners.map((o) => ({ value: o.id, label: o.full_name }))]} /></Field>
+            <Field label="Owner"><Select value={owner} onChange={setOwner} width={160} options={[{ value: 'all', label: 'All' }, { value: OWNER_UNASSIGNED, label: 'Tanpa pemilik' }, ...owners.map((o) => ({ value: o.id, label: o.full_name }))]} /></Field>
           )}
           {isAllEntities && (
             <Field label="Entity"><Select value={entity} onChange={setEntity} width={110} options={[{ value: 'all', label: 'All' }, ...ENTITIES.map((e) => ({ value: e.id, label: e.code }))]} /></Field>

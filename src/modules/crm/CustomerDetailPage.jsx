@@ -7,7 +7,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
-import { canCreatePrf } from '../../lib/roles';
+import { canCreatePrf, isManagerOrAbove } from '../../lib/roles';
+import ReassignModal from './lead/components/ReassignModal';
 import BantScoreBar from './components/BantScoreBar';
 import { calcBantScore, bantQualifyGate, BANT_DIMENSIONS } from './lib/bant';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -750,6 +751,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
   const [topOpen,    setTopOpen]    = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting,   setDeleting]   = useState(false);
+  // Reassign (irisan 7 Bagian 2 poin 2) — modal yang sama dengan Lead,
+  // di-scope ke SATU akun. Trigger-nya digerbang per-entitas akun ini
+  // (bukan entity-blind) karena halaman Customer bisa dibuka lintas entitas.
+  const [reassignOpen, setReassignOpen] = useState(false);
 
   const [editNotes, setEditNotes]     = useState(false);
   const [notesDraft, setNotesDraft]   = useState('');
@@ -1288,6 +1293,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
     );
   }
 
+  // Gate Reassign — scoped ke ENTITAS AKUN INI, bukan entity-blind (halaman
+  // Customer bisa dibuka lintas entitas lewat CompanySwitcher/navigasi).
+  const canReassign = isManagerOrAbove(erpRoles, { companyId: customer.company_id });
   const statusKey = statusOf(customer);
   // Penanda "sudah customer" dari sumbu lifecycle — dipakai chevron deal & badge
   // kartu Pipeline Stage (basis sama dengan computeHealth). Dibaca langsung dari
@@ -1431,6 +1439,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
           )}
           {isTempoTerm(customer.payment_term?.name) && (
             <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
+          )}
+          {canReassign && (
+            <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setReassignOpen(true)}><Icon name="user" size={16} />Reassign</button>
           )}
           <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
           {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Delete</button>}
@@ -1879,6 +1890,18 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
           showToast={showToast}
         />
       )}
+
+      {/* Reassign modal — sama dengan Lead, di-scope ke satu akun (irisan 7 Bagian 2 poin 2) */}
+      <ReassignModal
+        open={reassignOpen}
+        onClose={() => setReassignOpen(false)}
+        accounts={reassignOpen ? [customer] : []}
+        showToast={showToast}
+        title="Reassign Customer"
+        notifyEventType="customer_reassigned"
+        notifyReferenceType="customer"
+        onReassigned={() => { setReassignOpen(false); showToast?.('Customer reassigned'); fetchCustomer(); }}
+      />
 
       {/* Edit Deal modal — stage/value/assignee, jalur tulis sama DealDetailPage */}
       <EditDealModal

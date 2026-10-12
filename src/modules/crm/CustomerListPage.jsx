@@ -190,7 +190,7 @@ function StatCard({ label, value, hint, icon, iconBg, iconFg }) {
 }
 
 // ─── Table row (real data; row → detail, actions → view/edit) ───────────────────
-function CustomerRow({ c, idx, onSelect, onEdit }) {
+function CustomerRow({ c, idx, onSelect, onEdit, lastOwnerName }) {
   const [h, setH] = useState(false);
   const zebra = idx % 2 === 1;
   const bg = h ? '#FBF4E6' : zebra ? '#FCF8F0' : 'transparent';
@@ -223,6 +223,7 @@ function CustomerRow({ c, idx, onSelect, onEdit }) {
           {c.is_in_lead_pool ? <LeadPoolBadge /> : null}
         </span>
       </td>
+      <td style={P.td}>{lastOwnerName ? <span style={{ color: '#5E6553' }}>{lastOwnerName}</span> : <span style={{ color: '#A29684' }}>—</span>}</td>
       <td style={P.td}><span style={P.terms}>{c.payment_term?.name || c.payment_terms || '—'}</span></td>
       <td style={P.td}><span style={P.lastAct}>{fmtDate(lastAct)}</span></td>
       <td style={{ ...P.td, width: 90 }}>
@@ -566,8 +567,14 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
   const [filterStatus, setFilterStatus] = useState('customer'); // default view: Customer (Semua/Free Agent via filter)
   const [filterCo,    setFilterCo]    = useState('all');
   const [filterTier,  setFilterTier]  = useState('all');
+  const [filterOwner, setFilterOwner] = useState('all'); // 'all' | 'unowned' -- irisan 7 Bagian 2 poin 1
   const [formCustomer, setFormCustomer] = useState(null);
   const [formOpen,    setFormOpen]    = useState(false);
+  // Last Owner (accounts.lead_pool_last_owner) -- profMap TERPISAH dari
+  // assigned_profile (FK embed yang sudah ada untuk owner SAAT INI), bukan
+  // embed baru, supaya satu permintaan daftar Last Owner tak menambah JOIN
+  // ke query utama. id -> full_name, diisi sesudah `customers` berubah.
+  const [lastOwnerMap, setLastOwnerMap] = useState({});
 
   const searchTimer = useRef(null);
   const [search, setSearch] = useState('');
@@ -621,6 +628,18 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
+  // Last Owner lookup -- profMap, BUKAN FK embed (irisan 7 Bagian 2 poin 1).
+  // Promise.resolve().then(...) -- pola yang sudah dipakai di tempat lain
+  // (LeadCapturePage.jsx dkk) supaya react-hooks/set-state-in-effect tak menyala.
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      const ids = [...new Set(customers.map((c) => c.lead_pool_last_owner).filter(Boolean))];
+      if (!ids.length) { setLastOwnerMap({}); return; }
+      supabase.from('profiles').select('id, full_name').in('id', ids).limit(1000)
+        .then(({ data }) => setLastOwnerMap(Object.fromEntries((data || []).map((p) => [p.id, p.full_name]))));
+    });
+  }, [customers]);
+
   // Scope = search + entity + tier (everything EXCEPT the Status dropdown). Shared by
   // the table (which then also applies Status) and the stat cards (kept status-
   // segmented so their labels stay accurate regardless of the Status filter).
@@ -636,6 +655,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
     }
     if (!entityLocked && filterCo !== 'all' && c.source_company?.code !== filterCo) return false;
     if (filterTier !== 'all' && c.tier !== filterTier) return false;
+    if (filterOwner === 'unowned' && c.assigned_to) return false;
     return true;
   };
   const filtered = customers.filter(c => matchesScope(c) && (filterStatus === 'all' || statusOf(c) === filterStatus));
@@ -717,6 +737,13 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             </select>
             <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
           </div>
+          <div style={P.selectWrap}>
+            <select className="cl-sel" style={P.select} value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}>
+              <option value="all">All Owners</option>
+              <option value="unowned">Tanpa pemilik</option>
+            </select>
+            <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
+          </div>
           {entityFilter !== 'FREE_AGENT' && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
@@ -749,6 +776,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
                 <th style={P.th}>PIC Name</th>
                 <th style={P.th}>Tier</th>
                 <th style={P.th}>Status</th>
+                <th style={P.th}>Last Owner</th>
                 <th style={P.th}>Payment Terms</th>
                 <th style={P.th}>Last Activity</th>
                 <th style={{ ...P.th, width: 90 }}></th>
@@ -756,14 +784,14 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Loading data…</td></tr>
+                <tr><td colSpan={10} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
-                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'No customers match the filter.' : 'No customer data yet.'}
+                <tr><td colSpan={10} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
+                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' || filterOwner !== 'all' ? 'No customers match the filter.' : 'No customer data yet.'}
                 </td></tr>
               ) : (
                 filtered.map((c, i) => (
-                  <CustomerRow key={c.id} c={c} idx={i} onSelect={(id) => onSelectCustomer?.(id)} onEdit={openEdit} />
+                  <CustomerRow key={c.id} c={c} idx={i} onSelect={(id) => onSelectCustomer?.(id)} onEdit={openEdit} lastOwnerName={c.lead_pool_last_owner ? lastOwnerMap[c.lead_pool_last_owner] : null} />
                 ))
               )}
             </tbody>

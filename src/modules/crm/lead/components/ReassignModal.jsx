@@ -31,8 +31,13 @@ import { getTodayWIB } from '../../../../lib/dateUtils';
  * @param {Array<{id:string, name:string, code?:string, company_id:string, assigned_to?:string|null, assigned_profile?:{full_name?:string}}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onReassigned
+ * @param {string} [title] - judul modal; default-nya mereproduksi perilaku Lead
+ *   lama (bulk ? 'Assign to Sales' : 'Reassign Lead') -- irisan 7 Bagian 2 poin 2.
+ *   Pemanggil non-Lead (mis. Customer) mengirim judul tetap sendiri.
+ * @param {string} [notifyEventType] - notifications.event_type, default 'lead_reassigned'
+ * @param {string} [notifyReferenceType] - notifications.reference_type, default 'lead'
  */
-export default function ReassignModal({ open, onClose, accounts = [], showToast, onReassigned }) {
+export default function ReassignModal({ open, onClose, accounts = [], showToast, onReassigned, title, notifyEventType = 'lead_reassigned', notifyReferenceType = 'lead' }) {
   const { profile } = useAuth();
   const [profiles, setProfiles] = useState([]);
   const [newOwner, setNewOwner] = useState('');
@@ -87,10 +92,10 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
           const { data: prevProfile } = await supabase.from('profiles').select('active').eq('id', prevOwnerId).maybeSingle();
           if (prevProfile?.active) {
             await supabase.from('notifications').insert({
-              company_id: companyId, user_id: prevOwnerId, event_type: 'lead_reassigned',
+              company_id: companyId, user_id: prevOwnerId, event_type: notifyEventType,
               title: 'Lead Reassigned',
               body: bulk ? `${accounts.length} leads have been reassigned to ${newOwnerName}.` : `${accounts[0].name} has been reassigned to ${newOwnerName}.`,
-              reference_type: 'lead', reference_id: accounts[0].id,
+              reference_type: notifyReferenceType, reference_id: accounts[0].id,
             });
           }
         } catch (e) {
@@ -105,7 +110,7 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
   if (!accounts.length) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={bulk ? 'Assign to Sales' : 'Reassign Lead'} width={520} footer={(
+    <Modal open={open} onClose={onClose} title={title ?? (bulk ? 'Assign to Sales' : 'Reassign Lead')} width={520} footer={(
       <>
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
         <SaveButton onSave={handleSave} label={bulk ? 'Assign' : 'Save and Reassign'} savedLabel={bulk ? 'Assigned!' : 'Reassigned!'} disabled={!canSave}
