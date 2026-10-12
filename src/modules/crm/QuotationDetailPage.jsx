@@ -264,7 +264,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone),
-          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no),
+          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no, status),
           accepted_by_profile:profiles!quotations_accepted_by_fkey(full_name)
         `)
         .eq('id', quotationId)
@@ -379,6 +379,15 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const isManagerOrAbove = isManagerOrAboveRole(erpRoles, { companyId: quot?.company_id });
   const canAct = !!quot && (quot.created_by === profile?.id || !!isManagerOrAbove);
 
+  /* KEPUTUSAN DEN: inquiry LOST/CANCELLED mengunci seluruh quotation-nya —
+     Edit/Create Revision/Mark Accepted/Mark Rejected/Send to Customer
+     disembunyikan (bukan disabled, pola yang sama dgn komentar tombol
+     versi/approval di bawah). Download PDF & Duplicate SENGAJA TETAP tampil
+     (keputusan Den: quotation lama dipakai sbg template inquiry baru).
+     Penjaga sesungguhnya = trigger DB (migrasi 20261012000007) — ini hanya
+     mencegah tombol muncul-lalu-ditolak. */
+  const isInquiryClosed = ['LOST', 'CANCELLED'].includes(quot?.inquiry?.status);
+
   /* Revisi terakhir = ujung rantai versi. pickActiveQuotation dipakai supaya
      definisinya SATU dengan yang dipakai Detail Deal & form — kalau di sini
      dihitung sendiri, dua tempat pasti melenceng suatu hari. */
@@ -388,8 +397,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     return pickActiveQuotation(siblings)?.id === quot.id;
   }, [siblings, quot]);
 
-  const canRevise = canAct && isLatestRevision && ['SENT', 'REJECTED'].includes(quot?.status);
-  const canRecordOutcome = canAct && isLatestRevision && quot?.status === 'SENT';
+  const canRevise = canAct && !isInquiryClosed && isLatestRevision && ['SENT', 'REJECTED'].includes(quot?.status);
+  const canRecordOutcome = canAct && !isInquiryClosed && isLatestRevision && quot?.status === 'SENT';
 
   // ── Revisi baru: RPC menyalin header+item, sumber jadi SUPERSEDED ─────────
   const handleCreateRevision = async () => {
@@ -509,7 +518,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           <StatusBadge status={quot.status} />
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          {quot.status === 'SUBMITTED' && (
+          {!isInquiryClosed && quot.status === 'SUBMITTED' && (
             <button
               onClick={() => setConfirmSend(true)}
               style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
@@ -550,12 +559,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <GitBranch size={14} /> {actionSaving ? 'Working…' : 'Create Revision'}
             </button>
           )}
-          <button
-            onClick={() => onEdit(quot)}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >
-            <Edit2 size={14} /> Edit
-          </button>
+          {!isInquiryClosed && (
+            <button
+              onClick={() => onEdit(quot)}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Edit2 size={14} /> Edit
+            </button>
+          )}
           {onDuplicate && (
             <button
               onClick={() => onDuplicate(quot)}
@@ -573,6 +584,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           </button>
         </div>
       </div>
+
+      {/* ── Lock banner — inquiry induk LOST/CANCELLED (Task 3.1) ─────────── */}
+      {isInquiryClosed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, padding: '12px 16px', borderRadius: 10, border: `1px solid ${C.dangerBd}`, background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 600 }}>
+          <XCircle size={16} />
+          Inquiry ini sudah {quot.inquiry.status === 'LOST' ? 'Lost' : 'Cancelled'}, quotation terkunci.
+        </div>
+      )}
 
       {/* ── SLA indicator (BD-05) ────────────────────────────────────────── */}
       <SlaCard quot={quot} />

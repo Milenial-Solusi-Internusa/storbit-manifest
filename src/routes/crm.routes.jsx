@@ -126,6 +126,26 @@ function useRecord(table, id, seedFromState) {
   };
 }
 
+/** Status inquiry induk — dipakai Task 3.2 (migrasi 20261012000007) utk
+ *  mengunci mode edit quotation dari inquiry LOST/CANCELLED, termasuk akses
+ *  lewat URL langsung (cek ini di level rute, sebelum QuotationFormPage
+ *  mount). Diturunkan saat render seperti useRecord di atas, bukan lewat
+ *  setState sinkron di dalam effect.
+ *  Return: null = tak ada inquiry_id, undefined = fetch belum selesai,
+ *  string = status inquiry-nya. */
+function useInquiryStatus(inquiryId) {
+  const [fetched, setFetched] = useState({ id: null, status: null });
+  useEffect(() => {
+    if (!inquiryId) return;
+    let cancelled = false;
+    supabase.from('inquiries').select('status').eq('id', inquiryId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setFetched({ id: inquiryId, status: data?.status ?? null }); });
+    return () => { cancelled = true; };
+  }, [inquiryId]);
+  if (!inquiryId) return null;
+  return fetched.id === inquiryId ? fetched.status : undefined;
+}
+
 // ============================================================================
 // Dashboard · Pipeline · Report · Rate List — daun tanpa state
 // ============================================================================
@@ -441,11 +461,22 @@ function QuotationFormRoute({ mode }) {
   const duplicate = useRecord('quotations', duplicateId, seeded?.row);
   const back = mode === 'edit' ? `${P_QUOTATION}/${id}` : P_QUOTATION;
 
-  if (editing.loading || duplicate.loading) {
+  // Task 3.2 (migrasi 20261012000007) — tolak membuka mode edit kalau inquiry
+  // induknya LOST/CANCELLED, termasuk akses lewat URL langsung (cek di level
+  // rute ini, sebelum QuotationFormPage mount sama sekali). Trigger DB tetap
+  // penjaga akhir kalau titik ini terlewat. Duplicate SENGAJA tidak ikut
+  // diblokir di sini (keputusan Den — lihat prefill di QuotationFormPage).
+  const inquiryStatus = useInquiryStatus(mode === 'edit' ? editing.row?.inquiry_id : null);
+  const inquiryStatusLoading = mode === 'edit' && !!editing.row?.inquiry_id && inquiryStatus === undefined;
+
+  if (editing.loading || duplicate.loading || inquiryStatusLoading) {
     return <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>;
   }
   if (mode === 'edit' && !editing.row) {
     return <RecordNotFound label="Quotation tidak ditemukan." onBack={() => navigate(P_QUOTATION)} backLabel="Kembali ke daftar Quotation" />;
+  }
+  if (mode === 'edit' && ['LOST', 'CANCELLED'].includes(inquiryStatus)) {
+    return <RecordNotFound label="Quotation ini terkunci — inquiry induknya sudah Lost/Cancelled." onBack={() => navigate(back)} backLabel="Kembali ke Quotation" />;
   }
   return (
     <Boundary title="Quotation Form temporarily unavailable">

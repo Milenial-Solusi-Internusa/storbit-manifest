@@ -420,6 +420,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
   const [clientName,      setClientName]      = useState('');
   const [selectedInquiry, setSelectedInquiry] = useState(null);
+  // Duplicate dari quotation milik inquiry yang sudah LOST/CANCELLED (Task
+  // 3.3, migrasi 20261012000007): inquiry_id SENGAJA tidak ikut disalin —
+  // quotation lama dipakai sbg template, bukan diikat lagi ke inquiry
+  // tertutup (keputusan Den). true selama form baru dibuka dgn duplicateFrom
+  // semacam itu; dicabut begitu user memilih inquiry sendiri.
+  const [duplicateSourceClosed, setDuplicateSourceClosed] = useState(false);
 
   const [sections, setSections] = useState([freshSection('ORIGIN CHARGES')]);
 
@@ -626,8 +632,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   useEffect(() => {
     if (isEdit || !duplicateFrom) return;
     const src = duplicateFrom;
-    setHeader({
-      inquiry_id:       src.inquiry_id        || '',
+    setHeader(h => ({
+      ...h,
+      // inquiry_id SENGAJA DIKOSONGKAN di sini -- diisi di bawah SESUDAH
+      // status inquiry sumbernya dicek (Task 3.3, migrasi 20261012000007).
+      inquiry_id:       '',
       service_type:     src.service_type      || 'freight_forwarding',
       route:            src.route             || '',
       valid_until:      '',
@@ -651,14 +660,36 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       cbm:              src.cbm               || '',
       container_type:   src.container_type    || '',
       container_qty:    src.container_qty     ?? '',
-    });
-    setClientName(src.prospect?.name || src.customer?.name || '');
-    // Synthesise selectedInquiry so the CREATE payload keeps prospect/customer link.
-    setSelectedInquiry({
-      id:       src.inquiry_id || null,
-      prospect: src.prospect_id ? { id: src.prospect_id, name: src.prospect?.name } : null,
-      customer: src.customer_id ? { id: src.customer_id, name: src.customer?.name } : null,
-    });
+    }));
+
+    // KEPUTUSAN DEN (Task 3.3): quotation dari inquiry LOST/CANCELLED boleh
+    // dipakai sbg TEMPLATE duplikat, tapi inquiry_id TIDAK ikut disalin --
+    // supaya hasil duplikat tidak otomatis terikat ke inquiry yang sudah
+    // tertutup. Dicek via fetch status langsung (bukan src.inquiry?.status,
+    // yang bisa absen kalau duplicateFrom datang dari fallback useRecord('*')
+    // tanpa embed -- akses lewat URL langsung di crm.routes.jsx), supaya
+    // benar terlepas dari jalur masuknya. Trigger DB tetap penjaga akhir
+    // kalau inquiry_id tertutup tetap terkirim lewat jalur lain.
+    let cancelled = false;
+    if (!src.inquiry_id) {
+      setDuplicateSourceClosed(false);
+    } else {
+      supabase.from('inquiries').select('status').eq('id', src.inquiry_id).maybeSingle()
+        .then(({ data }) => {
+          if (cancelled) return;
+          const closed = ['LOST', 'CANCELLED'].includes(data?.status);
+          setDuplicateSourceClosed(closed);
+          if (closed) return; // inquiry_id tetap '' -- user pilih inquiry aktif sendiri
+          setHeader(h => ({ ...h, inquiry_id: src.inquiry_id }));
+          setClientName(src.prospect?.name || src.customer?.name || '');
+          // Synthesise selectedInquiry so the CREATE payload keeps prospect/customer link.
+          setSelectedInquiry({
+            id:       src.inquiry_id,
+            prospect: src.prospect_id ? { id: src.prospect_id, name: src.prospect?.name } : null,
+            customer: src.customer_id ? { id: src.customer_id, name: src.customer?.name } : null,
+          });
+        });
+    }
 
     supabase
       .from('quotation_items')
@@ -694,6 +725,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         setHeader(h => ({ ...h, exchange_rates: rates }));
         setRateWarnings(warnings);
       });
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, duplicateFrom?.id]);
 
@@ -858,6 +890,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
   const handleInquiryChange = (e) => {
     const id = e.target.value;
+    setDuplicateSourceClosed(false); // user sudah bertindak sendiri — pesan Task 3.3 tak relevan lagi
     setHeader(h => ({ ...h, inquiry_id: id }));
     if (!id) { setClientName(''); setSelectedInquiry(null); return; }
     const inq = inquiries.find(i => i.id === id);
@@ -1272,6 +1305,14 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                     </option>
                   ))}
                 </select>
+                {/* Task 3.3 — quotation sumber duplikat berasal dari inquiry
+                    LOST/CANCELLED: inquiry_id sengaja tidak ikut disalin
+                    (lihat effect prefill duplicate), user wajib pilih sendiri. */}
+                {duplicateSourceClosed && (
+                  <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: C.orangeBg, border: `1px solid ${C.orangeBd}`, color: C.orange, fontSize: 11.5, fontWeight: 600 }}>
+                    Inquiry asal sudah Lost/Cancelled, pilih inquiry yang masih aktif.
+                  </div>
+                )}
                 {errors.inquiry_id && <span style={{ fontSize: 11.5, color: C.danger }}>{errors.inquiry_id}</span>}
               </Field>
 
