@@ -112,32 +112,46 @@ export default function UserAccessPage({ showToast, onEditUser }) {
       async () => {
         closeConfirm();
         setTogglingId(row.id);
-        const { data: statusData, error: toggleErr } = await setUserActiveStatus(row.id, !row.active);
-        setTogglingId(null);
-        if (toggleErr) {
-          toast(toggleErr.message || `Failed to ${action} user.`, 'error');
-          return;
-        }
-        // TD-301: audit BOTH transitions now, not just deactivate — the old
-        // toggleUserActive() path never logged ACTIVATE_USER at all (gap
-        // found while building this hotfix, closed here, not a new rule).
-        const partialNote = statusData?.partial
-          ? ` (sebagian gagal: ${JSON.stringify(statusData.steps)})`
-          : '';
-        logAudit(supabase, {
-          action: action === 'deactivate' ? ACTION_TYPES.DEACTIVATE_USER : ACTION_TYPES.ACTIVATE_USER,
-          entityType: ENTITY_TYPES.USER,
-          entityId: row.id,
-          entityLabel: row.full_name || null,
-          oldData: { active: row.active },
-          newData: { active: !row.active },
-          notes: statusData?.steps ? `set-user-status: ${JSON.stringify(statusData.steps)}${partialNote}` : null,
-        }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
-        refresh();
-        if (statusData?.partial) {
-          toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}, but one step failed — check audit log.`, 'error');
-        } else {
-          toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+        // Bug investigasi (Task A): try/finally BARU di sini — sebelumnya
+        // setTogglingId(null) berada SESUDAH await tanpa try/catch, jadi
+        // kalau setUserActiveStatus() atau supabase.functions.invoke()
+        // melempar (bukan mengembalikan {error}) — mis. fetch gagal total
+        // sebelum sempat dapat respons — togglingId tersangkut SELAMANYA di
+        // row.id ini (disabled={isToggling} tak pernah lepas lagi tanpa
+        // reload halaman). finally menjamin reset-nya selalu jalan; catch
+        // menoast error-nya alih-alih membiarkannya jadi unhandled rejection
+        // yang diam-diam (persis ciri "tidak bereaksi sama sekali").
+        try {
+          const { data: statusData, error: toggleErr } = await setUserActiveStatus(row.id, !row.active);
+          if (toggleErr) {
+            toast(toggleErr.message || `Failed to ${action} user.`, 'error');
+            return;
+          }
+          // TD-301: audit BOTH transitions now, not just deactivate — the old
+          // toggleUserActive() path never logged ACTIVATE_USER at all (gap
+          // found while building this hotfix, closed here, not a new rule).
+          const partialNote = statusData?.partial
+            ? ` (sebagian gagal: ${JSON.stringify(statusData.steps)})`
+            : '';
+          logAudit(supabase, {
+            action: action === 'deactivate' ? ACTION_TYPES.DEACTIVATE_USER : ACTION_TYPES.ACTIVATE_USER,
+            entityType: ENTITY_TYPES.USER,
+            entityId: row.id,
+            entityLabel: row.full_name || null,
+            oldData: { active: row.active },
+            newData: { active: !row.active },
+            notes: statusData?.steps ? `set-user-status: ${JSON.stringify(statusData.steps)}${partialNote}` : null,
+          }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
+          refresh();
+          if (statusData?.partial) {
+            toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}, but one step failed — check audit log.`, 'error');
+          } else {
+            toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+          }
+        } catch (err) {
+          toast(err?.message || `Failed to ${action} user.`, 'error');
+        } finally {
+          setTogglingId(null);
         }
       }
     );
@@ -370,12 +384,16 @@ export default function UserAccessPage({ showToast, onEditUser }) {
               <div
                 key={row.id}
                 className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-                style={{ gridTemplateColumns: GRID, borderColor: PASTEL.line, opacity: row.active ? 1 : 0.6 }}
+                style={{ gridTemplateColumns: GRID, borderColor: PASTEL.line }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
+                {/* Opacity dipindah dari div baris (dulu meredupkan SELURUH
+                    baris termasuk Actions) ke keempat sel SELAIN Actions —
+                    Edit dan Activate/Deactivate tetap tampil penuh pada baris
+                    user nonaktif (Task A poin 3), bagian lain tetap pudar. */}
                 {/* Avatar + Name */}
-                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                <div className="flex items-center gap-2.5 min-w-0 pr-2" style={{ opacity: row.active ? 1 : 0.6 }}>
                   <Avatar name={row.full_name} avatarUrl={row.avatar_url} />
                   <div className="min-w-0">
                     <div className="font-medium truncate" style={{ color: PASTEL.ink }}>
@@ -390,7 +408,7 @@ export default function UserAccessPage({ showToast, onEditUser }) {
                 </div>
 
                 {/* Company */}
-                <div>
+                <div style={{ opacity: row.active ? 1 : 0.6 }}>
                   {row.companies ? (
                     <span
                       className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold"
@@ -405,7 +423,7 @@ export default function UserAccessPage({ showToast, onEditUser }) {
 
                 {/* Role — badge = role utama di HOME company; chip = role aktif
                     lain per entitas (kode entitas · kode role). */}
-                <div className="min-w-0 pr-2">
+                <div className="min-w-0 pr-2" style={{ opacity: row.active ? 1 : 0.6 }}>
                   <RoleBadge erpRole={primaryErpRole} />
                   {otherRoles.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
@@ -424,11 +442,11 @@ export default function UserAccessPage({ showToast, onEditUser }) {
                 </div>
 
                 {/* Status */}
-                <div>
+                <div style={{ opacity: row.active ? 1 : 0.6 }}>
                   <StatusBadge active={row.active} />
                 </div>
 
-                {/* Actions */}
+                {/* Actions — SENGAJA TANPA opacity (Task A poin 3) */}
                 <div className="flex items-center justify-end gap-1.5">
                   <button
                     type="button"
