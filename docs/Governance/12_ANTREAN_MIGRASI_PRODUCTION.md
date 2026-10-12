@@ -71,6 +71,20 @@
 | 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail` | ✔ 30 Sep | ⛔ belum | ⛔ **WAJIB** — mandiri |
 | 45 | `20260930000007_td281_h5_lapis1_revoke_trtm_existing` | ✔ 30 Sep | ✔ 30 Sep | — **selesai** — pengerasan mandiri, dijalankan sebelum launching, staging & production hari yang sama |
 | 46 | `20260930000008_td281_h5_lapis2_anon_business_tables` | ✔ 30 Sep | ✔ 30 Sep | — **selesai** — dijalankan dengan koreksi (lihat §H5); staging & production hari yang sama |
+| 47 | `20261011000001_crm_lead_capture_fields` | ✔ 11 Okt | ⛔ belum | ⛔ **WAJIB** — Paket 2 Lead Pool, mandiri |
+| 48 | `20261011000002_crm_lead_master_data_requests` | ✔ 11 Okt | ⛔ belum | ⛔ **WAJIB** — mandiri |
+| 49 | `20261012000001_crm_lead_pool_schema` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — fondasi Paket 2 (file 1/4) |
+| 50 | `20261012000002_crm_lead_pool_rpc` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — sesudah butir 49 |
+| 51 | `20261012000003_crm_lead_pool_triggers` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — sesudah butir 49 |
+| 52 | `20261012000004_crm_lead_pool_approval_roles` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — mandiri (lihat catatan DELETE §52) |
+| 53 | `20261012000005_crm_lead_aging_threshold_policy` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — berpasangan dgn deploy EF `aging-pipeline` |
+| 54 | `20261012000009_crm_lead_pool_legacy_cleanup` | ⛔⛔ **BELUM DIJALANKAN DI MANA PUN** (hanya diuji dry-run, lihat §Catatan uji coba) | ⛔ belum | ⛔ **WAJIB, SEBELUM butir 55** — lihat §54 |
+| 55 | `20261012000006_crm_lead_pool_notifications` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, SESUDAH butir 54** |
+| 56 | `20261012000007_crm_quotation_lock_on_closed_inquiry` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — didahului langkah manual backup, lihat §56 ("9a") |
+| 57 | `20261012000008_crm_lead_pool_sweep_notify` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, TERAKHIR** dari rangkaian 11 berkas |
+| 58 | Perubahan manual khusus STAGING (seed CRM dummy + reaktivasi akun uji) | ✔ 12 Okt (manual) | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
+
+**Butir 47-58 = Paket 2 Lead Pool (Batch DS 3, Lead Management) — rilis SESUDAH 14 Oktober 2026, jalur TERPISAH dari rantai AR Storbit (butir 1-46) di atas.** Urutan mengikat, kedua Edge Function yang menyusul, dan konfigurasi aging pasca-rilis: **§Paket 2 Lead Pool (butir 47-57)** di bagian akhir dokumen ini, sesudah §Naskah Eksekusi Malam Rilis.
 
 ~~**Butir 3** memblokir launching.~~ **✅ SELESAI 2 Okt 2026 — lihat paragraf di bawah; butir 3 BUKAN LAGI pemblokir launching.** **Butir 6 dan 7 SELESAI di production 2 Okt 2026** (lihat seksinya masing-masing) — sisa **8 dan 9** dari rantai AR Tahap 1 masih **⛔ belum**, dengan **urutan yang MENGIKAT: 6 → 7 → 8 → 9** tetap berlaku untuk dua butir sisanya. **Butir 32 sampai 38 adalah AR Tahap 3, dan urutannya MENGIKAT: 32 → 33 → 34 → 35 → 36 → 37 (37 opsional/menunggu review) → 38** (rincian dependensi tiap butir: lihat seksinya masing-masing di bawah; butir 38 hanya butuh 36, tidak bergantung pada 37). Seed staging `scripts/seed/staging_ar_tahap3_potongan_pelanggan.sql` (peran `potongan_pelanggan` → akun 4-1900 SOA) **TIDAK masuk antrean ini** — ia staging-only by design, tidak pernah naik ke produksi (lihat butir 33).
 
@@ -1730,6 +1744,268 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 ### TD-300 Group E — SENGAJA DI LUAR jendela rilis ini
 
 ⛔ **TD-300 Group E (lihat `08_TECH_DEBT.md` TD-300 dan migrasi `20261007000001_td300_group_e_revoke_public_execute.sql`) BUKAN bagian naskah malam ini.** Ia pemblokir keamanan yang **terpisah**, dengan keputusan go/no-go **sendiri** — bukan prasyarat, bukan dependensi fungsional AR Tahap 1-3b, dan tidak ada halaman/fitur rilis 14-15 Okt yang bergantung padanya. Alasan dipisah: cakupannya (sampai ~90 fungsi, badan belum dibaca satu-per-satu) jauh lebih besar dan lebih baru (ditulis 7 Okt 2026, belum pernah diuji sekali pun) dibanding rantai AR yang sudah lolos uji staging penuh berminggu-minggu. **Jangan jalankan di malam yang sama dengan Langkah 1-5 di atas** — jadwalkan sesi TERSENDIRI, hanya sesudah migrasi ini lolos SELURUH langkah uji staging (lihat ekor berkas migrasinya), termasuk dua uji nyata (signup user baru, DML pada tabel bertrigger) yang tidak bisa digantikan pembacaan kode.
+
+---
+
+## Paket 2 Lead Pool (butir 47-57) — rilis SESUDAH 14 Oktober 2026, BUKAN bagian malam rilis itu
+
+> **Sifat berbeda dari seluruh butir di atas.** Butir 1-46 + §Naskah Eksekusi Malam Rilis adalah rantai AR Storbit yang dijadwalkan rilis malam **14 Oktober 2026**. Sebelas berkas migrasi di bawah ini (+ dua Edge Function + satu langkah manual staging-only, butir 47-58) adalah pekerjaan TERPISAH — Lead Management "Paket 2" (Batch DS 3, irisan 7-9) — yang **TIDAK termasuk** jendela rilis AR itu sama sekali. **Jangan jalankan berkas-berkas ini di malam yang sama dengan Langkah 1-5 §Naskah Eksekusi** — jadwalkan sesi tersendiri, SESUDAH 14 Oktober 2026.
+>
+> **Status staging vs production diukur dari DUA sumber yang harus cocok, bukan dikarang dari salah satu:** tanggal commit (`git log`) DAN baris `Status:` di header tiap berkas migrasi itu sendiri. Seluruh sebelas berkas sudah **JALAN DI STAGING** (dua yang pertama 11 Okt 2026, sembilan sisanya 12 Okt 2026) — **KECUALI butir 54**, yang header filenya sendiri menulis "BELUM DIJALANKAN DI MANA PUN" secara eksplisit (hanya pernah **diuji dry-run**, bukan di-commit — lihat §Catatan uji coba). **Production: BELUM SATU PUN dijalankan sungguhan (commit).**
+
+**Urutan production yang MENGIKAT** (ditulis eksplisit per nama berkas, supaya tidak ambigu — perhatikan khusus butir 54 yang akhiran nomor filenya `...009` tapi WAJIB jalan SEBELUM butir 55 yang akhiran nomor filenya `...006`, terbalik dari urutan angka di nama file):
+
+**47 → 48 → 49 → 50 → 51 → 52 → 53 → 54 → [LANGKAH MANUAL "9a", lihat §56] → 55 → 56 → 57.**
+
+Ini identik dengan urutan yang ditulis sendiri di header berkas butir 54: *"URUTAN PRODUCTION LENGKAP (mengikat): 1, 2, 3, 4, 5, 9, 6, 7, 8"* — di mana angka-angka itu adalah akhiran nomor file dalam seri `20261012*` (1=skema/butir 49, 2=RPC/butir 50, 3=trigger/butir 51, 4=approval roles/butir 52, 5=aging threshold/butir 53, 9=legacy cleanup/butir 54, 6=notifications/butir 55, 7=quotation lock/butir 56, 8=sweep notify/butir 57).
+
+---
+
+### 47. `20261011000001_crm_lead_capture_fields`
+
+| | |
+|---|---|
+| Isi | 9 kolom baru `accounts` (`industry`, `lead_category`, `priority`, `website`, `description`, `qualified_reason`, `qualified_at`, `competitor_name`, `competitor_price`) + 2 kolom baru `contacts` (`whatsapp`, `preferred_channel` + `CHECK` tiga nilai) |
+| Staging | ✔ **dijalankan 11 Okt 2026** (commit `66dde46`) |
+| Production | ⛔ belum |
+| Sifat | Aditif murni — nol kolom diubah/di-drop, nol tabel baru, nol GRANT baru (kolom baru otomatis ikut cakupan GRANT table-level yang sudah ada). Mandiri |
+
+**Untuk apa.** Field baru untuk layar Capture Lead + Detail Lead (tab Overview/Contacts) sesuai mockup `design-handoff/crm-2026-10-11/Lead Management.dc.html`. `qualified_at` adalah sumbu status "Qualified" di layar baru: `lifecycle_stage IN ('lead','mql') AND qualified_at IS NULL` = Raw, `IS NOT NULL` = Qualified — diisi lewat aksi "Mark Qualified" di UI, **bukan** trigger DB. `competitor_name`/`competitor_price` menyalin pola kolom yang sudah ada di `inquiries` (bukan tabel/relasi baru) — relevan untuk Mark as Lost **sebelum** lead sempat jadi inquiry.
+
+**Rollback.** `DROP COLUMN` untuk kesebelas kolom — aman selama belum ada baris terisi.
+
+---
+
+### 48. `20261011000002_crm_lead_master_data_requests`
+
+| | |
+|---|---|
+| Isi | Tabel baru `dropdown_option_requests` (RLS: SELECT untuk manager-ke-atas/pengaju sendiri, INSERT untuk pengaju, NOL policy UPDATE/DELETE) + 3 RPC (`add_dropdown_option_direct`, `approve_dropdown_option_request`, `reject_dropdown_option_request`, ketiganya `SECURITY DEFINER` + `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`) + seed `dropdown_options` (12 baris `lead_industry`, 3 baris `lead_category`, 6 baris `lost_reason`, semua `company_id NULL`/global) |
+| Staging | ✔ **dijalankan 11 Okt 2026** (commit `66dde46`) |
+| Production | ⛔ belum |
+| Sifat | Mandiri — header file menegaskan eksplisit "TIDAK bergantung pada migrasi lain yang belum jalan" |
+
+**Untuk apa.** Infrastruktur rule 5 mockup Lead Management: "manager menambah langsung, sales mengajukan, peran lain hanya membaca". Tabel `dropdown_options` sendiri sudah ada sejak lama (migrasi `20260827000001`) tapi tulisnya super_admin-only tanpa tingkatan — file ini menambah jalur pengajuan+persetujuan TANPA mengubah tabel `dropdown_options` atau RLS-nya yang sudah ada. Satu-satunya jalur tulis baru `dropdown_options` tetap `add_dropdown_option_direct` (dipanggil manager langsung ATAU oleh `approve_dropdown_option_request` sesudah sales mengajukan) — satu badan logika untuk kedua pintu masuk. Nilai `lead_category` (3) dan `lost_reason` (6) dikonfirmasi Den 11 Okt 2026 dan ditulis ke file migrasi **sesudah** eksekusi staging (file mencerminkan keadaan DB yang sebenarnya) — `ON CONFLICT` memakai predikat index unik parsial `dropdown_options_global_unique ON (list_key, value) WHERE company_id IS NULL`, idempoten untuk environment yang belum punya baris-baris ini.
+
+**Rollback.** Ekor file — `DELETE` ketiga seed + `DROP FUNCTION` ketiga RPC + `DROP TABLE dropdown_option_requests`, aman selama belum ada baris pengajuan/penolakan.
+
+---
+
+### 49. `20261012000001_crm_lead_pool_schema`
+
+| | |
+|---|---|
+| Isi | 5 kolom baru `accounts` (`lead_pool_last_owner`, `pull_requested_by`, `pull_rejection_reason`, `is_stale`, `stale_flagged_at`) + 1 kolom baru `companies` (`aging_baseline_at`) + tabel baru `account_pool_history` (audit-only, RLS: SELECT untuk pemegang izin `crm_lead_pool_approval` di entitas baris ATAU pelaku sendiri, NOL policy tulis untuk `authenticated` — hanya RPC `SECURITY DEFINER` butir 50 yang menulis) + 2 helper function baru `has_menu_permission_in(company_id, menu_key, action)` dan `lead_pool_approvers(company_id)` |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `6a36ca6`) |
+| Production | ⛔ belum |
+| Sifat | Fondasi — file 1/4 rangkaian skema Lead Pool BARU (prinsip baru: pool = akun TANPA pemilik, tarik = KLAIM kepemilikan, penuaan hanya menandai `is_stale`, tidak lagi memindahkan ke pool). Butir 50-52 bergantung pada objek-objek di file ini |
+
+**Untuk apa.** Mengganti mekanisme pool LAMA (`is_in_lead_pool` yang tak pernah mengosongkan `assigned_to`, persetujuan tanpa RPC) dengan prinsip baru. `lead_pool_last_owner` beda dari `pull_approved_by`/`pull_requested_by` yang sudah ada — kolom lama mencatat **siklus tarikan**, kolom baru mencatat **siklus pelepasan**. `pull_requested_by` sendiri BARU — mekanisme lama tidak pernah mencatat siapa yang mengajukan tarikan, hanya siapa yang menyetujui. `is_stale`/`stale_flagged_at` menggantikan "penuaan otomatis pindah ke pool" (cron `aging-pipeline-harian` sudah dimatikan sejak 11 Okt 2026 — lihat baris itu di §Koreksi Data dan Akses Manual) — penuaan sekarang HANYA menandai, tidak memindahkan kepemilikan. `aging_baseline_at` sengaja **tidak diisi** migrasi ini (nol nilai historis untuk dikarang) — diisi manual per entitas saat Paket 2 rilis (lihat §Urutan konfigurasi penuaan di bawah).
+
+⭐ **`has_menu_permission_in` MENIRU PERSIS logika resolusi 3-tingkat `AuthContext.jsx` (FE), bukan memperbaiki/memperketatnya** — kalau FE kelak diperketat per-entitas, fungsi ini WAJIB ikut diubah, kalau tidak RPC bisa menolak aksi yang UI-nya masih menampilkan tombolnya (atau sebaliknya).
+
+**Rollback.** `DROP FUNCTION` kedua helper + `DROP TABLE account_pool_history` + `DROP COLUMN` keenam kolom — aman selama butir 50-52 belum jalan.
+
+---
+
+### 50. `20261012000002_crm_lead_pool_rpc`
+
+| | |
+|---|---|
+| Isi | 4 RPC siklus pool baru: `lead_pool_release(account_id, reason)`, `lead_pool_request_pull(account_id, reason)`, `lead_pool_approve_pull(account_id)`, `lead_pool_reject_pull(account_id, reason)` — semua `SECURITY DEFINER`, `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE TO authenticated`, menulis riwayat ke `account_pool_history`. Plus rancangan `lead_pool_sweep_deactivated_owner(user_id)` (`service_role` ONLY — badannya disempurnakan lagi di butir 57) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `6a36ca6`) |
+| Production | ⛔ belum |
+| Sifat | Bergantung pada butir 49 (kolom `accounts`/`companies`, tabel `account_pool_history`, `has_menu_permission_in`) |
+
+**Untuk apa.** Gerbang izin SELURUH empat RPC siklus lewat `has_menu_permission_in(company_id, 'crm_lead_pool_approval', 'view')` — **BUKAN** level peran — supaya Finance (`manager`/`finance_controller`, level ≤ 6) tidak ikut berhak meski level-nya tinggi. `lead_pool_approve_pull` punya guard self-approval (pemegang izin **DAN BUKAN** pengaju sendiri). `lead_pool_request_pull` nol gerbang peran (siapa pun authenticated boleh mengajukan), alasan wajib minimal 20 karakter. Transisi `lifecycle_stage` free_agent→customer hanya terjadi di `lead_pool_approve_pull`; `account_status` dan `pipeline_stage` **sengaja tidak disentuh** (kolom pertama "dipensiunkan sejak 7 Sep 2026", kolom kedua instruksi eksplisit).
+
+**Rollback.** `DROP FUNCTION` kelima fungsi — aman kalau belum ada baris riwayat `account_pool_history` yang bergantung padanya.
+
+---
+
+### 51. `20261012000003_crm_lead_pool_triggers`
+
+| | |
+|---|---|
+| Isi | Menambahkan pengosongan `is_stale`/`stale_flagged_at` ke DUA trigger promosi yang sudah ada (`set_prospect_on_inquiry`, `set_sql_on_quotation_sent`) — begitu akun disentuh aktivitas nyata (inquiry baru, quotation terkirim), tanda stale tak lagi berlaku. Badan selebihnya TIDAK diubah |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `6a36ca6`) |
+| Production | ⛔ belum |
+| Sifat | Bergantung pada butir 49 (`accounts.is_stale`/`stale_flagged_at`) |
+
+⚠️ **Temuan drift yang dikoreksi DI DALAM file ini sendiri sebelum dijalankan (12 Okt 2026, dicek langsung ke database oleh Den) — murni catatan, bukan TD baru.** Draft pertama file ini mengasumsikan `set_prospect_on_inquiry` sudah dibersihkan jadi hanya menulis `lifecycle_stage` (badan dari `20260908000002_accounts_lifecycle_drop_legacy`, dikira sudah live karena "tercatat sudah berjalan di produksi"). Asumsi itu salah — badan yang SUNGGUH live di production DAN staging hari ini **masih dual-write** `account_status`+`lifecycle_stage`, konsisten dengan status `20260908000002` yang memang masih ⛔ STOP di seluruh dokumen governance lain (TD-246; Keputusan Terbuka #35 di `09_ROADMAP.md`). File ini sudah dikoreksi memakai badan dual-write yang sungguh live sebagai dasar sebelum dijalankan di staging — jadi **tidak mengubah** fakta bahwa drop-legacy belum jalan, hanya memastikan file ini sendiri menyalin badan yang benar. `set_sql_on_quotation_sent` tidak terdampak temuan ini — badannya sudah terkonfirmasi sama dengan yang live.
+
+**Rollback.** Kembalikan kedua fungsi ke badan sebelum file ini (tanpa blok pengosongan `is_stale`).
+
+---
+
+### 52. `20261012000004_crm_lead_pool_approval_roles`
+
+| | |
+|---|---|
+| Isi | §1 tambah izin `view` menu `crm_lead_pool_approval` untuk 3 role supervisor (`bd_sales_spv_console`, `bd_sales_spv_forwarding`, `bd_digital_marketing_spv`) · §2 **CABUT** izin `view` menu itu dari role `manager` (`DELETE`, baris 70) · §4 set `roles.level = 6` untuk `bd_digital_marketing_spv` (idempoten, `WHERE level <> 6`) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `6a36ca6`) — menulis ulang hasil akhir yang SAMA secara idempoten; SEBAGIAN sudah dikerjakan manual Den di staging sebelum file ini ditulis (lihat header file) |
+| Production | ⛔ belum |
+| Sifat | Mandiri — nol dependensi pada butir 49-51; murni data `role_menu_permissions`/`roles` |
+
+**Perhatian khusus untuk siapa pun yang menjalankan file ini di production: baris 70 berisi statement `DELETE`.** Statement itu menghapus izin `view` menu `crm_lead_pool_approval` untuk role **`manager` (generik)** — sesuai aturan 2 mockup ("supervisor sales ke atas", BUKAN "manager generik ke atas", keputusan Den). Peran yang **tetap** berhak menyetujui tarikan Lead Pool sesudahnya: `ceo`, `gm_bd`, `gm`, `admin`, plus ketiga role supervisor dari §1. `DELETE` ini **aman/idempoten secara alami** — kalau baris `manager` untuk menu itu sudah tidak ada (sudah dihapus manual di staging sebelumnya, atau belum pernah ada di production), statement ini nol baris terhapus, nol error. Ia **dijalankan dalam proses yang sama seperti seluruh SQL di dokumen ini** — manual oleh Den di SQL Editor/`execute_sql`, bukan lewat runner migrasi otomatis terpisah — jadi tidak ada mekanisme tersembunyi yang membedakannya dari `INSERT`/`UPDATE` lain di file ini; ia hanya layak diperhatikan khusus karena **menghapus** hak akses yang sebelumnya ada (role `manager` kehilangan izin), bukan menambahkannya.
+
+**Rollback.** Ekor file — `INSERT` kembali baris `manager`, `DELETE` ketiga baris supervisor. **TAPI** `roles.level` `bd_digital_marketing_spv` **TIDAK** dirollback ke 7 — mengembalikannya akan merusak keadaan yang sudah benar kalau staging/production sudah 6 sebelum file ini jalan; konfirmasi dulu level SEBELUM file ini jalan di environment itu.
+
+---
+
+### 53. `20261012000005_crm_lead_aging_threshold_policy`
+
+| | |
+|---|---|
+| Isi | Pelebaran `sla_policies_type_check` (+`'lead_aging'`) dan `sla_policies_axis_check` (+cabang baru, mensyaratkan `transport_mode`/`target_status`/`target_scope` SEMUANYA NULL) + seed SATU baris per company AKTIF (code `LEAD_STALE`, threshold 14 hari, `action='flag_stale'`) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `be52eed`) — versi yang jalan SAMA dengan isi file ini SESUDAH koreksi cast `sla_policies_type_check` + GRANT `service_role` (commit `38c8b8b`), bukan versi awal `be52eed` |
+| Production | ⛔ belum |
+| Sifat | Nol FK langsung ke butir 49/51 (`is_stale`/`stale_flagged_at`/`aging_baseline_at`) — hanya hubungan LOGIS lewat kode Edge Function `aging-pipeline` (ditulis ulang di commit yang sama, `be52eed`, lihat §Dua Edge Function di bawah) |
+
+**Untuk apa.** KEPUTUSAN Den (irisan 8): penuaan **TIDAK LAGI** memindahkan lead ke Lead Pool — hanya menandai `is_stale` + notifikasi ke pemilik. Kepemilikan tidak pernah berubah karena penuaan (beda total dari mekanisme lama `AGING_RULES` yang dihapus dari `aging-pipeline/index.ts` di commit yang sama). Ambang hari diam per entitas kini di `sla_policies`, bukan hardcode di kode EF — bisa diubah per entitas tanpa deploy ulang. Pelebaran constraint-nya MELEBARKAN saja, TIDAK mempersempit cabang lama (`prf_response`/`deal_aging`/`account_dormancy`) — baris existing tidak terdampak.
+
+**Rollback.** Persempit kembali kedua constraint (hanya aman kalau belum ada baris `lead_aging` tersisa) + `DELETE` baris seed `LEAD_STALE`.
+
+---
+
+### 54. `20261012000009_crm_lead_pool_legacy_cleanup` — ⛔⛔ STATUS KHUSUS, baca sebelum menjalankan
+
+| | |
+|---|---|
+| Isi | Migrasi data SATU KALI (bukan skema baru): menyelaraskan **1.183 akun production** (`is_in_lead_pool=true`, `deleted_at IS NULL`) yang lahir dari mekanisme pool LAMA ke aturan BARU (pool = akun TANPA pemilik) |
+| Staging | ⛔ **BELUM DIJALANKAN** — header file sendiri menulis demikian secara eksplisit |
+| Production | ⛔ **belum** (commit sungguhan) — HANYA pernah diuji **dry-run**, lihat §Catatan uji coba di bawah |
+| Sifat | Harus jalan **SEBELUM butir 55** (`20261012000006`, posisi 9 dalam daftar) — DUA alasan independen, dijelaskan di header kedua file secara saling-silang |
+
+**Dua alasan file ini wajib jalan sebelum butir 55:**
+
+1. **Trigger baru di butir 55**, `trg_block_inquiry_for_pooled_account`, menolak INSERT inquiry baru untuk akun mana pun yang `is_in_lead_pool = true` — **termasuk akun pool LAMA yang masih punya pemilik** (pool lama tidak mengikuti aturan "pool = tanpa pemilik" yang baru). Kalau butir 55 dijalankan duluan, sales/BD yang account-nya masih di pool lama akan **mendadak tidak bisa membuat inquiry baru** untuk akun itu, tanpa penjelasan yang jelas kenapa (pesan errornya bicara soal Lead Pool, bukan soal "akun ini warisan sistem lama").
+2. **Butir 55 juga melebarkan `account_pool_history_event_type_check`** menjadi **sembilan** nilai (delapan lama + `'legacy_pool_exit'`, nilai yang baru ditulis file ini). `ADD CONSTRAINT` dengan sembilan nilai itu akan **GAGAL** di production kalau butir 54 belum menulis baris `'legacy_pool_exit'`-nya lebih dulu (ADD CONSTRAINT memeriksa baris yang SUDAH ADA terhadap daftar baru — kalau urutannya dibalik, migrasi 55 batal total).
+
+**Apa yang dilakukan migrasi ini** (ringkas; lihat isi file untuk SQL lengkap). Backup penuh ke `accounts_lead_pool_backup_20261012` → Kelompok 1 (pemilik AKTIF, 1.079 akun diproyeksikan) keluar dari pool TAPI `assigned_to` tetap, 28 pull pending ditutup + dinotifikasi lebih dulu (riwayat `legacy_pool_exit`) → Kelompok 2/3 (pemilik nonaktif/tanpa pemilik) mengikuti aturan sweep `lead_pool_sweep_deactivated_owner` PERSIS (disalin verbatim): lead/mql tanpa inquiry/quotation terbuka tetap di pool TANPA pemilik (riwayat `enter_pool`), sisanya keluar pool dengan `pull_*` **dikosongkan juga** (koreksi Den — beda dari sweep yang tidak menyentuhnya) (riwayat `owner_cleared`).
+
+**Rollback.** Restore dari `accounts_lead_pool_backup_20261012` (urutan WAJIB: kembalikan `accounts` dulu, baru persempit CHECK — membalik urutan akan gagal selama baris `'legacy_pool_exit'` masih ada); `account_pool_history` yang ditulis migrasi ini **tidak otomatis terhapus** (penanda = prefix `reason`, bukan kolom terpisah) — hapus manual kalau benar-benar perlu.
+
+---
+
+### Catatan uji coba dry-run butir 54 di production (12 Okt 2026) — BUKAN eksekusi, NOL perubahan tersimpan
+
+Berkas migrasi butir 54 menyertakan blok komentar terpisah di akhir file — **versi uji coba (dry-run)**, isi SAMA PERSIS dengan blok `BEGIN...COMMIT` utama, hanya dua beda: nama tabel backup berakhiran `_dryrun`, dan ditutup `ROLLBACK` bukan `COMMIT`. Blok ini **sudah dijalankan di production 12 Okt 2026** sebagai uji coba.
+
+**Angka hasil uji coba (dilaporkan Den):**
+- Backup (dry-run): **1.183 akun**.
+- Keluar pool (gabungan `legacy_pool_exit` + `owner_cleared`): **1.144**.
+- Tetap di pool (`enter_pool`): **39**.
+- Rincian riwayat per `event_type`: `enter_pool` = **39**, `legacy_pool_exit` = **1.079**, `owner_cleared` = **65**.
+- Verifikasi aritmetika (supaya pembaca berikutnya tidak perlu menghitung ulang): `1.079 + 65 = 1.144` ✔ cocok dengan angka "keluar pool"; `1.144 + 39 = 1.183` ✔ cocok dengan angka backup.
+- Notifikasi pending yang akan dikirim (grup pemilik aktif, `pull_status='pending'`) pada saat uji dry-run ini: **0**.
+
+⚠️ **Jangan samakan angka "0 pull pending" di atas dengan angka 28 pull pending yang pernah dilaporkan Den sebelumnya sebagai kondisi production 12 Okt 2026.** Kedua angka diukur pada **momen pengukuran yang berbeda** — data production bergerak antar-waktu; catat kedua angka dengan konteks/tanggalnya masing-masing, jangan diselaraskan paksa jadi satu angka.
+
+**Kenapa dry-run bisa diuji di production tanpa risiko.** Blok di atas diakhiri `ROLLBACK`, bukan `COMMIT` — seluruh perubahan di dalam transaksi itu (UPDATE `accounts`, INSERT `account_pool_history`, kemungkinan INSERT `notifications`, bahkan DROP/ADD CONSTRAINT) **dibatalkan menyeluruh** begitu blok selesai. Uji ini membuktikan ANGKA yang akan terjadi, bukan menjalankannya sungguhan — bukan "koreksi" apa pun, karena itu BUKAN baris baru di tabel §Koreksi Data dan Akses Manual (di luar Migrasi).
+
+---
+
+### 55. `20261012000006_crm_lead_pool_notifications`
+
+| | |
+|---|---|
+| Isi | `lead_pool_request_pull`/`lead_pool_approve_pull`/`lead_pool_reject_pull` (`CREATE OR REPLACE`, badan dasar SAMA PERSIS butir 50 + tambahan insert notifikasi best-effort) · `lead_pool_release` (`CREATE OR REPLACE`, +4 guard baru) · RPC BARU `lead_pool_assign(account_id, target_user_id)` · trigger BARU `trg_b_lead_pool_auto_release` (BEFORE UPDATE ON accounts) · trigger BARU `trg_block_inquiry_for_pooled_account` (BEFORE INSERT ON inquiries) · pelebaran `account_pool_history_event_type_check` (+`'assign'`+`'auto_release'`, DAN `'legacy_pool_exit'` — sembilan nilai total, lihat §54) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `86c7aca`) — dengan DELAPAN nilai constraint (tanpa `'legacy_pool_exit'`), karena butir 54 belum pernah dijalankan di staging. Menjalankan ulang file ini di staging akan GAGAL dengan cara yang sama seperti di production kalau butir 54 belum menyusul lebih dulu di sana juga |
+| Production | ⛔ belum |
+| Sifat | Bergantung pada butir 49-53 (kolom, RPC lama, approval roles) DAN **WAJIB sesudah butir 54** (lihat §54 untuk dua alasannya) |
+
+**Dua trigger baru WAJIB `SECURITY DEFINER` (keputusan Den).** `trg_fn_lead_pool_auto_release` menulis `account_pool_history` (yang hanya punya policy SELECT untuk `authenticated` — sebagai INVOKER trigger ini akan ditolak RLS tepat saat paling dibutuhkan, user biasa menandai Lost/Archive lewat UI); `trg_fn_block_inquiry_for_pooled_account` membaca `accounts` (sebagai INVOKER, RLS SELECT pemanggil bisa membuat baris akun "tidak terlihat" sehingga guard lolos diam-diam — DEFINER menjamin trigger selalu melihat baris sebenarnya terlepas dari RLS pemanggil). Urutan trigger `BEFORE UPDATE` di `accounts` ditentukan alfabetis per nama (`trg_a_` → `trg_b_lead_pool_auto_release` BARU → `trg_z_...`) — trigger baru WAJIB menyala sesudah `trg_a_sync_lifecycle_columns` supaya update yang hanya mengisi `account_status='lost'` (tanpa menyentuh `lifecycle_stage` eksplisit) tetap tertangkap.
+
+**Rollback.** `DROP TRIGGER`/`DROP FUNCTION` untuk kedua trigger baru + kembalikan tiga RPC lama dan `lead_pool_release` ke badan butir 50 + persempit constraint kembali ke delapan nilai (hanya aman kalau belum ada baris `'assign'`/`'auto_release'` yang bergantung padanya).
+
+---
+
+### 56. `20261012000007_crm_quotation_lock_on_closed_inquiry` — didahului LANGKAH MANUAL "9a"
+
+| | |
+|---|---|
+| Isi | Trigger BARU `trg_z_quotation_auto_close_on_inquiry_closed` (AFTER UPDATE OF status ON inquiries — auto-REJECT quotation DRAFT/SUBMITTED/SENT saat inquiry jadi LOST/CANCELLED) · trigger BARU `trg_z_lock_quotation_closed_inquiry` (BEFORE INSERT OR UPDATE ON quotations — tolak tulis kalau inquiry induk tertutup) · trigger BARU `trg_lock_quotation_items_closed_inquiry` (BEFORE INSERT OR UPDATE OR DELETE ON quotation_items — defense-in-depth) · pembersihan data SATU KALI (Task 4 di dalam file ini) — di production LOST punya 96 SENT/17 DRAFT/2 SUBMITTED yang diubah jadi REJECTED (angka CANCELLED dihitung live oleh DO-block, bukan ditebak) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `e6aea81`) |
+| Production | ⛔ belum |
+| Sifat | WAJIB didahului langkah SQL manual di bawah ini — backup data yang akan ditutup oleh Task 4 dalam file ini |
+
+⛔⛔ **LANGKAH SQL MANUAL WAJIB ("9a" dalam urutan instruksi) — jalankan SEBELUM file ini, backup quotation yang akan ditutup Task 4:**
+
+```sql
+CREATE TABLE quotations_lock_backup_20261012 AS
+SELECT q.id, q.status, q.inquiry_id, now() AS backed_up_at
+FROM quotations q
+JOIN inquiries i ON i.id = q.inquiry_id
+WHERE i.status IN ('LOST','CANCELLED')
+  AND q.status IN ('DRAFT','SUBMITTED','SENT');
+```
+
+**Kenapa langkah ini wajib, bukan opsional.** Blok rollback di ekor file migrasi ini **HANYA** `DROP TRIGGER`/`DROP FUNCTION` untuk keenam objek baru (Task 1/2a/2b) — ia **TIDAK** mengembalikan quotation yang statusnya sudah diubah jadi REJECTED oleh Task 4. Ini diverifikasi langsung dari isi berkas: komentar ekor file secara eksplisit menulis *"TIDAK ADA rollback otomatis utk Task 4, data yang sudah diubah jadi REJECTED oleh pembersihan tetap REJECTED kecuali dipulihkan manual dari backup/log"*. Tabel `quotations_lock_backup_20261012` di atas adalah **SATU-SATUNYA jalan** memulihkan status quotation itu kalau file ini perlu dibatalkan sesudah dijalankan — tanpa backup ini, membatalkan trigger tidak membatalkan konsekuensinya yang sudah terjadi pada data.
+
+**Catatan isi Task 1/2 (trigger).** Pengecualian trigger Task 2a (supaya tidak ikut mengunci update cascading dari Task 1/Task 4 sendiri) memakai GUC transaksi-lokal `nexus.quotation_auto_close` (`set_config`, pola yang sama dengan impersonasi `request.jwt.claim.sub` di skrip seed UAT) — bukan mencocokkan BENTUK update, karena quotation NORMAL yang ditolak customer (inquiry masih OPEN) bisa punya bentuk akhir yang identik dengan update cascading. GUC ini tidak bisa di-set lewat PostgREST (nol RPC yang mengeksposnya ke client).
+
+**Rollback (keenam objek trigger, TANPA memulihkan data Task 4 — lihat peringatan di atas):**
+```sql
+DROP TRIGGER trg_lock_quotation_items_closed_inquiry ON public.quotation_items;
+DROP FUNCTION public.trg_fn_lock_quotation_items_closed_inquiry();
+DROP TRIGGER trg_z_lock_quotation_closed_inquiry ON public.quotations;
+DROP FUNCTION public.trg_fn_lock_quotation_closed_inquiry();
+DROP TRIGGER trg_z_quotation_auto_close_on_inquiry_closed ON public.inquiries;
+DROP FUNCTION public.trg_fn_quotation_auto_close_on_inquiry_closed();
+```
+
+---
+
+### 57. `20261012000008_crm_lead_pool_sweep_notify`
+
+| | |
+|---|---|
+| Isi | `CREATE OR REPLACE lead_pool_sweep_deactivated_owner` — badan dasar (kedua loop Kasus 1/Kasus 2) DISALIN VERBATIM dari butir 50, tanda tangan & `RETURNS TABLE(account_id, action)` TIDAK berubah, GRANT TETAP `service_role` ONLY. Satu-satunya tambahan: notifikasi ringkasan per company sesudah kedua loop selesai (event `lead_pool_sweep_summary`, dua `reference_type` — existing `'lead_pool'` untuk akun yang ikut ter-pool, BARU `'unowned_customers'`/`'unowned_leads'` untuk akun yang keluar pool tanpa pemilik) |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit `f27131a`) |
+| Production | ⛔ belum |
+| Sifat | TERAKHIR dalam rangkaian sebelas berkas — berpasangan dengan langkah 4d Edge Function `set-user-status` (lihat §Dua Edge Function) + dua cabang navigasi baru `App.jsx` (commit kode terpisah, di luar migrasi SQL ini) |
+
+**Untuk apa.** Pemanggilnya: `set-user-status` langkah 4d, SESUDAH langkah 4a/4b/4c (deaktivasi akun — perubahan kode EF itu di luar migrasi SQL ini). Fungsi dipanggil **sesudah** user dinonaktifkan, mengirim MAKSIMAL DUA notifikasi per company yang tersentuh sweep ke setiap penerima dari `lead_pool_approvers(company_id)`. ⛔ **Koreksi atas rancangan awal yang disetujui Den:** notifikasi `'pooled'` **TIDAK** diarahkan ke `crm-prospects` — filter "Tanpa pemilik" di `LeadCapturePage` sengaja mensyaratkan `assigned_to IS NULL AND is_in_lead_pool = false`, sehingga akun yang baru ter-pool (`is_in_lead_pool = true`) tidak pernah lolos filter itu; `'lead_pool'` (cabang existing, `LeadAssignmentPage`) adalah satu-satunya tujuan yang benar untuk notifikasi `pooled`.
+
+**Rollback.** Kembalikan `lead_pool_sweep_deactivated_owner` ke badan butir 50 (tanpa blok notifikasi ringkasan).
+
+---
+
+### Dua Edge Function yang harus di-deploy ke PRODUCTION sesudah SELURUH migrasi di atas
+
+| Edge Function | Versi staging saat ini | Catatan |
+|---|---|---|
+| `aging-pipeline` | **v1** | Ditulis ulang di commit `be52eed` (bersamaan dengan butir 53) — menghapus mekanisme `AGING_RULES` lama (yang memindahkan lead ke Lead Pool), menulis `is_stale`/`stale_flagged_at` berdasarkan `sla_policies` code `LEAD_STALE` |
+| `set-user-status` | **v2** | Memuat langkah **4d** (`supabase/functions/set-user-status/index.ts`, komentar `// 4d. Lead Pool sweep` + `rpc('lead_pool_sweep_deactivated_owner', ...)`) — langkah ini memanggil RPC butir 57, sesudah langkah 4a/4b/4c (deaktivasi akun) |
+
+Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang disampaikan langsung oleh Den, bukan sesuatu yang diukur dari tool DB oleh sesi ini — pola yang sama dengan butir-butir lain di dokumen ini yang ditandai "info Den".)*
+
+---
+
+### Urutan konfigurasi penuaan (aging) SESUDAH kedua Edge Function di atas di-deploy
+
+1. **Isi `companies.aging_baseline_at` untuk entitas MSI** — jam mulai penuaan dihitung (lihat komentar kolom di butir 49: migrasi ini sengaja tidak mengisinya, nol nilai historis untuk dikarang).
+2. **Cek vault key `aging_pipeline_key` sudah ber-role `service_role`** — key ini yang dipakai `cron.job` memanggil `aging-pipeline` lewat `net.http_post` (lihat `05_WORKFLOW_MAP.md` §Mekanisme cron + TD-274 `08_TECH_DEBT.md`); EF membaca `role !== 'service_role'` sebagai gerbang (`aging-pipeline/index.ts:69`).
+3. **Set `companies.aging_enabled` = `true` untuk MSI.**
+4. **`cron.alter_job(1, active := true)`** — menyalakan kembali job `aging-pipeline-harian` (jobid 1).
+
+⚠️ **Urutan di atas pada dasarnya adalah LANGKAH PEMBALIK dari baris tanggal 11 Okt 2026 di tabel §Koreksi Data dan Akses Manual (di luar Migrasi) di atas** — baris itu mencatat `cron.alter_job(1, active := false)` + `companies.aging_enabled = false` untuk MSI **DIMATIKAN** hari itu (mengikuti temuan audit mekanisme aging, sebelum Paket 2 ini ditulis). Langkah 3-4 di atas adalah menyalakannya kembali, kini dengan mekanisme `is_stale`-saja yang baru (butir 49/51/53) — bukan mengembalikan mekanisme lama yang memindahkan ke pool. **Jangan baca dua catatan ini sebagai dua hal yang bertentangan** — satu mencatat kapan dimatikan (sebelum Paket 2), satu mencatat kapan/bagaimana dinyalakan kembali (sesudah Paket 2 rilis).
+
+---
+
+### 58. Perubahan manual khusus STAGING (nol jejak git) — ARAH TERBALIK, **JANGAN NAIK KE PRODUKSI**
+
+| | |
+|---|---|
+| Isi | (a) Seed data CRM dummy — sekitar 25 lead/inquiry/quotation · (b) `UPDATE stage_changed_at = created_at` pada data seed itu · (c) Aktivasi ulang akun uji "ZZZ Test Sales 2" (`profiles.active`, `auth.users.banned_until` → NULL, `user_roles` diaktifkan lagi) |
+| Staging | ✔ **dilakukan manual 12 Okt 2026**, lewat SQL manual — nol jejak git |
+| Production | — **tidak pernah, dan tidak boleh** |
+| Tindakan saat rilis Paket 2 | ⛔ **lewati** — bukan bagian antrean production |
+
+**Kenapa.** Data seed + akun uji dummy hanya relevan untuk menguji Paket 2 di staging sebelum rilis — data dummy dan akun uji tidak boleh ada di production.
+
+**Kapan diulang.** Kalau staging suatu saat di-refresh/disamakan dari production, ketiga langkah ini perlu diulang manual lagi — pola yang sama dengan butir 10/20 (ARAH TERBALIK selamanya, bukan "staging menyusul production").
 
 ---
 
