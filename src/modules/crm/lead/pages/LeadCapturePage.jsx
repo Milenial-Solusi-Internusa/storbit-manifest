@@ -3,11 +3,15 @@
 // halaman yang dimount di menu crm-prospects (/crm/lead/capture). Konsumen
 // PERTAMA src/kit/ untuk halaman non-admin (giliran Lead Management, Batch DS 3).
 //
-// Acuan visual: design-handoff/crm-2026-10-11/shots/lead/01,02,04,24,25.
-// SENGAJA BELUM ADA di irisan ini (aksi butuh modal irisan 5 -- Reassign/
-// MarkAsLost/Archive/Assign to Sales): tombol aksi di bulk bar, menu baris
-// "⋮". Bulk bar tetap tampil (checkbox + "N selected" + Clear) supaya
-// pemilihan baris sudah berfungsi begitu irisan 5 menambah tombol aksinya.
+// Acuan visual: design-handoff/crm-2026-10-11/shots/lead/01,02,03,04,24,25.
+// Bulk bar (Reassign/Archive/Mark as Lost) + menu baris "⋮" datang di
+// irisan 5. Koreksi visual Paket 1 (sisir ulang ketat terhadap mockup):
+// Pager bernomor (komponen baru, src/modules/crm/lead/components/Pager.jsx)
+// menggantikan ‹ Prev / Next › polos; menu baris "⋮" dapat "Add Note" (mockup
+// 03) yang dibangun di atas mekanisme Add Note yang sudah ada (lihat
+// AddNoteModal.jsx) -- "Quick Edit" di mockup yang sama SENGAJA belum
+// dibangun, nol spesifikasi field selain labelnya di menu, lihat laporan
+// akhir.
 //
 // Dua deviasi dari batas awal irisan ini, DIPUTUSKAN Den sesudah verifikasi
 // visual (ikut mockup, bukan lagi dicatat sebagai "tidak ada"): filter
@@ -32,6 +36,7 @@ import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
 import Pager from '../components/Pager';
+import AddNoteModal from '../components/AddNoteModal';
 
 const PAGE_SIZE = 20;
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
@@ -55,7 +60,14 @@ function fmtDate(iso) {
 // Den, deviasi dari batas awal irisan 4) -- avatarToneFor(id) hash stabil
 // dari id (bukan nama, supaya dua orang bernama sama tak pernah bentrok).
 function OwnerCell({ id, name }) {
-  if (!name) return <span style={{ color: INK_FAINT, fontSize: 13 }}>Unassigned</span>;
+  if (!name) {
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: INK_FAINT, fontSize: 13 }}>
+        <span style={{ width: 24, height: 24, borderRadius: 999, background: LINE_SOFT, border: `1px dashed ${LINE}`, flex: '0 0 24px' }} />
+        Unassigned
+      </span>
+    );
+  }
   const initials = name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const tone = avatarToneFor(id);
   return (
@@ -130,6 +142,7 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
   // jadi satu negara cukup untuk keduanya.
   const [modalAction, setModalAction] = useState(null); // { type:'reassign'|'lost'|'archive', accounts:[...] } | null
   const [rowMenuFor, setRowMenuFor] = useState(null);
+  const [noteForAccount, setNoteForAccount] = useState(null); // "Add Note" dari menu baris "⋮" (mockup 03)
 
   const effectiveScope = isSalesOnly ? 'mine' : scope;
 
@@ -392,13 +405,15 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                       <td style={{ ...td, color: INK_FAINT, fontSize: 12.5 }}>{fmtDate(l.last_activity_at)}</td>
                       <td style={{ ...td, width: 60, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
-                          {(rowCanMarkLost || canManage) && (
-                            <IconButton size="xs" variant="ghost" icon={<MoreVertical size={14} />} label="Row actions" onClick={() => setRowMenuFor(rowMenuOpen ? null : l.id)} />
-                          )}
+                          <IconButton size="xs" variant="ghost" icon={<MoreVertical size={14} />} label="Row actions" onClick={() => setRowMenuFor(rowMenuOpen ? null : l.id)} />
                           {rowMenuOpen && (
                             <>
                               <div onClick={() => setRowMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
                               <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 150, zIndex: 10, overflow: 'hidden' }}>
+                                <button type="button" onClick={() => { setRowMenuFor(null); setNoteForAccount(l); }}
+                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                  Add Note
+                                </button>
                                 {canManage && (
                                   <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'reassign', accounts: [l] }); }}
                                     style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
@@ -453,6 +468,8 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
         onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
       <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
         onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />
+      <AddNoteModal open={!!noteForAccount} onClose={() => setNoteForAccount(null)} account={noteForAccount} userId={profile?.id} showToast={showToast}
+        onSaved={() => { setNoteForAccount(null); showToast?.('Note added'); fetchLeads(); }} />
     </div>
   );
 }
