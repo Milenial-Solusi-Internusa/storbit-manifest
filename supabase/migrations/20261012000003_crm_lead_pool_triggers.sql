@@ -11,48 +11,54 @@
 -- disentuh aktivitas nyata (inquiry baru, quotation terkirim), tanda stale
 -- tak lagi berlaku. Badan SELEBIHNYA TIDAK diubah.
 --
--- !! TEMUAN SAAT MEMBANDINGKAN -- schema_snapshot.sql BASI untuk
---    set_prospect_on_inquiry, DILAPORKAN DI SINI sesuai instruksi "kalau
---    beda, laporkan dulu" (bukan ditemukan lewat menjalankan SQL -- lewat
---    membaca supabase/migrations/*.sql, lihat gotcha di bawah):
+-- !! DRIFT TERKONFIRMASI (koreksi 12 Okt 2026, dicek LANGSUNG ke database
+--    oleh Den -- bukan dugaan dari membaca file migrasi): versi pertama
+--    file ini memakai badan set_prospect_on_inquiry dari migrasi
+--    20260908000002_accounts_lifecycle_drop_legacy.sql (HANYA
+--    lifecycle_stage, TANPA account_status) sebagai "badan dasar", dengan
+--    asumsi itulah yang LIVE karena migrasi itu tercatat sudah berjalan
+--    di produksi. ASUMSI ITU SALAH: badan yang SUNGGUH live di production
+--    DAN staging hari ini MASIH dual-write account_status+lifecycle_stage,
+--    PERSIS bentuk lama yang 20260908000002 (di atas kertas) seharusnya
+--    sudah menggantikannya. Artinya 20260908000002 TIDAK pernah benar-
+--    benar mendarat untuk fungsi INI -- entah karena urutan file migrasi
+--    yang berbeda saat dijalankan, langkah manual belakangan yang
+--    mengembalikannya, atau sebab lain yang tidak tercatat; file ini
+--    TIDAK menyelidiki ATAU memutuskan yang mana -- dicatat sebagai DRIFT
+--    yang DITEMUKAN, bukan dijelaskan sebabnya. schema_snapshot.sql
+--    (4441-4454) KEBETULAN mencerminkan keadaan LIVE yang benar di sini
+--    (dual-write) -- "snapshot basi" yang disebut versi pertama catatan
+--    ini SALAH ALAMAT khusus untuk fungsi ini; snapshot basi untuk banyak
+--    hal LAIN tetap berlaku (lihat CLAUDE.md), tapi bukan di sini.
 --
---    schema_snapshot.sql:4441-4454 (refresh terakhir ~29 Sep 2026, basi
---    untuk banyak hal lain -- lihat CLAUDE.md) masih menunjukkan badan
---    LAMA (dual-write account_status+lifecycle_stage, syarat kedua kolom
---    di WHERE). Migrasi TERAKHIR yang benar-benar menyentuh fungsi ini,
---    20260908000002_accounts_lifecycle_drop_legacy.sql (LIVE 18 Sep 2026,
---    bagian dari merge CRM v3 yang sudah terkonfirmasi di produksi),
---    sudah menyederhanakannya jadi HANYA lifecycle_stage, TANPA
---    account_status:
+--    Badan LIVE yang dipakai sebagai dasar file ini sekarang (dicek
+--    langsung ke DB 12 Okt 2026):
 --
---      CREATE OR REPLACE FUNCTION public.set_prospect_on_inquiry() RETURNS trigger
---          LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
 --      BEGIN
 --        UPDATE public.accounts
---        SET lifecycle_stage = 'prospect'
+--        SET account_status  = 'prospect',
+--            lifecycle_stage = 'prospect'
 --        WHERE id = COALESCE(NEW.prospect_id, NEW.customer_id)
---          AND lifecycle_stage IN ('lead','mql','sql');
+--          AND lifecycle_stage IN ('lead','mql','sql')
+--          AND account_status  IN ('lead','mql','sql');
 --        RETURN NEW;
 --      END;
---      $$;
 --
---    File ini memakai badan 20260908000002 di atas sebagai DASAR (bukan
---    snapshot) -- menyalin bentuk snapshot yang basi akan MEMBATALKAN
---    pembersihan 20260908000002 secara senyap. Perbedaan ini TIDAK
---    menghalangi migrasi ini jalan (badan dasarnya tetap benar), tapi
---    DILAPORKAN sesuai instruksi sebelum CREATE OR REPLACE dieksekusi.
+--    WHERE TIDAK diubah dari badan live ini (tetap mensyaratkan KEDUA
+--    kolom, account_status DAN lifecycle_stage, di 'lead','mql','sql').
 --
---    set_sql_on_quotation_sent SEBALIKNYA -- badan di schema_snapshot.sql
---    (4673-4691) SAMA PERSIS dengan migrasi terakhir yang menyentuhnya
---    (20260918000001_set_sql_on_quotation_sent.sql, "LIVE DI PRODUCTION
---    sejak 18 Sep 2026... direkam retroaktif"), KEDUANYA dual-write
---    account_status+lifecycle_stage. Nol perbedaan untuk fungsi ini.
+--    set_sql_on_quotation_sent TIDAK terdampak temuan ini -- badan di
+--    schema_snapshot.sql (4673-4691) SAMA PERSIS dengan migrasi terakhir
+--    yang menyentuhnya (20260918000001_set_sql_on_quotation_sent.sql,
+--    "LIVE DI PRODUKSI sejak 18 Sep 2026... direkam retroaktif"), dan
+--    sekarang juga TERKONFIRMASI sama dengan dual-write yang live.
 --
---    Kedua fungsi TIDAK SELARAS satu sama lain soal account_status (satu
---    sudah berhenti menulisnya, satu belum) -- itu TETAP BEGITU di file
---    ini, bukan diselaraskan di sini (di luar cakupan irisan ini, dan
---    20260918000001 sendiri sudah mencatat "siapa pun yang mencabut salah
---    satu kolom harus ikut menyentuh fungsi ini").
+--    Kesimpulan: KEDUA fungsi promosi, hari ini, SAMA-SAMA dual-write
+--    account_status+lifecycle_stage -- bukan "tidak selaras satu sama
+--    lain" seperti catatan versi pertama berkas ini. Pembersihan
+--    account_status yang DIKIRA sudah terjadi untuk set_prospect_on_inquiry
+--    BELUM terjadi di lingkungan manapun -- itu tech debt terpisah, DI
+--    LUAR cakupan file ini, TIDAK dikerjakan di sini.
 --
 -- !! ACL KEDUA FUNGSI SENGAJA TIDAK DISENTUH -- CREATE OR REPLACE TIDAK
 --    mereset hak akses yang sudah ada (selama tanda tangan tak berubah,
@@ -76,11 +82,13 @@ CREATE OR REPLACE FUNCTION public.set_prospect_on_inquiry() RETURNS trigger
     AS $$
 BEGIN
   UPDATE public.accounts
-  SET lifecycle_stage  = 'prospect',
+  SET account_status   = 'prospect',
+      lifecycle_stage  = 'prospect',
       is_stale         = false,
       stale_flagged_at = NULL
   WHERE id = COALESCE(NEW.prospect_id, NEW.customer_id)
-    AND lifecycle_stage IN ('lead','mql','sql');
+    AND lifecycle_stage IN ('lead','mql','sql')
+    AND account_status  IN ('lead','mql','sql');
   RETURN NEW;
 END;
 $$;
@@ -111,7 +119,10 @@ COMMIT;
 --
 -- SELECT proname, prosrc FROM pg_proc
 --  WHERE proname IN ('set_prospect_on_inquiry','set_sql_on_quotation_sent');
--- -- Harap: kedua badan memuat 'is_stale = false' dan 'stale_flagged_at = NULL'.
+-- -- Harap: KEDUA badan memuat 'account_status', 'is_stale = false', dan
+-- --        'stale_flagged_at = NULL' -- set_prospect_on_inquiry sekarang
+-- --        dual-write lagi (lihat temuan DRIFT di header), bukan
+-- --        lifecycle_stage saja seperti versi pertama file ini.
 --
 -- SELECT p.proname, p.proacl FROM pg_proc p
 --  WHERE p.proname IN ('set_prospect_on_inquiry','set_sql_on_quotation_sent');
@@ -138,17 +149,20 @@ COMMIT;
 -- =============================================================================
 
 -- =============================================================================
--- ROLLBACK (kembalikan ke badan SEBELUM file ini -- SAMA dengan badan
--- "DASAR" yang dikutip di header, dikurangi dua baris is_stale/
--- stale_flagged_at):
+-- ROLLBACK (kembalikan ke badan LIVE SEBELUM file ini -- dual-write,
+-- dikurangi dua baris is_stale/stale_flagged_at -- lihat temuan DRIFT di
+-- header, BUKAN badan 20260908000002 yang ternyata tak pernah live untuk
+-- fungsi ini):
 --
 --   CREATE OR REPLACE FUNCTION public.set_prospect_on_inquiry() RETURNS trigger
 --       LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
 --   BEGIN
 --     UPDATE public.accounts
---     SET lifecycle_stage = 'prospect'
+--     SET account_status  = 'prospect',
+--         lifecycle_stage = 'prospect'
 --     WHERE id = COALESCE(NEW.prospect_id, NEW.customer_id)
---       AND lifecycle_stage IN ('lead','mql','sql');
+--       AND lifecycle_stage IN ('lead','mql','sql')
+--       AND account_status  IN ('lead','mql','sql');
 --     RETURN NEW;
 --   END;
 --   $$;

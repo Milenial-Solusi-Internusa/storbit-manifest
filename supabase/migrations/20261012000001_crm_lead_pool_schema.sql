@@ -210,7 +210,7 @@ CREATE TABLE public.account_pool_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   company_id uuid NOT NULL REFERENCES public.companies(id),
-  event_type text NOT NULL CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull')),
+  event_type text NOT NULL CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull', 'owner_cleared')),
   actor_id uuid REFERENCES public.profiles(id),
   previous_owner uuid REFERENCES public.profiles(id),
   new_owner uuid REFERENCES public.profiles(id),
@@ -218,7 +218,7 @@ CREATE TABLE public.account_pool_history (
   occurred_at timestamptz NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE public.account_pool_history IS 'Riwayat Lead Pool (enter_pool/release/request_pull/approve_pull/reject_pull) -- audit-only, pola account_lifecycle_history. Ditulis EKSKLUSIF oleh empat RPC SECURITY DEFINER (file 2) + lead_pool_sweep_deactivated_owner (file 2, service_role) -- nol policy tulis untuk authenticated.';
+COMMENT ON TABLE public.account_pool_history IS 'Riwayat Lead Pool (enter_pool/release/request_pull/approve_pull/reject_pull/owner_cleared) -- audit-only, pola account_lifecycle_history. owner_cleared = akun yang pemiliknya dikosongkan oleh lead_pool_sweep_deactivated_owner TANPA masuk pool (lifecycle di luar lead/mql, atau punya inquiry/quotation terbuka). Ditulis EKSKLUSIF oleh empat RPC SECURITY DEFINER (file 2) + lead_pool_sweep_deactivated_owner (file 2, service_role) -- nol policy tulis untuk authenticated.';
 
 ALTER TABLE public.account_pool_history ENABLE ROW LEVEL SECURITY;
 
@@ -256,6 +256,11 @@ COMMIT;
 --
 -- SELECT to_regclass('public.account_pool_history');
 -- -- Harap: bukan NULL.
+--
+-- SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+--  WHERE conrelid = 'public.account_pool_history'::regclass AND contype = 'c';
+-- -- Harap: CHECK event_type memuat 6 nilai termasuk 'owner_cleared'
+-- --        (ditambahkan koreksi 12 Okt 2026 untuk lead_pool_sweep_deactivated_owner).
 --
 -- SELECT polname, polcmd FROM pg_policy WHERE polrelid = 'public.account_pool_history'::regclass;
 -- -- Harap: 1 baris (r = SELECT) -- nol insert/update/delete.

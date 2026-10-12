@@ -61,24 +61,41 @@
 -- Dipanggil Edge Function set-user-status SAAT user dinonaktifkan (irisan
 -- BERIKUTNYA yang mengubah kode Edge Function-nya -- lihat laporan akhir
 -- untuk rancangan perubahannya). Fungsi DB-nya sendiri CUKUP SEDERHANA
--- untuk ditulis sekarang (instruksi eksplisit):
---   - Akun milik p_user_id TANPA inquiry terbuka (status NOT IN
---     ('WON','LOST','CANCELLED')) DAN TANPA quotation terbuka (status NOT
---     IN ('ACCEPTED','REJECTED','SUPERSEDED')) -> MASUK POOL (pemilik
---     dikosongkan, pemilik terakhir dicatat, riwayat enter_pool).
---   - Akun dengan inquiry/quotation terbuka -> TIDAK dipool, dikembalikan
---     sebagai baris 'needs_reassignment' di hasil (tabel) supaya pemanggil
---     (Edge Function) bisa melaporkannya ke supervisor -- TIDAK ada
---     penyimpanan "daftar perlu dialihkan" yang persisten di file ini;
---     tabel hasil RETURNS TABLE cukup untuk satu panggilan sinkron.
---   - Cakupan lifecycle_stage: SEMUA akun milik user itu KECUALI 'lost'
---     dan 'free_agent' -- SATU keputusan desain YANG BUKAN instruksi
---     eksplisit, ditandai jelas di komentar fungsi + laporan akhir supaya
---     Den bisa mengoreksi sebelum Edge Function benar-benar memanggilnya.
---     'lost': lead mati, memasukkannya ke pool tak berguna untuk siapa
---     pun. 'free_agent': sudah berada di jalur dormansi customer
---     tersendiri (belum dibangun, irisan 8+) -- menyeretnya ke mekanisme
---     pool lead berisiko tabrakan dengan mekanisme itu nanti.
+-- untuk ditulis sekarang. KOREKSI 12 Okt 2026 (keputusan Den, menggantikan
+-- rancangan pertama yang memakai 'needs_reassignment' TANPA menyentuh
+-- akun sama sekali) -- SETIAP akun milik p_user_id (kecuali lost/
+-- free_agent) DISENTUH, bedanya cuma APAKAH ikut masuk pool:
+--   - Kasus 1 (action 'pooled'): lifecycle_stage IN ('lead','mql') DAN
+--     TANPA inquiry terbuka (status NOT IN ('WON','LOST','CANCELLED'))
+--     DAN TANPA quotation terbuka (status NOT IN
+--     ('ACCEPTED','REJECTED','SUPERSEDED')) -> is_in_lead_pool=true,
+--     assigned_to=NULL, lead_pool_last_owner/lead_pool_reason/
+--     lead_pool_at terisi -- PERSIS efek lead_pool_release(). Riwayat
+--     enter_pool.
+--   - Kasus 2 (action 'owner_cleared'): SISA akun milik user itu --
+--     prospect/sql/customer (lifecycle_stage di luar lead/mql SAMA
+--     SEKALI), ATAU lead/mql yang MASIH punya inquiry/quotation terbuka.
+--     TIDAK masuk pool, lifecycle_stage TIDAK diubah, TIDAK dijadikan
+--     free_agent -- deal yang masih berjalan dioper manual oleh
+--     supervisor ke atas lewat fitur ganti pemilik deal yang sudah ada
+--     (DealDetailPage), BUKAN lewat mekanisme pool. Efek HANYA
+--     assigned_to=NULL + lead_pool_last_owner terisi; is_in_lead_pool
+--     TETAP false. Riwayat owner_cleared (nilai BARU di CHECK
+--     account_pool_history.event_type, file 1).
+--   - Kasus 1 dan 2 SALING LEPAS (kasus 2 eksplisit mengecualikan kondisi
+--     kasus 1 di WHERE-nya) -- satu akun tidak pernah muncul di kedua
+--     action untuk satu panggilan.
+--   - lost dan free_agent: TIDAK disentuh SAMA SEKALI (bukan cuma
+--     dikecualikan dari pool -- assigned_to-nya TETAP, tidak ikut baris
+--     manapun di hasil).
+--   - inquiries.owner_id TIDAK disentuh -- itu sumbu lain, di luar
+--     cakupan fungsi ini (lihat laporan akhir).
+--   - Kedua kasus: actor_id NULL (sistem yang menulis, bukan sales yang
+--     baru dinonaktifkan -- auth.uid() di konteks Edge Function/
+--     service_role tidak merujuk profil manapun), previous_owner =
+--     p_user_id, reason 'Owner account deactivated'. new_owner TIDAK
+--     diisi (NULL, default) di kedua kasus -- kepemilikan dikosongkan,
+--     bukan dipindah ke siapa pun.
 --
 -- !! BAHAYA GRANT: fungsi ini TIDAK memeriksa auth.uid() sama sekali --
 --    ia percaya p_user_id dari pemanggil (Edge Function, sesudah Edge
@@ -263,12 +280,14 @@ CREATE FUNCTION public.lead_pool_sweep_deactivated_owner(p_user_id uuid)
 DECLARE
   r record;
 BEGIN
+  -- Kasus 1 -- lead/mql TANPA inquiry/quotation terbuka -> masuk pool
+  -- (efek PERSIS lead_pool_release()).
   FOR r IN
-    SELECT a.id, a.company_id, a.assigned_to
+    SELECT a.id, a.company_id
     FROM public.accounts a
     WHERE a.assigned_to = p_user_id
       AND a.deleted_at IS NULL
-      AND a.lifecycle_stage NOT IN ('lost', 'free_agent')
+      AND a.lifecycle_stage IN ('lead', 'mql')
       AND NOT EXISTS (
         SELECT 1 FROM public.inquiries i
         WHERE (i.prospect_id = a.id OR i.customer_id = a.id)
@@ -291,26 +310,35 @@ BEGIN
     WHERE id = r.id;
 
     INSERT INTO public.account_pool_history (account_id, company_id, event_type, actor_id, previous_owner, reason)
-      VALUES (r.id, r.company_id, 'enter_pool', p_user_id, p_user_id, 'Owner account deactivated');
+      VALUES (r.id, r.company_id, 'enter_pool', NULL, p_user_id, 'Owner account deactivated');
 
     account_id := r.id; action := 'pooled';
     RETURN NEXT;
   END LOOP;
 
+  -- Kasus 2 -- SISA akun milik user itu: prospect/sql/customer (lifecycle
+  -- di luar lead/mql sama sekali), ATAU lead/mql yang MASIH punya
+  -- inquiry/quotation terbuka (kondisi kasus 1 dikecualikan eksplisit di
+  -- NOT (...) supaya satu akun tak pernah masuk DUA action). lost/
+  -- free_agent TIDAK disentuh sama sekali (tak muncul di kasus 1 maupun
+  -- 2). Pemilik dikosongkan TANPA masuk pool -- lifecycle_stage dan
+  -- is_in_lead_pool TIDAK berubah; deal yang masih berjalan dioper
+  -- manual oleh supervisor lewat fitur ganti pemilik deal yang sudah ada.
   FOR r IN
-    SELECT a.id
+    SELECT a.id, a.company_id
     FROM public.accounts a
     WHERE a.assigned_to = p_user_id
       AND a.deleted_at IS NULL
       AND a.lifecycle_stage NOT IN ('lost', 'free_agent')
-      AND (
-        EXISTS (
+      AND NOT (
+        a.lifecycle_stage IN ('lead', 'mql')
+        AND NOT EXISTS (
           SELECT 1 FROM public.inquiries i
           WHERE (i.prospect_id = a.id OR i.customer_id = a.id)
             AND i.deleted_at IS NULL
             AND i.status NOT IN ('WON', 'LOST', 'CANCELLED')
         )
-        OR EXISTS (
+        AND NOT EXISTS (
           SELECT 1 FROM public.quotations q
           WHERE (q.prospect_id = a.id OR q.customer_id = a.id)
             AND q.deleted_at IS NULL
@@ -318,12 +346,20 @@ BEGIN
         )
       )
   LOOP
-    account_id := r.id; action := 'needs_reassignment';
+    UPDATE public.accounts SET
+      assigned_to          = NULL,
+      lead_pool_last_owner = p_user_id
+    WHERE id = r.id;
+
+    INSERT INTO public.account_pool_history (account_id, company_id, event_type, actor_id, previous_owner, reason)
+      VALUES (r.id, r.company_id, 'owner_cleared', NULL, p_user_id, 'Owner account deactivated');
+
+    account_id := r.id; action := 'owner_cleared';
     RETURN NEXT;
   END LOOP;
 END $$;
 
-COMMENT ON FUNCTION public.lead_pool_sweep_deactivated_owner(uuid) IS 'RANCANGAN -- dipanggil Edge Function set-user-status (perubahan kodenya irisan BERIKUTNYA) saat user dinonaktifkan. Akun tanpa inquiry/quotation TERBUKA masuk pool (dicatat enter_pool); akun dengan inquiry/quotation terbuka dikembalikan sebagai ''needs_reassignment'' (TIDAK dipool). Cakupan lifecycle_stage: SEMUA KECUALI lost/free_agent -- keputusan desain sendiri, BUKAN instruksi eksplisit, lihat laporan akhir. !! GRANT HANYA service_role -- fungsi ini TIDAK memeriksa auth.uid(), percaya p_user_id dari pemanggil. GRANT ke authenticated = eskalasi privilege.';
+COMMENT ON FUNCTION public.lead_pool_sweep_deactivated_owner(uuid) IS 'RANCANGAN -- dipanggil Edge Function set-user-status (perubahan kodenya irisan BERIKUTNYA) saat user dinonaktifkan. Kasus 1: lead/mql TANPA inquiry/quotation terbuka -> masuk pool (action ''pooled'', riwayat enter_pool). Kasus 2: SISA akun (prospect/sql/customer, atau lead/mql dengan inquiry/quotation terbuka) -> pemilik dikosongkan TANPA masuk pool, lifecycle_stage TIDAK diubah (action ''owner_cleared'', riwayat owner_cleared). lost/free_agent TIDAK disentuh sama sekali. Kedua kasus: actor_id NULL (sistem), previous_owner = p_user_id. !! GRANT HANYA service_role -- fungsi ini TIDAK memeriksa auth.uid(), percaya p_user_id dari pemanggil. GRANT ke authenticated = eskalasi privilege.';
 
 REVOKE ALL ON FUNCTION public.lead_pool_sweep_deactivated_owner(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.lead_pool_sweep_deactivated_owner(uuid) TO service_role;
@@ -361,6 +397,26 @@ COMMIT;
 -- --    occurred_at;
 -- -- -- Harap 3 baris: release, request_pull, approve_pull -- new_owner
 -- --    baris approve_pull = pengaju langkah 2.
+--
+-- -- Uji lead_pool_sweep_deactivated_owner (service_role, SQL Editor --
+-- -- fungsi ini TIDAK bergantung auth.uid(), aman diuji langsung disitu.
+-- -- JANGAN panggil dengan p_user_id akun sungguhan di produksi -- pakai
+-- -- akun uji staging):
+-- -- 6. Siapkan 3 akun milik <user uji>: (a) lead TANPA inquiry/quotation
+-- --    terbuka, (b) lead DENGAN satu inquiry status OPEN, (c) customer.
+-- -- 7. SELECT * FROM public.lead_pool_sweep_deactivated_owner('<user uji>');
+-- -- -- Harap 3 baris: (a) action='pooled', (b) action='owner_cleared',
+-- --    (c) action='owner_cleared'. Nol baris 'needs_reassignment' (nilai
+-- --    itu sudah dihapus dari fungsi, koreksi 12 Okt 2026).
+-- -- 8. SELECT id, assigned_to, is_in_lead_pool, lifecycle_stage,
+-- --    lead_pool_last_owner FROM public.accounts WHERE id IN (<a,b,c>);
+-- -- -- Harap: ketiganya assigned_to NULL, lead_pool_last_owner=<user uji>;
+-- --    HANYA (a) is_in_lead_pool=true; (b) dan (c) lifecycle_stage TIDAK
+-- --    berubah (b tetap 'lead', c tetap 'customer' -- BUKAN free_agent).
+-- -- 9. SELECT account_id, event_type, actor_id, previous_owner FROM
+-- --    public.account_pool_history WHERE account_id IN (<a,b,c>);
+-- -- -- Harap: (a) event_type='enter_pool', (b)/(c) event_type=
+-- --    'owner_cleared' -- SEMUA actor_id IS NULL, previous_owner=<user uji>.
 -- =============================================================================
 
 -- =============================================================================
