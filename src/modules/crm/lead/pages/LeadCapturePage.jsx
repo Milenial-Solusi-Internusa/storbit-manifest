@@ -31,6 +31,7 @@ import ImportLeadsModal from '../components/ImportLeadsModal';
 import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
+import Pager from '../components/Pager';
 
 const PAGE_SIZE = 20;
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
@@ -432,12 +433,8 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
       </Card>
 
       {totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: SP.s3, fontSize: 13, color: INK_SOFT, fontFamily: FONT_BODY }}>
-          <span>Page {page + 1} of {totalPages} ({total} total)</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <OutlineBtn size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>‹ Prev</OutlineBtn>
-            <OutlineBtn size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}>Next ›</OutlineBtn>
-          </div>
+        <div style={{ marginTop: SP.s3 }}>
+          <Pager left={`Page ${page + 1} of ${totalPages}, ${PAGE_SIZE} rows per page`} page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
 

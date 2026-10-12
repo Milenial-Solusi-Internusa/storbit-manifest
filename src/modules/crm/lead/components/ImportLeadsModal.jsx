@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Upload, Check, AlertTriangle } from 'lucide-react';
 import { Modal, FloatingSelect, SaveButton, OutlineBtn, PrimaryBtn } from '../../../../kit';
 import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, SEMANTIC, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP } from '../../../../kit/tokens';
+import Pager from './Pager';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole } from '../../../../lib/roles';
@@ -178,7 +179,7 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
   return (
     <Modal open={open} onClose={onClose} title="Import Leads" width={700} footer={step === 4 ? null : (
       <>
-        {step > 1 && <OutlineBtn onClick={() => setStep((s) => s - 1)}>Back</OutlineBtn>}
+        {step > 1 && <OutlineBtn style={{ marginRight: 'auto' }} onClick={() => setStep((s) => s - 1)}>Back</OutlineBtn>}
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
         {step === 1 && <PrimaryBtn onClick={goToMapping} disabled={!file || parsed.rows.length === 0}>Next</PrimaryBtn>}
         {step === 2 && <PrimaryBtn onClick={() => setStep(3)}>Next</PrimaryBtn>}
@@ -213,20 +214,24 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
           </div>
           <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, overflow: 'hidden', marginBottom: SP.s3 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: HEAD_BG }}><th style={th}>Column in File</th><th style={th}>Sample Data</th><th style={th}>Nexus Field</th></tr></thead>
+              <thead><tr style={{ background: HEAD_BG }}><th style={th}>Column in File</th><th style={th}>Sample Data</th><th style={th}>Nexus Field</th><th style={{ ...th, width: 28 }} /></tr></thead>
               <tbody>
-                {parsed.headers.map((h, i) => (
-                  <tr key={i}>
-                    <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>{h || `Column ${i + 1}`}</td>
-                    <td style={{ ...td, color: INK_SOFT }}>{parsed.rows[0]?.[i] ?? ''}</td>
-                    <td style={td}>
-                      <select value={mapping[i] || 'ignore'} onChange={(e) => setMapping((m) => ({ ...m, [i]: e.target.value }))}
-                        style={{ height: 36, borderRadius: RADIUS.sm, border: `1px solid ${LINE}`, padding: '0 8px', fontFamily: FONT_BODY, fontSize: 13 }}>
-                        {NEXUS_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                {parsed.headers.map((h, i) => {
+                  const mapped = (mapping[i] || 'ignore') !== 'ignore';
+                  return (
+                    <tr key={i}>
+                      <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>{h || `Column ${i + 1}`}</td>
+                      <td style={{ ...td, color: INK_SOFT }}>{parsed.rows[0]?.[i] ?? ''}</td>
+                      <td style={td}>
+                        <select value={mapping[i] || 'ignore'} onChange={(e) => setMapping((m) => ({ ...m, [i]: e.target.value }))}
+                          style={{ height: 36, borderRadius: RADIUS.sm, border: `1px solid ${LINE}`, padding: '0 8px', fontFamily: FONT_BODY, fontSize: 13 }}>
+                          {NEXUS_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ ...td, width: 28 }}>{mapped && <Check size={15} color={SEMANTIC.ok.fg} />}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -283,13 +288,10 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
                   </tbody>
                 </table>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: INK_SOFT }}>
-                <span>Rows {previewPage * PREVIEW_PAGE_SIZE + 1} to {Math.min(previewRows.length, previewPage * PREVIEW_PAGE_SIZE + PREVIEW_PAGE_SIZE)} of {previewRows.length} ({includedCount} will be imported)</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" disabled={previewPage === 0} onClick={() => setPreviewPage((p) => p - 1)} style={{ padding: '4px 10px', borderRadius: RADIUS.sm, border: `1px solid ${LINE}`, background: '#fff', cursor: previewPage === 0 ? 'not-allowed' : 'pointer' }}>‹</button>
-                  <button type="button" disabled={(previewPage + 1) * PREVIEW_PAGE_SIZE >= previewRows.length} onClick={() => setPreviewPage((p) => p + 1)} style={{ padding: '4px 10px', borderRadius: RADIUS.sm, border: `1px solid ${LINE}`, background: '#fff', cursor: (previewPage + 1) * PREVIEW_PAGE_SIZE >= previewRows.length ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              </div>
+              <Pager
+                left={`Rows ${previewPage * PREVIEW_PAGE_SIZE + 1} to ${Math.min(previewRows.length, previewPage * PREVIEW_PAGE_SIZE + PREVIEW_PAGE_SIZE)} of ${previewRows.length} (${includedCount} will be imported)`}
+                page={previewPage} totalPages={Math.ceil(previewRows.length / PREVIEW_PAGE_SIZE)} onChange={setPreviewPage}
+              />
             </>
           )}
         </div>
