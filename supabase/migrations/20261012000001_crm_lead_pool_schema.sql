@@ -9,7 +9,8 @@
 -- baru -- pool artinya TANPA pemilik, tarik artinya KLAIM kepemilikan,
 -- penuaan hanya menandai stale (tidak memindahkan ke pool).
 --
--- Status: BELUM DIJALANKAN. Istilah: kepemilikan akun = accounts.assigned_to
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
+-- Istilah: kepemilikan akun = accounts.assigned_to
 -- (TIDAK ada kolom owner_id di accounts). inquiries.owner_id adalah hal
 -- LAIN, tidak disentuh di sini.
 --

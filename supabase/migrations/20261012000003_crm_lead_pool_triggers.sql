@@ -4,7 +4,7 @@
 -- Batch DS 3 Lead Management, irisan 7 Bagian 2 (Paket 2) -- file 3/4
 -- (trigger). Bergantung pada file 1 (accounts.is_stale/stale_flagged_at).
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
 --
 -- Menambahkan pengosongan is_stale/stale_flagged_at ke DUA trigger promosi
 -- (set_prospect_on_inquiry, set_sql_on_quotation_sent) -- begitu akun

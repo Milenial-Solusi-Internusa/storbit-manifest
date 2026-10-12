@@ -5,7 +5,8 @@
 -- (izin role_menu_permissions, IDEMPOTEN). Nol dependensi pada file 1-3 --
 -- murni data role_menu_permissions/roles, bisa berjalan sendiri.
 --
--- Status: BELUM DIJALANKAN DI PRODUCTION. STAGING SUDAH PUNYA SEBAGIAN
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
+--         Sebelum migrasi ini jalan, staging sudah punya SEBAGIAN
 --         (info Den 12 Okt 2026, dikerjakan manual, TIDAK diulang di sini
 --         sebagai migrasi terpisah -- file ini menulis ULANG hasil akhir
 --         yang SAMA secara idempoten supaya production ikut saat Paket 2

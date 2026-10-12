@@ -10,7 +10,7 @@
 -- set-user-status (langkah 4d, sesudah 4a/4b/4c -- berkas itu diubah
 -- terpisah, DI LUAR migrasi SQL ini) + dua cabang navigasi baru di App.jsx.
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
 --
 -- =============================================================================
 -- RINGKASAN PERUBAHAN

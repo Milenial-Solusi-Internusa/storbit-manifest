@@ -9,7 +9,20 @@
 -- lead_pool_approvers) dan 20261012000002 (empat RPC asli, badan dasar
 -- disalin dari versi yang LIVE di staging -- lihat catatan per fungsi).
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
+--
+-- ⛔ WAJIB sebelum file ini dijalankan DI PRODUCTION: migrasi bersih-bersih
+-- pool lama (20261012000009_crm_lead_pool_legacy_cleanup.sql) HARUS jalan
+-- LEBIH DULU. Trigger BARU di file ini, trg_block_inquiry_for_pooled_account
+-- (BEFORE INSERT ON inquiries), menolak inquiry baru untuk akun mana pun
+-- yang is_in_lead_pool = true -- termasuk akun pool LAMA yang MASIH punya
+-- pemilik (pool lama tidak mengikuti aturan "pool = tanpa pemilik" yang baru).
+-- Dijalankan di urutan terbalik, sales/BD yang account-nya masih di pool
+-- lama akan mendadak tidak bisa membuat inquiry baru untuk akun itu, tanpa
+-- penjelasan yang jelas kenapa (pesan errornya bicara soal Lead Pool, bukan
+-- soal "akun ini warisan sistem lama"). Urutan produksi yang benar: 20261012
+-- 000001 s/d 000005 -> 20261012000009 (bersihkan pool lama) -> 20261012000006
+-- (file ini) -> 20261012000007 -> 20261012000008.
 --
 -- =============================================================================
 -- RINGKASAN PERUBAHAN

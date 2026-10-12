@@ -7,7 +7,11 @@
 -- ...000003 (is_stale/stale_flagged_at/aging_baseline_at), hanya hubungan
 -- LOGIS lewat kode EF.
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION. Versi yang
+--         jalan di staging SAMA dengan isi file ini SESUDAH commit 38c8b8b
+--         (koreksi cast sla_policies_type_check + GRANT service_role) --
+--         bukan versi awal commit be52eed, yang sudah dikoreksi sebelum
+--         staging dijalankan.
 --
 -- KEPUTUSAN Den (irisan 8): penuaan TIDAK LAGI memindahkan lead ke Lead
 -- Pool. Penuaan sekarang HANYA menandai stale (accounts.is_stale/

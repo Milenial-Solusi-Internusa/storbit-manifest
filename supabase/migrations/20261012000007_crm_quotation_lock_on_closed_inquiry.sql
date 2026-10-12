@@ -12,7 +12,7 @@
 -- Angka SENT/DRAFT/SUBMITTED di bawah CANCELLED tidak disebutkan Den --
 -- dihitung live oleh DO-block Task 4 di bawah, bukan ditebak/disalin.
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
 --
 -- =============================================================================
 -- RINGKASAN PERUBAHAN

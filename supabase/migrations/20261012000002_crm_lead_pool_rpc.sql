@@ -5,7 +5,7 @@
 -- (RPC). Bergantung pada file 1 (kolom accounts/companies,
 -- account_pool_history, has_menu_permission_in).
 --
--- Status: BELUM DIJALANKAN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
 --
 -- Empat RPC siklus pool, semua SECURITY DEFINER, SET search_path public,
 -- REVOKE ALL FROM PUBLIC, GRANT EXECUTE TO authenticated, menulis riwayat
