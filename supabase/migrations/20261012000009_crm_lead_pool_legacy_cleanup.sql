@@ -7,7 +7,7 @@
 -- 20261012000001 dst.): pool = akun TANPA pemilik. Migrasi ini menyelaraskan
 -- 1.183 akun lama itu ke aturan baru, satu kali, dalam satu transaksi.
 --
--- Status: BELUM DIJALANKAN DI MANA PUN.
+-- Status: JALAN DI STAGING 12 Okt 2026. BELUM DI PRODUCTION.
 --
 -- PRASYARAT: file 20261012000001 s/d 20261012000005 HARUS sudah jalan lebih
 -- dulu -- migrasi ini butuh tabel account_pool_history dan kolom

@@ -78,7 +78,7 @@
 | 51 | `20261012000003_crm_lead_pool_triggers` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — sesudah butir 49 |
 | 52 | `20261012000004_crm_lead_pool_approval_roles` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — mandiri (lihat catatan DELETE §52) |
 | 53 | `20261012000005_crm_lead_aging_threshold_policy` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — berpasangan dgn deploy EF `aging-pipeline` |
-| 54 | `20261012000009_crm_lead_pool_legacy_cleanup` | ⛔⛔ **BELUM DIJALANKAN DI MANA PUN** (hanya diuji dry-run, lihat §Catatan uji coba) | ⛔ belum | ⛔ **WAJIB, SEBELUM butir 55** — lihat §54 |
+| 54 | `20261012000009_crm_lead_pool_legacy_cleanup` | ✔ **dijalankan 12 Okt 2026** (commit sungguhan, bukan dry-run; 7 akun pool staging, nol berpemilik aktif → nol baris `legacy_pool_exit` — lihat §54) | ⛔ belum | ⛔ **WAJIB, SEBELUM butir 55** — lihat §54 |
 | 55 | `20261012000006_crm_lead_pool_notifications` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, SESUDAH butir 54** |
 | 56 | `20261012000007_crm_quotation_lock_on_closed_inquiry` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — didahului langkah manual backup, lihat §56 ("9a") |
 | 57 | `20261012000008_crm_lead_pool_sweep_notify` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, TERAKHIR** dari rangkaian 11 berkas |
@@ -1751,11 +1751,11 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 
 > **Sifat berbeda dari seluruh butir di atas.** Butir 1-46 + §Naskah Eksekusi Malam Rilis adalah rantai AR Storbit yang dijadwalkan rilis malam **14 Oktober 2026**. Sebelas berkas migrasi di bawah ini (+ dua Edge Function + satu langkah manual staging-only, butir 47-58) adalah pekerjaan TERPISAH — Lead Management "Paket 2" (Batch DS 3, irisan 7-9) — yang **TIDAK termasuk** jendela rilis AR itu sama sekali. **Jangan jalankan berkas-berkas ini di malam yang sama dengan Langkah 1-5 §Naskah Eksekusi** — jadwalkan sesi tersendiri, SESUDAH 14 Oktober 2026.
 >
-> **Status staging vs production diukur dari DUA sumber yang harus cocok, bukan dikarang dari salah satu:** tanggal commit (`git log`) DAN baris `Status:` di header tiap berkas migrasi itu sendiri. Seluruh sebelas berkas sudah **JALAN DI STAGING** (dua yang pertama 11 Okt 2026, sembilan sisanya 12 Okt 2026) — **KECUALI butir 54**, yang header filenya sendiri menulis "BELUM DIJALANKAN DI MANA PUN" secara eksplisit (hanya pernah **diuji dry-run**, bukan di-commit — lihat §Catatan uji coba). **Production: BELUM SATU PUN dijalankan sungguhan (commit).**
+> **Status staging vs production diukur dari DUA sumber yang harus cocok, bukan dikarang dari salah satu:** tanggal commit (`git log`) DAN baris `Status:` di header tiap berkas migrasi itu sendiri. Seluruh **sebelas** berkas sudah **JALAN DI STAGING** sebagai commit sungguhan — dua yang pertama 11 Okt 2026, sembilan sisanya 12 Okt 2026, **termasuk butir 54** (dikonfirmasi langsung ke staging oleh Den 12 Okt 2026: tabel `accounts_lead_pool_backup_20261012` ada, constraint `account_pool_history_event_type_check` sudah sembilan nilai — lihat §54 untuk angka lengkapnya; jangan tertukar dengan uji coba **dry-run** di PRODUCTION yang terpisah, lihat §Catatan uji coba). **Production: BELUM SATU PUN dijalankan sungguhan (commit).**
 
 **Urutan production yang MENGIKAT** (ditulis eksplisit per nama berkas, supaya tidak ambigu — perhatikan khusus butir 54 yang akhiran nomor filenya `...009` tapi WAJIB jalan SEBELUM butir 55 yang akhiran nomor filenya `...006`, terbalik dari urutan angka di nama file):
 
-**47 → 48 → 49 → 50 → 51 → 52 → 53 → 54 → [LANGKAH MANUAL "9a", lihat §56] → 55 → 56 → 57.**
+**47 → 48 → 49 → 50 → 51 → 52 → 53 → 54 → 55 → [LANGKAH MANUAL "9a", lihat §56] → 56 → 57.**
 
 Ini identik dengan urutan yang ditulis sendiri di header berkas butir 54: *"URUTAN PRODUCTION LENGKAP (mengikat): 1, 2, 3, 4, 5, 9, 6, 7, 8"* — di mana angka-angka itu adalah akhiran nomor file dalam seri `20261012*` (1=skema/butir 49, 2=RPC/butir 50, 3=trigger/butir 51, 4=approval roles/butir 52, 5=aging threshold/butir 53, 9=legacy cleanup/butir 54, 6=notifications/butir 55, 7=quotation lock/butir 56, 8=sweep notify/butir 57).
 
@@ -1873,7 +1873,7 @@ Ini identik dengan urutan yang ditulis sendiri di header berkas butir 54: *"URUT
 | | |
 |---|---|
 | Isi | Migrasi data SATU KALI (bukan skema baru): menyelaraskan **1.183 akun production** (`is_in_lead_pool=true`, `deleted_at IS NULL`) yang lahir dari mekanisme pool LAMA ke aturan BARU (pool = akun TANPA pemilik) |
-| Staging | ⛔ **BELUM DIJALANKAN** — header file sendiri menulis demikian secara eksplisit |
+| Staging | ✔ **dijalankan 12 Okt 2026** (commit sungguhan, bukan dry-run) — dikonfirmasi langsung ke staging oleh Den: tabel `accounts_lead_pool_backup_20261012` ADA, dan constraint `account_pool_history_event_type_check` sudah berisi **sembilan** nilai termasuk `'legacy_pool_exit'`. Baris riwayat ber-`event_type='legacy_pool_exit'` di staging = **0** — ini WAJAR, bukan tanda migrasinya gagal: populasi akun pool di staging (`is_in_lead_pool=true`) hanya **7 akun, semuanya TANPA pemilik AKTIF** (beda dari production yang 1.183 akun dengan campuran pemilik aktif/nonaktif/tanpa-pemilik). Karena nol akun pool staging berpemilik aktif, kelompok "keluar pool, `assigned_to` tetap" (yang menulis `legacy_pool_exit`) nol baris — ketujuh akun itu semuanya jatuh ke kelompok "tetap di pool tanpa pemilik" (`enter_pool`) atau sudah sesuai aturan baru sejak awal |
 | Production | ⛔ **belum** (commit sungguhan) — HANYA pernah diuji **dry-run**, lihat §Catatan uji coba di bawah |
 | Sifat | Harus jalan **SEBELUM butir 55** (`20261012000006`, posisi 9 dalam daftar) — DUA alasan independen, dijelaskan di header kedua file secara saling-silang |
 
@@ -1891,6 +1891,8 @@ Ini identik dengan urutan yang ditulis sendiri di header berkas butir 54: *"URUT
 ### Catatan uji coba dry-run butir 54 di production (12 Okt 2026) — BUKAN eksekusi, NOL perubahan tersimpan
 
 Berkas migrasi butir 54 menyertakan blok komentar terpisah di akhir file — **versi uji coba (dry-run)**, isi SAMA PERSIS dengan blok `BEGIN...COMMIT` utama, hanya dua beda: nama tabel backup berakhiran `_dryrun`, dan ditutup `ROLLBACK` bukan `COMMIT`. Blok ini **sudah dijalankan di production 12 Okt 2026** sebagai uji coba.
+
+⚠️ **Jangan tertukar dengan eksekusi SUNGGUHAN di STAGING** (lihat §54 di atas, tabel "Staging") — keduanya peristiwa yang BERBEDA: yang di atas ini adalah dry-run di **PRODUCTION** (ROLLBACK, nol perubahan tersimpan), sementara di **STAGING** migrasi ini sudah benar-benar di-**COMMIT** (12 Okt 2026, bukti tabel backup + constraint sembilan nilai).
 
 **Angka hasil uji coba (dilaporkan Den):**
 - Backup (dry-run): **1.183 akun**.
