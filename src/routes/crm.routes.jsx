@@ -188,6 +188,7 @@ function LeadCaptureRoute() {
       <Boundary title="CRM Prospects temporarily unavailable">
         <LeadCapturePage
           onSelectProspect={(p) => navigate(`${P_LEAD}/${p.id}`)}
+          onQuickEdit={(p) => navigate(`${P_LEAD}/${p.id}`, { state: { quickEdit: true } })}
           showToast={showToast}
           openCaptureOnMount={openCapture}
           captureInitialName={location.state?.captureName || ''}
@@ -220,6 +221,7 @@ function LeadDetailRoute() {
         id={id}
         onBack={() => navigate(P_LEAD)}
         showToast={showToast}
+        quickEditOnMount={!!location.state?.quickEdit}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
           ? (account) => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
           : undefined}

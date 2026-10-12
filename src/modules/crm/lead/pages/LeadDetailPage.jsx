@@ -121,7 +121,7 @@ function OwnerLine({ id, name, canReassign, onReassign }) {
  * @param {(quotationId:string) => void} [onOpenQuotation]
  * @param {(msg:string, type?:string)=>void} [showToast]
  */
-export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInquiry, onOpenQuotation, showToast }) {
+export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInquiry, onOpenQuotation, showToast, quickEditOnMount }) {
   const { profile, erpRoles } = useAuth();
 
   const [account, setAccount] = useState(null);
@@ -241,25 +241,33 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
     return undefined;
   }
 
-  // "Reactivate" (tombol BARU, mockup Lost -- tak ada di rencana tertulis
-  // Paket 1 manapun). Diimplementasikan sebagai kebalikan simetris Mark as
-  // Lost: lifecycle_stage kembali 'lead', lost_reason/competitor_name
-  // dibersihkan, qualified_at TIDAK disentuh (kalau sebelumnya sudah
-  // qualified_at terisi, lead kembali ke status Qualified, bukan Raw -- itu
-  // yang dijaga StageBar lewat `status` turunan, bukan field terpisah).
-  // Keputusan fungsional ini belum dikonfirmasi Den -- lihat laporan akhir.
+  // "Reactivate" (tombol, mockup Lost) -- KEPUTUSAN Den (koreksi irisan 7):
+  // Lost -> Raw murni (lifecycle_stage 'lead' DAN qualified_at dikosongkan,
+  // bukan kebalikan simetris Mark as Lost yang semula dipertahankan
+  // qualified_at). Alasan lost lama + kompetitor dicatat di log aktivitas
+  // SEBELUM dibersihkan (resolve label dropdown dari lostReasonOptions,
+  // sama seperti view-mode Notes) -- begitu dibersihkan, nilainya hilang
+  // permanen dari `accounts`, jadi log adalah satu-satunya jejaknya.
   async function handleReactivate() {
+    const reasonLabel = account?.lost_reason
+      ? (lostReasonOptions.find((o) => o.value === account.lost_reason)?.label || account.lost_reason)
+      : null;
+    const competitor = account?.competitor_name;
     const { error } = await supabase.from('accounts').update({
-      lifecycle_stage: 'lead', lost_reason: null, competitor_name: null,
+      lifecycle_stage: 'lead', qualified_at: null, lost_reason: null, competitor_name: null,
       last_activity_at: new Date().toISOString(),
     }).eq('id', id);
     if (error) return { error };
+    const lines = ['Lost to Raw, reactivated.'];
+    if (reasonLabel) lines.push(`Previous lost reason: ${reasonLabel}.`);
+    if (competitor) lines.push(`Previous competitor: ${competitor}.`);
     await supabase.from('activities').insert({
       account_id: id, company_id: companyId, type: 'status_change', status: 'done',
-      notes: `Reactivated from Lost (was lost at ${lostAtLabel}).`, created_by: profile.id, completed_at: new Date().toISOString(),
+      notes: lines.join(' '), created_by: profile.id, completed_at: new Date().toISOString(),
     });
-    setAccount((a) => ({ ...a, lifecycle_stage: 'lead', lost_reason: null, competitor_name: null }));
+    setAccount((a) => ({ ...a, lifecycle_stage: 'lead', qualified_at: null, lost_reason: null, competitor_name: null }));
     fetchActivities();
+    showToast?.('Lead reactivated');
     return undefined;
   }
 
@@ -383,6 +391,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
                 canManage={canManage} onReassign={() => setReassignOpen(true)}
                 onRequestNewOption={(key) => setRequestOptionFor(key)}
                 showToast={showToast}
+                autoEditCompany={quickEditOnMount}
               />
             )}
             {tab === 'contacts' && (
@@ -437,9 +446,17 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
    read-only + link "Reassign" -- perubahan owner HANYA lewat ReassignModal
    supaya tercatat di activity log + notifikasi (bukan Edit polos).
    ========================================================================= */
+function buildCompanyDraft(account) {
+  return {
+    name: account.name || '', legal_name: account.legal_name || '', industry: account.industry || '',
+    lead_category: account.lead_category || '', priority: account.priority || '', website: account.website || '',
+    address: account.address || '', city: account.city || '', country: account.country || 'Indonesia',
+  };
+}
+
 function OverviewTab({
   account, setAccount, id, companyId, status, industryOptions, categoryOptions, lostReasonOptions,
-  canManage, onReassign, onRequestNewOption, showToast,
+  canManage, onReassign, onRequestNewOption, showToast, autoEditCompany,
 }) {
   const entityCode = ENTITIES.find((e) => e.id === companyId)?.code || '—';
   const isLost = status === 'lost';
@@ -448,14 +465,14 @@ function OverviewTab({
     ? (lostReasonOptions.find((o) => o.value === account.lost_reason)?.label || account.lost_reason)
     : account.qualified_reason;
 
-  const [companyEdit, setCompanyEdit] = useState(false);
-  const [companyDraft, setCompanyDraft] = useState(null);
+  // "Quick Edit" (menu baris Capture, mockup rmEdit) -- lead dibuka dengan
+  // Company SUDAH dalam mode edit, lewat lazy initializer (bukan effect:
+  // `account` sudah pasti terisi saat OverviewTab mount, LeadDetailPage baru
+  // merender tab ini sesudah `if (!account) return ...`).
+  const [companyEdit, setCompanyEdit] = useState(() => !!autoEditCompany);
+  const [companyDraft, setCompanyDraft] = useState(() => (autoEditCompany ? buildCompanyDraft(account) : null));
   function startCompanyEdit() {
-    setCompanyDraft({
-      name: account.name || '', legal_name: account.legal_name || '', industry: account.industry || '',
-      lead_category: account.lead_category || '', priority: account.priority || '', website: account.website || '',
-      address: account.address || '', city: account.city || '', country: account.country || 'Indonesia',
-    });
+    setCompanyDraft(buildCompanyDraft(account));
     setCompanyEdit(true);
   }
   async function saveCompany() {
@@ -731,9 +748,11 @@ function activityLabel(a) {
 // sebelumnya tersembunyi oleh rantai fallback `notes || outcome ||
 // next_action` (kalau `notes` terisi, dua field lain tak pernah terlihat).
 // Chip "From visit report" DI mockup SENGAJA tidak dibangun -- `activities`
-// tak punya kolom penaut balik ke sumber (mis. tabel riwayat visit),
-// menambahkannya di sini berarti mengarang data yang tak ada -- lihat
-// laporan akhir.
+// tak punya kolom penaut balik ke sumber (mis. tabel riwayat visit).
+// KEPUTUSAN Den (irisan 7): DITUNDA ke giliran Sales Activity (menu 1.11),
+// bukan dibatalkan -- modul itulah yang akan menentukan bentuk penautannya
+// (kolom baru di `activities`, atau join ke tabel riwayat visit yang sudah
+// ada). Jangan dibangun di sini lebih dulu dengan mengarang kolom.
 function TimelineRow({ a, actorMap, isLast }) {
   const [open, setOpen] = useState(false);
   const Icon = ACTIVITY_ICON[a.type] || FileText;

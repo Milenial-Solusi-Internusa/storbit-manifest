@@ -9,9 +9,10 @@
 // Pager bernomor (komponen baru, src/modules/crm/lead/components/Pager.jsx)
 // menggantikan ‹ Prev / Next › polos; menu baris "⋮" dapat "Add Note" (mockup
 // 03) yang dibangun di atas mekanisme Add Note yang sudah ada (lihat
-// AddNoteModal.jsx) -- "Quick Edit" di mockup yang sama SENGAJA belum
-// dibangun, nol spesifikasi field selain labelnya di menu, lihat laporan
-// akhir.
+// AddNoteModal.jsx). "Quick Edit" (irisan 7, KEPUTUSAN Den): ikut perilaku
+// rmEdit di mockup -- membuka LeadDetailPage lead itu dengan Company
+// langsung dalam mode edit (onQuickEdit, dirutekan lewat location.state
+// `quickEdit`, lihat LeadDetailRoute/crm.routes.jsx).
 //
 // Dua deviasi dari batas awal irisan ini, DIPUTUSKAN Den sesudah verifikasi
 // visual (ikut mockup, bukan lagi dicatat sebagai "tidak ada"): filter
@@ -92,12 +93,13 @@ function BantCell({ score }) {
 
 /**
  * @param {(acc: {id:string}) => void} onSelectProspect
+ * @param {(acc: {id:string}) => void} [onQuickEdit] - "Quick Edit" (menu baris "⋮", mockup rmEdit): buka Detail Lead dengan Company langsung dalam mode edit
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {boolean} [openCaptureOnMount]
  * @param {string} [captureInitialName]
  * @param {() => void} [onCaptureClosed]
  */
-export default function LeadCapturePage({ onSelectProspect, showToast, openCaptureOnMount, captureInitialName, onCaptureClosed }) {
+export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToast, openCaptureOnMount, captureInitialName, onCaptureClosed }) {
   const { profile, erpRole, erpRoles } = useAuth();
   const isAllEntities = isAllEntitiesRole(erpRoles);
   const isSalesOnly = isSalesOnlyRole(erpRole);
@@ -410,6 +412,12 @@ export default function LeadCapturePage({ onSelectProspect, showToast, openCaptu
                             <>
                               <div onClick={() => setRowMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
                               <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 150, zIndex: 10, overflow: 'hidden' }}>
+                                {onQuickEdit && (
+                                  <button type="button" onClick={() => { setRowMenuFor(null); onQuickEdit(l); }}
+                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                    Quick Edit
+                                  </button>
+                                )}
                                 <button type="button" onClick={() => { setRowMenuFor(null); setNoteForAccount(l); }}
                                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
                                   Add Note
