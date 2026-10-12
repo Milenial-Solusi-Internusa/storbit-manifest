@@ -15,7 +15,7 @@
    Alias `KitSelect` (= Select) di bawah = kompatibilitas, dicabut Batch DS 7.
    ========================================================================= */
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useEffect } from 'react';
 import { Check, ChevronDown, Lock, Minus, Plus, Search } from 'lucide-react';
 import Icon from './Icon';
 import { ENTITIES } from '../lib/entities';
@@ -317,27 +317,68 @@ export function Slider({ label, value, onChange, min = 0, max = 100, step = 1, f
 
 /* =========================================================================
    SEGMENTED — thumb geser di atas track HEAD_BG
+   Kotak sorot mengikuti posisi/lebar NYATA tombol aktif (ref offsetLeft/
+   offsetWidth), BUKAN lagi lebar rata calc((100%-8px)/n) -- tombol sendiri
+   TIDAK selalu rata (lebarnya ikut panjang label tiap pemakai berbeda-beda,
+   terlihat jelas di LeadAssignmentPage), jadi kotak rata lama meleset dari
+   tulisan. Diukur ulang lewat useLayoutEffect TANPA larik dependensi
+   (jalan tiap render, sebelum paint) -- aman dari render-loop karena
+   setHighlight functional-updater mengembalikan STATE LAMA persis kalau
+   left/width/visible tidak berubah (React membatalkan render berikutnya).
+   Pola ini otomatis menangkap tiga pemicu yang diminta: idx berubah, teks
+   label berubah (opsi array selalu baru di pemanggil), DAN ResizeObserver
+   terpisah menangkap resize viewport/container. Prop `full` tidak diubah
+   perilakunya (tombol tetap flex:1, dibagi rata) -- yang berubah hanya
+   CARA kotak sorot mengukur, bukan cara tombol disusun.
    ========================================================================= */
 export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
   const idx = options.findIndex((o) => optVal(o) === value);
-  const n = options.length || 1;
+  const containerRef = useRef(null);
+  const btnRefs = useRef([]);
+  const [highlight, setHighlight] = useState({ left: 4, width: 0, visible: false });
+
+  const measure = useCallback(() => {
+    const btn = btnRefs.current[idx];
+    if (!btn) {
+      setHighlight((h) => (h.visible ? { ...h, visible: false } : h));
+      return;
+    }
+    const left = btn.offsetLeft, width = btn.offsetWidth;
+    setHighlight((h) => (h.left === left && h.width === width && h.visible ? h : { left, width, visible: true }));
+  }, [idx]);
+
+  // Tanpa larik dependensi -- jalan sesudah TIAP commit (termasuk saat
+  // hanya teks label berubah, yang tak punya sinyal lain utk dipantau),
+  // sebelum browser paint (useLayoutEffect, bukan useEffect) supaya
+  // posisi baru tak pernah sempat ter-flash di posisi lama.
+  useLayoutEffect(() => { measure(); });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure]);
+
   return (
-    <div role="radiogroup" aria-label={ariaLabel} style={{
+    <div ref={containerRef} role="radiogroup" aria-label={ariaLabel} style={{
       display: full ? 'flex' : 'inline-flex', position: 'relative', background: HEAD_BG, border: `1px solid ${LINE}`,
       borderRadius: RADIUS.md, padding: 4, width: full ? '100%' : 'auto', boxSizing: 'border-box',
     }}>
       <div style={{
-        position: 'absolute', top: 4, bottom: 4, left: 4, width: `calc((100% - 8px) / ${n})`,
-        transform: `translateX(${idx < 0 ? 0 : idx * 100}%)`, background: INPUT_BG, border: `1px solid ${LINE}`,
-        borderRadius: 8, boxShadow: SHADOW_1, transition: `transform .28s ${MOTION.ease}`, opacity: idx < 0 ? 0 : 1,
+        position: 'absolute', top: 4, bottom: 4, left: highlight.left, width: highlight.width,
+        background: INPUT_BG, border: `1px solid ${LINE}`,
+        borderRadius: 8, boxShadow: SHADOW_1, transition: `left .28s ${MOTION.ease}, width .28s ${MOTION.ease}`, opacity: highlight.visible ? 1 : 0,
       }} />
-      {options.map((o) => {
+      {options.map((o, i) => {
         const val = optVal(o);
         const active = val === value;
         const icon = typeof o === 'object' ? o.icon : null;
         return (
           <button
-            key={val} type="button" role="radio" aria-checked={active} onClick={() => onChange(val)} className="nk-focus"
+            key={val} ref={(el) => { btnRefs.current[i] = el; }}
+            type="button" role="radio" aria-checked={active} onClick={() => onChange(val)} className="nk-focus"
             style={{
               position: 'relative', zIndex: 1, flex: 1, height: 38, border: 'none', background: 'transparent', cursor: 'pointer',
               fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: active ? INK : INK_SOFT,

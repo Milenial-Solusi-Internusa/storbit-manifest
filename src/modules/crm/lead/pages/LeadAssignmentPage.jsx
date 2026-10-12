@@ -26,6 +26,7 @@ import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, FONT_BODY, FONT_HEA
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole } from '../../../../lib/roles';
+import { SOURCE_LABELS } from '../lib/leadOptions';
 import RequestPullModal from '../components/RequestPullModal';
 import RejectPullModal from '../components/RejectPullModal';
 import AssignToSalesModal from '../components/AssignToSalesModal';
@@ -41,6 +42,39 @@ function PullStatusBadge({ status }) {
   if (status === 'pending') return <Badge tone="warn">Pending Approval</Badge>;
   if (status === 'rejected') return <Badge tone="neutral">Rejected</Badge>;
   return <span style={{ color: INK_FAINT, fontSize: 13 }}>—</span>;
+}
+
+// Nama perusahaan jadi LINK ke detail (Account Code jadi teks biasa) --
+// pola sama LeadCapturePage (kolom Account Code di sana link, tapi di sini
+// Company Name yang dipakai sebagai pegangan klik, instruksi Den irisan
+// berikutnya).
+function CompanyLink({ row, onSelectAccount }) {
+  if (!onSelectAccount) return row.name;
+  return (
+    <a href="#" onClick={(e) => { e.preventDefault(); onSelectAccount(row); }} style={{ color: INK, textDecoration: 'underline' }}>
+      {row.name}
+    </a>
+  );
+}
+
+// Kolom aksi tab Leads/Free Agent -- SATU logika dipakai kedua tabel
+// (irisan berikutnya, Task 2a):
+//   pull_status null/rejected -- Request Pull (siapa pun) + Assign to
+//     Sales (tambahan, hanya canApprove).
+//   pull_status pending, canApprove -- Review (pindah ke tab Pull Approvals).
+//   pull_status pending, !canApprove -- kosong (badge-nya sudah ada di
+//     kolom Pull Status, tak perlu diulang di sini).
+function PoolRowActions({ row, canApprove, onRequestPull, onAssign, onReview }) {
+  if (row.pull_status === 'pending') {
+    if (!canApprove) return null;
+    return <OutlineBtn size="sm" onClick={() => onReview()}>Review</OutlineBtn>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+      <OutlineBtn size="sm" onClick={() => onRequestPull(row)}>Request Pull</OutlineBtn>
+      {canApprove && <OutlineBtn size="sm" onClick={() => onAssign(row)}>Assign to Sales</OutlineBtn>}
+    </div>
+  );
 }
 
 const th = { padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, whiteSpace: 'nowrap' };
@@ -134,6 +168,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           rows={poolRows} loading={loading} profMap={profMap} canApprove={canApprove}
           codeLabel="Account Code" onSelectAccount={onSelectAccount}
           onRequestPull={(a) => setPullTarget(a)} onAssign={(a) => setAssignTarget(a)}
+          onReview={() => setView('approvals')}
         />
       )}
       {activeView === 'fac' && (
@@ -141,6 +176,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           rows={facRows} loading={loading} profMap={profMap} canApprove={canApprove}
           onSelectAccount={onSelectAccount}
           onRequestPull={(a) => setPullTarget(a)} onAssign={(a) => setAssignTarget(a)}
+          onReview={() => setView('approvals')}
         />
       )}
       {activeView === 'approvals' && canApprove && (
@@ -167,7 +203,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
   );
 }
 
-function PoolTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequestPull, onAssign }) {
+function PoolTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequestPull, onAssign, onReview }) {
   return (
     <Card padded={false}>
       {loading ? (
@@ -193,25 +229,16 @@ function PoolTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequ
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' }}>
-                  <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                    {onSelectAccount ? <a href="#" onClick={(e) => { e.preventDefault(); onSelectAccount(r); }} style={{ color: INK, textDecoration: 'underline' }}>{r.code || '—'}</a> : (r.code || '—')}
-                  </td>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.name}</td>
-                  <td style={td}><Badge tone="neutral">{r.source || '—'}</Badge></td>
+                  <td style={{ ...td, fontFamily: FONT_MONO }}>{r.code || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600 }}><CompanyLink row={r} onSelectAccount={onSelectAccount} /></td>
+                  <td style={td}><Badge tone="neutral">{SOURCE_LABELS[r.source] || r.source || '—'}</Badge></td>
                   <td style={{ ...td, color: INK_SOFT }}>{r.lead_pool_reason || '—'}</td>
                   <td style={{ ...td, fontFamily: FONT_MONO, color: INK_SOFT }}>{fmtDate(r.lead_pool_at)}</td>
                   <td style={{ ...td, color: r.lead_pool_last_owner ? INK : INK_FAINT }}>{r.lead_pool_last_owner ? (profMap[r.lead_pool_last_owner] || '—') : 'None'}</td>
                   <td style={{ ...td, fontFamily: FONT_MONO, textAlign: 'right' }}>{r.estimated_value != null ? fmtRp(r.estimated_value) : '—'}</td>
                   <td style={td}><PullStatusBadge status={r.pull_status} /></td>
                   <td style={{ ...td, textAlign: 'right' }}>
-                    {r.pull_status === 'pending'
-                      ? <Badge tone="warn">Pending Approval</Badge>
-                      : <OutlineBtn size="sm" onClick={() => onRequestPull(r)}>Request Pull</OutlineBtn>}
-                    {canApprove && (
-                      <div style={{ marginTop: 6 }}>
-                        <OutlineBtn size="sm" onClick={() => onAssign(r)}>Assign to Sales</OutlineBtn>
-                      </div>
-                    )}
+                    <PoolRowActions row={r} canApprove={canApprove} onRequestPull={onRequestPull} onAssign={onAssign} onReview={onReview} />
                   </td>
                 </tr>
               ))}
@@ -223,7 +250,7 @@ function PoolTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequ
   );
 }
 
-function FreeAgentTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequestPull, onAssign }) {
+function FreeAgentTable({ rows, loading, profMap, canApprove, onSelectAccount, onRequestPull, onAssign, onReview }) {
   return (
     <Card padded={false}>
       {loading ? (
@@ -250,10 +277,8 @@ function FreeAgentTable({ rows, loading, profMap, canApprove, onSelectAccount, o
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' }}>
-                  <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                    {onSelectAccount ? <a href="#" onClick={(e) => { e.preventDefault(); onSelectAccount(r); }} style={{ color: INK, textDecoration: 'underline' }}>{r.code || '—'}</a> : (r.code || '—')}
-                  </td>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.name}</td>
+                  <td style={{ ...td, fontFamily: FONT_MONO }}>{r.code || '—'}</td>
+                  <td style={{ ...td, fontWeight: 600 }}><CompanyLink row={r} onSelectAccount={onSelectAccount} /></td>
                   <td style={td}><Badge tone="neutral">{r.source_company?.code || '—'}</Badge></td>
                   <td style={{ ...td, color: r.lead_pool_last_owner ? INK : INK_FAINT }}>{r.lead_pool_last_owner ? (profMap[r.lead_pool_last_owner] || '—') : 'None'}</td>
                   <td style={{ ...td, fontFamily: FONT_MONO, color: INK_SOFT }}>{fmtDate(r.lead_pool_at)}</td>
@@ -262,14 +287,7 @@ function FreeAgentTable({ rows, loading, profMap, canApprove, onSelectAccount, o
                   <td style={{ ...td, color: INK_SOFT }}>{r.lead_pool_reason || '—'}</td>
                   <td style={td}><PullStatusBadge status={r.pull_status} /></td>
                   <td style={{ ...td, textAlign: 'right' }}>
-                    {r.pull_status === 'pending'
-                      ? <Badge tone="warn">Pending Approval</Badge>
-                      : <OutlineBtn size="sm" onClick={() => onRequestPull(r)}>Request Pull</OutlineBtn>}
-                    {canApprove && (
-                      <div style={{ marginTop: 6 }}>
-                        <OutlineBtn size="sm" onClick={() => onAssign(r)}>Assign to Sales</OutlineBtn>
-                      </div>
-                    )}
+                    <PoolRowActions row={r} canApprove={canApprove} onRequestPull={onRequestPull} onAssign={onAssign} onReview={onReview} />
                   </td>
                 </tr>
               ))}

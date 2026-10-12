@@ -1534,6 +1534,17 @@ function NexusSidebar({
           >
             {Icon && <Icon size={15} strokeWidth={1.8} style={{ flexShrink: 0, color: subActive ? 'var(--navy)' : 'var(--faint)' }} />}
             <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
+            {/* Badge Level 2 "Lead Management" (induk Lead Assignment / Claim)
+                -- supaya jumlahnya terlihat walau submenu tertutup (irisan
+                berikutnya, Task 3). Sama persis badge Level 3 di bawah;
+                keduanya tampil BERSAMAAN saat submenu terbuka (disengaja,
+                bukan dedup). id Level 2 "Lead Management" = l2-1-1
+                (SKELETON_NAV_ITEMS: `l2-${code.replace(/\./g,'-')}`, code "1.1"). */}
+            {c.id === 'l2-1-1' && leadPoolPendingCount > 0 && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
+                {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
+              </span>
+            )}
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
