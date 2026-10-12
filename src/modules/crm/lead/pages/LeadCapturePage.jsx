@@ -46,6 +46,12 @@ const PAGE_SIZE = 20;
 // sudah masuk Lead Pool punya halamannya sendiri (LeadPoolPage), sengaja
 // TIDAK ikut muncul di sini.
 const OWNER_UNASSIGNED = '__unowned__';
+// Sentinel filter Status "Stale" (irisan 9 Paket 2, Task 4.4.5) -- is_stale
+// adalah tanda ORTOGONAL terhadap lifecycle status (raw/qualified/dst bisa
+// stale atau tidak), jadi ditumpangkan sebagai nilai EKSTRA di filter Status
+// yang sudah ada (pola sentinel sama dengan OWNER_UNASSIGNED di atas),
+// bukan kontrol filter baru.
+const STATUS_STALE = '__stale__';
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
 const DATE_BUCKETS = [
   { value: 'all', label: 'Any time' },
@@ -180,6 +186,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
         .select(`
           id, code, name, source, industry, priority, lifecycle_stage, qualified_at,
           assigned_to, estimated_value, last_activity_at, created_at, company_id,
+          is_in_lead_pool, is_stale, stale_flagged_at,
           bant_budget, bant_authority, bant_need, bant_timeline,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name),
           contacts(id, name, is_primary, deleted_at)
@@ -192,7 +199,8 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
       if (effectiveScope === 'mine') query = query.eq('assigned_to', profile.id);
 
-      if (status !== 'all') query = applyLeadStatusFilter(query, status);
+      if (status === STATUS_STALE) query = query.eq('is_stale', true);
+      else if (status !== 'all') query = applyLeadStatusFilter(query, status);
       if (source !== 'all') query = query.eq('source', source);
       if (owner === OWNER_UNASSIGNED) query = query.is('assigned_to', null).eq('is_in_lead_pool', false);
       else if (owner !== 'all') query = query.eq('assigned_to', owner);
@@ -265,7 +273,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
       <Card style={{ marginBottom: SP.s4 }} pad={SP.s4}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s3, alignItems: 'flex-end', marginBottom: SP.s3 }}>
-          <Field label="Status"><Select value={status} onChange={setStatus} width={140} options={[{ value: 'all', label: 'All' }, ...LEAD_STATUSES.map((s) => ({ value: s, label: LEAD_STATUS_META[s].label }))]} /></Field>
+          <Field label="Status"><Select value={status} onChange={setStatus} width={140} options={[{ value: 'all', label: 'All' }, ...LEAD_STATUSES.map((s) => ({ value: s, label: LEAD_STATUS_META[s].label })), { value: STATUS_STALE, label: 'Stale' }]} /></Field>
           <Field label="Source"><Select value={source} onChange={setSource} width={150} options={[{ value: 'all', label: 'All sources' }, ...SOURCES.map((s) => ({ value: s, label: SOURCE_LABELS[s] }))]} /></Field>
           {!isSalesOnly && (
             <Field label="Owner"><Select value={owner} onChange={setOwner} width={160} options={[{ value: 'all', label: 'All' }, { value: OWNER_UNASSIGNED, label: 'Tanpa pemilik' }, ...owners.map((o) => ({ value: o.id, label: o.full_name }))]} /></Field>
@@ -407,7 +415,12 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
                       <td style={td}><Badge tone="neutral">{SOURCE_LABELS[l.source] || l.source || '—'}</Badge></td>
                       <td style={{ ...td, fontWeight: 700 }}>{l.name}</td>
                       <td style={{ ...td, color: INK_SOFT }}>{primaryContactOf(l)?.name || '—'}</td>
-                      <td style={td}>{meta ? <Badge tone={meta.tone}>{meta.label}</Badge> : '—'}</td>
+                      <td style={td}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {meta ? <Badge tone={meta.tone}>{meta.label}</Badge> : '—'}
+                          {l.is_stale && <Badge tone="warn" title={`Not touched since ${fmtDate(l.stale_flagged_at)}`}>Stale</Badge>}
+                        </span>
+                      </td>
                       <td style={td}><BantCell score={calcBantScoreSafe(l)} /></td>
                       <td style={td}><OwnerCell id={l.assigned_to} name={l.assigned_profile?.full_name} /></td>
                       <td style={{ ...td, fontFamily: FONT_MONO }}>{l.estimated_value != null ? fmtRp(l.estimated_value) : '—'}</td>

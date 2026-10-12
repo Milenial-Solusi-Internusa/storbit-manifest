@@ -18,6 +18,21 @@
 // notifications yang SUDAH ADA, dicegat kalau profil penerima non-aktif
 // (profiles.active) -- pola best-effort yang sama dengan
 // LeadPoolPage.jsx/LeadPoolApprovalPage.jsx notifySales/notifyManagers.
+//
+// Batch DS 3 Lead Management, irisan 9 Paket 2 (C.1, keputusan Den):
+// akun is_in_lead_pool=true TIDAK BOLEH lewat .update() langsung --
+// lead_pool_last_owner/pull_* akan tertinggal kacau (is_in_lead_pool tetap
+// true walau sudah berpemilik baru). Akun pool dipisah dan dikirim SATU
+// PER SATU lewat RPC lead_pool_assign; sisanya (non-pool) tetap lewat
+// .update() bulk seperti sebelumnya -- nol perubahan perilaku untuk
+// seleksi yang seluruhnya non-pool. Gate TOMBOL yang membuka modal ini
+// (LeadCapturePage/LeadDetailPage/CustomerDetailPage) memakai
+// isManagerOrAbove -- LEBIH LUAS dari izin crm_lead_pool_approval yang
+// dicek lead_pool_assign di server, jadi baris pool BISA ditolak RPC
+// walau tombolnya terlihat. Reason/Effective Date di bawah TIDAK dipakai
+// RPC lead_pool_assign (tak punya parameter itu) -- hanya relevan utk
+// baris non-pool; dibiarkan terisi apa adanya, bukan disembunyikan
+// kondisional (kompleksitas UI yang tak diminta).
 import { useState } from 'react';
 import { Modal, FloatingInput, FloatingSelect, Textarea, SaveButton, OutlineBtn } from '../../../../kit';
 import { INK, INK_SOFT, FONT_BODY, FONT_HEAD, SP, avatarToneFor } from '../../../../kit/tokens';
@@ -28,7 +43,7 @@ import { getTodayWIB } from '../../../../lib/dateUtils';
 /**
  * @param {boolean} open
  * @param {() => void} onClose
- * @param {Array<{id:string, name:string, code?:string, company_id:string, assigned_to?:string|null, assigned_profile?:{full_name?:string}}>} accounts
+ * @param {Array<{id:string, name:string, code?:string, company_id:string, assigned_to?:string|null, assigned_profile?:{full_name?:string}, is_in_lead_pool?:boolean}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onReassigned
  * @param {string} [title] - judul modal; default-nya mereproduksi perilaku Lead
@@ -67,41 +82,71 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     if (!canSave) return { error: new Error('Select a new owner') };
     const newOwnerName = profiles.find((p) => p.id === newOwner)?.full_name || 'Unknown';
 
-    const { error } = await supabase.from('accounts')
-      .update({ assigned_to: newOwner, last_activity_at: new Date().toISOString() })
-      .in('id', accounts.map((a) => a.id));
-    if (error) return { error };
+    const poolAccounts = accounts.filter((a) => a.is_in_lead_pool);
+    const normalAccounts = accounts.filter((a) => !a.is_in_lead_pool);
 
-    const logRows = accounts.map((a) => {
-      const prevOwnerName = a.assigned_profile?.full_name || 'Unassigned';
-      const lines = [`Reassigned from ${prevOwnerName} to ${newOwnerName}.`];
-      if (reason.trim()) lines.push(`Reason: ${reason.trim()}`);
-      lines.push(`Effective: ${effectiveDate}`);
-      return {
-        account_id: a.id, company_id: a.company_id, type: 'owner_change', status: 'done',
-        notes: lines.join(' '), created_by: profile.id, completed_at: new Date().toISOString(),
-      };
-    });
-    const { error: logErr } = await supabase.from('activities').insert(logRows);
-    if (logErr) console.error('[lead] reassign activity log failed:', logErr.message);
+    let okCount = 0;
+    const failures = []; // { name, message }
 
-    if (notify) {
-      const prevOwners = [...new Map(accounts.filter((a) => a.assigned_to).map((a) => [a.assigned_to, a.company_id])).entries()];
-      for (const [prevOwnerId, companyId] of prevOwners) {
-        try {
-          const { data: prevProfile } = await supabase.from('profiles').select('active').eq('id', prevOwnerId).maybeSingle();
-          if (prevProfile?.active) {
-            await supabase.from('notifications').insert({
-              company_id: companyId, user_id: prevOwnerId, event_type: notifyEventType,
-              title: 'Lead Reassigned',
-              body: bulk ? `${accounts.length} leads have been reassigned to ${newOwnerName}.` : `${accounts[0].name} has been reassigned to ${newOwnerName}.`,
-              reference_type: notifyReferenceType, reference_id: accounts[0].id,
-            });
+    // Non-pool: jalur lama tanpa perubahan -- satu update bulk + log +
+    // notifikasi, hanya atas subset non-pool dari seleksi.
+    if (normalAccounts.length) {
+      const { error } = await supabase.from('accounts')
+        .update({ assigned_to: newOwner, last_activity_at: new Date().toISOString() })
+        .in('id', normalAccounts.map((a) => a.id));
+      if (error) {
+        normalAccounts.forEach((a) => failures.push({ name: a.name, message: error.message }));
+      } else {
+        okCount += normalAccounts.length;
+        const logRows = normalAccounts.map((a) => {
+          const prevOwnerName = a.assigned_profile?.full_name || 'Unassigned';
+          const lines = [`Reassigned from ${prevOwnerName} to ${newOwnerName}.`];
+          if (reason.trim()) lines.push(`Reason: ${reason.trim()}`);
+          lines.push(`Effective: ${effectiveDate}`);
+          return {
+            account_id: a.id, company_id: a.company_id, type: 'owner_change', status: 'done',
+            notes: lines.join(' '), created_by: profile.id, completed_at: new Date().toISOString(),
+          };
+        });
+        const { error: logErr } = await supabase.from('activities').insert(logRows);
+        if (logErr) console.error('[lead] reassign activity log failed:', logErr.message);
+
+        if (notify) {
+          const prevOwners = [...new Map(normalAccounts.filter((a) => a.assigned_to).map((a) => [a.assigned_to, a.company_id])).entries()];
+          for (const [prevOwnerId, companyId] of prevOwners) {
+            try {
+              const { data: prevProfile } = await supabase.from('profiles').select('active').eq('id', prevOwnerId).maybeSingle();
+              if (prevProfile?.active) {
+                await supabase.from('notifications').insert({
+                  company_id: companyId, user_id: prevOwnerId, event_type: notifyEventType,
+                  title: 'Lead Reassigned',
+                  body: normalAccounts.length > 1 ? `${normalAccounts.length} leads have been reassigned to ${newOwnerName}.` : `${normalAccounts[0].name} has been reassigned to ${newOwnerName}.`,
+                  reference_type: notifyReferenceType, reference_id: normalAccounts[0].id,
+                });
+              }
+            } catch (e) {
+              console.error('[lead] notify previous owner failed:', e?.message || e);
+            }
           }
-        } catch (e) {
-          console.error('[lead] notify previous owner failed:', e?.message || e);
         }
       }
+    }
+
+    // Pool: SATU PER SATU lewat RPC lead_pool_assign -- gerbangnya
+    // crm_lead_pool_approval di server, lebih sempit dari gate tombol
+    // (isManagerOrAbove) pemanggil; pesan gagal RPC ditampilkan apa
+    // adanya, bukan diseragamkan.
+    for (const a of poolAccounts) {
+      const { error } = await supabase.rpc('lead_pool_assign', { p_account_id: a.id, p_user_id: newOwner });
+      if (error) failures.push({ name: a.name, message: error.message });
+      else okCount++;
+    }
+
+    if (failures.length) {
+      const detail = failures.map((f) => `${f.name}: ${f.message}`).join(' | ');
+      showToast?.(`${okCount} succeeded, ${failures.length} failed — ${detail}`, 'error');
+      onReassigned?.(); // baris yang berhasil tetap tersimpan -- refresh daftar pemanggil
+      return false; // SaveButton: idle tanpa "Tersimpan!" -- pesan sudah ditampilkan di atas
     }
     onReassigned?.();
     return undefined;

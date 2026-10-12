@@ -1432,7 +1432,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
               di atas untuk header/Info Dasar, jadi tak ada fetch tambahan di sini).
               contactId boleh null: akun tanpa kontak primary tetap boleh bikin inquiry —
               form tujuan yang memutuskan cara menampilkannya, bukan tombol ini. */}
-          {onCreateInquiry && (
+          {onCreateInquiry && !customer.is_in_lead_pool && (
             <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => onCreateInquiry(id, primaryContact?.id || null)}>
               <Icon name="plus" size={16} />New Inquiry
             </button>

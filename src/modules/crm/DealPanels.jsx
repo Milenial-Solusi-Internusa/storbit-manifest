@@ -72,18 +72,6 @@ export const isActiveStage = (key) => ACTIVE_STAGE_KEYS.includes(key);
 // (Kanban, urutan funnel dashboard) tidak perlu menulis array literal keduanya.
 export const STAGE_IDS = STAGES.map((s) => s.key.toLowerCase());
 
-// Stage sebelumnya untuk tarik-balik Lead Pool, DI-CLAMP ke ACTIVE_STAGE_KEYS:
-// pemetaan mentah NEGOTIATION → PROPOSAL akan MENGHASILKAN nilai yang akan dihapus,
-// jadi apa pun di luar daftar aktif dikembalikan ke QUALIFIED (nilai tertinggi yang
-// masih sah). Dipakai LeadPoolApprovalPage (yang MENULIS) dan LeadPoolPage (yang
-// menampilkan target) dari satu helper, supaya labelnya tidak menjanjikan stage yang
-// berbeda dari yang benar-benar ditulis.
-const PREV_STAGE = { CONTACTED: 'NEW', QUALIFIED: 'CONTACTED', PROPOSAL: 'QUALIFIED', NEGOTIATION: 'PROPOSAL' };
-export const prevActiveStage = (s) => {
-  const prev = PREV_STAGE[String(s || '').toUpperCase()] || 'NEW';
-  return isActiveStage(prev) ? prev : 'QUALIFIED';
-};
-
 export const fmtRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 export const fmtCompact = (n) => {
   const v = Number(n || 0);

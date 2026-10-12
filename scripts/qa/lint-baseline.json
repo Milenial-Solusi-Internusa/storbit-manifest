@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-11T19:59:35.601Z",
-  "errors": 132,
+  "generatedAt": "2026-10-12T08:48:47.379Z",
+  "errors": 126,
   "warnings": 19,
   "files": {
     "src/App.jsx": {
@@ -117,14 +117,6 @@
     },
     "src/modules/crm/InquiryListPage.jsx": {
       "errors": 13,
-      "warnings": 0
-    },
-    "src/modules/crm/LeadPoolApprovalPage.jsx": {
-      "errors": 4,
-      "warnings": 0
-    },
-    "src/modules/crm/LeadPoolPage.jsx": {
-      "errors": 2,
       "warnings": 0
     },
     "src/modules/crm/QuotationDetailPage.jsx": {

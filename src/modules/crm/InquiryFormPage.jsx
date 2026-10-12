@@ -195,10 +195,21 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   useEffect(() => {
     if (isEdit || !prefillAccountId) return undefined;
     let cancelled = false;
-    supabase.from('accounts').select('id, name, lifecycle_stage')
+    // is_in_lead_pool DITAMBAHKAN (irisan 9 Paket 2, Task C.3) -- jalur
+    // prefill ini fetch LANGSUNG by id, beda dari dropdown picker di bawah
+    // yang sudah `.eq('is_in_lead_pool', false)`. Tanpa cek ini, "+ New
+    // Inquiry" dari akun Free Agent yang sedang di pool bisa lolos ke sini.
+    // Guard DB (trigger trg_block_inquiry_for_pooled_account, migrasi
+    // 20261012000006) tetap penjaga utama -- ini cuma mencegah form
+    // terisi dengan akun yang toh akan ditolak saat submit.
+    supabase.from('accounts').select('id, name, lifecycle_stage, is_in_lead_pool')
       .eq('id', prefillAccountId).is('deleted_at', null).maybeSingle()
       .then(({ data: acc }) => {
         if (cancelled || !acc) return;
+        if (acc.is_in_lead_pool) {
+          showToast?.('This account is in the Lead Pool and must be assigned before an inquiry can be created.', 'error');
+          return;
+        }
         const isCustomerSide = CUSTOMER_SIDE_STATUS.includes(acc.lifecycle_stage);
         const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage };
         setSourceType(isCustomerSide ? 'customer' : 'prospect');
@@ -219,7 +230,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         }));
       });
     return () => { cancelled = true; };
-  }, [isEdit, prefillAccountId, prefillContactId]);
+  }, [isEdit, prefillAccountId, prefillContactId, showToast]);
 
   // ── Kontak akun terpilih ────────────────────────────────────────────────────
   // SATU mekanisme untuk ketiga kasus (0 / 1 / banyak kontak): selalu ambil daftar

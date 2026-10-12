@@ -1405,6 +1405,7 @@ function NexusSidebar({
   activeMenu, onNavigate, hasMenuPermission, isBnfAuthorized,
   profile, currentRoleLabel, isSuperAdminUser = false,
   asDrawer = false, isOpen = false, onClose,
+  leadPoolPendingCount = 0,
 }) {
   // An item is "gated" only if it carries an explicit access rule (public flag
   // or a MENU_KEY_MAP entry — sejak 11 Sep 2026 tidak ada rezim lain). The OLD sidebar
@@ -1557,6 +1558,16 @@ function NexusSidebar({
       >
         {Icon && <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />}
         <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
+        {/* Badge jumlah tarikan pending -- SATU-SATUNYA leaf yang memakainya
+            (irisan 9 Paket 2, Task 3); leadPoolPendingCount sudah di-scope
+            ke entitas yang auth.uid() pegang crm_lead_pool_approval, jadi
+            0 di sini berarti "nol pending ATAU bukan approver", keduanya
+            sengaja tidak dibedakan (sama seperti badge navbar HRGA). */}
+        {c.id === 'crm-lead-pool' && leadPoolPendingCount > 0 && (
+          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
+            {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
+          </span>
+        )}
       </button>
     );
   };
@@ -1930,6 +1941,48 @@ export default function StorbitManifest() {
     const iv = setInterval(fetchPending, 60000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [profile?.id, profile?.company_id, authRole, approverKeys, approverScopeLoading]);
+
+  // ── Sidebar badge: Lead Assignment / Claim pending-pull count ──────────────
+  // Batch DS 3 Lead Management, irisan 9 Paket 2 (Task 3). Nol pola badge
+  // sidebar-per-leaf sudah ada sebelum ini (pendingApprovalCount di atas
+  // adalah tombol NAVBAR, bukan leaf sidebar) -- ini konsumen PERTAMA,
+  // dipasang di LeafRow (lihat di bawah) khusus utk id 'crm-lead-pool'.
+  // Dihitung per entitas yang auth.uid() PEGANG crm_lead_pool_approval --
+  // lewat RPC has_menu_permission_in (server, entity-scoped), BUKAN
+  // hasMenuPermission FE (company-blind, lihat komentarnya di
+  // AuthContext.jsx) -- keduanya bisa menjawab beda utk user multi-entitas.
+  const [leadPoolPendingCount, setLeadPoolPendingCount] = useState(0);
+  const leadPoolCountRef = useRef(null);
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    let cancelled = false;
+    const applyCount = (n) => {
+      if (cancelled) return;
+      if (n !== leadPoolCountRef.current) { leadPoolCountRef.current = n; setLeadPoolPendingCount(n); }
+    };
+    const fetchCount = async () => {
+      try {
+        const companyIds = [...new Set((authErpRoles || []).map((r) => r.company_id).filter(Boolean))];
+        if (!companyIds.length) { applyCount(0); return; }
+        const checks = await Promise.all(companyIds.map((cid) =>
+          supabase.rpc('has_menu_permission_in', { p_company_id: cid, p_menu_key: 'crm_lead_pool_approval', p_action: 'view' })
+        ));
+        const approvedIds = companyIds.filter((_, i) => checks[i].data === true);
+        if (!approvedIds.length) { applyCount(0); return; }
+        const { count, error } = await supabase.from('accounts')
+          .select('id', { count: 'exact', head: true })
+          .eq('pull_status', 'pending').in('company_id', approvedIds);
+        if (error) throw error;
+        applyCount(count || 0);
+      } catch (e) {
+        console.debug('[leadPoolBadge] count failed:', e?.message || e);
+        applyCount(0);
+      }
+    };
+    fetchCount();
+    const iv = setInterval(fetchCount, 60000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [profile?.id, authErpRoles]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
@@ -2655,6 +2708,7 @@ export default function StorbitManifest() {
           profile={profile}
           currentRoleLabel={currentRoleLabel}
           isSuperAdminUser={isSuperAdmin(authErpRoles)}
+          leadPoolPendingCount={leadPoolPendingCount}
         />
 
         {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
@@ -2680,6 +2734,7 @@ export default function StorbitManifest() {
             profile={profile}
             currentRoleLabel={currentRoleLabel}
             isSuperAdminUser={isSuperAdmin(authErpRoles)}
+            leadPoolPendingCount={leadPoolPendingCount}
           />
         </>
 

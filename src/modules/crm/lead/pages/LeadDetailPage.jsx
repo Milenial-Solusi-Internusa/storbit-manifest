@@ -36,6 +36,7 @@ import ContactModal from '../components/ContactModal';
 import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
+import ReleaseToPoolModal from '../components/ReleaseToPoolModal';
 import LeadStageBar from '../components/LeadStageBar';
 
 function fmtDate(iso) {
@@ -122,7 +123,7 @@ function OwnerLine({ id, name, canReassign, onReassign }) {
  * @param {(msg:string, type?:string)=>void} [showToast]
  */
 export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInquiry, onOpenQuotation, showToast, quickEditOnMount }) {
-  const { profile, erpRoles } = useAuth();
+  const { profile, erpRoles, hasMenuPermission } = useAuth();
 
   const [account, setAccount] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -142,6 +143,8 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const [reassignOpen, setReassignOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [poolHistory, setPoolHistory] = useState([]);
 
   const fetchAccount = useCallback(async () => {
     if (!id) return;
@@ -172,10 +175,32 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
       const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
       const map = {};
       (profs || []).forEach((p) => { map[p.id] = p.full_name; });
-      setActorMap(map);
+      setActorMap((prev) => ({ ...prev, ...map }));
     }
   }, [id, showToast]);
   useEffect(() => { Promise.resolve().then(fetchActivities); }, [fetchActivities]);
+
+  // Riwayat Lead Pool (irisan 9 Paket 2, Task 4.4.5) -- digabung ke timeline
+  // Activity tab, BUKAN tab tersendiri (mockup menunjukkan "Pooled"/
+  // "Unpooled" sebagai entri di dalam timeline Activity, lihat ACTIVITY_ICON
+  // `inbox` di bawah). actorMap DIGABUNG (bukan ditimpa) dengan yang dibangun
+  // fetchActivities di atas -- dua fetch independen, union id profil.
+  const fetchPoolHistory = useCallback(async () => {
+    if (!id) return;
+    const { data, error } = await supabase.from('account_pool_history')
+      .select('id, event_type, actor_id, previous_owner, new_owner, reason, occurred_at')
+      .eq('account_id', id).order('occurred_at', { ascending: false }).limit(200);
+    if (error) { console.error('[lead] pool history fetch failed:', error.message); return; }
+    setPoolHistory(data || []);
+    const ids = [...new Set((data || []).flatMap((h) => [h.actor_id, h.previous_owner, h.new_owner]).filter(Boolean))];
+    if (ids.length) {
+      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+      const map = {};
+      (profs || []).forEach((p) => { map[p.id] = p.full_name; });
+      setActorMap((prev) => ({ ...prev, ...map }));
+    }
+  }, [id]);
+  useEffect(() => { Promise.resolve().then(fetchPoolHistory); }, [fetchPoolHistory]);
 
   // Tab History (koreksi Den atas mockup 20): SELURUH inquiry akun ini,
   // bukan cuma yang terbaru -- `inquiries` dipakai HistoryTab, `latestInquiry`
@@ -221,6 +246,13 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const canMarkQualified = account && status === 'raw' && (isOwner || canManage);
   const canMarkLost = account && status !== 'lost' && (isOwner || canManage);
   const canArchive = !!canManage;
+  // Release to Pool (irisan 9 Paket 2, Task A.5) -- menu item tampil kalau
+  // pemilik ATAU pemegang crm_lead_pool_approval, DAN lead/mql, DAN belum
+  // di pool. Cek inquiry/quotation terbuka SENGAJA TIDAK direplikasi di sini
+  // (RPC lead_pool_release tetap penjaga utama -- pesan gagalnya tampil apa
+  // adanya lewat showToast kalau ada dokumen terbuka).
+  const canReleasePool = account && ['lead', 'mql'].includes(account.lifecycle_stage) && !account.is_in_lead_pool
+    && (isOwner || hasMenuPermission('crm_lead_pool_approval', 'view'));
   // "Lost at <tahap>" (mockup, LeadStageBar) diturunkan dari qualified_at --
   // TANPA kolom baru. Lead yang belum pernah qualified_at -> "Raw", sudah ->
   // "Qualified". Kasus lost SESUDAH Converted (sudah py inquiry) tak punya
@@ -309,8 +341,8 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
                   <SaveButton onSave={handleReactivate} label="Reactivate" savedLabel="Reactivated!"
                     onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
                 )
-                : onCreateInquiry && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
-              {(canMarkLost || canArchive) && (
+                : (!account.is_in_lead_pool && onCreateInquiry) && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
+              {(canMarkLost || canArchive || canReleasePool) && (
                 <>
                   <IconButton icon={<MoreVertical size={16} />} label="More actions" onClick={() => setMenuOpen((o) => !o)} />
                   {menuOpen && (
@@ -329,6 +361,12 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
                             Archive
                           </button>
                         )}
+                        {canReleasePool && (
+                          <button type="button" onClick={() => { setMenuOpen(false); setReleaseOpen(true); }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>
+                            Release to Pool
+                          </button>
+                        )}
                       </div>
                     </>
                   )}
@@ -344,6 +382,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
           <div style={{ display: 'flex', gap: SP.s3, alignItems: 'center', flexWrap: 'wrap' }}>
             {account.code && <DocNo style={{ fontWeight: 600 }}>{account.code}</DocNo>}
             {statusMeta && <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>}
+            {account.is_stale && <Badge tone="warn" title={`Not touched since ${fmtDate(account.stale_flagged_at)}`}>Stale</Badge>}
             <Badge tone="neutral">{entityCode}</Badge>
             <Badge tone="neutral">{SOURCE_LABELS[account.source] || account.source || '—'}</Badge>
           </div>
@@ -398,7 +437,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               <ContactsTab contacts={contacts} accountId={id} companyId={companyId} showToast={showToast} onChanged={fetchContacts} />
             )}
             {tab === 'activity' && (
-              <ActivityTab activities={activities} actorMap={actorMap} accountId={id} companyId={companyId}
+              <ActivityTab activities={activities} poolHistory={poolHistory} actorMap={actorMap} accountId={id} companyId={companyId}
                 profile={profile} showToast={showToast} onChanged={fetchActivities} />
             )}
             {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
@@ -421,6 +460,8 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
         onMarked={() => { setLostOpen(false); showToast?.('Lead marked as Lost'); fetchAccount(); fetchActivities(); }} />
       <ArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onArchived={() => { setArchiveOpen(false); showToast?.('Lead archived'); onBack?.(); }} />
+      <ReleaseToPoolModal open={releaseOpen} onClose={() => setReleaseOpen(false)} account={account} showToast={showToast}
+        onReleased={() => { setReleaseOpen(false); showToast?.('Lead released to the pool'); fetchAccount(); fetchPoolHistory(); }} />
       <RequestNewOptionModal
         open={!!requestOptionFor} onClose={() => setRequestOptionFor(null)}
         listKey={requestOptionFor === 'industry' ? 'lead_industry' : 'lead_category'}
@@ -725,6 +766,22 @@ function ContactsTab({ contacts, accountId, companyId, showToast, onChanged }) {
 const ACTIVITY_ICON = {
   note: FileText, call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: Calendar, owner_change: Users, status_change: RefreshCw, lead_lost: Inbox,
+  // Riwayat Lead Pool (account_pool_history, irisan 9 Paket 2) digabung ke
+  // timeline ini sebagai pseudo-activity `pool_<event_type>` (lihat
+  // ActivityTab) -- prefix mencegah bentrok dgn tipe `activities` asli.
+  // Pemetaan ikon: enter_pool/release/auto_release = masuk-pool (inbox,
+  // mockup "Pooled"); approve_pull/assign = keluar-pool berpemilik (users,
+  // mockup "Unpooled"); request_pull/reject_pull = siklus tarikan (tak ada
+  // acuan mockup -- dipilih reuse status_change); owner_cleared = pemilik
+  // dikosongkan tanpa masuk pool (users, sejenis owner_change).
+  pool_enter_pool: Inbox, pool_release: Inbox, pool_auto_release: Inbox,
+  pool_approve_pull: Users, pool_assign: Users, pool_owner_cleared: Users,
+  pool_request_pull: RefreshCw, pool_reject_pull: RefreshCw,
+};
+const POOL_EVENT_LABEL = {
+  enter_pool: 'Pooled', release: 'Pooled', auto_release: 'Removed from Pool',
+  approve_pull: 'Unpooled', assign: 'Unpooled',
+  request_pull: 'Pull Requested', reject_pull: 'Pull Rejected', owner_cleared: 'Owner Cleared',
 };
 // Label timeline -- mockup (18-detail-activity.png) memakai judul dua-kata
 // ("Scheduled Follow Up", "Status Change", "Owner Change") yang beda dari
@@ -732,6 +789,7 @@ const ACTIVITY_ICON = {
 // SUDAH selesai (status 'done') tetap "Follow-up" -- "Scheduled" cuma benar
 // selama masih 'todo'.
 function activityLabel(a) {
+  if (a.type?.startsWith('pool_')) return POOL_EVENT_LABEL[a.type.slice(5)] || 'Pool Activity';
   if (a.type === 'followup') return a.status === 'todo' ? 'Scheduled Follow Up' : 'Follow-up';
   if (a.type === 'status_change') return 'Status Change';
   if (a.type === 'owner_change') return 'Owner Change';
@@ -803,11 +861,45 @@ function TimelineRow({ a, actorMap, isLast }) {
   );
 }
 
-function ActivityTab({ activities, actorMap, accountId, companyId, profile, showToast, onChanged }) {
+// Notes pseudo-activity riwayat pool, lihat ACTIVITY_ICON/POOL_EVENT_LABEL.
+function poolHistoryNotes(h, actorMap) {
+  const who = (uid) => (uid ? actorMap[uid] : null);
+  switch (h.event_type) {
+    case 'enter_pool':
+    case 'release':
+      return h.reason || 'Released to the Lead Pool.';
+    case 'auto_release':
+      return h.reason ? `Removed from the Lead Pool. ${h.reason}.` : 'Removed from the Lead Pool.';
+    case 'request_pull':
+      return h.reason ? `Pull requested. ${h.reason}` : 'Pull requested.';
+    case 'reject_pull':
+      return h.reason ? `Pull request rejected. ${h.reason}` : 'Pull request rejected.';
+    case 'approve_pull':
+    case 'assign':
+      return who(h.new_owner) ? `Assigned to ${who(h.new_owner)}.` : 'Assigned from the Lead Pool.';
+    case 'owner_cleared':
+      return h.reason || 'Owner cleared.';
+    default:
+      return h.reason || '';
+  }
+}
+
+function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged }) {
   const [composer, setComposer] = useState(null); // null | 'note' | 'followup'
   const [text, setText] = useState('');
   const [followDate, setFollowDate] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Timeline gabungan activities + account_pool_history, terbaru dulu --
+  // mockup menampilkan "Pooled"/"Unpooled" sebagai entri DI DALAM timeline
+  // ini, bukan tab tersendiri (lihat ACTIVITY_ICON).
+  const timeline = [
+    ...activities,
+    ...poolHistory.map((h) => ({
+      id: `pool-${h.id}`, type: `pool_${h.event_type}`,
+      notes: poolHistoryNotes(h, actorMap), created_at: h.occurred_at, created_by: h.actor_id,
+    })),
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   async function submitNote() {
     if (!text.trim()) return;
@@ -853,12 +945,12 @@ function ActivityTab({ activities, actorMap, accountId, companyId, profile, show
         </div>
       )}
 
-      {!activities.length ? (
+      {!timeline.length ? (
         <EmptyState icon="inbox" title="No activity yet" sub="Calls, visits, notes, and status changes will appear here." />
       ) : (
         <div>
-          {activities.map((a, i) => (
-            <TimelineRow key={a.id} a={a} actorMap={actorMap} isLast={i === activities.length - 1} />
+          {timeline.map((a, i) => (
+            <TimelineRow key={a.id} a={a} actorMap={actorMap} isLast={i === timeline.length - 1} />
           ))}
         </div>
       )}

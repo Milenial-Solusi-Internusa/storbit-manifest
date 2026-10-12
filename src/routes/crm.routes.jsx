@@ -72,8 +72,11 @@ const CustomerDetailPage     = lazy(() => import('@/modules/crm/CustomerDetailPa
 const ActivitiesPage         = lazy(() => import('@/modules/crm/ActivitiesPage'));
 const ActivityLogPage        = lazy(() => import('@/modules/crm/ActivityLogPage'));
 const RiwayatVisitPage       = lazy(() => import('@/modules/crm/RiwayatVisitPage'));
-const LeadPoolPage           = lazy(() => import('@/modules/crm/LeadPoolPage'));
-const LeadPoolApprovalPage   = lazy(() => import('@/modules/crm/LeadPoolApprovalPage'));
+// LeadPoolPage.jsx/LeadPoolApprovalPage.jsx DIGANTIKAN LeadAssignmentPage
+// (Batch DS 3 Lead Management, irisan 9 Paket 2) dan DIHAPUS (nol importir
+// tersisa). Tiga tab (Leads/Free Agent/Pull Approvals) satu halaman --
+// lihat LeadAssignmentRoute di bawah.
+const LeadAssignmentPage     = lazy(() => import('@/modules/crm/lead/pages/LeadAssignmentPage'));
 const CRMReportPage          = lazy(() => import('@/modules/crm/CRMReportPage'));
 const RateListPage           = lazy(() => import('@/modules/crm/RateListPage'));
 const PRFFormPage            = lazy(() => import('@/modules/procurement/PRFFormPage'));
@@ -263,28 +266,38 @@ function LeadNewRedirect() {
   return <Navigate to={P_LEAD} replace state={{ openCapture: true, captureName: draftName, from: sp.get('from') }} />;
 }
 
-function LeadPoolRoute() {
+// LeadAssignmentPage (irisan 9 Paket 2) -- SATU halaman tiga tab menggantikan
+// LeadPoolPage + LeadPoolApprovalPage. `initialView` dipakai hanya oleh rute
+// /approval (bookmark lama) supaya mendarat langsung di tab Pull Approvals;
+// rute dasar selalu mulai di tab Leads. `canApprove` dari hasMenuPermission
+// (route wrapper, pola sama onOpenApprovals lama) -- halaman sendiri TIDAK
+// memanggil useAppShell, menerima boolean jadi.
+function LeadAssignmentRoute({ initialView = 'pool' }) {
   const { showToast, hasMenuPermission } = useAppShell();
   const navigate = useNavigate();
+  const onSelectAccount = useCallback((a) => {
+    navigate(`${a.lifecycle_stage === 'free_agent' ? P_CUSTOMER : P_LEAD}/${a.id}`);
+  }, [navigate]);
   return (
-    <div>
-      <Boundary title="Lead Pool temporarily unavailable">
-        <LeadPoolPage
-          showToast={showToast}
-          onOpenApprovals={hasMenuPermission('crm_lead_pool_approval', 'view')
-            ? () => navigate(MENU_PATHS['crm-lead-pool-approval'])
-            : undefined}
-        />
-      </Boundary>
-    </div>
+    <Boundary title="Lead Assignment / Claim temporarily unavailable">
+      <LeadAssignmentPage
+        showToast={showToast}
+        canApprove={hasMenuPermission('crm_lead_pool_approval', 'view')}
+        initialView={initialView}
+        onSelectAccount={onSelectAccount}
+      />
+    </Boundary>
   );
 }
 
-function LeadPoolApprovalRoute() {
-  const { showToast } = useAppShell();
+// Bookmark lama /crm/lead/assignment/approval -- gate DIREPLIKASI apa
+// adanya (Gated menuId, pola sama LeadPoolApprovalRoute lama) supaya user
+// yang kehilangan izin crm_lead_pool_approval tetap ditolak di sini, bukan
+// diam-diam mendarat di tab Leads.
+function LeadAssignmentApprovalRoute() {
   return (
     <Gated menuId="crm-lead-pool-approval" onGoHome={false}>
-      <Boundary title="Approval Lead Pool temporarily unavailable"><LeadPoolApprovalPage showToast={showToast} /></Boundary>
+      <LeadAssignmentRoute initialView="approvals" />
     </Gated>
   );
 }
@@ -668,8 +681,8 @@ export const crmRoutes = [
       { path: `${P_LEAD}/new`,                      handle: { menuId: 'crm-prospects' },          element: <LeadNewRedirect /> },
       { path: `${P_LEAD}/:id`,                      handle: { menuId: 'crm-prospects' },          element: <LeadDetailRoute /> },
       { path: MENU_PATHS['crm-lead-qualification'], handle: { menuId: 'crm-lead-qualification' }, element: <LeadQualificationRoute /> },
-      { path: MENU_PATHS['crm-lead-pool'],          handle: { menuId: 'crm-lead-pool' },          element: <LeadPoolRoute /> },
-      { path: MENU_PATHS['crm-lead-pool-approval'], handle: { menuId: 'crm-lead-pool-approval' }, element: <LeadPoolApprovalRoute /> },
+      { path: MENU_PATHS['crm-lead-pool'],          handle: { menuId: 'crm-lead-pool' },          element: <LeadAssignmentRoute /> },
+      { path: MENU_PATHS['crm-lead-pool-approval'], handle: { menuId: 'crm-lead-pool-approval' }, element: <LeadAssignmentApprovalRoute /> },
 
       { path: P_INQUIRY,                            handle: { menuId: 'crm-inquiry' },            element: <InquiryListRoute /> },
       { path: `${P_INQUIRY}/new`,                   handle: { menuId: 'crm-inquiry' },            element: <InquiryNewRoute /> },

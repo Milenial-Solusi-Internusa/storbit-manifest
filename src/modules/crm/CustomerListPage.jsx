@@ -499,10 +499,20 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               </select>
             </FG>
             <FG label="Assigned Salesperson">
-              <select value={form.assigned_to} onChange={set('assigned_to')} style={SEL_STYLE}>
+              {/* Dinonaktifkan untuk akun di Lead Pool (irisan 9 Paket 2,
+                  Task C.5) -- menulis assigned_to langsung dari sini akan
+                  meninggalkan is_in_lead_pool/pull_* tak konsisten (sama
+                  dengan bug yang ditutup di ReassignModal). Pakai halaman
+                  Lead Assignment / Claim (lead_pool_assign), bukan di sini. */}
+              <select value={form.assigned_to} onChange={set('assigned_to')} style={SEL_STYLE} disabled={!!initial?.is_in_lead_pool}>
                 <option value="">— Select —</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
+              {initial?.is_in_lead_pool && (
+                <div style={{ fontSize: 11.5, color: D.inkFaint, marginTop: 4 }}>
+                  This account is in the Lead Pool — assign it from the Lead Assignment / Claim page.
+                </div>
+              )}
             </FG>
             <FG label="Sumber Data" full>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13.5, color: D.ink }}>
