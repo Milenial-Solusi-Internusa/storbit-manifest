@@ -74,6 +74,23 @@ function OwnerField({ id, name, canReassign, onReassign }) {
   );
 }
 
+// Bagian polos dalam SATU Card (OverviewTab: Company/Commercial/Notes) --
+// BUKAN tiga <Card title=...> bersarang. Mockup (16-detail-overview-sales.png)
+// menunjukkan ketiganya sebagai judul tebal + tombol Edit TANPA pita warna
+// header, dipisah garis horizontal tipis -- ketiganya hidup di dalam SATU
+// bingkai kartu luar (dibungkus LeadDetailPage, lihat komentar di sana).
+function SectionBlock({ title, action, children, first }) {
+  return (
+    <div style={{ paddingTop: first ? 0 : SP.s5, marginTop: first ? 0 : SP.s5, borderTop: first ? 'none' : `1px solid ${LINE_SOFT}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SP.s4 }}>
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: INK }}>{title}</div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: SP.s4 };
 const grid3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: SP.s4 };
 
@@ -493,8 +510,8 @@ function OverviewTab({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s5 }}>
-      <Card title="Company" right={!companyEdit && <OutlineBtn size="sm" onClick={startCompanyEdit}>Edit</OutlineBtn>}>
+    <div>
+      <SectionBlock first title="Company" action={!companyEdit && <OutlineBtn size="sm" onClick={startCompanyEdit}>Edit</OutlineBtn>}>
         {companyEdit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <div style={grid3}>
@@ -545,9 +562,9 @@ function OverviewTab({
             </div>
           </div>
         )}
-      </Card>
+      </SectionBlock>
 
-      <Card title="Commercial" right={!commercialEdit && <OutlineBtn size="sm" onClick={startCommercialEdit}>Edit</OutlineBtn>}>
+      <SectionBlock title="Commercial" action={!commercialEdit && <OutlineBtn size="sm" onClick={startCommercialEdit}>Edit</OutlineBtn>}>
         {commercialEdit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <div style={grid3}>
@@ -570,9 +587,9 @@ function OverviewTab({
             <ViewField label="Expected Closing Date" value={fmtDate(account.estimated_closing_date)} />
           </div>
         )}
-      </Card>
+      </SectionBlock>
 
-      <Card title="Notes" right={!notesEdit && <OutlineBtn size="sm" onClick={startNotesEdit}>Edit</OutlineBtn>}>
+      <SectionBlock title="Notes" action={!notesEdit && <OutlineBtn size="sm" onClick={startNotesEdit}>Edit</OutlineBtn>}>
         {notesEdit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <Textarea label="Lead Description" value={notesDraft.description} onChange={(v) => setNotesDraft((d) => ({ ...d, description: v }))} rows={3} />
@@ -597,7 +614,7 @@ function OverviewTab({
             {isLost && account.competitor_name && <ViewField label="Competitor" value={account.competitor_name} full />}
           </div>
         )}
-      </Card>
+      </SectionBlock>
     </div>
   );
 }
@@ -931,12 +948,8 @@ function BantTab({ account, id, setAccount, showToast }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s5 }}>
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SP.s2 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: INK }}>BANT Score</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 700, color: INK }}>{score}/{BANT_MAX_SCORE}</div>
-        </div>
+    <div>
+      <SectionBlock first title="BANT Score" action={<span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 700, color: INK }}>{score}/{BANT_MAX_SCORE}</span>}>
         <span style={{ display: 'block', height: 6, borderRadius: 999, background: HEAD_BG, overflow: 'hidden', marginBottom: SP.s4 }}>
           <span style={{ display: 'block', height: '100%', width: `${(score / BANT_MAX_SCORE) * 100}%`, background: INK_SOFT, borderRadius: 999 }} />
         </span>
@@ -962,9 +975,9 @@ function BantTab({ account, id, setAccount, showToast }) {
             </div>
           ))}
         </div>
-      </div>
+      </SectionBlock>
 
-      <Card title="Qualification Data" right={!qualEdit && <OutlineBtn size="sm" onClick={startQualEdit}>Edit</OutlineBtn>}>
+      <SectionBlock title="Qualification Data" action={!qualEdit && <OutlineBtn size="sm" onClick={startQualEdit}>Edit</OutlineBtn>}>
         {qualEdit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <div style={grid3}>
@@ -983,7 +996,7 @@ function BantTab({ account, id, setAccount, showToast }) {
             {QUALIFICATION_FIELDS.map((f) => <ViewField key={f.key} label={f.label} value={account[f.key]} />)}
           </div>
         )}
-      </Card>
+      </SectionBlock>
     </div>
   );
 }
