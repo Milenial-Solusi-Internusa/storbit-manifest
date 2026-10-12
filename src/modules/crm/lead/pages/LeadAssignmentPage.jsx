@@ -187,7 +187,8 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           onApprove={async (a) => {
             const { error } = await supabase.rpc('lead_pool_approve_pull', { p_account_id: a.id });
             if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
-            showToast?.(`"${a.name}" assigned`, 'success');
+            window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
+            showToast?.(`Pull request for "${a.name}" approved`, 'success');
             refetch();
           }}
         />
@@ -196,9 +197,9 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
       <RequestPullModal open={!!pullTarget} onClose={() => setPullTarget(null)} account={pullTarget} showToast={showToast}
         onRequested={() => { setPullTarget(null); showToast?.('Pull request submitted'); refetch(); }} />
       <RejectPullModal open={!!rejectTarget} onClose={() => setRejectTarget(null)} account={rejectTarget} showToast={showToast}
-        onRejected={() => { setRejectTarget(null); showToast?.('Request rejected'); refetch(); }} />
+        onRejected={() => { showToast?.(`Pull request for "${rejectTarget?.name}" rejected`); setRejectTarget(null); refetch(); }} />
       <AssignToSalesModal open={!!assignTarget} onClose={() => setAssignTarget(null)} account={assignTarget} showToast={showToast}
-        onAssigned={() => { setAssignTarget(null); showToast?.('Assigned'); refetch(); }} />
+        onAssigned={() => { showToast?.(`"${assignTarget?.name}" assigned to sales`); setAssignTarget(null); refetch(); }} />
     </div>
   );
 }
@@ -328,11 +329,9 @@ function ApprovalsTable({ rows, loading, profMap, profile, onSelectAccount, onAp
                 const tone = r.pull_requested_by ? avatarToneFor(r.pull_requested_by) : null;
                 return (
                   <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' }}>
-                    <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                      {onSelectAccount ? <a href="#" onClick={(e) => { e.preventDefault(); onSelectAccount(r); }} style={{ color: INK, textDecoration: 'underline' }}>{r.code || '—'}</a> : (r.code || '—')}
-                    </td>
+                    <td style={{ ...td, fontFamily: FONT_MONO }}>{r.code || '—'}</td>
                     <td style={td}><Badge tone="neutral">{r.lifecycle_stage === 'free_agent' ? 'Customer' : 'Lead'}</Badge></td>
-                    <td style={{ ...td, fontWeight: 600 }}>{r.name}</td>
+                    <td style={{ ...td, fontWeight: 600 }}><CompanyLink row={r} onSelectAccount={onSelectAccount} /></td>
                     <td style={td}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {tone && (

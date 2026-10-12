@@ -33,6 +33,7 @@ export default function RejectPullModal({ open, onClose, account, showToast, onR
     const { error } = await supabase.rpc('lead_pool_reject_pull', { p_account_id: account.id, p_reason: reason.trim() });
     setSaving(false);
     if (error) { showToast?.('Failed to reject: ' + error.message, 'error'); return; }
+    window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
     onRejected?.();
   }
 

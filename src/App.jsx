@@ -1966,6 +1966,15 @@ export default function StorbitManifest() {
   const leadPoolCountRef = useRef(null);
   useEffect(() => {
     if (!profile?.id) return undefined;
+    // Pra-gerbang murah (FE, company-blind) -- "hanya untuk pemegang
+    // crm_lead_pool_approval" (irisan berikutnya, Task 1c): kalau user SAMA
+    // SEKALI tak pegang izin ini di mana pun, RPC has_menu_permission_in
+    // per-entitas di bawah tak akan pernah menjawab true -- berhenti di
+    // sini, jangan pasang polling/listener yang pasti akan hasilnya 0.
+    if (!hasMenuPermission('crm_lead_pool_approval', 'view')) {
+      if (leadPoolCountRef.current !== 0) { leadPoolCountRef.current = 0; setLeadPoolPendingCount(0); }
+      return undefined;
+    }
     let cancelled = false;
     const applyCount = (n) => {
       if (cancelled) return;
@@ -1992,8 +2001,24 @@ export default function StorbitManifest() {
     };
     fetchCount();
     const iv = setInterval(fetchCount, 60000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [profile?.id, authErpRoles]);
+    // Hitung ulang SEGERA sesudah aksi pool (request/approve/reject/assign/
+    // release/reassign akun pool lewat ReassignModal) -- pemanggil (modal/
+    // halaman tempat RPC-nya berhasil) memancarkan CustomEvent ini lewat
+    // window, bukan prop-drilling refetch lintas banyak file yang tak
+    // bertetangga (LeadAssignmentPage, LeadDetailPage, ReassignModal).
+    const onPoolChanged = () => fetchCount();
+    window.addEventListener('nexus:lead-pool-changed', onPoolChanged);
+    // Tab balik aktif -- angka bisa basi kalau user sempat approve/reject
+    // di tab Nexus LAIN selagi tab ini di latar belakang.
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchCount(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      window.removeEventListener('nexus:lead-pool-changed', onPoolChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [profile?.id, authErpRoles, hasMenuPermission]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.

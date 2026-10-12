@@ -37,6 +37,7 @@ export default function ReleaseToPoolModal({ open, onClose, account, showToast, 
     const { error } = await supabase.rpc('lead_pool_release', { p_account_id: account.id, p_reason: reason.trim() });
     setSaving(false);
     if (error) { showToast?.('Failed to release: ' + error.message, 'error'); return; }
+    window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
     onReleased?.();
   }
 

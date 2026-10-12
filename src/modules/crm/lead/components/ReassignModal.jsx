@@ -136,11 +136,15 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     // crm_lead_pool_approval di server, lebih sempit dari gate tombol
     // (isManagerOrAbove) pemanggil; pesan gagal RPC ditampilkan apa
     // adanya, bukan diseragamkan.
+    let poolOkCount = 0;
     for (const a of poolAccounts) {
       const { error } = await supabase.rpc('lead_pool_assign', { p_account_id: a.id, p_user_id: newOwner });
       if (error) failures.push({ name: a.name, message: error.message });
-      else okCount++;
+      else { okCount++; poolOkCount++; }
     }
+    // Satu dispatch utk SELURUH baris pool baris ini (bukan per baris) --
+    // badge sidebar cukup tahu "sesuatu berubah", bukan apa/berapa banyak.
+    if (poolOkCount > 0) window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
 
     if (failures.length) {
       const detail = failures.map((f) => `${f.name}: ${f.message}`).join(' | ');

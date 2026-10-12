@@ -33,6 +33,9 @@ export default function RequestPullModal({ open, onClose, account, showToast, on
     if (!account || !valid) return { error: new Error(`Reason must be at least ${MIN_LEN} characters`) };
     const { error } = await supabase.rpc('lead_pool_request_pull', { p_account_id: account.id, p_reason: reason.trim() });
     if (error) return { error };
+    // Beri tahu badge sidebar (App.jsx) untuk hitung ulang segera -- irisan
+    // berikutnya, Task 1a. Nol listener = no-op, aman dipanggil di mana pun.
+    window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
     onRequested?.();
     return undefined;
   }
