@@ -2350,13 +2350,18 @@ export default function StorbitManifest() {
         });
       return;
     }
-    const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
-               : n.reference_type === 'activity'     ? 'crm-calls'
-               : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
+    const dest = n.reference_type === 'hrga_request'     ? 'hrga-semua-request'
+               : n.reference_type === 'activity'         ? 'crm-calls'
+               : n.reference_type === 'lead_pool'         ? 'crm-lead-pool'
                // 'account' = notifikasi 'crm.lead_idle' Edge Function aging-pipeline
                // (Prospect Masuk Lead Pool) — tujuan sama dengan 'lead_pool'.
-               : n.reference_type === 'account'       ? 'crm-lead-pool'
-               : n.reference_type === 'mom'           ? 'reporting-mom'
+               : n.reference_type === 'account'           ? 'crm-lead-pool'
+               : n.reference_type === 'mom'               ? 'reporting-mom'
+               // Ringkasan sweep lead_pool_sweep_deactivated_owner (migrasi
+               // 20261012000008) — bagian owner_cleared, dipecah server-side
+               // berdasarkan ada/tiadanya akun lifecycle_stage='customer'.
+               : n.reference_type === 'unowned_customers' ? 'crm-customers'
+               : n.reference_type === 'unowned_leads'     ? 'crm-prospects'
                : null;
     if (dest) navigateTo(dest);
   }, [navigate, navigateTo, showToast]);

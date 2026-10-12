@@ -32,10 +32,20 @@
 //      expired remains valid until its own `exp` (TD-301 PLAN Q5, accepted
 //      limitation -- closed at the data layer by the companion DB migration,
 //      not by this function).
+//   4. rpc('lead_pool_sweep_deactivated_owner', { p_user_id }) -- migrasi
+//      20261012000008. Placed LAST (after 1-3, not between): the RPC's own
+//      summary notification uses lead_pool_approvers(company_id), which
+//      filters profiles.active = true -- running after step 1 keeps the
+//      just-deactivated user from getting notified about their own sweep if
+//      they also hold crm_lead_pool_approval. Steps 2/3 neither touch nor
+//      are read by the RPC, so their order relative to it does not matter.
+//      Best-effort: a failed RPC call is caught and recorded in
+//      steps.lead_pool, never thrown -- it does not undo steps 1-3.
 // Flow (reactivate, active=true):
 //   1. UPDATE profiles SET active = true
 //   2. auth.admin.updateUserById(user_id, { ban_duration: 'none' })
-//   (user_roles is intentionally left empty -- see above)
+//   (user_roles is intentionally left empty -- see above; the lead_pool
+//   sweep is not called either -- reactivation never returns any account)
 //
 // Each step's own success/failure is reported back distinctly in the response
 // so a partial failure is never silently swallowed (the exact "jendela gagal
@@ -147,11 +157,43 @@ serve(async (req) => {
     steps.auth_ban = banErr ? `GAGAL: ${banErr.message}` : 'ok'
     if (banErr) console.error('[set-user-status] auth ban/unban failed:', banErr.message)
 
+    // 4d. Lead Pool sweep -- best-effort, hanya saat deactivate (migrasi
+    // 20261012000008). Dipanggil SESUDAH 4a/4b/4c, bukan disisipkan di
+    // antaranya: lead_pool_approvers(company_id) di dalam RPC ini menyaring
+    // profiles.active = true, jadi urutan ini menjamin user yang BARU
+    // dinonaktifkan di 4a tidak ikut menerima notifikasi soal sweep-nya
+    // sendiri kalau dia juga pemegang izin crm_lead_pool_approval. user_roles
+    // (4b) dan Auth ban (4c) tidak disentuh maupun dibaca oleh RPC ini --
+    // urutannya terhadap keduanya tidak mempengaruhi benar/salahnya, jadi
+    // diletakkan paling akhir supaya blok 4a/4b/4c (TD-301) tetap utuh.
+    // Kegagalan RPC ini TIDAK menggagalkan penonaktifan -- ditangkap di sini,
+    // direkam di steps.lead_pool, fungsi tetap lanjut ke response.
+    if (!active) {
+      const { data: sweepRows, error: sweepErr } = await adminClient
+        .rpc('lead_pool_sweep_deactivated_owner', { p_user_id: user_id })
+
+      if (sweepErr) {
+        steps.lead_pool = `GAGAL: ${sweepErr.message}`
+        console.error('[set-user-status] lead_pool sweep failed:', sweepErr.message)
+      } else {
+        const rows = (sweepRows ?? []) as { account_id: string; action: string }[]
+        const pooled = rows.filter((r) => r.action === 'pooled').length
+        const cleared = rows.filter((r) => r.action === 'owner_cleared').length
+        steps.lead_pool = `ok (pooled: ${pooled}, owner_cleared: ${cleared})`
+      }
+    } else {
+      // Jalur reactivate TIDAK memanggil sweep dan TIDAK mengembalikan akun
+      // apa pun -- simetris dengan 4b (user_roles tidak di-restore).
+      steps.lead_pool = 'tidak dijalankan (hanya saat deactivate)'
+    }
+
     // ── 5. Report precisely -- never a bare {success:true} if a sub-step
     //      failed. profiles.active (4a) already committed at this point; a
     //      caller reading `partial: true` must re-run or escalate manually,
     //      not assume the deactivation is complete.
-    const partial = steps.roles?.toString().startsWith('GAGAL') || steps.auth_ban?.toString().startsWith('GAGAL')
+    const partial = steps.roles?.toString().startsWith('GAGAL')
+      || steps.auth_ban?.toString().startsWith('GAGAL')
+      || steps.lead_pool?.toString().startsWith('GAGAL')
 
     return json({ success: true, partial: !!partial, steps }, 200)
 
