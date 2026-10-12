@@ -19,7 +19,7 @@ import {
   FloatingInput, FloatingSelect, MasterSelect, Textarea, IconButton,
 } from '../../../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, FONT_BODY, FONT_HEAD, FONT_MONO,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, SEMANTIC, FONT_BODY, FONT_HEAD, FONT_MONO,
   RADIUS, SP, fmtRp, avatarToneFor,
 } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
@@ -682,10 +682,81 @@ function ContactsTab({ contacts, accountId, companyId, showToast, onChanged }) {
    ========================================================================= */
 const ACTIVITY_ICON = {
   note: FileText, call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
-  email: Mail, followup: Calendar, owner_change: RefreshCw, status_change: RefreshCw, lead_lost: Inbox,
+  email: Mail, followup: Calendar, owner_change: Users, status_change: RefreshCw, lead_lost: Inbox,
 };
-function activityLabel(type) {
-  return ACTIVITY_TYPE_LABEL[type] || (type ? type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ') : 'Activity');
+// Label timeline -- mockup (18-detail-activity.png) memakai judul dua-kata
+// ("Scheduled Follow Up", "Status Change", "Owner Change") yang beda dari
+// ACTIVITY_TYPE_LABEL (dipakai komposer/dropdown, satu kata). Followup yang
+// SUDAH selesai (status 'done') tetap "Follow-up" -- "Scheduled" cuma benar
+// selama masih 'todo'.
+function activityLabel(a) {
+  if (a.type === 'followup') return a.status === 'todo' ? 'Scheduled Follow Up' : 'Follow-up';
+  if (a.type === 'status_change') return 'Status Change';
+  if (a.type === 'owner_change') return 'Owner Change';
+  if (a.type === 'lead_lost') return 'Lead Lost';
+  return ACTIVITY_TYPE_LABEL[a.type] || (a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1).replace(/_/g, ' ') : 'Activity');
+}
+
+// Baris timeline -- mockup 18-detail-activity.png: spine vertikal (garis
+// LINE menghubungkan lingkaran ikon), entri "Scheduled Follow Up" yang
+// belum selesai mendapat bingkai + badge "Upcoming" (SEMANTIC.warn, satu-
+// satunya status siap pakai yang cocok -- mockup tak membedakan
+// upcoming/overdue). Link "Details" (mockup) membuka panel inline berisi
+// outcome/next_action -- field yang SUDAH ADA di kolom `activities` tapi
+// sebelumnya tersembunyi oleh rantai fallback `notes || outcome ||
+// next_action` (kalau `notes` terisi, dua field lain tak pernah terlihat).
+// Chip "From visit report" DI mockup SENGAJA tidak dibangun -- `activities`
+// tak punya kolom penaut balik ke sumber (mis. tabel riwayat visit),
+// menambahkannya di sini berarti mengarang data yang tak ada -- lihat
+// laporan akhir.
+function TimelineRow({ a, actorMap, isLast }) {
+  const [open, setOpen] = useState(false);
+  const Icon = ACTIVITY_ICON[a.type] || FileText;
+  const upcoming = a.type === 'followup' && a.status === 'todo';
+  const hasDetails = !!((a.notes && (a.outcome || a.next_action)) || (!a.notes && a.outcome && a.next_action));
+  const metaWhen = a.type === 'followup' && a.scheduled_for
+    ? `${fmtDate(a.scheduled_for)}${a.activity_time ? `, ${a.activity_time}` : ''}`
+    : fmtDateTime(a.created_at);
+  const actorName = a.created_by && actorMap[a.created_by] ? actorMap[a.created_by] : null;
+  return (
+    <div style={{ display: 'flex', gap: SP.s3 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 28px' }}>
+        <span style={{
+          width: 28, height: 28, borderRadius: 999, flex: '0 0 28px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: upcoming ? SEMANTIC.warn.bg : HEAD_BG, border: `1px solid ${upcoming ? SEMANTIC.warn.bd : LINE}`,
+        }}>
+          <Icon size={13} color={upcoming ? SEMANTIC.warn.fg : INK_SOFT} />
+        </span>
+        {!isLast && <span style={{ width: 1, flex: 1, background: LINE, marginTop: 2 }} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, paddingBottom: SP.s4 }}>
+        <div style={{
+          ...(upcoming ? { border: `1px solid ${SEMANTIC.warn.bd}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD } : {}),
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{activityLabel(a)}</span>
+            {upcoming && <Badge tone="warn">Upcoming</Badge>}
+            <span style={{ fontSize: 12, color: INK_FAINT, fontFamily: FONT_BODY }}>
+              {metaWhen}{actorName ? `, ${a.type === 'followup' && a.status === 'todo' ? `scheduled by ${actorName}` : actorName}` : ''}
+            </span>
+            {hasDetails && (
+              <button type="button" onClick={() => setOpen((o) => !o)}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>
+                {open ? 'Hide' : 'Details'}
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY, marginTop: 2 }}>{a.notes || a.outcome || a.next_action || '—'}</div>
+          {open && hasDetails && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${LINE_SOFT}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {a.outcome && <div style={{ fontSize: 12.5, color: INK_SOFT, fontFamily: FONT_BODY }}><strong style={{ color: INK }}>Outcome:</strong> {a.outcome}</div>}
+              {a.next_action && <div style={{ fontSize: 12.5, color: INK_SOFT, fontFamily: FONT_BODY }}><strong style={{ color: INK }}>Next action:</strong> {a.next_action}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ActivityTab({ activities, actorMap, accountId, companyId, profile, showToast, onChanged }) {
@@ -741,22 +812,10 @@ function ActivityTab({ activities, actorMap, accountId, companyId, profile, show
       {!activities.length ? (
         <EmptyState icon="inbox" title="No activity yet" sub="Calls, visits, notes, and status changes will appear here." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
-          {activities.map((a) => {
-            const Icon = ACTIVITY_ICON[a.type] || FileText;
-            return (
-              <div key={a.id} style={{ display: 'flex', gap: SP.s3, border: `1px solid ${LINE_SOFT}`, borderRadius: RADIUS.md, padding: '12px 14px', background: CARD }}>
-                <Icon size={16} color={INK_SOFT} style={{ marginTop: 2, flex: '0 0 auto' }} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{activityLabel(a.type)}</span>
-                    <span style={{ fontSize: 12, color: INK_FAINT, fontFamily: FONT_BODY }}>{fmtDateTime(a.created_at)}{a.created_by && actorMap[a.created_by] ? `, ${actorMap[a.created_by]}` : ''}</span>
-                  </div>
-                  <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY, marginTop: 2 }}>{a.notes || a.outcome || a.next_action || '—'}</div>
-                </div>
-              </div>
-            );
-          })}
+        <div>
+          {activities.map((a, i) => (
+            <TimelineRow key={a.id} a={a} actorMap={actorMap} isLast={i === activities.length - 1} />
+          ))}
         </div>
       )}
     </div>

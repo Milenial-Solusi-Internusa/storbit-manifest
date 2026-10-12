@@ -20,7 +20,7 @@
 // LeadPoolPage.jsx/LeadPoolApprovalPage.jsx notifySales/notifyManagers.
 import { useState } from 'react';
 import { Modal, FloatingInput, FloatingSelect, Textarea, SaveButton, OutlineBtn } from '../../../../kit';
-import { INK, INK_SOFT, FONT_BODY, SP } from '../../../../kit/tokens';
+import { INK, INK_SOFT, FONT_BODY, FONT_HEAD, SP, avatarToneFor } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { getTodayWIB } from '../../../../lib/dateUtils';
@@ -117,15 +117,28 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>
             {bulk ? `${accounts.length} Leads Selected` : 'Current Owner'}
           </div>
-          <div style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>
-            {bulk ? accounts.map((a) => a.name).join(', ') : (accounts[0].assigned_profile?.full_name || 'Unassigned')}
-          </div>
+          {bulk ? (
+            <div style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{accounts.map((a) => a.name).join(', ')}</div>
+          ) : (() => {
+            const name = accounts[0].assigned_profile?.full_name;
+            const tone = name ? avatarToneFor(accounts[0].assigned_to) : null;
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {name && (
+                  <span style={{ width: 22, height: 22, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>
+                    {name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+                  </span>
+                )}
+                <span style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{name || 'Unassigned'}</span>
+              </div>
+            );
+          })()}
         </div>
 
         <FloatingSelect label="New Owner" value={newOwner} onChange={setNewOwner}
-          options={profiles
+          options={[{ value: '', label: 'Select an active salesperson' }, ...profiles
             .filter((p) => bulk || p.id !== accounts[0].assigned_to)
-            .map((p) => ({ value: p.id, label: p.full_name }))} />
+            .map((p) => ({ value: p.id, label: p.full_name }))]} />
 
         <Textarea label="Reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this lead being reassigned?" />
         <div style={{ fontSize: 11.5, color: INK_SOFT, fontFamily: FONT_BODY, marginTop: -SP.s2 }}>Recorded in the activity timeline.</div>
