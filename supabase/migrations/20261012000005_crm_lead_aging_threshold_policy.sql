@@ -55,14 +55,13 @@
 BEGIN;
 
 -- Lebarkan sla_policies_type_check: +'lead_aging'.
+-- !! KOREKSI (dijalankan manual di staging): bentuk awal file ini menaruh
+--    cast ::text[] di LUAR ANY(...), menempel ke hasil perbandingan
+--    (boolean), bukan ke array -- "cannot cast type boolean to text[]".
+--    Bentuk di bawah mencocokkan cast ke ARRAY[...] itu sendiri.
 ALTER TABLE public.sla_policies DROP CONSTRAINT sla_policies_type_check;
 ALTER TABLE public.sla_policies ADD CONSTRAINT sla_policies_type_check
-  CHECK (((policy_type)::text = ANY (ARRAY[
-    'prf_response'::character varying,
-    'deal_aging'::character varying,
-    'account_dormancy'::character varying,
-    'lead_aging'::character varying
-  ]::character varying[])::text[]));
+  CHECK ((policy_type)::text = ANY (ARRAY['prf_response', 'deal_aging', 'account_dormancy', 'lead_aging']::text[]));
 
 -- Lebarkan sla_policies_axis_check: +cabang keempat utk 'lead_aging'
 -- (transport_mode/target_status/target_scope semuanya NULL).
@@ -94,6 +93,12 @@ SELECT
 FROM public.companies c
 WHERE c.is_active = true
 ON CONFLICT (company_id, code) WHERE (deleted_at IS NULL) DO NOTHING;
+
+-- service_role tak punya SELECT di sla_policies (sisa pengetatan TD-281,
+-- produksi DAN staging) -- tanpa ini aging-pipeline (jalan sebagai
+-- service_role) gagal "permission denied for table sla_policies" tepat
+-- di langkah baca ambang (file 2, aging-pipeline/index.ts).
+GRANT SELECT ON public.sla_policies TO service_role;
 
 COMMIT;
 
@@ -128,6 +133,9 @@ COMMIT;
 -- SELECT policy_type, count(*) FROM public.sla_policies
 --  WHERE policy_type IN ('prf_response','deal_aging','account_dormancy')
 --  GROUP BY policy_type ORDER BY policy_type;
+--
+-- SELECT has_table_privilege('service_role','public.sla_policies','SELECT');
+-- -- Harap: true
 -- =============================================================================
 
 -- =============================================================================
@@ -149,9 +157,5 @@ COMMIT;
 --
 --   ALTER TABLE public.sla_policies DROP CONSTRAINT sla_policies_type_check;
 --   ALTER TABLE public.sla_policies ADD CONSTRAINT sla_policies_type_check
---     CHECK (((policy_type)::text = ANY (ARRAY[
---       'prf_response'::character varying,
---       'deal_aging'::character varying,
---       'account_dormancy'::character varying
---     ]::character varying[])::text[]));
+--     CHECK ((policy_type)::text = ANY (ARRAY['prf_response', 'deal_aging', 'account_dormancy']::text[]));
 -- =============================================================================
