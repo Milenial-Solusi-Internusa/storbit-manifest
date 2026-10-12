@@ -24,6 +24,19 @@
 -- 000001 s/d 000005 -> 20261012000009 (bersihkan pool lama) -> 20261012000006
 -- (file ini) -> 20261012000007 -> 20261012000008.
 --
+-- ⛔ TEMUAN KRITIS KEDUA (bergantung pada urutan di atas): 20261012000009
+-- JUGA melebarkan account_pool_history_event_type_check -- +'legacy_pool_exit'
+-- -- dan menulis ±1.079 baris riwayat bertipe itu SEBELUM file ini jalan.
+-- DROP+ADD CONSTRAINT di §1 bawah ini karena itu memuat SEMBILAN nilai
+-- (delapan lama + 'legacy_pool_exit'), BUKAN delapan -- ADD CONSTRAINT
+-- dengan delapan nilai akan GAGAL di production karena baris
+-- 'legacy_pool_exit' yang sudah ditulis 20261012000009 melanggarnya, dan
+-- migrasi ini batal total. Versi yang SUDAH LIVE DI STAGING dijalankan
+-- dengan DELAPAN nilai (tanpa 'legacy_pool_exit') karena 20261012000009
+-- belum pernah dijalankan di staging -- daftar sembilan nilai di file ini
+-- baru benar-benar cocok dengan staging juga setelah 20261012000009
+-- menyusul dijalankan di sana.
+--
 -- =============================================================================
 -- RINGKASAN PERUBAHAN
 -- =============================================================================
@@ -98,10 +111,31 @@ BEGIN;
 -- 1. Lebarkan account_pool_history.event_type: +'assign' +'auto_release'.
 --    Nama constraint = default Postgres untuk CHECK kolom tunggal tanpa nama
 --    eksplisit di migrasi 20261012000001 ({table}_{column}_check).
+--
+-- ⛔ KOREKSI URUTAN PRODUCTION (temuan kritis): urutan production yang benar
+-- adalah 1,2,3,4,5,9,6,7,8 -- migrasi 20261012000009 (bersih-bersih pool
+-- lama) WAJIB jalan SEBELUM file ini, dan file itu sendiri menambah
+-- 'legacy_pool_exit' ke constraint yang SAMA lalu menulis ±1.079 baris
+-- account_pool_history bertipe itu. Kalau DROP+ADD di bawah ini memakai
+-- daftar delapan nilai TANPA 'legacy_pool_exit' (bentuk asli sebelum
+-- temuan ini), ADD CONSTRAINT-nya PASTI GAGAL -- baris yang sudah ada
+-- melanggar check baru, migrasi ini batal total. Daftar di bawah karena
+-- itu SEMBILAN nilai, termasuk 'legacy_pool_exit' yang lahir di migrasi
+-- 20261012000009.
+--
+-- CATATAN STAGING: versi yang SUDAH LIVE di staging (lihat migrasi
+-- 20261012000008 dkk, status "JALAN DI STAGING") dijalankan dengan
+-- DELAPAN nilai (tanpa 'legacy_pool_exit') -- di staging, migrasi
+-- 20261012000009 belum pernah dijalankan. Daftar sembilan nilai di sini
+-- hanya akan LENGKAP/BENAR di staging juga begitu 20261012000009
+-- dijalankan di sana -- sampai itu terjadi, menjalankan ULANG file ini
+-- (CREATE OR REPLACE-nya idempoten, tapi DROP+ADD CONSTRAINT ini TIDAK)
+-- di staging akan gagal dengan cara yang SAMA seperti yang ditemukan di
+-- production, kalau baris 'legacy_pool_exit' belum ada.
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.account_pool_history DROP CONSTRAINT account_pool_history_event_type_check;
 ALTER TABLE public.account_pool_history ADD CONSTRAINT account_pool_history_event_type_check
-  CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull', 'owner_cleared', 'assign', 'auto_release'));
+  CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull', 'owner_cleared', 'assign', 'auto_release', 'legacy_pool_exit'));
 
 -- -----------------------------------------------------------------------------
 -- 2a. lead_pool_request_pull -- badan dasar PERSIS 20261012000002, +notifikasi.
@@ -521,7 +555,9 @@ COMMIT;
 -- SELECT pg_get_constraintdef(oid) FROM pg_constraint
 --  WHERE conrelid = 'public.account_pool_history'::regclass
 --    AND conname = 'account_pool_history_event_type_check';
--- -- Harap: delapan nilai, termasuk 'assign' dan 'auto_release'.
+-- -- Harap: SEMBILAN nilai, termasuk 'assign', 'auto_release', DAN
+-- --        'legacy_pool_exit' (dari 20261012000009, wajib sudah jalan
+-- --        duluan -- lihat urutan production di header).
 --
 -- SELECT proname, prosecdef FROM pg_proc
 --  WHERE proname IN ('lead_pool_request_pull','lead_pool_approve_pull',
@@ -612,7 +648,12 @@ COMMIT;
 --   -- request_pull/approve_pull/reject_pull: kembalikan ke badan TANPA blok
 --   -- notifikasi -- salin persis isi 20261012000002 untuk ketiganya.
 --
+--   -- ⛔ BUKAN enam nilai asli -- 20261012000009 (urutan production: SEBELUM
+--   -- file ini) tetap terpasang saat rollback ini dijalankan sendirian, dan
+--   -- baris 'legacy_pool_exit' yang ditulisnya TIDAK ikut dihapus oleh
+--   -- rollback ini. Menyempitkan ke enam nilai akan GAGAL selama baris itu
+--   -- masih ada. Tujuh nilai di bawah = enam asli + 'legacy_pool_exit'.
 --   ALTER TABLE public.account_pool_history DROP CONSTRAINT account_pool_history_event_type_check;
 --   ALTER TABLE public.account_pool_history ADD CONSTRAINT account_pool_history_event_type_check
---     CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull', 'owner_cleared'));
+--     CHECK (event_type IN ('enter_pool', 'release', 'request_pull', 'approve_pull', 'reject_pull', 'owner_cleared', 'legacy_pool_exit'));
 -- =============================================================================

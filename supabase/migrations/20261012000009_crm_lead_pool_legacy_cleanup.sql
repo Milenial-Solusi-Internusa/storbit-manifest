@@ -7,12 +7,31 @@
 -- 20261012000001 dst.): pool = akun TANPA pemilik. Migrasi ini menyelaraskan
 -- 1.183 akun lama itu ke aturan baru, satu kali, dalam satu transaksi.
 --
--- Status: BELUM DIJALANKAN DI MANA PUN. Production: jalankan SEBELUM
---         20261012000006 -- trigger trg_block_inquiry_for_pooled_account di
---         file itu menolak inquiry baru untuk akun is_in_lead_pool = true
---         APAPUN status pemiliknya; kalau 20261012000006 jalan duluan, akun
---         pool lama yang masih berpemilik akan mendadak tidak bisa dipakai
---         membuat inquiry baru sampai migrasi ini menyusul.
+-- Status: BELUM DIJALANKAN DI MANA PUN.
+--
+-- PRASYARAT: file 20261012000001 s/d 20261012000005 HARUS sudah jalan lebih
+-- dulu -- migrasi ini butuh tabel account_pool_history dan kolom
+-- lead_pool_last_owner, keduanya lahir di 20261012000001. Tanpa itu, setiap
+-- statement di bawah yang menyentuh dua objek itu gagal langsung.
+--
+-- URUTAN PRODUCTION LENGKAP (mengikat): 1, 2, 3, 4, 5, 9, 6, 7, 8 -- migrasi
+-- ini (9) WAJIB jalan SEBELUM 20261012000006, karena DUA alasan:
+--   a. Trigger trg_block_inquiry_for_pooled_account (file 6) menolak inquiry
+--      baru untuk akun is_in_lead_pool = true APAPUN status pemiliknya;
+--      kalau file 6 jalan duluan, akun pool lama yang masih berpemilik akan
+--      mendadak tidak bisa dipakai membuat inquiry baru sampai migrasi ini
+--      menyusul.
+--   b. Migrasi ini JUGA melebarkan account_pool_history_event_type_check
+--      (+'legacy_pool_exit') dan menulis ±1.079 baris bertipe itu. File 6
+--      melakukan DROP+ADD CONSTRAINT-nya SENDIRI (+'assign'+'auto_release')
+--      -- daftarnya di file 6 SUDAH dikoreksi memuat 'legacy_pool_exit'
+--      (sembilan nilai total), jadi urutan 9-lalu-6 maupun 6-lalu-9 kini
+--      SAMA-SAMA aman khusus untuk constraint ini (keduanya ADD CONSTRAINT
+--      ke daftar sembilan nilai yang identik -- melebarkan ke superset
+--      yang sama tidak peka urutan). Alasan (a) di atas -- trigger blokir
+--      inquiry -- tetap SATU-SATUNYA alasan urutan 9-sebelum-6 mengikat;
+--      poin (b) ini murni dokumentasi supaya histori "kenapa daftarnya
+--      sembilan nilai, bukan delapan" tetap terbaca dari kedua file.
 --
 -- Kondisi production per 12 Okt 2026 (dilaporkan Den, DIVERIFIKASI ULANG
 -- oleh SELECT "hitung SEBELUM" di bawah, bukan dipercaya mentah -- angka di
