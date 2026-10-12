@@ -1,29 +1,78 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Batas hari per stage. Lead yang diam lebih lama dari ini masuk Lead Pool.
-// PROPOSAL & NEGOTIATION SENGAJA TIDAK ADA: sejak 22 Jul 2026 sumbu deal pindah
-// ke inquiries.status dan kedua stage itu tak bisa ditulis lagi dari UI, sehingga
-// stage_changed_at-nya beku permanen → akun warisan ke-pool terus tanpa bisa keluar.
-// Daftar ini juga jadi sumber prefilter query (lihat `stages` di bawah).
-const AGING_RULES: Record<string, number> = {
-  NEW: 7,
-  CONTACTED: 5,
-  QUALIFIED: 5,
+// Batch DS 3 Lead Management, irisan 8 Paket 2 -- PENANDA STALE. Ganti
+// TOTAL dari mekanisme lama (AGING_RULES hardcode per pipeline_stage +
+// pindah ke Lead Pool) -- lihat git history versi sebelumnya kalau perlu
+// bandingkan. KEPUTUSAN Den: penuaan TIDAK LAGI memindahkan kepemilikan
+// atau memasukkan akun ke Lead Pool. Penuaan sekarang HANYA menandai
+// accounts.is_stale/stale_flagged_at + notifikasi ke pemilik (assigned_to
+// TIDAK PERNAH diubah di sini). Mekanisme Lead Pool (is_in_lead_pool dkk)
+// kini SEPENUHNYA dikendalikan jalur lain (lead_pool_sweep_deactivated_owner,
+// lead_pool_release/approve_pull/reject_pull -- migrasi 20261012000002).
+//
+// Ambang (hari diam) dibaca per entitas dari sla_policies (policy_type
+// 'lead_aging', code 'LEAD_STALE', migrasi 20261012000005) -- NOL angka
+// ambang di-hardcode di sini, beda dari AGING_RULES lama. Entitas tanpa
+// kebijakan ini dilewati (dilaporkan di respons), bukan dipakai dengan
+// angka tebakan.
+//
+// Lifecycle yang diproses = HANYA lead/mql (bukan sql/prospect seperti
+// PRA_CUSTOMER_LIFECYCLE lama) -- keputusan Den, irisan 8.
+
+const BATCH_SIZE = 1000
+
+type CompanyCfg = { thresholdDays: number; baselineMs: number }
+type AccountRow = {
+  id: string
+  name: string
+  assigned_to: string | null
+  company_id: string
+  last_activity_at: string | null
+  stage_changed_at: string | null
+  created_at: string | null
 }
 
-// Lifecycle yang BOLEH diproses aging = fase PRA-customer saja. Cermin
-// PRA_CUSTOMER_STATUS di src/modules/crm/InquiryFormPage.jsx, minus 'lead_pool'
-// (nilai itu tak lolos CHECK accounts_lifecycle_stage_check, di FE tinggal TODO).
-// customer / free_agent / lost sudah melewati fase pra-customer dan tidak boleh
-// diparkir ke Lead Pool APA PUN nilai pipeline_stage-nya.
-// Sampai sekarang pengecualian itu terjadi KEBETULAN, bukan by design: akun yang
-// menang ditulis pipeline_stage='WON' oleh RPC mark_inquiry_won, dan 'WON' tak ada
-// di AGING_RULES. Begitu RPC itu berhenti menulis 'WON' (prasyarat batch B3),
-// customer yang baru menang tetap NEW/CONTACTED/QUALIFIED — filter inilah yang
-// menahannya. Filter pipeline_stage di bawah TETAP dipakai (tambahan, bukan ganti).
-const PRA_CUSTOMER_LIFECYCLE = ['lead', 'mql', 'sql', 'prospect']
+// Decode payload JWT TANPA verifikasi ulang tanda tangan. Ini aman karena
+// config.toml men-set verify_jwt=true untuk fungsi ini -- gateway Supabase
+// SUDAH menolak request dengan signature invalid/kedaluwarsa SEBELUM kode
+// ini sempat jalan; yang tersisa untuk kita cek hanyalah KLAIM `role` di
+// token yang (menurut gateway) sudah sah.
+//
+// JANGAN membandingkan token ini dengan SUPABASE_SERVICE_ROLE_KEY secara
+// string-demi-string -- jadwal pg_cron mengirim kunci dari vault secret
+// aging_pipeline_key, dan nilainya TIDAK dijamin sama persis dengan env
+// var SUPABASE_SERVICE_ROLE_KEY runtime EF ini (dua secret independen,
+// lihat migrasi 20260710000009 header).
+//
+// Token yang tidak bisa didekode (bukan tiga segmen dipisah '.', payload
+// bukan base64url valid, atau bukan JSON valid) mengembalikan null --
+// pemanggil membalasnya sebagai 401 (token ditolak), BUKAN 500 (yang
+// menyiratkan bug server kita, padahal ini murni masukan tak sah).
+function decodeJwtRole(authHeader: string | null): string | null {
+  if (!authHeader) return null
+  const m = authHeader.match(/^Bearer\s+(.+)$/i)
+  if (!m) return null
+  const parts = m[1].split('.')
+  if (parts.length !== 3) return null
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    const payload = JSON.parse(atob(padded))
+    return typeof payload?.role === 'string' ? payload.role : null
+  } catch {
+    return null
+  }
+}
 
 Deno.serve(async (req) => {
+  const role = decodeJwtRole(req.headers.get('Authorization'))
+  if (role !== 'service_role') {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   const url = new URL(req.url)
   const dryRun = url.searchParams.get('dry_run') === 'true'
 
@@ -32,51 +81,84 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
-  const stages = Object.keys(AGING_RULES)
+  const now = new Date()
+  const dilewati: Array<{ company_id: string; alasan: string }> = []
 
-  // Hanya entitas dengan aging_enabled=true yang lead-nya boleh dipindahkan.
-  // EF memakai service role key sehingga menembus RLS — filter ini WAJIB eksplisit.
+  // 1. Entitas yang boleh diproses: aging_enabled + is_active + sudah
+  //    punya baseline. Tanpa baseline, lead lama akan langsung melewati
+  //    ambang massal di hari pertama fitur ini dinyalakan untuk entitas
+  //    itu -- lihat komentar kolom companies.aging_baseline_at (migrasi
+  //    20261012000001).
   const { data: companies, error: errCompanies } = await supabase
-    .from("companies")
-    .select("id")
-    .eq("aging_enabled", true)
-    .eq("is_active", true)
+    .from('companies')
+    .select('id, aging_baseline_at')
+    .eq('aging_enabled', true)
+    .eq('is_active', true)
 
   if (errCompanies) {
     return new Response(JSON.stringify({ error: errCompanies.message }), { status: 500 })
   }
 
-  const companyIds = (companies ?? []).map((c) => c.id)
-  if (companyIds.length === 0) {
+  for (const c of companies ?? []) {
+    if (!c.aging_baseline_at) dilewati.push({ company_id: c.id, alasan: 'aging_baseline_at kosong' })
+  }
+  const withBaseline = (companies ?? []).filter((c) => !!c.aging_baseline_at)
+
+  if (withBaseline.length === 0) {
     return new Response(
-      JSON.stringify({ pesan: "Tak ada entitas dengan aging_enabled=true", diperiksa: 0 }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ diperiksa: 0, ditandai: 0, direset: 0, gagal: 0, dilewati }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
   }
 
-  const { data: prospects, error } = await supabase
-    .from('accounts')
-    .select('id, name, pipeline_stage, stage_changed_at, last_activity_at, assigned_to, company_id')
-    .eq('is_in_lead_pool', false)
+  // 2. Ambang per entitas dari sla_policies -- NOL angka hardcode.
+  const { data: policies, error: errPolicies } = await supabase
+    .from('sla_policies')
+    .select('company_id, threshold, time_unit')
+    .eq('policy_type', 'lead_aging')
+    .eq('code', 'LEAD_STALE')
     .eq('is_active', true)
     .is('deleted_at', null)
-    .in('pipeline_stage', stages)
-    .in('lifecycle_stage', PRA_CUSTOMER_LIFECYCLE)
-    .in('company_id', companyIds)
-    .limit(1000)
+    .in('company_id', withBaseline.map((c) => c.id))
 
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  if (errPolicies) {
+    return new Response(JSON.stringify({ error: errPolicies.message }), { status: 500 })
   }
 
-  // Sinyal aktivitas DOKUMEN: updated_at terbaru per akun dari inquiry & quotation.
-  // Diambil BATCH — dua query total di LUAR loop, bukan per akun (hindari N+1).
-  // Akun dicocokkan lewat prospect_id ATAU customer_id, pola sama dengan tab
-  // Riwayat di Detail Account (CustomerDetailPage: .or('prospect_id.eq…,customer_id.eq…')).
-  // Di sini id akun tidak dipakai sbg filter: daftar kandidat bisa sampai 1000 uuid
-  // dan URL-nya akan meledak. Diurut updated_at DESC supaya kalau limit terpotong,
-  // yang hilang adalah baris PALING LAMA — akun yang benar-benar baru tersentuh
-  // selalu ikut terbawa.
+  const policyByCompany = new Map((policies ?? []).map((p) => [p.company_id, p]))
+  const companyCfg = new Map<string, CompanyCfg>()
+
+  for (const c of withBaseline) {
+    const p = policyByCompany.get(c.id)
+    if (!p) {
+      dilewati.push({ company_id: c.id, alasan: 'kebijakan LEAD_STALE tidak ada' })
+      continue
+    }
+    // Cuma 'day' yang didukung -- 14 (threshold Task 1) selalu 'day'.
+    // Unit lain dilewati (bukan ditebak konversinya) sampai ada kebutuhan
+    // nyata + aturan konversi yang disepakati.
+    if (p.time_unit !== 'day') {
+      dilewati.push({ company_id: c.id, alasan: `time_unit '${p.time_unit}' tidak didukung` })
+      continue
+    }
+    companyCfg.set(c.id, { thresholdDays: p.threshold, baselineMs: new Date(c.aging_baseline_at).getTime() })
+  }
+
+  const eligibleIds = [...companyCfg.keys()]
+  if (eligibleIds.length === 0) {
+    return new Response(
+      JSON.stringify({ diperiksa: 0, ditandai: 0, direset: 0, gagal: 0, dilewati }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  // 3. Sinyal dokumen (inquiries/quotations) -- pola BATCH yang sudah ada
+  //    di versi sebelumnya fungsi ini: dua query DI LUAR loop per akun,
+  //    limit 1000 masing-masing diurut updated_at DESC. Kalau terpotong,
+  //    yang hilang baris PALING LAMA -- akun yang benar-benar baru
+  //    tersentuh selalu ikut terbawa. SENGAJA TIDAK ikut di-range-loop
+  //    seperti kandidat accounts di bawah (poin 9 instruksi khusus
+  //    menyebut "kandidat", bukan lookup bantu ini).
   const [inqRes, quoRes] = await Promise.all([
     supabase.from('inquiries')
       .select('prospect_id, customer_id, updated_at')
@@ -97,9 +179,6 @@ Deno.serve(async (req) => {
     )
   }
 
-  // akun id → epoch ms dokumen terbaru. Akun tanpa dokumen TIDAK masuk map sama
-  // sekali (bukan 0 tersimpan) — di loop dibaca lewat `?? 0`, mengikuti pola
-  // COALESCE yang sudah dipakai stage_changed_at / last_activity_at.
   const sinyalDokumen = new Map<string, number>()
   const catatDokumen = (accId: string | null, iso: string | null) => {
     if (!accId || !iso) return
@@ -112,108 +191,145 @@ Deno.serve(async (req) => {
     catatDokumen(r.customer_id, r.updated_at)
   }
 
-  const now = new Date()
-  const kandidat: Array<Record<string, unknown>> = []
-
-  for (const p of prospects ?? []) {
-    const limit = AGING_RULES[p.pipeline_stage]
-    if (!limit) continue
-
-    // Lead dianggap "disentuh" kalau stage-nya naik, ada aktivitas tercatat, ATAU
-    // ada inquiry/quotation hidup yang baru dibuat/diperbarui. Ambil yang paling baru.
-    const tglStage = p.stage_changed_at ? new Date(p.stage_changed_at).getTime() : 0
-    const tglAktivitas = p.last_activity_at ? new Date(p.last_activity_at).getTime() : 0
-    const tglDokumen = sinyalDokumen.get(p.id) ?? 0
-    const terakhirDisentuh = Math.max(tglStage, tglAktivitas, tglDokumen)
-
-    if (terakhirDisentuh === 0) continue // tak ada acuan waktu, lewati
-
-    const diamHari = Math.floor((now.getTime() - terakhirDisentuh) / (1000 * 60 * 60 * 24))
-    if (diamHari <= limit) continue
-
-    kandidat.push({
-      id: p.id,
-      nama: p.name,
-      stage: p.pipeline_stage,
-      diam_hari: diamHari,
-      assigned_to: p.assigned_to,
-      company_id: p.company_id,
-    })
+  // Waktu terakhir disentuh, EFEKTIF: diukur dari yang paling baru di
+  // antara last_activity_at/stage_changed_at/created_at/sinyal dokumen,
+  // TAPI tidak pernah lebih lama dari aging_baseline_at entitasnya --
+  // itulah yang mencegah lead lama ditandai stale massal di hari pertama.
+  function diamHari(row: AccountRow): number {
+    const cfg = companyCfg.get(row.company_id)!
+    const tglAktivitas = row.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
+    const tglStage = row.stage_changed_at ? new Date(row.stage_changed_at).getTime() : 0
+    const tglBuat = row.created_at ? new Date(row.created_at).getTime() : 0
+    const tglDokumen = sinyalDokumen.get(row.id) ?? 0
+    const terakhir = Math.max(tglAktivitas, tglStage, tglBuat, tglDokumen)
+    const efektif = Math.max(terakhir, cfg.baselineMs)
+    return Math.floor((now.getTime() - efektif) / (1000 * 60 * 60 * 24))
   }
 
-  // Mode kering: laporkan siapa yang memenuhi syarat, jangan pindahkan apa pun.
+  // Range-loop sampai habis -- JANGAN berhenti di 1000 baris (poin 9).
+  // .order('id') murni untuk pagination DETERMINISTIK (tanpa order,
+  // urutan antar-halaman tidak dijamin stabil -> baris bisa terlewat
+  // atau terbaca dua kali).
+  async function fetchAllCandidates(extra: (q: any) => any): Promise<AccountRow[]> {
+    const out: AccountRow[] = []
+    let from = 0
+    for (;;) {
+      let q = supabase.from('accounts')
+        .select('id, name, assigned_to, company_id, last_activity_at, stage_changed_at, created_at')
+        .in('company_id', eligibleIds)
+        .in('lifecycle_stage', ['lead', 'mql'])
+        .is('deleted_at', null)
+        .order('id', { ascending: true })
+        .range(from, from + BATCH_SIZE - 1)
+      q = extra(q)
+      const { data, error } = await q
+      if (error) throw error
+      out.push(...((data ?? []) as AccountRow[]))
+      if (!data || data.length < BATCH_SIZE) break
+      from += BATCH_SIZE
+    }
+    return out
+  }
+
+  let flagRows: AccountRow[] = []
+  let resetRows: AccountRow[] = []
+  try {
+    // Kandidat TANDAI -- is_stale masih false, pool false, berpemilik, aktif.
+    flagRows = await fetchAllCandidates((q) =>
+      q.eq('is_in_lead_pool', false).not('assigned_to', 'is', null).eq('is_active', true).eq('is_stale', false)
+    )
+    // Kandidat RESET -- SENGAJA TIDAK ikut mensyaratkan is_in_lead_pool/
+    // assigned_to/is_active seperti pass TANDAI (Risiko #2, disetujui
+    // Den): tanda yang sudah tidak berlaku lebih dari ambang waktu
+    // dibersihkan terlepas dari status pool/kepemilikan saat ini.
+    resetRows = await fetchAllCandidates((q) => q.eq('is_stale', true))
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return new Response(JSON.stringify({ error: msg }), { status: 500 })
+  }
+
+  const kandidatTandai = flagRows.filter((r) => diamHari(r) > companyCfg.get(r.company_id)!.thresholdDays)
+  const kandidatReset = resetRows.filter((r) => diamHari(r) <= companyCfg.get(r.company_id)!.thresholdDays)
+
+  // Mode kering: laporkan per entitas, jangan tulis apa pun.
   if (dryRun) {
+    const perEntitas: Record<string, { akan_ditandai: number; akan_direset: number }> = {}
+    for (const id of eligibleIds) perEntitas[id] = { akan_ditandai: 0, akan_direset: 0 }
+    for (const r of kandidatTandai) perEntitas[r.company_id].akan_ditandai++
+    for (const r of kandidatReset) perEntitas[r.company_id].akan_direset++
     return new Response(
       JSON.stringify({
         dry_run: true,
-        diperiksa: prospects?.length ?? 0,
-        memenuhi_syarat: kandidat.length,
-        per_stage: kandidat.reduce((acc: Record<string, number>, k) => {
-          const s = k.stage as string
-          acc[s] = (acc[s] ?? 0) + 1
-          return acc
-        }, {}),
-        daftar: kandidat,
+        diperiksa: flagRows.length + resetRows.length,
+        akan_ditandai: kandidatTandai.length,
+        akan_direset: kandidatReset.length,
+        per_entitas: perEntitas,
+        dilewati,
       }, null, 2),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
   }
 
-  let dipindahkan = 0
+  let ditandai = 0
+  let direset = 0
+  let gagal = 0
 
-  for (const k of kandidat) {
+  for (const r of kandidatTandai) {
+    const hari = diamHari(r)
     const { error: errUpdate } = await supabase
       .from('accounts')
-      .update({
-        // Parkir adalah kondisi terpisah, BUKAN tahap lifecycle. EF hanya
-        // menyalakan penanda parkir; lifecycle_stage (lifecycle asli akun)
-        // TIDAK BOLEH diubah di sini. Lihat AUDIT_CRM_FLOW.md.
-        is_in_lead_pool: true,
-        lead_pool_at: now.toISOString(),
-        lead_pool_reason: `Aging ${k.diam_hari} hari di stage ${k.stage}`,
-        // Siklus parkir BARU harus mulai dari status pull bersih. Tanpa reset ini,
-        // cap 'approved' dari siklus sebelumnya tertinggal dan mengunci akun:
-        // tombol "Tarik ke Pipeline" tak dirender (LeadPoolPage: canPull) dan
-        // Approval page tak melihatnya (filter pull_status='pending').
-        pull_status: null,
-        pull_requested_at: null,
-        pull_justification: null,
-        pull_approved_at: null,
-        pull_approved_by: null,
-      })
-      .eq('id', k.id)
+      .update({ is_stale: true, stale_flagged_at: now.toISOString() })
+      .eq('id', r.id)
 
     if (errUpdate) {
-      console.error(`Gagal memindahkan ${k.id}:`, errUpdate.message)
+      console.error(`Gagal menandai ${r.id}:`, errUpdate.message)
+      gagal++
       continue
     }
-    dipindahkan++
+    ditandai++
 
-    if (k.assigned_to) {
+    if (r.assigned_to) {
       const { error: errNotif } = await supabase
         .from('notifications')
         .insert({
-          company_id: k.company_id,
-          user_id: k.assigned_to,
-          event_type: 'crm.lead_idle',
-          title: 'Prospect Masuk Lead Pool',
-          body: `${k.nama} diam ${k.diam_hari} hari di stage ${k.stage} dan dipindahkan ke Lead Pool.`,
+          company_id: r.company_id,
+          user_id: r.assigned_to,
+          event_type: 'crm.lead_stale',
+          title: 'Lead perlu ditindaklanjuti',
+          body: `${r.name} sudah diam ${hari} hari.`,
           reference_type: 'account',
-          reference_id: k.id,
+          reference_id: r.id,
           is_read: false,
         })
 
       if (errNotif) {
-        console.error(`Gagal mengirim notifikasi untuk ${k.id}:`, errNotif.message)
+        console.error(`Gagal mengirim notifikasi untuk ${r.id}:`, errNotif.message)
       }
     }
   }
 
+  // Bersihkan tanda yang sudah tidak berlaku -- TANPA notifikasi (poin 8).
+  for (const r of kandidatReset) {
+    const { error: errReset } = await supabase
+      .from('accounts')
+      .update({ is_stale: false, stale_flagged_at: null })
+      .eq('id', r.id)
+
+    if (errReset) {
+      console.error(`Gagal mereset ${r.id}:`, errReset.message)
+      gagal++
+      continue
+    }
+    direset++
+  }
+
   return new Response(
     JSON.stringify({
-      diperiksa: prospects?.length ?? 0,
-      dipindahkan,
-      gagal: kandidat.length - dipindahkan,
+      diperiksa: flagRows.length + resetRows.length,
+      ditandai,
+      direset,
+      gagal,
+      dilewati,
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   )
