@@ -642,7 +642,8 @@ function ContactsTab({ contacts, accountId, companyId, showToast, onChanged }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: SP.s4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SP.s4 }}>
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: INK }}>Contacts</div>
         <PrimaryBtn onClick={() => { setEditingContact(null); setModalOpen(true); }}>+ Add Contact</PrimaryBtn>
       </div>
 
