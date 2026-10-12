@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MoreVertical, Phone, Mail, MessageCircle, MapPin, Calendar, FileText, Users, RefreshCw, Inbox } from 'lucide-react';
 import {
-  FormSheet, Notebook, StatusBar, Badge, Card, EmptyState, SaveButton, Button, OutlineBtn, PrimaryBtn,
+  Notebook, Badge, Card, DocNo, EmptyState, SaveButton, Button, OutlineBtn, PrimaryBtn,
   FloatingInput, FloatingSelect, MasterSelect, Textarea, IconButton,
 } from '../../../../kit';
 import {
@@ -36,13 +36,7 @@ import ContactModal from '../components/ContactModal';
 import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
-
-const STAGE_SEGMENTS = [
-  { id: 'raw', label: 'Raw' },
-  { id: 'qualified', label: 'Qualified' },
-  { id: 'converted', label: 'Converted' },
-  { id: 'customer', label: 'Customer' },
-];
+import LeadStageBar from '../components/LeadStageBar';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -64,6 +58,18 @@ function ViewField({ label, value, mono, full }) {
       <div style={{ fontSize: 14, color: value ? INK : INK_FAINT, fontFamily: mono ? FONT_MONO : FONT_BODY, fontWeight: 500, fontStyle: value ? 'normal' : 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {value || 'Not set'}
       </div>
+    </div>
+  );
+}
+
+// Owner di kartu Commercial (OverviewTab) -- bentuk kotak sama dengan
+// ViewField, tapi isinya OwnerLine supaya link "Reassign" ikut tampil
+// (mockup: Reassign muncul di SINI juga, bukan cuma di info-row header).
+function OwnerField({ id, name, canReassign, onReassign }) {
+  return (
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD, minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 4, fontFamily: FONT_BODY }}>Owner</div>
+      <OwnerLine id={id} name={name} canReassign={canReassign} onReassign={onReassign} />
     </div>
   );
 }
@@ -111,6 +117,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const [latestQuotation, setLatestQuotation] = useState(null);
   const [industryOptions, setIndustryOptions] = useState([]);
   const [categoryOptions, setCategoryOptions] = useState([]);
+  const [lostReasonOptions, setLostReasonOptions] = useState([]);
   const [requestOptionFor, setRequestOptionFor] = useState(null);
 
   const [tab, setTab] = useState('overview');
@@ -179,6 +186,11 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
       .order('sort_order', { ascending: true }).limit(1000).then(({ data }) => setIndustryOptions(data || []));
     supabase.from('dropdown_options').select('id, label, value').eq('list_key', 'lead_category').eq('is_active', true).is('deleted_at', null)
       .order('sort_order', { ascending: true }).limit(1000).then(({ data }) => setCategoryOptions(data || []));
+    // "Lost Reason" (Notes tab, status lost) -- account.lost_reason adalah
+    // VALUE dropdown (MarkAsLostModal), bukan teks bebas; dibaca di sini
+    // supaya view-mode bisa menampilkan LABEL-nya, bukan slug mentah.
+    supabase.from('dropdown_options').select('id, label, value').eq('list_key', 'lost_reason').eq('is_active', true).is('deleted_at', null)
+      .order('sort_order', { ascending: true }).limit(1000).then(({ data }) => setLostReasonOptions(data || []));
   }, []);
 
   const companyId = account?.company_id;
@@ -192,6 +204,12 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const canMarkQualified = account && status === 'raw' && (isOwner || canManage);
   const canMarkLost = account && status !== 'lost' && (isOwner || canManage);
   const canArchive = !!canManage;
+  // "Lost at <tahap>" (mockup, LeadStageBar) diturunkan dari qualified_at --
+  // TANPA kolom baru. Lead yang belum pernah qualified_at -> "Raw", sudah ->
+  // "Qualified". Kasus lost SESUDAH Converted (sudah py inquiry) tak punya
+  // acuan visual di mockup -- lihat laporan akhir.
+  const lostAtLabel = account?.qualified_at ? 'Qualified' : 'Raw';
+  const canReactivate = account && status === 'lost' && (isOwner || canManage);
 
   async function handleMarkQualified() {
     const { error } = await supabase.from('accounts')
@@ -202,6 +220,28 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
       notes: 'Raw to Qualified', created_by: profile.id, completed_at: new Date().toISOString(),
     });
     setAccount((a) => ({ ...a, qualified_at: new Date().toISOString() }));
+    fetchActivities();
+    return undefined;
+  }
+
+  // "Reactivate" (tombol BARU, mockup Lost -- tak ada di rencana tertulis
+  // Paket 1 manapun). Diimplementasikan sebagai kebalikan simetris Mark as
+  // Lost: lifecycle_stage kembali 'lead', lost_reason/competitor_name
+  // dibersihkan, qualified_at TIDAK disentuh (kalau sebelumnya sudah
+  // qualified_at terisi, lead kembali ke status Qualified, bukan Raw -- itu
+  // yang dijaga StageBar lewat `status` turunan, bukan field terpisah).
+  // Keputusan fungsional ini belum dikonfirmasi Den -- lihat laporan akhir.
+  async function handleReactivate() {
+    const { error } = await supabase.from('accounts').update({
+      lifecycle_stage: 'lead', lost_reason: null, competitor_name: null,
+      last_activity_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) return { error };
+    await supabase.from('activities').insert({
+      account_id: id, company_id: companyId, type: 'status_change', status: 'done',
+      notes: `Reactivated from Lost (was lost at ${lostAtLabel}).`, created_by: profile.id, completed_at: new Date().toISOString(),
+    });
+    setAccount((a) => ({ ...a, lifecycle_stage: 'lead', lost_reason: null, competitor_name: null }));
     fetchActivities();
     return undefined;
   }
@@ -224,90 +264,100 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
 
   return (
     <div>
-      <FormSheet
-        breadcrumb={(
-          <button type="button" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: INK_SOFT, fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY }}>
+      <Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
+          <button type="button" onClick={onBack} style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: INK_SOFT, fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY }}>
             ← Back to list
           </button>
-        )}
-        kicker="Lead"
-        title={account.name}
-        docNo={account.code}
-        meta={(
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s4, flexWrap: 'wrap' }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT }}>
+              Lead
+            </div>
+            <div style={{ display: 'flex', gap: SP.s2, alignItems: 'center', position: 'relative' }}>
+              {canMarkQualified && (
+                <SaveButton onSave={handleMarkQualified} variant="secondary" label="Mark Qualified" savedLabel="Qualified!"
+                  onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
+              )}
+              {status === 'lost'
+                ? canReactivate && (
+                  <SaveButton onSave={handleReactivate} label="Reactivate" savedLabel="Reactivated!"
+                    onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
+                )
+                : onCreateInquiry && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
+              {(canMarkLost || canArchive) && (
+                <>
+                  <IconButton icon={<MoreVertical size={16} />} label="More actions" onClick={() => setMenuOpen((o) => !o)} />
+                  {menuOpen && (
+                    <>
+                      <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
+                      <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 160, zIndex: 10, overflow: 'hidden' }}>
+                        {canMarkLost && (
+                          <button type="button" onClick={() => { setMenuOpen(false); setLostOpen(true); }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: '#B4432A' }}>
+                            Mark as Lost
+                          </button>
+                        )}
+                        {canArchive && (
+                          <button type="button" onClick={() => { setMenuOpen(false); setArchiveOpen(true); }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>
+                            Archive
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, letterSpacing: '-.01em', color: INK, lineHeight: 1.15 }}>
+            {account.name}
+          </h1>
+
+          <div style={{ display: 'flex', gap: SP.s3, alignItems: 'center', flexWrap: 'wrap' }}>
+            {account.code && <DocNo style={{ fontWeight: 600 }}>{account.code}</DocNo>}
             {statusMeta && <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>}
             <Badge tone="neutral">{entityCode}</Badge>
             <Badge tone="neutral">{SOURCE_LABELS[account.source] || account.source || '—'}</Badge>
           </div>
-        )}
-        actions={(
-          <div style={{ display: 'flex', gap: SP.s2, alignItems: 'center', position: 'relative' }}>
-            {canMarkQualified && (
-              <SaveButton onSave={handleMarkQualified} variant="secondary" label="Mark Qualified" savedLabel="Qualified!"
-                onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
-            )}
-            {onCreateInquiry && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
-            {(canMarkLost || canArchive) && (
-              <>
-                <IconButton icon={<MoreVertical size={16} />} label="More actions" onClick={() => setMenuOpen((o) => !o)} />
-                {menuOpen && (
-                  <>
-                    <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
-                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 160, zIndex: 10, overflow: 'hidden' }}>
-                      {canMarkLost && (
-                        <button type="button" onClick={() => { setMenuOpen(false); setLostOpen(true); }}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: '#B4432A' }}>
-                          Mark as Lost
-                        </button>
-                      )}
-                      {canArchive && (
-                        <button type="button" onClick={() => { setMenuOpen(false); setArchiveOpen(true); }}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>
-                          Archive
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
-        status={(
-          <div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s5, paddingBottom: SP.s3, borderBottom: `1px solid ${LINE_SOFT}`, marginBottom: SP.s3 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Owner</div>
-                <OwnerLine id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={() => setReassignOpen(true)} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Last Touched</div>
-                <div style={{ fontSize: 14, color: INK, fontFamily: FONT_MONO }}>{fmtDate(account.last_activity_at)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Estimated Value</div>
-                <div style={{ fontSize: 14, color: INK, fontFamily: FONT_MONO }}>{account.estimated_value != null ? fmtRp(account.estimated_value) : '—'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>BANT Score</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 14, color: INK, fontWeight: 600 }}>{bantScore}/{BANT_MAX_SCORE}</span>
-                  <span style={{ width: 60, height: 5, borderRadius: 999, background: HEAD_BG, overflow: 'hidden', display: 'inline-block' }}>
-                    <span style={{ display: 'block', height: '100%', width: `${(bantScore / BANT_MAX_SCORE) * 100}%`, background: INK_SOFT, borderRadius: 999 }} />
-                  </span>
-                </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s5, paddingTop: SP.s3, borderTop: `1px solid ${LINE_SOFT}` }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Owner</div>
+              <OwnerLine id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={() => setReassignOpen(true)} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Last Touched</div>
+              <div style={{ fontSize: 14, color: INK, fontFamily: FONT_MONO }}>{fmtDate(account.last_activity_at)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Estimated Value</div>
+              <div style={{ fontSize: 14, color: INK, fontFamily: FONT_MONO }}>{account.estimated_value != null ? fmtRp(account.estimated_value) : '—'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>BANT Score</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 14, color: INK, fontWeight: 600 }}>{bantScore}/{BANT_MAX_SCORE}</span>
+                <span style={{ width: 60, height: 5, borderRadius: 999, background: HEAD_BG, overflow: 'hidden', display: 'inline-block' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${(bantScore / BANT_MAX_SCORE) * 100}%`, background: INK_SOFT, borderRadius: 999 }} />
+                </span>
               </div>
             </div>
-            <StatusBar stages={STAGE_SEGMENTS} current={status === 'lost' ? null : status}
-              closed={status === 'lost' ? { stage: 'LOST', label: 'Lost' } : null} />
           </div>
-        )}
-      >
+
+          <LeadStageBar status={status} lostAtLabel={lostAtLabel} />
+        </div>
+      </Card>
+
+      <div style={{ marginTop: SP.s6 }}>
         <Notebook tabs={tabs} value={tab} onChange={setTab}>
           {tab === 'overview' && (
             <OverviewTab
-              account={account} setAccount={setAccount} id={id} companyId={companyId}
-              industryOptions={industryOptions} categoryOptions={categoryOptions}
+              account={account} setAccount={setAccount} id={id} companyId={companyId} status={status}
+              industryOptions={industryOptions} categoryOptions={categoryOptions} lostReasonOptions={lostReasonOptions}
+              canManage={canManage} onReassign={() => setReassignOpen(true)}
               onRequestNewOption={(key) => setRequestOptionFor(key)}
               showToast={showToast}
             />
@@ -330,7 +380,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
         <RelatedDocuments account={account} statusMeta={statusMeta}
           inquiry={latestInquiry} quotation={latestQuotation}
           onOpenInquiry={onOpenInquiry} onOpenQuotation={onOpenQuotation} />
-      </FormSheet>
+      </div>
 
       <ReassignModal open={reassignOpen} onClose={() => setReassignOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onReassigned={() => { setReassignOpen(false); showToast?.('Lead reassigned'); fetchAccount(); fetchActivities(); }} />
@@ -363,8 +413,16 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
    read-only + link "Reassign" -- perubahan owner HANYA lewat ReassignModal
    supaya tercatat di activity log + notifikasi (bukan Edit polos).
    ========================================================================= */
-function OverviewTab({ account, setAccount, id, companyId, industryOptions, categoryOptions, onRequestNewOption, showToast }) {
+function OverviewTab({
+  account, setAccount, id, companyId, status, industryOptions, categoryOptions, lostReasonOptions,
+  canManage, onReassign, onRequestNewOption, showToast,
+}) {
   const entityCode = ENTITIES.find((e) => e.id === companyId)?.code || '—';
+  const isLost = status === 'lost';
+  const reasonLabel = isLost ? 'Lost Reason' : 'Qualified Reason';
+  const reasonValue = isLost
+    ? (lostReasonOptions.find((o) => o.value === account.lost_reason)?.label || account.lost_reason)
+    : account.qualified_reason;
 
   const [companyEdit, setCompanyEdit] = useState(false);
   const [companyDraft, setCompanyDraft] = useState(null);
@@ -488,7 +546,7 @@ function OverviewTab({ account, setAccount, id, companyId, industryOptions, cate
             <div style={grid3}>
               <FloatingSelect label="Source" value={commercialDraft.source} onChange={(v) => setCommercialDraft((d) => ({ ...d, source: v }))}
                 options={SOURCES.map((s) => ({ value: s, label: SOURCE_LABELS[s] }))} />
-              <ViewField label="Owner" value={account.assigned_profile?.full_name} />
+              <OwnerField id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={onReassign} />
               <FloatingInput label="Estimated Value" value={commercialDraft.estimated_value} onChange={(v) => setCommercialDraft((d) => ({ ...d, estimated_value: v }))} mono />
             </div>
             <FloatingInput label="Expected Closing Date" type="date" half value={commercialDraft.estimated_closing_date} onChange={(v) => setCommercialDraft((d) => ({ ...d, estimated_closing_date: v }))} />
@@ -500,7 +558,7 @@ function OverviewTab({ account, setAccount, id, companyId, industryOptions, cate
         ) : (
           <div style={grid3}>
             <ViewField label="Source" value={SOURCE_LABELS[account.source] || account.source} />
-            <ViewField label="Owner" value={account.assigned_profile?.full_name} />
+            <OwnerField id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={onReassign} />
             <ViewField label="Estimated Value" value={account.estimated_value != null ? fmtRp(account.estimated_value) : null} mono />
             <ViewField label="Expected Closing Date" value={fmtDate(account.estimated_closing_date)} />
           </div>
@@ -512,7 +570,13 @@ function OverviewTab({ account, setAccount, id, companyId, industryOptions, cate
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <Textarea label="Lead Description" value={notesDraft.description} onChange={(v) => setNotesDraft((d) => ({ ...d, description: v }))} rows={3} />
             <Textarea label="Internal Notes" value={notesDraft.notes} onChange={(v) => setNotesDraft((d) => ({ ...d, notes: v }))} rows={3} />
-            <Textarea label="Qualified Reason" value={notesDraft.qualified_reason} onChange={(v) => setNotesDraft((d) => ({ ...d, qualified_reason: v }))} rows={3} />
+            {isLost
+              // account.lost_reason adalah VALUE dropdown (MarkAsLostModal, list_key
+              // 'lost_reason'), bukan teks bebas -- SENGAJA tidak dijadikan Textarea
+              // di sini (akan menimpa value dropdown dengan teks mentah). Ubah lewat
+              // "Mark as Lost" (menu titik tiga), bukan lewat form Notes ini.
+              ? <ViewField label={reasonLabel} value={reasonValue} full />
+              : <Textarea label="Qualified Reason" value={notesDraft.qualified_reason} onChange={(v) => setNotesDraft((d) => ({ ...d, qualified_reason: v }))} rows={3} />}
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
               <OutlineBtn size="sm" onClick={() => setNotesEdit(false)}>Cancel</OutlineBtn>
               <SaveButton size="sm" onSave={saveNotes} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
@@ -522,7 +586,8 @@ function OverviewTab({ account, setAccount, id, companyId, industryOptions, cate
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <ViewField label="Lead Description" value={account.description} full />
             <ViewField label="Internal Notes" value={account.notes} full />
-            <ViewField label="Qualified Reason" value={account.qualified_reason} full />
+            <ViewField label={reasonLabel} value={reasonValue} full />
+            {isLost && account.competitor_name && <ViewField label="Competitor" value={account.competitor_name} full />}
           </div>
         )}
       </Card>
