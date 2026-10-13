@@ -51,9 +51,10 @@ function Note({ hint, error }) {
    FloatingInput/FloatingSelect/Textarea supaya ketiganya SATU sumber
    kebenaran tata letak label, bukan tiga salinan yang bisa melenceng.
    DIEKSPOR (bukan lagi lokal file ini) supaya `MasterSelect.jsx` ikut
-   memakainya -- tanpa itu CaptureLeadModal/ImportLeadsModal akan punya DUA
-   gaya label dalam satu layar (field Source/Entity via MasterSelect vs
-   field lain via kontrol di file ini).
+   memakainya -- tanpa itu `CaptureLeadModal.jsx` (satu-satunya pemakai
+   MasterSelect hari ini, field Industry + Lead Category) akan punya DUA
+   gaya label dalam satu modal, berdampingan dengan field lain (Entity/
+   Source/Priority) yang lewat kontrol di file ini.
    Token: fontSize 12 + fontWeight 600 + FONT_BODY (Inter) = spesifikasi
    mockup persis; color INK_SOFT = #5C6B52 persis (lihat komentar token-nya
    sendiri: "label, subtitle, teks redup") -- NOL hex baru. `focus` dipakai

@@ -11,10 +11,11 @@
    13 Okt 2026 (TD-318 Irisan 0, lanjutan): label pindah dari floating ke
    DI ATAS kotak + tinggi 56px→44px + prop `required`, SAMA PERSIS dengan
    FloatingSelect di Form.jsx — memakai `FieldLabel` yang diekspor dari
-   sana, bukan salinan kedua. Alasannya murni supaya CaptureLeadModal dan
-   ImportLeadsModal (field Source/Entity lewat MasterSelect di sebelah
-   field lain lewat FloatingInput/FloatingSelect) tidak lagi menampilkan
-   DUA gaya label dalam satu layar. Nol perubahan perilaku pilihan/
+   sana, bukan salinan kedua. Alasannya murni supaya `CaptureLeadModal.jsx`
+   (satu-satunya pemakai `MasterSelect` hari ini, field Industry + Lead
+   Category) tidak lagi menampilkan DUA gaya label dalam satu modal --
+   field lain di modal itu (Entity/Source/Priority) sudah lewat
+   FloatingSelect. Nol perubahan perilaku pilihan/
    "+ Ajukan pilihan baru…"/Request new option — murni tampilan label +
    tinggi kotak.
 
