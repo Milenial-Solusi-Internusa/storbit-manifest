@@ -148,13 +148,40 @@ export const isSalesOnly = (erpRole) => SALES_ONLY_ROLES.includes(erpRole);
 //   mark_ttf_received (canMarkTtf, useInvoiceWorkflow.js) :
 //       is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')
 //       OR has_role('finance')
-//   approve_invoice_issue / reject_invoice_issue :
-//       is_super_admin() OR has_role('finance_controller') OR has_role('ceo')
-//       -- SENGAJA TANPA is_manager_or_above(): approval bukan "manajer mana
-//       pun", keputusan rapat 9/11/24 Sep 2026. Tidak boleh menyetujui/menolak
-//       pengajuan sendiri kecuali super_admin -- diperiksa di RPC lewat
-//       created_by, TIDAK dicerminkan di sini (butuh baris invoice-nya, bukan
-//       cuma erpRoles).
+//   approve_invoice_issue :
+//       has_role('finance_controller') OR has_role('ceo')
+//       -- super_admin DICABUT (revisi Den 13 Okt 2026, mockup Invoice
+//       Management: Super Admin murni pengamat, tidak ikut rantai persetujuan
+//       sama sekali). SENGAJA TANPA is_manager_or_above(): approval bukan
+//       "manajer mana pun", keputusan rapat 9/11/24 Sep 2026. Tidak boleh
+//       menyetujui pengajuan sendiri, TANPA pengecualian -- diperiksa di RPC
+//       lewat created_by, TIDAK dicerminkan di sini (butuh baris invoice-nya).
+//       BARU (revisi 13 Okt 2026): juga menolak kalau endorsed_by invoice itu
+//       = diri sendiri (satu orang satu tahap -- siapa yang endorse/skip
+//       TIDAK boleh jadi yang approve, invoice yang sama) -- baris invoice
+//       lagi, TIDAK dicerminkan di sini.
+//   reject_invoice_issue :
+//       tahap 1 (pending_manager_approval) : has_role('finance_manager') OR
+//         has_role('finance_controller') OR has_role('ceo')
+//       tahap 2 (pending_approval) : has_role('finance_controller') OR
+//         has_role('ceo') -- SAMA dengan approve_invoice_issue
+//       -- super_admin DICABUT di KEDUA tahap (revisi 13 Okt 2026). Himpunan
+//       perannya BERGANTUNG status invoice -- TIDAK ada fungsi gate tunggal
+//       untuk reject di sini (butuh status + erpRoles sekaligus); FE tombol
+//       reject MENUNGGU mockup, belum dibangun. Tidak boleh menolak pengajuan
+//       sendiri, TANPA pengecualian.
+//   endorse_invoice_issue (tahap 1, AR Tahap 3b lanjutan dua tahap) :
+//       has_role('finance_manager')
+//       -- super_admin DICABUT (revisi 13 Okt 2026). Peran BARU, tahap
+//       pertama sebelum approve_invoice_issue. Tidak boleh meng-endorse
+//       pengajuan sendiri, TANPA pengecualian (RPC).
+//   skip_invoice_endorsement (lompat tahap 1, AR Tahap 3b lanjutan dua tahap) :
+//       has_role('finance_controller') OR has_role('ceo')
+//       -- super_admin DICABUT (revisi 13 Okt 2026). SENGAJA himpunan yang
+//       SAMA dengan approve_invoice_issue (bukan finance_manager): melompati
+//       endorsement adalah wewenang tahap akhir, bukan tahap yang dilompati.
+//       p_reason WAJIB diisi (diperiksa di RPC). Tidak boleh melompati
+//       pengajuan sendiri, TANPA pengecualian.
 //
 // ⚠️ is_manager_or_above() pada tiga guard pertama meloloskan SELURUH role
 // ber-level<=6 LINTAS DEPARTEMEN (bukan cuma manajer finance) -- perilaku
@@ -172,8 +199,33 @@ export function canRecordInvoicePayment(erpRoles, opt) {
 // berbeda (tanpa is_manager_or_above, dengan ceo) meskipun ada irisan
 // finance_controller -- pola yang sama dengan alasan canMarkTtf ditulis
 // utuh sendiri (useInvoiceWorkflow.js).
+// canApproveInvoice -- cermin approve_invoice_issue. SENGAJA fungsi terpisah,
+// bukan turunan canIssueInvoice: himpunan perannya berbeda (tanpa is_manager_
+// or_above, dengan ceo) meskipun ada irisan finance_controller -- pola yang
+// sama dengan alasan canMarkTtf ditulis utuh sendiri (useInvoiceWorkflow.js).
+// super_admin DICABUT (revisi Den 13 Okt 2026) -- lihat checklist di atas.
 export function canApproveInvoice(erpRoles, opt) {
-  return isSuperAdmin(erpRoles, opt) || hasAnyRole(erpRoles, ['finance_controller', 'ceo'], opt);
+  return hasAnyRole(erpRoles, ['finance_controller', 'ceo'], opt);
+}
+
+// canEndorseInvoice -- cermin endorse_invoice_issue (tahap 1: pending_manager_approval
+// -> pending_approval). Peran finance_manager BARU, AR Tahap 3b lanjutan dua tahap.
+// super_admin DICABUT (revisi Den 13 Okt 2026). TAMPILAN tombolnya sendiri MENUNGGU
+// mockup Invoice Management diperbarui -- fungsi ini hidup di roles.js duluan supaya
+// siap dipakai begitu tombolnya dibangun.
+export function canEndorseInvoice(erpRoles, opt) {
+  return hasAnyRole(erpRoles, ['finance_manager'], opt);
+}
+
+// canSkipInvoiceEndorsement -- cermin skip_invoice_endorsement (lompat tahap 1 dengan
+// alasan wajib). SENGAJA fungsi terpisah dari canApproveInvoice walau himpunan perannya
+// identik hari ini -- pola yang sama dengan canMarkTtf/canImportTtf: dua RPC berbeda,
+// dua baris checklist TD-233 berbeda, supaya kalau salah satu perannya berubah nanti
+// (mis. skip dibuka untuk finance_manager juga), diff-nya kelihatan di SATU fungsi,
+// tidak diam-diam mengubah gate approve_invoice_issue. super_admin DICABUT (revisi
+// Den 13 Okt 2026).
+export function canSkipInvoiceEndorsement(erpRoles, opt) {
+  return hasAnyRole(erpRoles, ['finance_controller', 'ceo'], opt);
 }
 
 // canImportTtf -- gate tombol "Proses Impor" di TtfSubmissionPage (impor TTF

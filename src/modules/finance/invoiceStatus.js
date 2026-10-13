@@ -15,34 +15,42 @@ import { TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN, fmtDate } from '../logist
 // `submitted` sengaja panjang: "Submitted" tak memberi tahu siapa pun APA yang
 // sudah terjadi, sementara yang sungguh dilakukan Finance adalah mengunggah
 // invoice ke portal customer.
+// pending_manager_approval (AR Tahap 3b lanjutan dua tahap, belum LIVE di
+// mana pun saat baris ini ditulis): tahap SEBELUM pending_approval -- menunggu
+// endorsement Finance Manager. Label polos saja -- tombol Endorse/Lompat Tahap
+// dan badge/filter barunya MENUNGGU mockup Invoice Management diperbarui di
+// Claude Design (jangan dibaca sebagai desain final).
 export const STATUS_LABEL = {
-  draft:            'Draft',
-  pending_approval: 'Menunggu Persetujuan',
-  issued:           'Terbit',
-  submitted:        'Sudah Upload ke Portal',
-  partial:          'Bayar Sebagian',
-  paid:             'Lunas',
-  void:             'Void',
+  draft:                    'Draft',
+  pending_manager_approval: 'Menunggu Persetujuan Manager',
+  pending_approval:         'Menunggu Persetujuan',
+  issued:                   'Terbit',
+  submitted:                'Sudah Upload ke Portal',
+  partial:                  'Bayar Sebagian',
+  paid:                     'Lunas',
+  void:                     'Void',
 };
 
 // Label pendek untuk tempat sempit (tab, kolom tabel sempit).
 export const STATUS_LABEL_SHORT = {
   ...STATUS_LABEL,
-  pending_approval: 'Persetujuan',
-  submitted:        'Sudah Upload',
+  pending_manager_approval: 'Menunggu Manager',
+  pending_approval:         'Persetujuan',
+  submitted:                'Sudah Upload',
 };
 
 // Pemetaan ke empat varian tag keluarga ungu/serif Storbit. Aturannya sama
 // dengan yang berlaku di Detail SP: PALE = selesai/positif, OUTLINE = sedang
 // berjalan, ATTN = butuh perhatian, NEUTRAL = inert/informasi.
 export const STATUS_TAG = {
-  draft:            TAG_NEUTRAL,
-  pending_approval: TAG_ATTN,
-  issued:           TAG_OUTLINE,
-  submitted:        TAG_OUTLINE,
-  partial:          TAG_ATTN,
-  paid:             TAG_PALE,
-  void:             TAG_NEUTRAL,
+  draft:                    TAG_NEUTRAL,
+  pending_manager_approval: TAG_ATTN,
+  pending_approval:         TAG_ATTN,
+  issued:                   TAG_OUTLINE,
+  submitted:                TAG_OUTLINE,
+  partial:                  TAG_ATTN,
+  paid:                     TAG_PALE,
+  void:                     TAG_NEUTRAL,
 };
 
 // ─── Stepper tahap ─────────────────────────────────────────────────────────
@@ -142,7 +150,8 @@ export function isOverdue(row, todayIso) {
 // "belum diisi" yang generik.
 export function dueDateText(row) {
   if (row?.due_date) return fmtDate(row.due_date);
-  return ['draft', 'pending_approval', 'void'].includes(row?.status) ? '—' : 'Belum TTF';
+  return ['draft', 'pending_manager_approval', 'pending_approval', 'void'].includes(row?.status)
+    ? '—' : 'Belum TTF';
 }
 
 // ─── Label saat belum bernomor ─────────────────────────────────────────────
@@ -154,6 +163,7 @@ export function dueDateText(row) {
 // disetujui" / "Menunggu nomor"), TIDAK lewat helper ini.
 export function invoiceNoLabel({ invoice_no, status, sp_no } = {}) {
   if (invoice_no) return invoice_no;
+  if (status === 'pending_manager_approval' && sp_no) return `Pengajuan SP ${sp_no}`;
   if (status === 'pending_approval' && sp_no) return `Pengajuan SP ${sp_no}`;
   if (status === 'draft' && sp_no) return `Ditolak · SP ${sp_no}`;
   return '(tanpa nomor)';
