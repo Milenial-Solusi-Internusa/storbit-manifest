@@ -332,16 +332,28 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               Lead
             </div>
             <div style={{ display: 'flex', gap: SP.s2, alignItems: 'center', position: 'relative' }}>
-              {canMarkQualified && (
+              {/* Satu tombol primer EKSKLUSIF per status (TD-318 Irisan 0c,
+                  keputusan Den 13 Okt 2026) -- persis variabel `prim` di
+                  mockup (Lead Management.dc.html: st==='Raw' ? MarkQualified
+                  : st==='Qualified' ? CreateInquiry : st==='Lost' ?
+                  Reactivate : null). SEBELUMNYA `canMarkQualified` dan
+                  cabang Create Inquiry dua kondisi TERPISAH yang bisa
+                  sama-sama true untuk lead Raw (pemilik/manager) --
+                  menampilkan KEDUA tombol sekaligus, padahal mockup hanya
+                  satu. Status 'converted'/'customer' sengaja TANPA tombol
+                  primer (sama seperti mockup -- 'customer' sendiri sudah
+                  tak pernah sampai di sini, lihat redirect LeadDetailRoute). */}
+              {status === 'raw' && canMarkQualified && (
                 <SaveButton onSave={handleMarkQualified} variant="secondary" label="Mark Qualified" savedLabel="Qualified!"
                   onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
               )}
-              {status === 'lost'
-                ? canReactivate && (
-                  <SaveButton onSave={handleReactivate} label="Reactivate" savedLabel="Reactivated!"
-                    onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
-                )
-                : (!account.is_in_lead_pool && onCreateInquiry) && <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>}
+              {status === 'qualified' && !account.is_in_lead_pool && onCreateInquiry && (
+                <PrimaryBtn onClick={() => onCreateInquiry(account)}>Create Inquiry</PrimaryBtn>
+              )}
+              {status === 'lost' && canReactivate && (
+                <SaveButton onSave={handleReactivate} label="Reactivate" savedLabel="Reactivated!"
+                  onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
+              )}
               {(canMarkLost || canArchive || canReleasePool) && (
                 <>
                   <IconButton icon={<MoreVertical size={16} />} label="More actions" onClick={() => setMenuOpen((o) => !o)} />
