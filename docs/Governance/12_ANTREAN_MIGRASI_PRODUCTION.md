@@ -1286,6 +1286,39 @@ Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`f
 
 ---
 
+## 44a. ⛔ `20261013000001_ar_tahap3b_invoice_two_stage_approval` — WAJIB, sesudah butir 39, 40, 41, 42
+
+| | |
+|---|---|
+| Berkas | `supabase/migrations/20261013000001_ar_tahap3b_invoice_two_stage_approval.sql` |
+| Staging | ⛔ **belum** — ditulis 13 Okt 2026, menunggu Den jalankan manual (CC tidak menjalankan SQL) |
+| Production | ⛔ **belum** |
+| Tindakan saat launching | ⛔ **WAJIB jalankan**, SESUDAH butir 39-42 (pre-check berkas ini menolak jalan kalau basis `reject_invoice_issue`/`record_payment`/`mark_ttf_received` bukan versi butir 41/42) |
+
+**Apa isinya.** Persetujuan invoice dua tahap (keputusan verbal Den 7 Okt 2026, dieksekusi sesudah revisi 13 Okt 2026): invoice yang diajukan kini menunggu **endorsement Finance Manager** (Rini Andriyani @ SOA) lebih dulu, sebelum sampai ke persetujuan akhir Finance Controller/CEO yang sudah ada.
+
+- Status BARU `pending_manager_approval`, disisip SEBELUM `pending_approval` di CHECK constraint.
+- `create_invoice_for_sp` (butir 40) kini INSERT ke `pending_manager_approval`, bukan lagi `pending_approval` — **satu-satunya** baris yang berubah dari badan butir 40, segalanya lain byte-identik (diverifikasi diff mekanis).
+- RPC BARU `endorse_invoice_issue(uuid)` — tahap 1: `pending_manager_approval` → `pending_approval`. Peran: `super_admin`/`finance_manager`. Nol penomoran/jurnal (tetap eksklusif `approve_invoice_issue`, **TIDAK DISENTUH** berkas ini).
+- RPC BARU `skip_invoice_endorsement(uuid, text)` — melompati tahap 1 langsung ke `pending_approval`, **alasan WAJIB**. Peran SAMA dengan `approve_invoice_issue` (`super_admin`/`finance_controller`/`ceo`) — **BUKAN** `finance_manager` (keputusan Den: melompati endorsement adalah wewenang tahap akhir, bukan tahap yang dilompati). Audit_logs aksi khusus `LOMPATI_ENDORSEMENT` + alasan di kolom `notes`.
+- `reject_invoice_issue` (butir 41) **dilebarkan**: menolak dari KEDUA tahap menunggu (dulu cuma `pending_approval`). Peran TIDAK berubah.
+- `record_payment` (butir 42) dan `mark_ttf_received` (butir 42) masing-masing dapat **satu guard baru**: menolak `pending_manager_approval` — tanpa ini, invoice di tahap PALING AWAL (bahkan sebelum `pending_approval`) akan lolos menerima pembayaran/TTF, karena kedua fungsi itu memakai guard status gaya satu-per-satu, bukan allowlist.
+- Role BARU `finance_manager` (level 7 — **sama dengan** `finance_controller`/`finance`, **bukan** manajer-ke-atas; wewenangnya datang dari `has_role('finance_manager')` eksplisit, bukan dari `is_manager_or_above()` lintas departemen) + grant menu `fin_invoice` (`view`) — **nol pemegang** sampai Den menambahkannya manual (lihat langkah sesudah tabel ini).
+
+⛔ **`approve_invoice_issue` TIDAK DISENTUH SAMA SEKALI** — tetap hanya menerima `pending_approval`, tetap `super_admin`/`finance_controller`/`ceo`. Diverifikasi mekanis (grep `CREATE OR REPLACE FUNCTION public.approve_invoice_issue` di berkas ini = nol hit).
+
+⛔ **Nol notifikasi di badan `skip_invoice_endorsement`** — disisir dulu, nol migrasi di seluruh repo yang pernah `INSERT INTO notifications` dari badan RPC (tabel itu selalu diisi dari FRONTEND, best-effort, pola `LeadPoolPage.jsx`). Fan-out "semua pemegang `finance_manager` di entitas itu, alasan dilompati" dibangun di FE bersamaan tombol Lompat Tahap — yang menunggu mockup Invoice Management final.
+
+⛔ **TAMPILAN (badge, tombol Endorse, tombol Lompat Tahap, filter/badge baru di halaman Finance) SENGAJA TIDAK DIBANGUN** — menunggu mockup Invoice Management diperbarui di Claude Design (keputusan Den). FE yang disentuh hari ini hanya `src/lib/roles.js` (dua fungsi gate baru, `canEndorseInvoice`/`canSkipInvoiceEndorsement` — siap pakai, belum dipanggil UI apa pun) dan `src/modules/finance/invoiceStatus.js` (label/tag/`dueDateText`/`invoiceNoLabel` untuk status baru, supaya halaman yang ADA menampilkan teks yang benar, bukan status mentah/kosong — bukan desain baru).
+
+**Basis tiap fungsi yang diubah** (diverifikasi diff mekanis terhadap file yang sungguh mendefinisikannya, BUKAN `schema_snapshot.sql` yang nol hit untuk `approve_invoice_issue`/`reject_invoice_issue`): `create_invoice_for_sp` ← butir 40 · `reject_invoice_issue` ← butir 41 · `record_payment`/`mark_ttf_received` ← butir 42.
+
+**Rollback.** ⛔ Hanya aman kalau **nol** baris `sp_invoices` berstatus `pending_manager_approval` hidup. Lihat blok ROLLBACK lengkap di ekor berkas migrasi (DROP dua RPC baru, tempel ulang badan lama tiga fungsi yang dilebarkan, kembalikan CHECK constraint, hapus grant menu — JANGAN hapus role `finance_manager` kalau sudah dipegang user).
+
+**Langkah manual SESUDAH migrasi ini live di suatu environment (BUKAN SQL — lewat Admin Settings, dikerjakan Den sendiri):** tambahkan peran **`finance_manager`** ke akun **Rini Andriyani @ SOA** lewat User Access/User Edit. Migrasi ini hanya menyiapkan role + izin menunya — **nol pemegang** sampai langkah ini dijalankan. Tanpa langkah ini, setiap invoice baru akan menumpuk tak terbatas di `pending_manager_approval` (sama persis dengan pelajaran butir 9 Okt soal akun `finance_controller` Bagus — gerbang approval tanpa penyetuju aktif = macet, bukan lewat begitu saja).
+
+---
+
 ## Paket Keamanan TD-281 — ✅ H1-H6 SELESAI (sisa H4 sengaja ikut Fase 4 BNF)
 
 | | |
@@ -1634,7 +1667,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 |---|---|---|
 | 38 | `20260929000010_ar_tahap3_ttf_tanggal_menerima_isi_sekali.sql` | butir 36 (TIDAK butuh 37) |
 
-#### 1F. AR Tahap 3 bagian kedua — butir 39 → 40 → 41 → 42 → 43 → 44
+#### 1F. AR Tahap 3 bagian kedua — butir 39 → 40 → 41 → 42 → 43 → 44 → 44a
 
 | Urutan | Berkas | Prasyarat |
 |---|---|---|
@@ -1644,6 +1677,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 42 | `20260930000004_ar_tahap3b_record_payment_ttf_pending_guard.sql` | butir 39 (boleh sebelum/sesudah 40-41) |
 | 43 | `20260930000005_ar_tahap3b_submit_invoice_finance_role.sql` | — (mandiri) |
 | 44 | `20260930000006_ar_tahap3b_get_invoice_audit_trail.sql` | — (mandiri, tapi diperlukan panel Riwayat FE) |
+| 44a | `20261013000001_ar_tahap3b_invoice_two_stage_approval.sql` | butir 39, 40, 41, 42 — ⛔⏳ **rollback hanya aman kalau nol invoice `pending_manager_approval` hidup.** Sesudah ini COMMIT, lakukan **langkah manual** (bukan SQL): tambahkan peran `finance_manager` ke akun Rini Andriyani @ SOA lewat Admin Settings — lihat ## 44a |
 
 ### Langkah 2 — Merge `release/2026-10-14` → `main` dan deploy kode
 
@@ -1686,6 +1720,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 4.7 | Login sebagai akun **gudang/Operations**, buka Detail SP yang Surat Jalannya sudah `delivered`, isi tanggal tanda tangan lewat **"Lengkapi Tanggal Ditandatangani"** — fitur ini BARU di production malam ini (butir 8) | Gudang |
 | 4.8 | Dari akun yang sama atau admin, buka **Edit Item SP**, ketik ongkir **`1.766.050`**, simpan, buka lagi — konfirmasi nilainya **tetap `1.766.050`**, BUKAN berubah jadi `1,77` (regresi lama yang baru ditutup di commit `4d81943`, 7 Okt 2026) | Gudang/Admin |
 | 4.9 | Login sebagai akun **Bagus Putra Kurnia** (`finance_controller`), pastikan menu "Billing / Invoice" tampil di sidebar dan tab invoice **"Menunggu Persetujuan"** (`pending_approval`) bisa dibuka. ⚠️ **JANGAN tekan tombol Setujui atau Tolak pada invoice ASLI selama smoke test ini** — persetujuan nyata PERTAMA dilakukan Pak Bagus sendiri pada 15 Okt (bukan bagian smoke test malam rilis) | Finance Controller (Bagus) |
+| 4.9a | **Prasyarat: langkah manual "peran `finance_manager` untuk Rini" (## 44a) sudah dikerjakan Den.** Login sebagai akun **Rini Andriyani** (`finance_manager`@SOA), pastikan menu "Billing / Invoice" tampil di sidebar dan invoice yang baru diajukan (dari 4.3 atau pengajuan lain malam itu) menampilkan status **"Menunggu Persetujuan Manager"** (`pending_manager_approval`) sebagai teks, bukan status mentah/kosong. ⚠️ **Tombol Endorse/Lompat Tahap SENGAJA BELUM ADA di rilis ini** (menunggu mockup Invoice Management final) — langkah ini murni cek peran + visibilitas menu + bacaan status, BUKAN uji tombol. Jangan laporkan "tombol tidak ada" sebagai bug | Finance Manager (Rini) |
 
 ⚠️ **Butir 4.3 memakai invoice SUNGGUHAN, bukan data uji yang bisa dihapus.** Nomor invoice yang keluar **permanen** (preseden: nomor 0012/0013 terpakai permanen dari insiden 7 Sep 2026), jurnalnya **benar-benar terposting**, dan **jalur void belum ada** di rilis ini — begitu terbit, tidak ada tombol untuk membatalkannya. **Wajib memakai SP yang memang sudah waktunya ditagih** (ambil dari kategori `4_lolos_bisa_ditagih` hasil H-1.1/pengukuran ulang malam itu) — JANGAN memakai SP sembarangan "cuma untuk tes".
 
