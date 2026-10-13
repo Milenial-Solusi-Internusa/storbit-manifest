@@ -3137,7 +3137,11 @@ export function LegacyMenuOutlet() {
             </ErrorBoundary>
           )}
 
-          <div className={`nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7`} style={{ display: activeMenu === 'home' ? 'none' : undefined }}>
+          {/* Padding >=1280px diturunkan 36px/28px -> 20px/24px-32px (TD-318
+              Irisan 0b) supaya cocok mockup `<main style="padding:24px 20px
+              32px">` -- lihat komentar sama di ModuleShell.jsx (dua salinan
+              bingkai, TD-273, wajib bergerak bersama). */}
+          <div className={`nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-5 py-6 lg:pt-6 lg:pb-8`} style={{ display: activeMenu === 'home' ? 'none' : undefined }}>
 
           {/* Content-level access gate (Fix C): deny render only once permissions
               have loaded — never during the loading window. */}
