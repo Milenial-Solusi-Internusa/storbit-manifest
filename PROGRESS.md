@@ -31,6 +31,15 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-10-13
+### Audit Lead Management vs mockup + jadwal launching mundur + aturan CLAUDE.md diperkuat
+- [x] Audit penuh Lead Management terhadap file sumber mockup `design-handoff/crm-2026-10-11/Lead Management.dc.html` (bukan PNG) — 386 temuan (A 26, B 9, C 183, D 99, E 69), dicatat sebagai TD-318 (PEMBLOKIR launching).
+- [x] Keputusan Den: launching Lead Management (Paket 1+2) MUNDUR dari "sesudah 14 Okt 2026" ke target awal November 2026, syarat Fase 1+2 TD-318 selesai & lolos tes staging. Rilis AR 14 Okt TIDAK berubah.
+- [x] CLAUDE.md §Aturan Wajib "Cek mockup dulu" diperkuat: acuan implementasi WAJIB file sumber mockup dibaca utuh (bukan PNG), setiap irisan ditutup audit per elemen kategori A-E.
+- [x] Dua keputusan final: menu Mark as Lost di Detail Lead disembunyikan untuk lead berstatus Converted (sesuai mockup); ikon ChevronRight di kolom aksi Capture/Table dihapus (sesuai mockup).
+
+Detail: `docs/Governance/08_TECH_DEBT.md` TD-318 · `docs/Governance/12_ANTREAN_MIGRASI_PRODUCTION.md` §Paket 2 Lead Pool · `CLAUDE.md` §Aturan Wajib ("Cek mockup dulu").
+
 ## 2026-10-09
 
 ### Audit lanjutan — regresi senyap jendela merge 26 Sep–7 Okt (11 commit) + verifikasi izin menu Finance Controller — doc-keeper, SELURUHNYA dokumentasi (nol kode/migrasi/SQL disentuh, nol commit/push) — **draft menunggu review Den, belum final**
