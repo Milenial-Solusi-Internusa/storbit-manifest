@@ -40,6 +40,31 @@
 -- sekali, jadi klausanya memang sudah mati, tapi dicabut eksplisit supaya
 -- komentar/kode tidak berbohong soal pengecualian yang sudah tidak ada).
 --
+-- TAMBALAN KEDUA (sesudah SQL pertama ditulis, SEBELUM dijalankan di
+-- staging -- revisi Den, dua butir):
+--   (D) Peran di KEEMPAT RPC persetujuan kini diperiksa PER ENTITAS invoice
+--       (ur.company_id = invoice.company_id), BUKAN di entitas mana pun.
+--       has_role() mengabaikan company_id sama sekali (perilaku LAMA, bukan
+--       sesuatu yang lahir di sini -- lihat gotcha TD-233: "bentuk yang
+--       benar = uji role DI ENTITAS BARIS ITU"). Disisir dulu: nol fungsi
+--       pembantu GENERIK "has_role_in(kode, company)" ada di repo/develop --
+--       yang ada hanya sibling KHUSUS per fungsi (is_manager_or_above_in,
+--       is_procurement_functional_in, dst., masing-masing hardcode daftar
+--       rolenya sendiri). Pola itu DIPERTAHANKAN: pengecekan ditulis EXISTS
+--       langsung ke user_roles/roles/profiles di tiap fungsi, konsisten
+--       dengan kriteria invoice_role_holders (company_id, is_active,
+--       valid_until, profil aktif) -- BUKAN fungsi generik baru. Karena
+--       peran butuh company_id invoice, urutan guard di keempat fungsi
+--       berubah: baris invoice dibaca+dikunci LEBIH DULU, baru peran
+--       diperiksa (dulu peran diperiksa paling awal, sebelum tahu company_id
+--       mana pun -- endorse/skip/approve; reject SUDAH begini sejak putaran
+--       pertama karena perannya sendiri bergantung status).
+--   (E) invoice_role_holders TIDAK LAGI di-GRANT EXECUTE ke authenticated
+--       (atau siapa pun) -- fungsi itu HANYA dipanggil dari dalam badan RPC
+--       SECURITY DEFINER lain, yang berjalan sebagai pemilik fungsi
+--       (postgres) dan karena itu tidak butuh grant eksplisit. Klien tidak
+--       ada alasan memanggilnya langsung.
+--
 -- SATU status baru, DUA RPC baru, EMPAT RPC dapat guard baru (approve,
 -- reject dilebarkan; record_payment/mark_ttf_received dapat guard status),
 -- SATU role baru, EMPAT kolom jejak endorsement baru, SATU fungsi helper
@@ -273,6 +298,12 @@ COMMENT ON COLUMN public.sp_invoices.endorsement_skip_reason IS 'Alasan skip, WA
 -- bisa melihat baris user_roles/profiles milik orang lain lewat RLS sebagai
 -- invoker; DEFINER menjamin daftar penerima lengkap terlepas dari RLS
 -- pemanggil (alasan yang sama dengan lead_pool_approvers).
+-- ⛔ REVISI 13 Okt 2026 (tambalan kedua): NOL GRANT EXECUTE ke siapa pun,
+-- termasuk authenticated -- fungsi ini HANYA dipanggil dari dalam badan RPC
+-- SECURITY DEFINER lain (create_invoice_for_sp/endorse_invoice_issue/
+-- skip_invoice_endorsement), yang berjalan sebagai pemilik fungsi (postgres)
+-- dan karena itu TIDAK butuh grant EXECUTE eksplisit untuk memanggilnya.
+-- Klien TIDAK ADA alasan memanggilnya langsung.
 -- ---------------------------------------------------------------------------
 CREATE FUNCTION public.invoice_role_holders(p_company_id uuid, p_role_codes text[]) RETURNS SETOF uuid
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public' AS $$
@@ -287,10 +318,11 @@ CREATE FUNCTION public.invoice_role_holders(p_company_id uuid, p_role_codes text
     AND p.active = true;
 $$;
 
-COMMENT ON FUNCTION public.invoice_role_holders(uuid, text[]) IS 'Profil AKTIF yang memegang salah satu peran di p_role_codes, AKTIF, di entitas p_company_id -- penerima notifikasi RPC persetujuan invoice (endorse/skip/create_invoice_for_sp). Pola sama dengan lead_pool_approvers, berbasis has_role() bukan izin menu. AR Tahap 3b lanjutan dua tahap, 20261013000001.';
+COMMENT ON FUNCTION public.invoice_role_holders(uuid, text[]) IS 'Profil AKTIF yang memegang salah satu peran di p_role_codes, AKTIF, di entitas p_company_id -- penerima notifikasi RPC persetujuan invoice (endorse/skip/create_invoice_for_sp). Pola sama dengan lead_pool_approvers, berbasis has_role() bukan izin menu. NOL grant EXECUTE -- hanya dipanggil dari dalam RPC SECURITY DEFINER lain (revisi 13 Okt 2026). AR Tahap 3b lanjutan dua tahap, 20261013000001.';
 
 REVOKE ALL ON FUNCTION public.invoice_role_holders(uuid, text[]) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.invoice_role_holders(uuid, text[]) TO authenticated;
+REVOKE ALL ON FUNCTION public.invoice_role_holders(uuid, text[]) FROM anon;
+REVOKE ALL ON FUNCTION public.invoice_role_holders(uuid, text[]) FROM authenticated;
 
 -- ---------------------------------------------------------------------------
 -- (2) create_invoice_for_sp -- DUA perubahan terhadap basis 20260930000002:
@@ -465,12 +497,22 @@ COMMENT ON FUNCTION public.create_invoice_for_sp(uuid, date) IS
 
 -- ---------------------------------------------------------------------------
 -- (3) endorse_invoice_issue -- BARU (putaran pertama berkas ini), DIREVISI
--- 13 Okt 2026: (i) super_admin DICABUT dari guard peran -- HANYA
--- finance_manager; (ii) klausa "kecuali super_admin" dicabut dari larangan
--- endorse pengajuan sendiri -- larangan berlaku tanpa pengecualian; (iii)
--- endorsed_by/endorsed_at diisi (dibaca approve_invoice_issue untuk aturan
--- satu orang satu tahap); (iv) notifikasi BARU ke pemegang finance_controller
--- DAN ceo di entitas itu (titik b), best-effort.
+-- 13 Okt 2026 (dua putaran): (i) super_admin DICABUT dari guard peran --
+-- HANYA finance_manager; (ii) klausa "kecuali super_admin" dicabut dari
+-- larangan endorse pengajuan sendiri -- larangan berlaku tanpa pengecualian;
+-- (iii) endorsed_by/endorsed_at diisi (dibaca approve_invoice_issue untuk
+-- aturan satu orang satu tahap); (iv) notifikasi BARU ke pemegang finance_
+-- controller DAN ceo di entitas itu (titik b), best-effort; (v) TAMBALAN
+-- KEDUA -- peran kini diperiksa PER ENTITAS invoice (has_role() lama
+-- mengabaikan company_id sama sekali -- lihat gotcha TD-233: "uji role DI
+-- ENTITAS BARIS ITU"). Nol helper generik "has_role_in(kode, company)"
+-- ditemukan di repo/develop (disisir dulu: is_manager_or_above_in/is_*_
+-- functional_in semuanya HARDCODE daftar rolenya sendiri, bukan parameter --
+-- pola yang sama dipertahankan di sini: EXISTS inline, bukan fungsi baru)
+-- -- jadi pengecekan ditulis EXISTS langsung ke user_roles, konsisten dengan
+-- invoice_role_holders (company_id invoice, is_active, valid_until, profil
+-- aktif). Karena peran butuh company_id, PENGECEKAN PERAN DIPINDAH ke
+-- SESUDAH baris invoice dibaca+dikunci (dulu di awal fungsi).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.endorse_invoice_issue(p_invoice_id uuid)
 RETURNS void
@@ -481,16 +523,29 @@ AS $fn$
 DECLARE
   v_status text; v_company_id uuid; v_created_by uuid; v_sp_no text; v_n int;
 BEGIN
-  IF NOT has_role('finance_manager') THEN
-    RAISE EXCEPTION 'Tidak punya izin meng-endorse invoice.';
-  END IF;
-
   SELECT i.status, i.company_id, i.created_by, o.sp_no
     INTO v_status, v_company_id, v_created_by, v_sp_no
     FROM sp_invoices i JOIN sp_orders o ON o.id = i.sp_order_id
    WHERE i.id = p_invoice_id AND i.deleted_at IS NULL
     FOR UPDATE OF i;
   IF v_company_id IS NULL THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+
+  -- Peran diperiksa DI ENTITAS invoice ini (v_company_id), BUKAN di entitas
+  -- mana pun (tambalan 13 Okt 2026 -- has_role() mengabaikan company_id).
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    JOIN public.profiles p ON p.id = ur.user_id
+    WHERE ur.user_id = auth.uid()
+      AND ur.company_id = v_company_id
+      AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND p.active = true
+      AND r.code = 'finance_manager'
+  ) THEN
+    RAISE EXCEPTION 'Tidak punya izin meng-endorse invoice di entitas ini.';
+  END IF;
+
   IF v_status <> 'pending_manager_approval' THEN
     RAISE EXCEPTION 'Invoice berstatus % — cuma yang menunggu endorsement manager yang bisa di-endorse.', v_status;
   END IF;
@@ -550,7 +605,9 @@ COMMENT ON FUNCTION public.endorse_invoice_issue(uuid) IS
 -- notifikasi BARU -- finance_controller+ceo (titik b, SAMA dengan endorse)
 -- DAN finance_manager entitas itu menyertakan alasan (titik c) -- keduanya
 -- best-effort. Ini MEMBATALKAN catatan "NOL notifikasi di sini" dari putaran
--- pertama berkas ini.
+-- pertama berkas ini; (v) TAMBALAN KEDUA 13 Okt 2026 -- peran kini diperiksa
+-- PER ENTITAS invoice lewat EXISTS inline (pola sama dengan endorse_
+-- invoice_issue di atas), dipindah ke sesudah baris invoice dibaca.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.skip_invoice_endorsement(p_invoice_id uuid, p_reason text)
 RETURNS void
@@ -561,10 +618,6 @@ AS $fn$
 DECLARE
   v_status text; v_company_id uuid; v_created_by uuid; v_sp_no text; v_reason text; v_n int;
 BEGIN
-  IF NOT (has_role('finance_controller') OR has_role('ceo')) THEN
-    RAISE EXCEPTION 'Tidak punya izin melompati endorsement invoice.';
-  END IF;
-
   v_reason := btrim(COALESCE(p_reason, ''));
   IF v_reason = '' THEN
     RAISE EXCEPTION 'Alasan melompati endorsement wajib diisi.';
@@ -576,6 +629,23 @@ BEGIN
    WHERE i.id = p_invoice_id AND i.deleted_at IS NULL
     FOR UPDATE OF i;
   IF v_company_id IS NULL THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+
+  -- Peran diperiksa DI ENTITAS invoice ini (tambalan 13 Okt 2026) --
+  -- dipindah ke sesudah baris invoice dibaca, karena butuh v_company_id.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    JOIN public.profiles p ON p.id = ur.user_id
+    WHERE ur.user_id = auth.uid()
+      AND ur.company_id = v_company_id
+      AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND p.active = true
+      AND r.code IN ('finance_controller', 'ceo')
+  ) THEN
+    RAISE EXCEPTION 'Tidak punya izin melompati endorsement invoice di entitas ini.';
+  END IF;
+
   IF v_status <> 'pending_manager_approval' THEN
     RAISE EXCEPTION 'Invoice berstatus % — cuma yang menunggu endorsement manager yang bisa dilompati.', v_status;
   END IF;
@@ -651,7 +721,10 @@ COMMENT ON FUNCTION public.skip_invoice_endorsement(uuid, text) IS
 -- check dipindah ke SESUDAH membaca+mengunci baris invoice (sebelumnya di
 -- awal fungsi); (iii) klausa "kecuali super_admin" dicabut dari larangan
 -- menolak pengajuan sendiri; (iv) notifikasi BARU ke created_by invoice
--- (titik d), best-effort.
+-- (titik d), best-effort; (v) TAMBALAN KEDUA 13 Okt 2026 -- kedua cabang
+-- peran kini EXISTS inline PER ENTITAS (v_company_id), bukan has_role()
+-- global -- pengecekan ini SUDAH berada sesudah baris invoice dibaca (poin
+-- (ii) di atas), jadi tidak perlu dipindah lagi.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.reject_invoice_issue(p_invoice_id uuid, p_rejection_note text)
 RETURNS void
@@ -681,14 +754,38 @@ BEGIN
   END IF;
 
   -- BARU (revisi 13 Okt 2026): peran BERGANTUNG tahap sumbernya, super_admin
-  -- DICABUT dari kedua cabang.
+  -- DICABUT dari kedua cabang. TAMBALAN KEDUA 13 Okt 2026 -- peran diperiksa
+  -- PER ENTITAS invoice ini (v_company_id), lewat EXISTS inline konsisten
+  -- dengan invoice_role_holders -- bukan has_role() yang mengabaikan
+  -- company_id (sudah dipindah ke sesudah baris invoice dibaca, lihat di
+  -- atas).
   IF v_status = 'pending_manager_approval' THEN
-    IF NOT (has_role('finance_manager') OR has_role('finance_controller') OR has_role('ceo')) THEN
-      RAISE EXCEPTION 'Tidak punya izin menolak invoice pada tahap endorsement.';
+    IF NOT EXISTS (
+      SELECT 1 FROM public.user_roles ur
+      JOIN public.roles r ON r.id = ur.role_id
+      JOIN public.profiles p ON p.id = ur.user_id
+      WHERE ur.user_id = auth.uid()
+        AND ur.company_id = v_company_id
+        AND ur.is_active = true
+        AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+        AND p.active = true
+        AND r.code IN ('finance_manager', 'finance_controller', 'ceo')
+    ) THEN
+      RAISE EXCEPTION 'Tidak punya izin menolak invoice pada tahap endorsement di entitas ini.';
     END IF;
   ELSE
-    IF NOT (has_role('finance_controller') OR has_role('ceo')) THEN
-      RAISE EXCEPTION 'Tidak punya izin menolak invoice.';
+    IF NOT EXISTS (
+      SELECT 1 FROM public.user_roles ur
+      JOIN public.roles r ON r.id = ur.role_id
+      JOIN public.profiles p ON p.id = ur.user_id
+      WHERE ur.user_id = auth.uid()
+        AND ur.company_id = v_company_id
+        AND ur.is_active = true
+        AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+        AND p.active = true
+        AND r.code IN ('finance_controller', 'ceo')
+    ) THEN
+      RAISE EXCEPTION 'Tidak punya izin menolak invoice di entitas ini.';
     END IF;
   END IF;
 
@@ -1085,13 +1182,16 @@ COMMENT ON FUNCTION public.mark_ttf_received(uuid, text, text, text, date) IS
 -- ---------------------------------------------------------------------------
 -- (8) approve_invoice_issue -- BARU DISENTUH revisi 13 Okt 2026 (versi
 -- pertama berkas ini menjanjikan "TIDAK DISENTUH SAMA SEKALI"; itu
--- DIBATALKAN -- lihat (A) di kepala berkas). Basis 20260930000003. TIGA
+-- DIBATALKAN -- lihat (A) di kepala berkas). Basis 20260930000003. EMPAT
 -- perubahan: (i) super_admin DICABUT dari guard peran -- HANYA
 -- finance_controller/ceo; (ii) klausa "kecuali super_admin" dicabut dari
 -- larangan approve pengajuan sendiri; (iii) aturan SATU ORANG SATU TAHAP
 -- BARU -- endorsed_by invoice ini TIDAK BOLEH = auth.uid() (pesan error
 -- Bahasa Inggris, instruksi Den); (iv) notifikasi BARU ke created_by invoice
--- (titik d). Penomoran invoice, posting jurnal, sp_recompute_status --
+-- (titik d). TAMBALAN KEDUA 13 Okt 2026: (v) peran diperiksa PER ENTITAS
+-- invoice (EXISTS inline, konsisten invoice_role_holders), dipindah ke
+-- SESUDAH baris invoice dibaca (dulu di awal fungsi, sebelum company_id
+-- diketahui). Penomoran invoice, posting jurnal, sp_recompute_status --
 -- SEGALANYA LAIN byte-identik 20260930000003.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.approve_invoice_issue(p_invoice_id uuid)
@@ -1107,15 +1207,27 @@ DECLARE
   v_entity_code  text; v_year int; v_month_roman text; v_seq int; v_invoice_no text;
   v_n            int;
 BEGIN
-  IF NOT (has_role('finance_controller') OR has_role('ceo')) THEN
-    RAISE EXCEPTION 'Tidak punya izin menyetujui invoice.';
-  END IF;
-
   SELECT status, company_id, sp_order_id, invoice_date, created_by, endorsed_by
     INTO v_status, v_company_id, v_sp_order_id, v_invoice_date, v_created_by, v_endorsed_by
     FROM sp_invoices WHERE id = p_invoice_id AND deleted_at IS NULL
     FOR UPDATE;
   IF v_company_id IS NULL THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+
+  -- Peran diperiksa DI ENTITAS invoice ini (tambalan 13 Okt 2026).
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    JOIN public.profiles p ON p.id = ur.user_id
+    WHERE ur.user_id = auth.uid()
+      AND ur.company_id = v_company_id
+      AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND p.active = true
+      AND r.code IN ('finance_controller', 'ceo')
+  ) THEN
+    RAISE EXCEPTION 'Tidak punya izin menyetujui invoice di entitas ini.';
+  END IF;
+
   IF v_status <> 'pending_approval' THEN
     RAISE EXCEPTION 'Invoice berstatus % — cuma yang menunggu persetujuan yang bisa disetujui.', v_status;
   END IF;
@@ -1288,6 +1400,12 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
+  IF v_def LIKE '%has_role(%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
+  END IF;
+  IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue belum memeriksa peran per entitas (ur.company_id).';
+  END IF;
   IF v_def NOT LIKE '%v_endorsed_by = auth.uid()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue belum memeriksa endorsed_by (satu orang satu tahap).';
   END IF;
@@ -1303,6 +1421,12 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
+  IF v_def LIKE '%has_role(%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
+  END IF;
+  IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue belum memeriksa peran per entitas (ur.company_id).';
+  END IF;
   IF v_def NOT LIKE '%endorsed_by = auth.uid(), endorsed_at = now()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue belum mengisi endorsed_by/endorsed_at.';
   END IF;
@@ -1314,6 +1438,12 @@ BEGIN
     FROM pg_proc p WHERE p.proname = 'skip_invoice_endorsement' AND p.pronamespace = 'public'::regnamespace;
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement MASIH menyebut is_super_admin() -- seharusnya dicabut.';
+  END IF;
+  IF v_def LIKE '%has_role(%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
+  END IF;
+  IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement belum memeriksa peran per entitas (ur.company_id).';
   END IF;
   IF v_def NOT LIKE '%endorsement_skipped = true%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement belum mengisi endorsement_skipped.';
@@ -1330,8 +1460,14 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
-  IF v_def NOT LIKE '%has_role(''finance_manager'')%' THEN
-    RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue belum memuat cabang peran finance_manager (tahap 1).';
+  IF v_def LIKE '%has_role(%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
+  END IF;
+  IF v_def NOT LIKE '%r.code IN (''finance_manager'', ''finance_controller'', ''ceo'')%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue belum memuat cabang peran finance_manager per entitas (tahap 1).';
+  END IF;
+  IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
+    RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue belum memeriksa peran per entitas (ur.company_id).';
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_def
@@ -1348,8 +1484,8 @@ BEGIN
     RAISE EXCEPTION 'V-POST GAGAL: mark_ttf_received belum memuat guard pending_manager_approval.';
   END IF;
 
-  -- ACL enam fungsi yang disentuh/baru -- authenticated-only.
-  FOR v_def IN SELECT unnest(ARRAY['invoice_role_holders','endorse_invoice_issue','skip_invoice_endorsement','approve_invoice_issue','reject_invoice_issue']) LOOP
+  -- ACL empat RPC yang disentuh/baru -- authenticated-only.
+  FOR v_def IN SELECT unnest(ARRAY['endorse_invoice_issue','skip_invoice_endorsement','approve_invoice_issue','reject_invoice_issue']) LOOP
     SELECT COALESCE(array_to_string(p.proacl::text[], ','), '(null = PUBLIC EXECUTE)') INTO v_acl
       FROM pg_proc p WHERE p.proname = v_def AND p.pronamespace = 'public'::regnamespace;
     IF v_acl = '(null = PUBLIC EXECUTE)' OR v_acl LIKE '=%' OR v_acl LIKE '%,=%'
@@ -1357,6 +1493,20 @@ BEGIN
       RAISE EXCEPTION 'V-POST GAGAL: ACL % salah. ACL: %', v_def, v_acl;
     END IF;
   END LOOP;
+
+  -- ACL invoice_role_holders -- TAMBALAN KEDUA 13 Okt 2026: NOL grant ke
+  -- siapa pun (bukan authenticated-only seperti keempat RPC di atas) --
+  -- hanya dipanggil dari dalam RPC SECURITY DEFINER lain. proacl NULL = aman
+  -- (REVOKE EXECUTE FROM PUBLIC default sejak TD-300, 2 Okt 2026) DAN array
+  -- kosong (REVOKE eksplisit, tanpa sisa grantee) sama-sama diterima; apa pun
+  -- yang menyebut authenticated/anon/PUBLIC (grantee '=' tanpa nama) GAGAL.
+  SELECT array_to_string(p.proacl::text[], ',') INTO v_acl
+    FROM pg_proc p WHERE p.proname = 'invoice_role_holders' AND p.pronamespace = 'public'::regnamespace;
+  IF v_acl IS NOT NULL AND (
+       v_acl LIKE '%authenticated=%' OR v_acl LIKE '%anon=%' OR v_acl LIKE '=%' OR v_acl LIKE '%,=%'
+     ) THEN
+    RAISE EXCEPTION 'V-POST GAGAL: invoice_role_holders MASIH punya grant EXECUTE (authenticated/anon/PUBLIC) -- seharusnya nol grant. ACL: %', COALESCE(v_acl, '(null)');
+  END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.roles WHERE code = 'finance_manager' AND is_active = true AND company_id IS NULL AND level = 7) THEN
     RAISE EXCEPTION 'V-POST GAGAL: role finance_manager tidak ada / salah bentuk (harus aktif, company_id NULL, level 7).';
