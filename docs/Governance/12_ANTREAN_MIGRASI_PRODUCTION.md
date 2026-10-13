@@ -17,6 +17,8 @@
 >
 > ⏰ **[Klarifikasi 7 Okt 2026] Rencana rilis gabungan "15 Oktober 2026" (AR Tahap 1-3b + Batch Finance AR) punya DUA tanggal, jangan tertukar:** jendela **EKSEKUSI** SQL/deploy = **malam 14 Okt 2026** (sesudah jam kerja); **EFEKTIF** dipakai Finance = **pagi 15 Okt 2026**. "15 Oktober" di seluruh dokumen (`CLAUDE.md`, `PROGRESS.md`) merujuk tanggal EFEKTIF, bukan jendela eksekusi.
 >
+> ⛔ **Koreksi 13 Okt 2026: kedua tanggal di atas (14 dan 15 Oktober) MUNDUR ke awal November 2026, tanggal pasti menyusul** — keputusan Den, lihat §Naskah Eksekusi Malam Rilis dan §Persiapan H-1 di bawah untuk detail lengkap. Pola "jendela eksekusi malam vs efektif pagi besoknya" TETAP berlaku, hanya tanggalnya yang berubah.
+>
 > 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice — ~~per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production~~ **[✅ TERPENUHI 9 Okt 2026, lihat H-1.0 & §Koreksi Data dan Akses Manual]**), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
 
 ---
@@ -80,6 +82,7 @@
 | 53 | `20261012000005_crm_lead_aging_threshold_policy` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — berpasangan dgn deploy EF `aging-pipeline` |
 | 54 | `20261012000009_crm_lead_pool_legacy_cleanup` | ✔ **dijalankan 12 Okt 2026** (commit sungguhan, bukan dry-run; 7 akun pool staging, nol berpemilik aktif → nol baris `legacy_pool_exit` — lihat §54) | ⛔ belum | ⛔ **WAJIB, SEBELUM butir 55** — lihat §54 |
 | 55 | `20261012000006_crm_lead_pool_notifications` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, SESUDAH butir 54** |
+| 55a | Migrasi baru (belum ditulis) — `lead_pool_assign` versi `(uuid, uuid, text DEFAULT NULL)` menggantikan versi 2-argumen; DROP overload lama di migrasi yang sama; ACL dipulihkan | ⛔ belum ditulis, rencana PLAN TD-318 (`08_TECH_DEBT.md`) | ⛔ belum | Dijalankan Den di staging di AWAL Irisan 2 TD-318 — lihat TD-318 untuk alasan lengkap |
 | 56 | `20261012000007_crm_quotation_lock_on_closed_inquiry` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — didahului langkah manual backup, lihat §56 ("9a") |
 | 57 | `20261012000008_crm_lead_pool_sweep_notify` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, TERAKHIR** dari rangkaian 11 berkas |
 | 58 | Perubahan manual khusus STAGING (seed CRM dummy + reaktivasi akun uji) | ✔ 12 Okt (manual) | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
@@ -1372,6 +1375,7 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 | 6 Okt 2026, 08:04 UTC | UPDATE `accounts.source`: akun "HOME WELL INDONESIA" (`id = 40808722-7a4a-4756-9061-c002692a685c`, company MSI) diubah dari `sales_visit` ke `whatsapp` | Salah pilih saat input awal | Claude chat + connector Supabase | Permanen. Terkait **TD-307** (`08_TECH_DEBT.md`) — field `source` di `ProspectFormPage.jsx` punya nilai DEFAULT diam-diam, bukan field wajib tanpa pilihan, yang sedang memicu kesalahan input seperti ini. |
 | 9 Okt 2026 | Akun baru **Bagus Putra Kurnia** (`bagus.putra@msigroup.co.id`) dibuat lewat Admin Settings dengan peran `finance_controller`@MSI; peran `finance_controller`@SOA ditambahkan manual (`INSERT user_roles`, `granted_by` = Den) | Penyetuju invoice Storbit tersedia sebelum rilis 14 Okt — gerbang approval RPC `approve_invoice_issue`/`reject_invoice_issue` (butir 40-41) tanpa penyetuju aktif berarti setiap invoice baru menumpuk tak terbatas di `pending_approval` | Admin Settings (akun) + Claude chat + connector Supabase (role @SOA) | Permanen. Diverifikasi: 2 baris `user_roles` aktif (`finance_controller`@MSI, `finance_controller`@SOA). **Butir H-1.0 di bawah ("cek akun penyetuju") kini TERPENUHI** — lihat anotasi koreksi di sana. |
 | 11 Okt 2026 | **`cron.alter_job(1, active := false)`** menonaktifkan job **`aging-pipeline-harian`** (jobid 1) — schedule dan command-nya TETAP tersimpan, hanya flag aktifnya dimatikan; terpisah, UPDATE **`companies.aging_enabled`** = `false` untuk entitas **MSI** | Mengikuti temuan audit mekanisme aging (dikerjakan sesi Claude Code sebelumnya) — Lead Pool aging otomatis dihentikan SEMENTARA, dieksekusi atas persetujuan eksplisit Den sebelum dijalankan | Claude chat + connector Supabase (MCP) | ⚠️ **[SEMENTARA, PERLU DITINJAU]** **Data pool TIDAK disentuh/diubah sama sekali** — hanya dua pengaturan di atas (job cron + flag entitas). Cara membalikkan: `cron.alter_job(1, active := true)` + set `companies.aging_enabled` MSI kembali `true`. |
+| 13 Okt 2026 | Akun **"akun test"** (`test@msi.com`) DIHAPUS — profil, auth user, dan `user_roles` (peran `finance`, `operations`, `procurement` di SOA, dibuat 21 Agu 2026, terakhir login 30 Sep 2026, nol invoice/aktivitas/akun yang dibuat) | Akun uji tidak boleh punya akses finance di production | Admin Settings > User Access (Den) | Permanen. Terverifikasi 13 Okt 2026: profil, auth user, dan `user_roles` nol baris untuk akun ini. |
 
 ### Backfill Fase B — 68 SP historis Storbit-Indomarco (23-24 Sep 2026)
 
@@ -1389,9 +1393,11 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 
 ---
 
-## Naskah Eksekusi Malam Rilis — 14 Oktober 2026
+## Naskah Eksekusi Malam Rilis — MUNDUR ke awal November 2026 (tanggal pasti menyusul)
 
-**Jendela eksekusi:** malam **14 Oktober 2026**, sesudah jam kerja. **Efektif dipakai Finance:** pagi **15 Oktober 2026**. Dua tanggal ini TIDAK boleh tertukar (klarifikasi 7 Okt 2026, lihat catatan di kepala dokumen).
+**Jendela eksekusi:** malam **[tanggal menyusul, awal November 2026]**, sesudah jam kerja. **Efektif dipakai Finance:** pagi hari berikutnya. Dua tanggal ini TIDAK boleh tertukar (klarifikasi 7 Okt 2026, lihat catatan di kepala dokumen). ⛔ **Koreksi 13 Okt 2026: mundur dari rencana semula 14/15 Oktober — keputusan Den, alasan + rekomendasi jadwal di bawah.**
+
+⛔ **Keputusan Den 13 Okt 2026: mundur ke awal November 2026, tanggal pasti menyusul.** Rekomendasi yang dicatat (bukan keputusan final, arah yang disetujui Den): **AR dan Lead Management (TD-318) dirilis di MALAM BERBEDA** — AR lebih dulu, Lead Management beberapa hari SESUDAH AR terbukti stabil di production (bukan malam yang sama, supaya kalau salah satu bermasalah, yang lain tidak ikut terseret investigasi). Lihat §Paket 2 Lead Pool untuk status TD-318 secara terpisah.
 
 **Cakupan naskah ini: butir 6-46** (AR Tahap 1 sisa, AR Tahap 2 + Invoice Lengkap, Paket Keamanan TD-281 H1/H2/H3/H5 — sudah LIVE, hanya checkpoint, AR Tahap 3, AR Tahap 3b). **Butir 6, 7, 27-31, 45, 46 SUDAH LIVE** di kedua lingkungan — disebut di sini hanya sebagai checkpoint "pastikan masih utuh", bukan tindakan baru. ⛔ **TIDAK termasuk TD-300 Group E** — lihat penjelasan di penutup naskah ini.
 
@@ -1401,13 +1407,15 @@ Bagian ini **berbeda sifat** dari seluruh butir di atas: butir 1-46 adalah **ber
 
 **Sejak 11 Oktober 2026**, isi rilis ini dikunci di branch **`release/2026-10-14`** (dicabangkan dari `develop`@`1176df7`) — `develop` sendiri dibuka kembali hari yang sama untuk pekerjaan baru (Batch DS 3 dkk) yang **bukan** bagian rilis ini. Tiga aturan berlaku sampai rilis ini benar-benar terkirim:
 
-1. **Perbaikan terhadap isi rilis ini** (dari sekarang sampai malam 14 Okt) **di-commit ke `release/2026-10-14` dulu, lalu di-merge balik ke `develop`** — supaya `develop` tidak kehilangan perbaikan itu.
-2. **Perubahan yang berdampak ke STAGING dari pekerjaan `develop` yang berjalan** (Batch DS 3 dkk, atau apa pun yang mendarat di `develop` di periode ini) **wajib murni ADITIF** sampai rilis ini terkirim — tidak boleh ada yang mengubah atau mengganggu apa pun yang sudah terkunci di `release/2026-10-14` dan siap kirim 14 Okt.
+1. **Perbaikan terhadap isi rilis ini** (dari sekarang sampai malam rilis, tanggal baru awal November 2026) **di-commit ke `release/2026-10-14` dulu, lalu di-merge balik ke `develop`** — supaya `develop` tidak kehilangan perbaikan itu.
+2. **Perubahan yang berdampak ke STAGING dari pekerjaan `develop` yang berjalan** (Batch DS 3 dkk, atau apa pun yang mendarat di `develop` di periode ini) **wajib murni ADITIF** sampai rilis ini terkirim — tidak boleh ada yang mengubah atau mengganggu apa pun yang sudah terkunci di `release/2026-10-14` dan siap kirim pada malam rilis (tanggal baru, awal November 2026).
 3. **Sesudah rilis ini sukses dikirim, `main` di-merge balik ke `develop`** (supaya `develop` menyerap apa pun yang mendarat di `main` selama rilis), dan **hanya sesudah itu** `release/2026-10-14` boleh dihapus.
 
 **Konsekuensi untuk naskah di bawah:** setiap langkah yang dulu menyebut "merge `develop` → `main`" sekarang berarti **merge `release/2026-10-14` → `main`** (merge commit biasa, bukan squash, bukan fast-forward-only) — lihat Langkah 2.
 
 ### Persiapan H-1 (13 Oktober 2026)
+
+⛔ **H-1 WAJIB DIULANG sehari sebelum tanggal rilis baru** (bukan dianggap final dari hasil 13 Okt 2026 di atas) — data production bergerak setiap hari, terutama H-1.1 (jumlah SP lolos) dan H-1.2 (baris `ar_ttfs` seharusnya bertambah begitu impor TTF mulai berjalan rutin sebelum rilis).
 
 **Tujuan: pindahkan sebanyak mungkin KEPUTUSAN keluar dari malam rilis.** Kelima langkah di bawah **read-only** (nol tabel diubah, aman dijalankan ke **production** kapan pun, termasuk hari ini) — hasilnya dipakai untuk meninjau angka lebih awal, BUKAN untuk menggantikan pengukuran ULANG di Langkah 0/1E malam itu (data bergerak setiap hari; angka H-1 adalah pratinjau, bukan angka final).
 
@@ -1438,6 +1446,8 @@ SELECT c.code AS entitas, r.code AS role, p.full_name AS nama, p.active AS profi
 ```
 
 **Tindakan sebelum rilis (keputusan Den, bukan sesuatu yang bisa saya putuskan):** pastikan minimal SATU akun `finance_controller` aktif di SOA sebelum butir 40 dijalankan — baik dengan mengaktifkan akun yang sudah ada atau menambah role `finance_controller` ke akun yang tepat (lewat Admin Settings/User Access, bukan SQL manual). Kalau tidak memungkinkan malam itu, pastikan CEO (Azhar Malik) ATAU pemegang `super_admin` benar-benar **siap dan terjaga** untuk membuka Approval di pagi 15 Okt — jangan asumsikan "ada penyetuju di kertas" berarti "ada yang akan benar-benar menyetujui".
+
+**Hasil dijalankan ulang 13 Okt 2026:** penyetuju SOA tersedia — **Bagus Putra Kurnia** (`finance_controller`@SOA) dan **Azhar Malik** (`ceo`@SOA). Konsisten dengan baris 9 Okt 2026 di §Koreksi Data dan Akses Manual — nol perubahan sejak itu.
 
 #### H-1.1 — Pratinjau radius dampak butir 9
 
@@ -1480,6 +1490,8 @@ SELECT kategori, count(*) AS jumlah_sp, string_agg(sp_no, ', ' ORDER BY sp_no) A
 ```
 
 **Cara membaca:** bandingkan total baris dengan angka 25 Sep 2026 (62 total → 5 lolos / 9 tertahan signed_date / 47 tertahan BTB / 1 tertahan SJ). Pergeseran kecil WAJAR (SP baru masuk/invoice baru terbit sejak 25 Sep); pergeseran BESAR (mis. "lolos" tiba-tiba 0 atau total jauh di luar ~60-an) layak ditanyakan sebelum malam rilis, bukan ditemukan saat itu.
+
+**Hasil dijalankan 13 Okt 2026:** total **88 SP** belum ditagih — **32 lolos** (`4_lolos_bisa_ditagih`), **44 tertahan BTB**, **11 tertahan signed_date kosong**, **1 tertahan SJ belum selesai**. Naik dari baseline 25 Sep 2026 (62 total, 5 lolos). ⛔ **Tindakan WAJIB sebelum rilis: cek ke Elvira apakah ke-32 SP kategori "lolos" itu sudah ditagih manual di luar Nexus** (pola sama dengan temuan rekonsiliasi AR Storbit 28-29 Sep — populasi "lolos di Nexus" dan "sudah ditagih di Finance" bisa tidak selaras) — kalau sudah, pastikan tidak dobel-tagih saat Langkah 1A/1F berjalan.
 
 **Siapkan sebagai daftar kerja gudang, dikerjakan SESUDAH rilis.** Kolom `daftar_sp` pada kategori **`1_tertahan_btb`** dan **`3_tertahan_signed_date_kosong`** adalah SP yang akan tetap tidak bisa ditagih sesudah butir 9 live — bukan karena ada yang salah, tapi karena pekerjaan gudangnya memang belum tuntas (BTB belum terbit, atau Surat Jalan sudah `delivered` tapi tanggal tanda tangannya belum diisi lewat "Lengkapi Tanggal Ditandatangani"). **Salin kedua daftar itu sebelum rilis** dan serahkan ke tim gudang sebagai checklist pasca-rilis — begitu masing-masing item diselesaikan (BTB diterbitkan / tanggal diisi), SP itu otomatis pindah ke `4_lolos_bisa_ditagih` tanpa butuh migrasi atau tindakan DB apa pun lagi. Kategori **`2_tertahan_sj_belum_selesai`** TIDAK termasuk daftar ini — itu menunggu Surat Jalannya sendiri selesai dikirim, bukan tindakan administratif.
 
@@ -1532,6 +1544,8 @@ SELECT count(*) AS invoice_void FROM sp_invoices WHERE deleted_at IS NULL AND st
 
 ⚠️ Angka H-1.2 ini **BUKAN pengganti V0 malam itu** — butir 37 TETAP wajib menjalankan V0 miliknya sendiri (di dalam berkas, sesudah butir 32 live) sebagai syarat menghapus blok STOP KERAS. Gunanya di sini murni supaya Den sudah punya gambaran kasar sebelum malam itu, bukan melihat angka ini untuk PERTAMA KALINYA sambil ditunggu.
 
+**Hasil dijalankan 13 Okt 2026:** production **BELUM PUNYA SATU PUN baris `ar_ttfs`** (nol TTF tercatat). ⛔ **Keputusan Den 13 Okt 2026 — butir 37 DIPINDAH, dijalankan SESUDAH impor TTF di Langkah 4 (bukan di Langkah 1E seperti rencana semula).** Alasan: menjalankan butir 37 selagi `ar_ttfs` masih nol baris berarti backfill `due_date` dari TTF tidak punya satu pun sumber data untuk dipakai — sekitar **500 invoice** (lihat baseline "508 dari 509" di tempat lain dokumen ini) akan kehilangan `due_date` sampai impor TTF benar-benar terjadi, padahal impor TTF itu sendiri adalah fitur HEADLINE rilis ini (Langkah 4.2). Lihat perubahan struktur Langkah 1E/Langkah 4 di bawah untuk detail pemindahannya.
+
 #### H-1.3 — Cek koneksi `pg_dump`/session pooler
 
 Memastikan jalur backup (Langkah 0.1) tidak gagal karena masalah jaringan/kredensial yang baru ketahuan malam itu:
@@ -1552,6 +1566,8 @@ pg_dump --version
 
 **Server production (diukur via Supabase API, 7 Okt 2026): PostgreSQL 17.6** (`postgres_engine: 17`). Aturannya: `pg_dump` lokal **wajib versi major 17 atau lebih baru** (pg_dump versi 14/15/16 TIDAK dijamin mengerti seluruh fitur Postgres 17 — risikonya dump gagal keras ATAU "berhasil" tapi kehilangan sesuatu tanpa pesan jelas). Kalau versi lokal lebih lama, **upgrade `pg_dump` dulu** (lewat `brew upgrade libpq`/`postgresql@17` atau sejenisnya) — jangan memaksakan backup dengan versi yang lebih lama hanya karena "biasanya jalan".
 
+**Hasil dijalankan 13 Okt 2026:** `pg_dump` lokal Den versi **18.4** — memenuhi syarat (server production PostgreSQL 17.6, aturan minimal major 17).
+
 #### H-1.4 — Perkiraan durasi tiap kelompok migrasi
 
 **Perkiraan, bukan ukuran** — volume data di production kecil (ratusan baris per tabel yang disentuh, bukan jutaan), jadi waktu eksekusi SQL murni diperkirakan sub-detik sampai beberapa detik per berkas; durasi TOTAL malam itu didominasi **kecepatan Den membaca output dan mengeksekusi satu-per-satu**, bukan beban database.
@@ -1562,12 +1578,12 @@ pg_dump --version
 | 1B (AR Tahap 2) | 4 | 5-10 menit | Butir 11 (backfill ~508 invoice) sedikit lebih lama dari sekadar `CREATE FUNCTION`, tetap dalam hitungan detik |
 | 1C (Invoice Lengkap) | 10 | 15-25 menit | Paling banyak berkas; butir 19 mengambil lock singkat saat REVOKE jika ada transaksi lain sedang menulis tabel yang sama |
 | 1D (checkpoint, nol eksekusi) | 0 | 2-5 menit | Murni membaca & membandingkan, bukan menjalankan apa pun |
-| 1E (AR Tahap 3, + titik berhenti 37) | 6-7 | 10-20 menit **+ waktu review V0/diskusi** (tidak bisa diperkirakan) | Butir 37 (kalau dijalankan malam itu): `CREATE UNIQUE INDEX` setara di migrasi lain pernah mengambil ShareLock singkat — di sini hanya `UPDATE`, bukan `CREATE INDEX`, jadi serupa |
+| 1E (AR Tahap 3) | 6 | 8-15 menit | Butir 37 **TIDAK lagi di kelompok ini** — dipindah ke Langkah 4.2a (lihat koreksi 13 Okt 2026), dijalankan sesudah impor TTF, bukan di sini |
 | 1F (AR Tahap 3b) | 6 | 8-15 menit | — |
 | **Total Langkah 1 (tanpa hitung diskusi butir 37)** | **34-35** | **≈ 45-80 menit** | |
 | Langkah 2 (merge+deploy) | — | 5-15 menit | Tergantung CI (build+lint) dan apakah lewat PR atau merge langsung |
 | Langkah 3 (cek Vercel) | — | 2-5 menit | Build Vercel untuk app ini historisnya ~10 detik (lihat verifikasi rilis Bagian A 7 Okt), tapi beri jeda untuk propagasi alias |
-| Langkah 4 (smoke test + impor TTF) | — | 15-30 menit | Tergantung jumlah dokumen TTF yang diuji & ketersediaan Finance malam itu |
+| Langkah 4 (smoke test + impor TTF + butir 37 di 4.2a) | — | 15-30 menit **+ waktu review V0/diskusi butir 37** (tidak bisa diperkirakan, pindah dari baris 1E — lihat koreksi 13 Okt 2026) | Tergantung jumlah dokumen TTF yang diuji & ketersediaan Finance malam itu |
 
 **Perkiraan total malam itu (tanpa menghitung diskusi butir 37, yang bergantung keputusan real-time): ≈ 1,5-2,5 jam.**
 
@@ -1628,7 +1644,7 @@ Sebelum lanjut ke AR Tahap 3, konfirmasi cepat objek-objek ini **masih seperti s
 
 Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah di luar urutan dokumen ini sejak 30 Sep, selidiki dulu sebelum lanjut ke AR Tahap 3 (yang membangun di atas asumsi keadaan ini).
 
-#### 1E. AR Tahap 3 — butir 32 → 33 → 34 → 35 → 36 → **[BERHENTI — lihat 37]** → 38
+#### 1E. AR Tahap 3 — butir 32 → 33 → 34 → 35 → 36 → 38 (butir 37 PINDAH ke Langkah 4, lihat 4.2a)
 
 | Urutan | Berkas | Prasyarat |
 |---|---|---|
@@ -1637,12 +1653,6 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 | 34 | `20260929000006_ar_tahap3_sp_payments_potongan_kolom.sql` | — |
 | 35 | `20260929000007_ar_tahap3_record_payment_v3.sql` | butir 9, 13, 33, 34 — ⛔⏳ **rollback menyempit, lihat di bawah** |
 | 36 | `20260929000008_ar_tahap3_ttf_tanggal_dan_due_date.sql` | butir 18, 25, 32 |
-
-⛔⛔ **TITIK BERHENTI WAJIB — butir 37, `20260929000009_ar_tahap3_due_date_ttf_backfill.sql`.** Berkas ini punya `STOP KERAS` tertanam (blok `RAISE EXCEPTION` tanpa syarat) yang **harus tetap ada** sampai langkah ini dijalankan manual:
-1. Jalankan **HANYA** blok **V0** di kepala berkas (read-only, aman) — ini mengukur berapa invoice production yang `due_date`-nya akan berubah basis kalau backfill ini jalan.
-2. **Tunjukkan angka V0 ke Den dan tunggu persetujuan EKSPLISIT malam itu** — angkanya untuk DATA PRODUCTION saat itu, **bukan** angka staging 29 Sep (22 invoice) yang sudah basi untuk production.
-3. **Hanya sesudah disetujui**, hapus/lewati blok STOP KERAS untuk SESI eksekusi ini saja, lalu jalankan sisa berkas.
-4. Kalau TIDAK disetujui malam itu: **lewati butir 37 untuk sekarang**, lanjut ke butir 38 (tidak bergantung pada 37) — backfill ini bisa menyusul kapan saja, ia tidak memblokir apa pun yang lain.
 
 | Urutan | Berkas | Prasyarat |
 |---|---|---|
@@ -1693,6 +1703,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 |---|---|---|
 | 4.1 | Login sebagai akun `finance`/`finance_controller` nyata, buka **Finance & Accounting › Accounts Receivable › Invoice Management** (6.2.1) | Finance |
 | 4.2 | Buka **Invoice Submission & Acknowledgement** (6.2.2), jalankan **"Proses Impor"** (impor TTF massal) dengan batch kecil dokumen TTF fisik yang sudah menumpuk — ini smoke test fitur HEADLINE rilis ini, bukan langkah DB. Konfirmasi status invoice yang diimpor berubah sesuai jumlah TTF yang benar-benar dicocokkan | Finance (Elvira) |
+| 4.2a | ⛔⛔ **TITIK BERHENTI WAJIB — butir 37, `20260929000009_ar_tahap3_due_date_ttf_backfill.sql`.** Berkas ini punya `STOP KERAS` tertanam (blok `RAISE EXCEPTION` tanpa syarat) yang **harus tetap ada** sampai langkah ini dijalankan manual. **Dipindah ke SINI (keputusan Den 13 Okt 2026) karena `ar_ttfs` baru punya baris SESUDAH 4.2 berjalan** — menjalankannya lebih awal (rencana semula, Langkah 1E) berarti backfill `due_date` nol sumber data, ±500 invoice kehilangan `due_date` sampai impor TTF terjadi. Prosedur: (1) Jalankan **HANYA** blok **V0** di kepala berkas (read-only, aman) — mengukur berapa invoice production yang `due_date`-nya akan berubah basis, SEKARANG `ar_ttfs` sudah berisi data dari 4.2. (2) **Tunjukkan angka V0 ke Den dan tunggu persetujuan EKSPLISIT malam itu.** (3) **Hanya sesudah disetujui**, hapus/lewati blok STOP KERAS untuk SESI eksekusi ini saja, lalu jalankan sisa berkas. (4) Kalau TIDAK disetujui malam itu: **lewati butir 37 untuk sekarang** — ia tidak memblokir butir 38 (sudah dijalankan di Langkah 1E) atau langkah lain, backfill ini bisa menyusul kapan saja. | Finance/Den |
 | 4.3 | Terbitkan SATU invoice baru end-to-end (ajukan → approve → lihat jurnal) untuk membuktikan rantai AR Tahap 1/2/3/3b tersambung di production sungguhan, bukan cuma lolos `V-POST` | Finance/Finance Controller |
 | 4.4 | `node scripts/qa/env-drift-check.mjs` sekali lagi | Harapan: seluruh butir 8-44 yang baru dijalankan pindah dari **ANTRE** jadi **cocok** (nol DRIFT baru) |
 | 4.5 | Login sebagai akun **Sales** (bukan super_admin), buka sidebar — konfirmasi **nol baris "Soon"** terlihat | Siapa pun yang pegang akun uji Sales |
@@ -1749,7 +1760,7 @@ Kalau salah satu di atas TIDAK sesuai, **berhenti** — artinya ada yang berubah
 
 ## Paket 2 Lead Pool (butir 47-57) — MUNDUR ke awal November 2026, BUKAN bagian malam rilis 14 Oktober itu
 
-> **Sifat berbeda dari seluruh butir di atas.** Butir 1-46 + §Naskah Eksekusi Malam Rilis adalah rantai AR Storbit yang dijadwalkan rilis malam **14 Oktober 2026 — TIDAK BERUBAH oleh keputusan di bawah**. Sebelas berkas migrasi di bawah ini (+ dua Edge Function + satu langkah manual staging-only, butir 47-58) adalah pekerjaan TERPISAH — Lead Management "Paket 2" (Batch DS 3, irisan 7-9) — yang **TIDAK termasuk** jendela rilis AR itu sama sekali. **Jangan jalankan berkas-berkas ini di malam yang sama dengan Langkah 1-5 §Naskah Eksekusi** — jadwalkan sesi tersendiri. ⛔ **Keputusan Den 13 Okt 2026: jadwal MUNDUR dari "sesudah 14 Oktober 2026" menjadi target awal November 2026.** Syarat: Fase 1 DAN Fase 2 dari TD baru hasil audit mockup Lead Management (lihat `08_TECH_DEBT.md` TD-318) harus SELESAI dan LOLOS TES DI STAGING dulu — launching (migrasi Paket 2 ke production) tidak boleh dijadwalkan sebelum syarat itu terpenuhi. Alasan: audit 13 Okt 2026 menemukan implementasinya belum persis mockup (386 temuan); detail lengkap di TD-318.
+> **Sifat berbeda dari seluruh butir di atas.** Butir 1-46 + §Naskah Eksekusi Malam Rilis adalah rantai AR Storbit yang **JUGA mundur ke awal November 2026** (keputusan Den 13 Okt 2026, terpisah dari keputusan TD-318 di bawah — lihat §Naskah Eksekusi Malam Rilis untuk detail). ⚠️ **Rekomendasi yang dicatat: AR dan Lead Management (TD-318) dirilis di MALAM BERBEDA** — AR lebih dulu, Lead Management beberapa hari sesudah AR stabil; jangan dibaca sebagai satu malam gabungan. Sebelas berkas migrasi di bawah ini (+ dua Edge Function + satu langkah manual staging-only, butir 47-58) adalah pekerjaan TERPISAH — Lead Management "Paket 2" (Batch DS 3, irisan 7-9) — yang **TIDAK termasuk** jendela rilis AR itu sama sekali. **Jangan jalankan berkas-berkas ini di malam yang sama dengan Langkah 1-5 §Naskah Eksekusi** — jadwalkan sesi tersendiri. ⛔ **Keputusan Den 13 Okt 2026: jadwal MUNDUR dari "sesudah 14 Oktober 2026" menjadi target awal November 2026.** Syarat: Fase 1 DAN Fase 2 dari TD baru hasil audit mockup Lead Management (lihat `08_TECH_DEBT.md` TD-318) harus SELESAI dan LOLOS TES DI STAGING dulu — launching (migrasi Paket 2 ke production) tidak boleh dijadwalkan sebelum syarat itu terpenuhi. Alasan: audit 13 Okt 2026 menemukan implementasinya belum persis mockup (386 temuan); detail lengkap di TD-318.
 >
 > **Status staging vs production diukur dari DUA sumber yang harus cocok, bukan dikarang dari salah satu:** tanggal commit (`git log`) DAN baris `Status:` di header tiap berkas migrasi itu sendiri. Seluruh **sebelas** berkas sudah **JALAN DI STAGING** sebagai commit sungguhan — dua yang pertama 11 Okt 2026, sembilan sisanya 12 Okt 2026, **termasuk butir 54** (dikonfirmasi langsung ke staging oleh Den 12 Okt 2026: tabel `accounts_lead_pool_backup_20261012` ada, constraint `account_pool_history_event_type_check` sudah sembilan nilai — lihat §54 untuk angka lengkapnya; jangan tertukar dengan uji coba **dry-run** di PRODUCTION yang terpisah, lihat §Catatan uji coba). **Production: BELUM SATU PUN dijalankan sungguhan (commit).**
 
