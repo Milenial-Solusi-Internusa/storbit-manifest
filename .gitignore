@@ -56,3 +56,9 @@ menu_catalog_seed.sql
 
 # QA sweep output (hasil run lokal; baseline yang di-commit ada di scripts/qa/baseline/)
 scripts/qa/out/
+
+# Mockup Claude Design (ekspor lokal, bukan bagian repo) -- berisi aturan
+# bisnis + data internal, repo ini PUBLIK. Sebelumnya hanya diabaikan lewat
+# .git/info/exclude lokal (tidak ikut ter-clone) -- dipindah ke sini 13 Okt
+# 2026 supaya perlindungannya berlaku untuk SEMUA clone, bukan cuma mesin ini.
+design-handoff/

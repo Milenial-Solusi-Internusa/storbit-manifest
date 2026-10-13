@@ -1853,7 +1853,7 @@ Ini identik dengan urutan yang ditulis sendiri di header berkas butir 54: *"URUT
 | Production | ⛔ belum |
 | Sifat | Aditif murni — nol kolom diubah/di-drop, nol tabel baru, nol GRANT baru (kolom baru otomatis ikut cakupan GRANT table-level yang sudah ada). Mandiri |
 
-**Untuk apa.** Field baru untuk layar Capture Lead + Detail Lead (tab Overview/Contacts) sesuai mockup `design-handoff/crm-2026-10-11/Lead Management.dc.html`. `qualified_at` adalah sumbu status "Qualified" di layar baru: `lifecycle_stage IN ('lead','mql') AND qualified_at IS NULL` = Raw, `IS NOT NULL` = Qualified — diisi lewat aksi "Mark Qualified" di UI, **bukan** trigger DB. `competitor_name`/`competitor_price` menyalin pola kolom yang sudah ada di `inquiries` (bukan tabel/relasi baru) — relevan untuk Mark as Lost **sebelum** lead sempat jadi inquiry.
+**Untuk apa.** Field baru untuk layar Capture Lead + Detail Lead (tab Overview/Contacts) sesuai mockup `design-handoff/mockup/Lead Management.dc.html`. `qualified_at` adalah sumbu status "Qualified" di layar baru: `lifecycle_stage IN ('lead','mql') AND qualified_at IS NULL` = Raw, `IS NOT NULL` = Qualified — diisi lewat aksi "Mark Qualified" di UI, **bukan** trigger DB. `competitor_name`/`competitor_price` menyalin pola kolom yang sudah ada di `inquiries` (bukan tabel/relasi baru) — relevan untuk Mark as Lost **sebelum** lead sempat jadi inquiry.
 
 **Rollback.** `DROP COLUMN` untuk kesebelas kolom — aman selama belum ada baris terisi.
 
