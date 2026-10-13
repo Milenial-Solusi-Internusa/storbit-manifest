@@ -1291,7 +1291,7 @@ Guard peran **SENGAJA TANPA `is_manager_or_above()`** — hanya `super_admin`/`f
 | | |
 |---|---|
 | Berkas | `supabase/migrations/20261013000001_ar_tahap3b_invoice_two_stage_approval.sql` |
-| Staging | ⛔ **belum** — ditulis 13 Okt 2026, menunggu Den jalankan manual (CC tidak menjalankan SQL) |
+| Staging | ✅ **SUDAH JALAN 13 Okt 2026** — dieksekusi Vir lewat connector Supabase MCP. Badan kedelapan fungsi diverifikasi md5 identik dengan file; 23 skenario uji fungsional (impersonasi JWT, satu transaksi dibatalkan) semua sesuai harapan — rincian di §VERIFIKASI STAGING di bawah |
 | Production | ⛔ **belum** |
 | Tindakan saat launching | ⛔ **WAJIB jalankan**, SESUDAH butir 39-42 (pre-check berkas ini menolak jalan kalau basis `reject_invoice_issue`/`record_payment`/`mark_ttf_received` bukan versi butir 41/42) |
 
@@ -1324,6 +1324,32 @@ Larangan "tidak boleh menyetujui/endorse/skip/menolak pengajuan sendiri" kini be
 **Basis tiap fungsi yang diubah** (diverifikasi diff mekanis terhadap file yang sungguh mendefinisikannya, BUKAN `schema_snapshot.sql` yang nol hit untuk `approve_invoice_issue`/`reject_invoice_issue`): `create_invoice_for_sp` ← butir 40 · `approve_invoice_issue`/`reject_invoice_issue` ← butir 41 · `record_payment`/`mark_ttf_received` ← butir 42.
 
 **Rollback.** ⛔ Hanya aman kalau **nol** baris `sp_invoices` berstatus `pending_manager_approval` ATAU `pending_approval` hidup (kini TERMASUK `pending_approval`, karena `approve_invoice_issue` lama tidak tahu soal `endorsed_by`). Lihat blok ROLLBACK lengkap di ekor berkas migrasi (DROP `invoice_role_holders` + dua RPC baru, tempel ulang badan lama EMPAT fungsi yang dilebarkan/direvisi termasuk `approve_invoice_issue`, DROP empat kolom jejak endorsement, kembalikan CHECK constraint, hapus grant menu — JANGAN hapus role `finance_manager` kalau sudah dipegang user).
+
+### ✅ VERIFIKASI STAGING 13 Okt 2026
+
+**Eksekusi:** Vir, lewat connector Supabase MCP (bukan CC — CC tidak menjalankan SQL, konsisten aturan proyek).
+
+**Badan fungsi.** Kedelapan fungsi yang disentuh/baru oleh migrasi ini (`create_invoice_for_sp`, `endorse_invoice_issue`, `skip_invoice_endorsement`, `approve_invoice_issue`, `reject_invoice_issue`, `record_payment`, `mark_ttf_received`, `invoice_role_holders`) diverifikasi **md5 identik** antara badan yang hidup di staging dan isi berkas migrasi — nol drift antara yang dijalankan dan yang tercatat di repo.
+
+**23 skenario uji fungsional**, lewat impersonasi JWT (GUC `request.jwt.claim.sub`, pola yang sama dengan seed UAT 25 Sep 2026) di **satu transaksi yang dibatalkan** (nol data staging berubah permanen akibat pengujian ini) — **SEMUA sesuai harapan**:
+- Alur normal: Elvira ajukan → **Rini endorse** → **Bagus approve** → `issued`
+- **Skip** dengan alasan wajib (kosong ditolak; diisi berhasil, `endorsement_skip_reason` terisi)
+- **Satu orang satu tahap**: aktor yang endorse/skip pada sebuah invoice ditolak saat mencoba approve invoice yang sama; aktor LAIN berhasil
+- **Super admin ditolak** di keempat RPC (endorse/skip/approve/reject) — konsisten (B) di atas
+- **Finance Manager @MSI ditolak meng-endorse invoice @SOA** (peran per entitas, tambalan kedua) — dan sebaliknya diterima di entitasnya sendiri
+- **Larangan atas pengajuan sendiri** — ditolak di keempat RPC, tanpa pengecualian
+- **Tolak di tahap 1** (`pending_manager_approval`, oleh `finance_manager`/`finance_controller`/`ceo`) dan **tolak di tahap 2** (`pending_approval`, oleh `finance_controller`/`ceo` saja) — keduanya kembali ke `draft` + `rejection_note`
+- **Guard pembayaran di tahap 1** — `record_payment`/`mark_ttf_received` menolak invoice `pending_manager_approval`
+- **Empat titik notifikasi** (invoice lahir → `finance_manager`; endorse/skip → `finance_controller`+`ceo`; skip juga → `finance_manager` dengan alasan; ditolak/terbit → `created_by`) — baris `notifications` muncul di penerima yang benar, nol baris ke pelaku aksinya sendiri
+
+⛔ **Bug ditemukan DAN ditutup hari yang sama:** blok V-POST migrasi ini (empat pengecekan `v_def LIKE '%has_role(%'` untuk approve/endorse/skip/reject) memberi **alarm palsu** — teks "has_role()" (tanpa tanda kutip, bentuk prosa) muncul di KOMENTAR inline badan `endorse_invoice_issue` dan `reject_invoice_issue` (menjelaskan KENAPA peran kini diperiksa per entitas), bukan sebagai panggilan fungsi sungguhan. V-POST sempat gagal di `endorse_invoice_issue` padahal fungsinya BENAR — gejala klasik *pengecekan `LIKE` yang tak bisa membedakan kode dari komentar*. **Diperbaiki**: pola diganti `'%has_role(''%'` (bentuk panggilan sungguhan, `has_role('...')`, dengan tanda kutip pembuka) — kebal terhadap komentar prosa yang menyebut nama fungsinya tanpa tanda kutip. Nol badan fungsi disentuh; keempat pengecekan lolos sesudahnya.
+
+**Perubahan manual KHUSUS STAGING (bukan migrasi, TIDAK naik ke production)** — tiga grant peran lewat Admin Settings/connector Supabase, untuk kebutuhan pengujian 23 skenario di atas:
+- `finance_manager`@SOA → akun `zzztest.h3@msi.com`
+- `ceo`@SOA → akun `zzztest.deactivate@msi.com`
+- `finance_manager`@MSI → akun `test@msi.com`
+
+⚠️ **Ketiganya eksplisit TIDAK termasuk dalam cakupan launching production** — mereka akun uji staging, bukan akun operasional nyata. Langkah manual yang WAJIB untuk production tetap hanya satu: peran `finance_manager`@SOA untuk **Rini Andriyani** (lihat paragraf di bawah). Jangan membawa ketiga grant staging ini ke production dengan asumsi "sudah pernah dikerjakan di sana".
 
 **Langkah manual SESUDAH migrasi ini live di suatu environment (BUKAN SQL — lewat Admin Settings, dikerjakan Den sendiri):** tambahkan peran **`finance_manager`** ke akun **Rini Andriyani @ SOA** lewat User Access/User Edit. Migrasi ini hanya menyiapkan role + izin menunya — **nol pemegang** sampai langkah ini dijalankan. Tanpa langkah ini, setiap invoice baru akan menumpuk tak terbatas di `pending_manager_approval` (sama persis dengan pelajaran butir 9 Okt soal akun `finance_controller` Bagus — gerbang approval tanpa penyetuju aktif = macet, bukan lewat begitu saja).
 

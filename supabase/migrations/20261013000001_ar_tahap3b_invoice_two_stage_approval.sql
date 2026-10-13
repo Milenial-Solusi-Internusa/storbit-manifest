@@ -1400,7 +1400,7 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
-  IF v_def LIKE '%has_role(%' THEN
+  IF v_def LIKE '%has_role(''%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: approve_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
   END IF;
   IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
@@ -1421,7 +1421,7 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
-  IF v_def LIKE '%has_role(%' THEN
+  IF v_def LIKE '%has_role(''%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: endorse_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
   END IF;
   IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
@@ -1439,7 +1439,7 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
-  IF v_def LIKE '%has_role(%' THEN
+  IF v_def LIKE '%has_role(''%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: skip_invoice_endorsement MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
   END IF;
   IF v_def NOT LIKE '%ur.company_id = v_company_id%' THEN
@@ -1460,7 +1460,7 @@ BEGIN
   IF v_def LIKE '%is_super_admin()%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue MASIH menyebut is_super_admin() -- seharusnya dicabut.';
   END IF;
-  IF v_def LIKE '%has_role(%' THEN
+  IF v_def LIKE '%has_role(''%' THEN
     RAISE EXCEPTION 'V-POST GAGAL: reject_invoice_issue MASIH memanggil has_role() -- seharusnya EXISTS per entitas (tambalan 13 Okt 2026).';
   END IF;
   IF v_def NOT LIKE '%r.code IN (''finance_manager'', ''finance_controller'', ''ceo'')%' THEN
