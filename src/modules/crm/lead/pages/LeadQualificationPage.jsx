@@ -42,7 +42,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { PageHeader, Card, Segmented, Select, PrimaryBtn } from '../../../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE_SOFT, HEAD_BG, ROW_HOVER,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER,
   FONT_BODY, FONT_HEAD, FONT_MONO, SP, fmtRp, avatarToneFor,
 } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
@@ -165,7 +165,10 @@ export default function LeadQualificationPage({ onSelectLead, onCreateInquiry, s
     <div>
       <PageHeader title="Lead Qualification to Inquiry" />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: SP.s4, marginBottom: SP.s4 }}>
+      {/* repeat(3, minmax(0,1fr)) -- persis mockup (Lead Management.dc.html:151,
+          "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px"),
+          bukan auto-fit minmax(220px,1fr) -- TD-318 Irisan 0d. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: SP.s4, marginBottom: SP.s4 }}>
         <Card>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 }}>Qualified Leads</div>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{leads.length}</div>
@@ -191,7 +194,27 @@ export default function LeadQualificationPage({ onSelectLead, onCreateInquiry, s
 
       <div style={{ fontSize: 13, color: INK_SOFT, marginBottom: SP.s2, fontFamily: FONT_BODY }}>{leads.length} lead{leads.length === 1 ? '' : 's'}, {scopeLabel}</div>
 
-      <Card padded={false}>
+      {/* border -> boxShadow inset -- TD-318 Irisan 0d, SATU-SATUNYA sumber overflow 1px
+          sisa di 1475px (jendela Den). Matematikanya (diukur Playwright, bukan ditebak):
+          QUAL_GRID_COLS sendiri PUNYA lantai 1186px (7 kolom tetap 736px + 3 minimum
+          minmax 170+130+150=450px) -- lebih besar dari QUAL_GRID_MIN_W=1180 yang
+          tertulis (angka itu DISALIN LITERAL dari mockup, dan mockup SENDIRI sudah
+          salah hitung 6px -- bukan typo kita, dibuktikan via grep mockup langsung).
+          Di 1475px, chrome app (sidebar 248px + padding 20px x2, PERSIS mockup
+          `<aside style="width:248px">`+`<main style="padding:24px 20px 32px">`)
+          menyisakan 1185px untuk isi kartu -- 1px DI BAWAH lantai 1186px itu, SEBELUM
+          border kartu dihitung. Border 1px x 2 sisi (kartu `padded={false}`) memakan
+          2px LAGI dari lebar isi, sementara perhitungan Den (1475-248-40=1187) tidak
+          menghitungnya -- itulah penyebab persis overflow 1px, bukan pembulatan
+          (diverifikasi: seluruh kotak di rantai ini bulat, nol sub-pixel).
+          grid-template-columns TIDAK disentuh (dilarang) dan sidebar/padding bersama
+          TIDAK disentuh (dipakai semua halaman lain) -- satu-satunya ruang aman untuk
+          mengembalikan 2px itu TANPA mengubah tampilan: ganti border jadi inset
+          box-shadow (warna & tebal sama persis, dicat KE DALAM alih-alih ditambahkan
+          ke lebar kotak). Baris mockup min-width:1180 sendiri akan overflow identik
+          kalau diukur persis di chrome yang sama -- bukan sesuatu yang kita
+          perkenalkan. */}
+      <Card padded={false} style={{ border: 'none', boxShadow: `inset 0 0 0 1px ${LINE}` }}>
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: INK_FAINT, fontFamily: FONT_BODY }}>Loading data…</div>
         ) : leads.length === 0 ? (
