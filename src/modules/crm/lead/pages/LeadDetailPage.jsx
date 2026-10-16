@@ -986,7 +986,13 @@ function ActivityTab({ activities, poolHistory = [], actorMap, accountId, compan
       {composer === 'followup' && (
         <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: SP.s4, marginBottom: SP.s4, background: CARD, display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
           <FloatingInput label="Follow-up Date" type="date" value={followDate} onChange={setFollowDate} />
-          <Textarea label="Notes" value={text} onChange={setText} rows={2} hint="Optional" />
+          {/* TD-318 Irisan 3, tes Den #3 (sisir): prop kit `optional`
+              menggantikan hint di bawah kotak -- CATATAN: field "Notes" di
+              composer Schedule Follow Up ini sendiri TIDAK ADA di mockup
+              (Modal mockup hanya Date + Time, :263), jadi ini bukan
+              perbaikan mengikuti pola mockup yang hilang -- murni konsisten
+              dgn satu pola "Optional" yang sama dipakai di tempat lain. */}
+          <Textarea label="Notes" optional value={text} onChange={setText} rows={2} />
           <div style={{ display: 'flex', gap: SP.s2 }}>
             <Button variant="primary" size="sm" disabled={!followDate || saving} loading={saving} onClick={submitFollowUp}>Schedule</Button>
             <OutlineBtn size="sm" onClick={() => { setComposer(null); setText(''); setFollowDate(''); }}>Cancel</OutlineBtn>

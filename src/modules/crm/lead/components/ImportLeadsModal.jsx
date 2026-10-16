@@ -283,8 +283,10 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
               options={(isAllEntities ? ENTITIES : ENTITIES.filter((e) => e.id === profile?.company_id)).map((e) => ({ value: e.id, label: e.code }))} />
             {/* TD-318 Irisan 1, N12: label "Owner" + kata "Optional" terpisah
                 warna lebih terang, persis mockup (:353) -- sebelumnya satu
-                string "Owner (optional)" polos. */}
-            <FloatingSelect label={<>Owner <span style={{ fontWeight: 400, color: INK_FAINT }}>Optional</span></>} value={defaultOwner} onChange={setDefaultOwner}
+                string "Owner (optional)" polos. TD-318 Irisan 3, tes Den
+                #3: pindah ke prop kit `optional` (FieldLabel) -- JSX label
+                manual di atas adalah workaround SEBELUM prop ini ada. */}
+            <FloatingSelect label="Owner" optional value={defaultOwner} onChange={setDefaultOwner}
               options={[{ value: '', label: 'Leave unassigned' }, ...owners.map((o) => ({ value: o.id, label: o.full_name }))]} />
           </div>
 
