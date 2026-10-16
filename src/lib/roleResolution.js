@@ -20,8 +20,12 @@
 // Pilot 3 BD (12 Sep 2026): kedua SPV sales (level 6) sejajar 'supervisor';
 // bd_account_executive / bd_sales_executive / bd_digital_marketing_spv (level 7)
 // di tier staf, di samping 'sales' lama yang kini dormant.
+// bd_digital_marketing_manager (level 4, 16 Okt 2026, migrasi
+// 20261016000002) disisipkan tepat sesudah 'proc_manager' — sejajar level 4,
+// pola yang sama dengan proc_manager sendiri (komentar di atas).
 export const ERP_ROLE_PRIORITY = [
   'super_admin','admin','ceo','gm','gm_bd','manager','proc_manager',
+  'bd_digital_marketing_manager',
   'supervisor','bd_sales_spv_console','bd_sales_spv_forwarding',
   'finance_controller','finance','operations',
   'sales','bd_account_executive','bd_sales_executive','bd_digital_marketing_spv',
