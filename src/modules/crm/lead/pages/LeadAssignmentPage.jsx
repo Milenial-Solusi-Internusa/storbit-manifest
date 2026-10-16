@@ -194,10 +194,18 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
         />
       )}
 
+      {/* TD-318 Irisan 3: toast dinamis persis mockup submitPull/saveReject
+          -- "by" (pengaju) utk Reject diresolve dari pull_requested_by yang
+          SUDAH ter-select di query utama (lihat komentar header) lewat
+          profMap yang SUDAH ada di scope ini, NOL query baru. */}
       <RequestPullModal open={!!pullTarget} onClose={() => setPullTarget(null)} account={pullTarget} showToast={showToast}
-        onRequested={() => { setPullTarget(null); showToast?.('Pull request submitted'); refetch(); }} />
+        onRequested={() => { setPullTarget(null); showToast?.(`Pull request for ${pullTarget?.code} sent for approval`); refetch(); }} />
       <RejectPullModal open={!!rejectTarget} onClose={() => setRejectTarget(null)} account={rejectTarget} showToast={showToast}
-        onRejected={() => { showToast?.(`Pull request for "${rejectTarget?.name}" rejected`); setRejectTarget(null); refetch(); }} />
+        onRejected={() => {
+          const by = rejectTarget?.pull_requested_by ? (profMap[rejectTarget.pull_requested_by] || 'the requester') : 'the requester';
+          showToast?.(`Request rejected. ${by} has been notified`);
+          setRejectTarget(null); refetch();
+        }} />
       <AssignToSalesModal open={!!assignTarget} onClose={() => setAssignTarget(null)} account={assignTarget} showToast={showToast}
         onAssigned={() => { showToast?.(`"${assignTarget?.name}" assigned to sales`); setAssignTarget(null); refetch(); }} />
     </div>
