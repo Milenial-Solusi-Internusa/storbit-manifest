@@ -188,11 +188,19 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
         <div>
+          {/* TD-318 Irisan 2: label SELALU "Current Owner" (persis mockup
+              `:375`) -- bulk hanya mengubah ISI chip (badge angka + "N
+              leads"), bukan labelnya jadi "N Leads Selected". */}
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>
-            {bulk ? `${accounts.length} Leads Selected` : 'Current Owner'}
+            Current Owner
           </div>
           {bulk ? (
-            <div style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{accounts.map((a) => a.name).join(', ')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 22, height: 22, borderRadius: 999, background: '#EFF3ED', color: INK, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>
+                {accounts.length}
+              </span>
+              <span style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{accounts.length} leads</span>
+            </div>
           ) : (() => {
             const name = accounts[0].assigned_profile?.full_name;
             const tone = name ? avatarToneFor(accounts[0].assigned_to) : null;
