@@ -174,6 +174,38 @@ export function MasterSelect({
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [open]);
 
+  // Escape -- temuan review Vir (commit cbb84d9): Modal (Overlay.jsx
+  // useEscape) memasang listener keydown di window TANPA capture (fase
+  // bubble) yang memanggil onClose untuk Escape DI MANA PUN, termasuk dari
+  // input "New option name" di popover yang kini di-portal ke document.body
+  // -- Escape untuk batal mengetik opsi baru ikut menutup SELURUH Modal.
+  // Listener di sini dipasang CAPTURE (fase capture jalan lebih dulu
+  // daripada fase bubble pada target yang sama, window), dan
+  // stopImmediatePropagation() mencegah listener Modal (dan apa pun lain)
+  // ikut menyala untuk event yang SAMA. Dua aturan, persis mockup `onKey`
+  // (Escape saat `adding` -> HANYA setAdding(false), draft tak dibuang) +
+  // `toggle` (Escape saat popover terbuka bukan adding -> tutup popover
+  // saja) -- Escape saat popover TERTUTUP tidak pernah mencapai sini
+  // (listener dilepas), jadi Modal tertutup seperti biasa. Fokus balik ke
+  // tombol pemicu HANYA saat popover benar-benar menutup (aturan 2) --
+  // aturan 1 (keluar dari "adding") tidak memindah fokus, persis mockup
+  // yang juga tak mengelola fokus di titik itu. Escape TIDAK LAGI ditangani
+  // di `onTriggerKeyDown`/`onDraftKeyDown` (lihat di bawah) -- satu listener
+  // ini saja, supaya tidak jalan dua kali.
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKeyDownCapture(e) {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (adding) { setAdding(false); return; }
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+    window.addEventListener('keydown', onKeyDownCapture, true);
+    return () => window.removeEventListener('keydown', onKeyDownCapture, true);
+  }, [open, adding]);
+
   // Posisi popover dihitung dari tombol pemicu, bukan dari rootRef -- dua
   // pass (pos awal null -> diukur -> dipasang) lewat useLayoutEffect supaya
   // koreksi arah (atas/bawah) terjadi SEBELUM paint, nol kedipan. Scroll
@@ -218,8 +250,9 @@ export function MasterSelect({
 
   function onTriggerKeyDown(e) {
     if (isDisabled) return;
-    if (e.key === 'Escape') { setOpen(false); setAdding(false); }
-    else if ((e.key === 'Enter' || e.key === ' ') && !open) { e.preventDefault(); setOpen(true); }
+    // Escape ditangani listener capture di atas -- bukan di sini, supaya
+    // tidak jalan dua kali (gotcha Vir, commit cbb84d9).
+    if ((e.key === 'Enter' || e.key === ' ') && !open) { e.preventDefault(); setOpen(true); }
   }
 
   function pick(v) { onChange?.(v); setOpen(false); }
@@ -232,8 +265,9 @@ export function MasterSelect({
   }
 
   function onDraftKeyDown(e) {
+    // Escape ditangani listener capture di atas (bukan di sini) -- satu
+    // jalan saja (gotcha Vir, commit cbb84d9).
     if (e.key === 'Enter') { e.preventDefault(); commitAdd(); }
-    else if (e.key === 'Escape') setAdding(false); // persis mockup -- draft TIDAK dibuang
   }
 
   function requestNew() { setOpen(false); onRequestNew?.(label); }
