@@ -2122,6 +2122,21 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 
 ---
 
+### 61. `20261016000003_crm_lead_capture_computed_sort_columns`
+
+| | |
+|---|---|
+| Isi | TD-318 Irisan Sorting — 4 fungsi "computed column" PostgREST di `accounts` (`bant_score`, `lead_status_rank`, `owner_name`, `primary_contact_name`), `LANGUAGE sql STABLE SECURITY INVOKER` + `GRANT EXECUTE TO authenticated`. Melengkapi 9 kolom sortable `Capture/Table` (mockup) — 5 kolom lain (code/source/name/estimated_value/last_activity_at) sudah sortable lewat `.order()` dinamis tanpa migrasi, di branch `feat/td318-irisan-sorting`. `lead_status_rank` cermin persis `deriveLeadStatus()` (`leadStatus.js`) + urutan `LEAD_STATUSES` (0=raw…4=lost), `is_stale` sengaja tidak dilipat ke dalamnya (sumbu terpisah, badge independen). Keempat fungsi **hanya dipakai di `.order()`, tidak pernah di-`select()`** — jadi 5 kolom langsung tetap jalan di Preview branch ini walau fungsi-fungsi ini belum ada di suatu environment. |
+| Staging | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector (`CREATE OR REPLACE FUNCTION`, bukan `CREATE FUNCTION` draf awal) + `NOTIFY pgrst, 'reload schema'`. Verifikasi: PT Verifikasi Irisan Enam — `bant_score` 12, `lead_status_rank` 1, `owner_name` "ZZZTEST Sales", `primary_contact_name` "Andi Wijaya". PT Bumi Agro Jember — `owner_name` NULL (Unassigned tetap ikut hasil, tidak terbuang lewat `!inner`). |
+| Production | ⛔ belum — **bagian rilis November** bersama sisa Irisan Sorting, bukan jendela rilis AR. SQL identik dengan staging (file migrasi sudah mencerminkan `CREATE OR REPLACE FUNCTION` yang benar-benar jalan), plus `NOTIFY pgrst, 'reload schema'` WAJIB diulang di production. |
+| Sifat | 100% BACA (fungsi `STABLE`, nol tabel baru, nol DDL pada `accounts`/`profiles`/`contacts`). `SECURITY INVOKER` — RLS `profiles`/`contacts` pemanggil tetap berlaku saat `owner_name`/`primary_contact_name` di-resolve. Nol dampak ke kode FE lain — hanya dipanggil dari `LeadCapturePage.jsx` lewat `.order()`. |
+
+**Untuk apa.** PostgREST tidak bisa `.order()` baris induk lintas tabel (Owner, Primary Contact) tanpa `!inner` — yang akan membuang baris Unassigned/tanpa kontak dari hasil — dan tidak bisa `.order()` ekspresi SQL (BANT Score = SUM 4 kolom, Status = turunan 2 kolom). Computed column PostgREST (fungsi berargumen tunggal bertipe baris `accounts`) menyelesaikan keduanya tanpa `!inner` dan tanpa mengubah bentuk hasil.
+
+**Rollback.** `DROP FUNCTION IF EXISTS public.bant_score(public.accounts); DROP FUNCTION IF EXISTS public.lead_status_rank(public.accounts); DROP FUNCTION IF EXISTS public.owner_name(public.accounts); DROP FUNCTION IF EXISTS public.primary_contact_name(public.accounts); NOTIFY pgrst, 'reload schema';` (lihat ekor file migrasi) — aman kapan pun karena keempatnya cuma dipakai di `.order()`, bukan di `.select()` manapun.
+
+---
+
 ## Cara merawat dokumen ini
 
 1. **Setiap SQL manual di staging masuk ke sini**, di hari yang sama. Perubahan tanpa berkas migrasi adalah perubahan yang paling mudah hilang.

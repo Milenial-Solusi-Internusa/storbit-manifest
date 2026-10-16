@@ -34,16 +34,27 @@
 -- Lead Management.dc.html). Melipat is_stale ke rank akan membuat satu
 -- kolom mewakili DUA sumbu berbeda sekaligus.
 --
--- Status: BELUM DIJALANKAN -- draft, JANGAN dieksekusi sampai Den/Vir
--- menyetujui. Ikut rilis November (develop) -- jalan di STAGING dulu untuk
--- diuji di Preview, baru production.
+-- Status: JALAN DI STAGING 16 Okt 2026 (Vir, via connector) -- BELUM DI
+-- PRODUCTION, menunggu rilis November bersama sisa Irisan Sorting. Keempat
+-- CREATE FUNCTION draf awal diganti CREATE OR REPLACE FUNCTION (idempoten
+-- tanpa perlu DROP dulu -- pola sama dengan koreksi 20261016000001, bukan
+-- karena connector memblokir CREATE FUNCTION polos, melainkan supaya file
+-- ini aman dijalankan ulang kalau isinya direvisi sebelum naik produksi).
+-- Sesudah jalan, Vir menjalankan NOTIFY pgrst, 'reload schema' supaya
+-- PostgREST langsung mengenali keempat computed column tanpa restart --
+-- WAJIB diulang saat migrasi ini jalan di production nanti.
+--
+-- Verifikasi staging (Vir, 16 Okt 2026): PT Verifikasi Irisan Enam --
+-- bant_score 12, lead_status_rank 1, owner_name "ZZZTEST Sales",
+-- primary_contact_name "Andi Wijaya". PT Bumi Agro Jember -- owner_name
+-- NULL (Unassigned tetap ikut hasil, tidak terbuang).
 -- =============================================================================
 
 BEGIN;
 
 -- bant_score -- cermin PERSIS calcBantScoreSafe() (LeadCapturePage.jsx:597-600):
 -- tiap dimensi NULL dianggap 0, bukan membuat SUM-nya NULL.
-CREATE FUNCTION public.bant_score(rec public.accounts) RETURNS integer
+CREATE OR REPLACE FUNCTION public.bant_score(rec public.accounts) RETURNS integer
     LANGUAGE sql STABLE SECURITY INVOKER
     SET search_path TO 'public'
     AS $$
@@ -60,7 +71,7 @@ GRANT EXECUTE ON FUNCTION public.bant_score(public.accounts) TO authenticated;
 -- query LeadCapturePage lewat .neq('lifecycle_stage','free_agent')) --
 -- NULLS LAST di FE. is_stale SENGAJA TIDAK dilipat ke sini, lihat catatan
 -- header file.
-CREATE FUNCTION public.lead_status_rank(rec public.accounts) RETURNS integer
+CREATE OR REPLACE FUNCTION public.lead_status_rank(rec public.accounts) RETURNS integer
     LANGUAGE sql STABLE SECURITY INVOKER
     SET search_path TO 'public'
     AS $$
@@ -80,7 +91,7 @@ GRANT EXECUTE ON FUNCTION public.lead_status_rank(public.accounts) TO authentica
 -- owner_name -- relasi many-to-one (accounts.assigned_to -> profiles.id).
 -- NULL utk Unassigned -- NULLS LAST di FE, bukan !inner (yang akan
 -- membuang baris Unassigned dari hasil -- TIDAK BOLEH).
-CREATE FUNCTION public.owner_name(rec public.accounts) RETURNS text
+CREATE OR REPLACE FUNCTION public.owner_name(rec public.accounts) RETURNS text
     LANGUAGE sql STABLE SECURITY INVOKER
     SET search_path TO 'public'
     AS $$
@@ -93,7 +104,7 @@ GRANT EXECUTE ON FUNCTION public.owner_name(public.accounts) TO authenticated;
 -- primary_contact_name -- relasi one-to-many (banyak contacts per account),
 -- diambil SATU baris ber-is_primary=true DAN deleted_at IS NULL. NULL kalau
 -- nol kontak utama -- NULLS LAST di FE.
-CREATE FUNCTION public.primary_contact_name(rec public.accounts) RETURNS text
+CREATE OR REPLACE FUNCTION public.primary_contact_name(rec public.accounts) RETURNS text
     LANGUAGE sql STABLE SECURITY INVOKER
     SET search_path TO 'public'
     AS $$
@@ -106,6 +117,12 @@ REVOKE ALL ON FUNCTION public.primary_contact_name(public.accounts) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.primary_contact_name(public.accounts) TO authenticated;
 
 COMMIT;
+
+NOTIFY pgrst, 'reload schema';
+-- PostgREST meng-cache daftar kolom/fungsi saat start -- tanpa NOTIFY ini,
+-- keempat computed column baru tidak dikenali sampai PostgREST restart
+-- sendiri. WAJIB diulang tiap migrasi ini dijalankan di environment baru
+-- (sudah dilakukan Vir di staging 16 Okt 2026; ulangi saat naik production).
 
 -- =============================================================================
 -- Verifikasi (jalankan terpisah sesudah commit):
@@ -126,4 +143,5 @@ COMMIT;
 -- DROP FUNCTION IF EXISTS public.lead_status_rank(public.accounts);
 -- DROP FUNCTION IF EXISTS public.owner_name(public.accounts);
 -- DROP FUNCTION IF EXISTS public.primary_contact_name(public.accounts);
+-- NOTIFY pgrst, 'reload schema';
 -- =============================================================================
