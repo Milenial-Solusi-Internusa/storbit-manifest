@@ -706,6 +706,23 @@
 >
 > ---
 >
+> ### Irisan Sorting — hasil eksekusi (16 Okt 2026)
+>
+> ✅ **SELESAI, 9 kolom sortable `Capture/Table` persis mockup (sortBy.X/arrow.X, mockup `:81/:538-539`), dikerjakan di branch `feat/td318-irisan-sorting` dari `develop`@`4e2b8c7`:**
+> - **5 kolom langsung** (Account Code/Source/Company Name/Estimated Value/Last Touched) via `.order()` dinamis di `LeadCapturePage.jsx` — nol migrasi.
+> - **4 kolom computed column PostgREST** (BANT Score/Status/Owner/Primary Contact) — migrasi `20261016000003_crm_lead_capture_computed_sort_columns.sql` (`bant_score`/`lead_status_rank`/`owner_name`/`primary_contact_name`, `LANGUAGE sql STABLE SECURITY INVOKER`, `GRANT EXECUTE TO authenticated`). Keempat fungsi sengaja **hanya dipakai di `.order()`, tidak pernah di-`select()`** — jadi 5 kolom langsung tetap jalan di Preview tanpa menunggu migrasi ini.
+> - Komponen `SortHeadCell` (gaya `Th` SalesOrderPage.jsx: warna aktif + panah ↑/↓/⇅) diadaptasi dari `<th>` ke `<div role="columnheader">` karena `Capture/Table` CSS grid, bukan `<table>` — bukan konvensi baru. Mekanika `toggleSort`: kolom baru = ascending, klik ulang = dibalik, default Last Touched terbaru (`sortKey='t', sortDir=-1`) — diverifikasi lewat repro reducer murni, persis mockup.
+> - **`CREATE OR REPLACE FUNCTION` SUDAH DIJALANKAN DI STAGING 16 Okt 2026** oleh Vir via connector (draf awal `CREATE FUNCTION` polos, diganti supaya file aman dijalankan ulang) + `NOTIFY pgrst, 'reload schema'`. Verifikasi: PT Verifikasi Irisan Enam — `bant_score` 12, `lead_status_rank` 1, `owner_name` "ZZZTEST Sales", `primary_contact_name` "Andi Wijaya"; PT Bumi Agro Jember — `owner_name` NULL (Unassigned tetap ikut hasil, tidak terbuang lewat `!inner`).
+> - ✅ **Tes runtime ADA** (Preview, Den): 9 kolom sortable termasuk keempat computed column (sudah jalan di staging), arah naik/turun, Unassigned tetap di akhir, sorting bertahan saat pindah halaman dan bersama filter.
+>
+> **Gate:** build clean · lint **126/19 = baseline persis, nol perubahan** · `check-menu-paths` tidak terdampak (nol rute baru/berubah).
+>
+> ⛔ **Migrasi `20261016000003` BELUM DI PRODUCTION — WAJIB jalan bersama rilis November, SEBELUM atau BERSAMAAN `develop` naik ke `main`, BUKAN sesudahnya.** Keempat kolom computed (BANT Score/Status/Owner/Primary Contact) bergantung penuh padanya — kalau `develop` naik ke produksi tanpa migrasi ini dulu, mengklik salah satu dari 4 header itu akan gagal lewat `showToast` error (PostgREST: kolom tak dikenal), bukan mematikan seluruh halaman (5 kolom langsung tetap jalan), tapi tetap regresi fungsional yang terlihat user. Dicatat di `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 61 sebagai bagian rilis November, dengan `NOTIFY pgrst, 'reload schema'` wajib diulang di production.
+>
+> ✅ **Irisan Sorting MERGE ke `develop` 16 Okt 2026** (merge commit `937cc02`, `git merge --no-ff feat/td318-irisan-sorting`, nol konflik — `12_ANTREAN_MIGRASI_PRODUCTION.md` auto-merge bersih, butir 59/60/61 ketiganya utuh tanpa duplikat) — sesudah Den menguji Preview `feat/td318-irisan-sorting`@`23f5c2f`. Build clean, lint **126/19 = baseline persis, nol perubahan**, `check-menu-paths` ✔ 334 id/325 rute tak berubah. Branch `feat/td318-irisan-sorting` **belum dihapus**.
+>
+> ---
+>
 > ## Gerbang eksekusi — DIUBAH 13 Okt 2026
 >
 > **Gerbang LAMA** ("tunggu rilis AR terkirim DAN `main` di-merge balik ke `develop`") **DIGANTI**: eksekusi Fase 1 dan Fase 2 boleh mulai SEKARANG di `develop`, tidak perlu menunggu rilis AR. Alasan: rilis AR sendiri mundur ke awal November 2026 (lihat `12_ANTREAN_MIGRASI_PRODUCTION.md` §Naskah Eksekusi) — menunggu gerbang lama berarti Fase 1+2 ikut tertunda tanpa alasan teknis, padahal keduanya tidak bergantung pada isi rilis AR.
