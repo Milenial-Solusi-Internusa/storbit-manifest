@@ -33,6 +33,15 @@
 // RPC lead_pool_assign (tak punya parameter itu) -- hanya relevan utk
 // baris non-pool; dibiarkan terisi apa adanya, bukan disembunyikan
 // kondisional (kompleksitas UI yang tak diminta).
+//
+// TD-318 Irisan 2: judul modal + label tombol memakai `allUnassigned`
+// (SEMUA target tanpa pemilik), persis mockup `allUn` -- BUKAN `bulk`
+// (accounts.length > 1). Satu lead tanpa pemilik dibuka dari Lead Detail
+// juga allUnassigned=true (judul "Assign to Sales"), bukan hanya saat
+// bulk; sebaliknya bulk-select beberapa lead yang SEMUA sudah berpemilik
+// tetap "Reassign Lead" (allUnassigned=false), bukan "Assign to Sales".
+// `bulk` TETAP dipakai di tempat lain (tampilan Current Owner, kata
+// "owners" jamak) -- dua sumbu berbeda, jangan disatukan.
 import { useState } from 'react';
 import { Modal, FloatingInput, FloatingSelect, Textarea, SaveButton, OutlineBtn } from '../../../../kit';
 import { INK, INK_SOFT, FONT_BODY, FONT_HEAD, SP, avatarToneFor } from '../../../../kit/tokens';
@@ -46,9 +55,10 @@ import { getTodayWIB } from '../../../../lib/dateUtils';
  * @param {Array<{id:string, name:string, code?:string, company_id:string, assigned_to?:string|null, assigned_profile?:{full_name?:string}, is_in_lead_pool?:boolean}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {() => void} onReassigned
- * @param {string} [title] - judul modal; default-nya mereproduksi perilaku Lead
- *   lama (bulk ? 'Assign to Sales' : 'Reassign Lead') -- irisan 7 Bagian 2 poin 2.
- *   Pemanggil non-Lead (mis. Customer) mengirim judul tetap sendiri.
+ * @param {string} [title] - judul modal; default-nya mengikuti kepemilikan SEMUA
+ *   target (allUnassigned ? 'Assign to Sales' : 'Reassign Lead'), bukan jumlah
+ *   target -- TD-318 Irisan 2, persis mockup `allUn`. Pemanggil non-Lead
+ *   (mis. Customer) mengirim judul tetap sendiri.
  * @param {string} [notifyEventType] - notifications.event_type, default 'lead_reassigned'
  * @param {string} [notifyReferenceType] - notifications.reference_type, default 'lead'
  */
@@ -61,6 +71,9 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
   const [notify, setNotify] = useState(true);
 
   const bulk = accounts.length > 1;
+  // TD-318 Irisan 2 -- persis mockup `allUn`: SEMUA target tanpa pemilik,
+  // independen dari `bulk`. Dipakai HANYA utk judul/tombol (lihat header).
+  const allUnassigned = accounts.length > 0 && accounts.every((a) => !a.assigned_to);
   const companyIds = [...new Set(accounts.map((a) => a.company_id).filter(Boolean))];
 
   // Reset + muat daftar salesperson aktif SAAT modal dibuka -- pola "adjust
@@ -159,10 +172,10 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
   if (!accounts.length) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={title ?? (bulk ? 'Assign to Sales' : 'Reassign Lead')} width={520} footer={(
+    <Modal open={open} onClose={onClose} title={title ?? (allUnassigned ? 'Assign to Sales' : 'Reassign Lead')} width={520} footer={(
       <>
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
-        <SaveButton onSave={handleSave} label={bulk ? 'Assign' : 'Save and Reassign'} savedLabel={bulk ? 'Assigned!' : 'Reassigned!'} disabled={!canSave}
+        <SaveButton onSave={handleSave} label={allUnassigned ? 'Assign' : 'Save and Reassign'} savedLabel={allUnassigned ? 'Assigned!' : 'Reassigned!'} disabled={!canSave}
           onError={(err) => showToast?.('Failed to reassign: ' + err.message, 'error')} />
       </>
     )}>
