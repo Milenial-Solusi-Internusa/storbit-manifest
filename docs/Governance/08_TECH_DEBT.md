@@ -649,11 +649,13 @@
 >
 > **Gate:** build clean · lint 126/19 = baseline, nol regresi · `check-menu-paths` 334 id/325 rute, tak berubah. Repro faithful (Playwright, bukan live render — akses staging tetap terblokir kredensial) + screenshot before/after topbar, FormSheet h1 (Detail Deal), dan tabel Lead Qualification di 1280/1440/1475px.
 >
+> ✅ **Irisan 0, 0b, 0c, 0d MERGE ke `develop` 16 Okt 2026** (merge commit `b92612b`, `git merge --no-ff feat/kit-label-atas`, nol konflik) — sesudah Den menguji Preview `feat/kit-label-atas`@`594af39` (5 tes lolos: Create Inquiry prefill, lead Raw tampil di Lead Capture, Lead Detail Raw hanya Mark Qualified, simpan BANT+Qualification Data terverifikasi ke DB staging, label di atas kotak di Entity Settings/Sales Targets). Build clean, lint **126/19 = baseline persis, nol perubahan** (baseline TIDAK perlu diperbarui di `CLAUDE.md`), `check-menu-paths` ✔ 334 id/325 rute tak berubah. Branch `feat/kit-label-atas` **belum dihapus**.
+>
 > ---
 >
-> ## Irisan 1 — Multi-channel Lead Capture, keputusan final (16 Okt 2026) — BELUM DIKERJAKAN
+> ## Irisan 1 — Multi-channel Lead Capture, keputusan final (16 Okt 2026)
 >
-> PLAN+audit dikerjakan AUDIT-ONLY (nol file kode disentuh), lalu DISETUJUI Den dengan koreksi+keputusan di bawah — dicek Vir langsung ke repo + kedua database (staging & production) sebelum menyetujui. Eksekusi BELUM mulai: dimulai HANYA sesudah Den mengonfirmasi `feat/kit-label-atas` sudah merge ke `develop`, di branch BARU `feat/td318-irisan-1` dari `develop` terbaru — BUKAN menumpuk di branch kit.
+> PLAN+audit dikerjakan AUDIT-ONLY (nol file kode disentuh), lalu DISETUJUI Den dengan koreksi+keputusan di bawah — dicek Vir langsung ke repo + kedua database (staging & production) sebelum menyetujui. ✅ **Gerbang mulai TERPENUHI 16 Okt 2026** — `feat/kit-label-atas` sudah merge ke `develop` (`b92612b`, lihat di atas); dikerjakan di branch BARU `feat/td318-irisan-1` dari `develop` terbaru — BUKAN menumpuk di branch kit.
 >
 > **Koreksi atas audit awal:** klaim "`/crm/lead/capture` gagal/error di production hari ini" SALAH — lihat perluasan PRASYARAT PRODUKSI di atas (§Irisan 0c). Status staging (dicek Vir langsung, bukan dari header migrasi saja): `accounts` SUDAH punya `industry`/`priority`/`lead_category`/`description`/`qualified_at`/`qualified_reason`/`estimated_value`/`is_stale`/`stale_flagged_at`; `contacts` SUDAH punya `whatsapp`/`preferred_channel` — seluruh field yang dipakai `LeadCapturePage.jsx`/`CaptureLeadModal.jsx`/`ImportLeadsModal.jsx` BISA diuji penuh di Vercel Preview.
 >
