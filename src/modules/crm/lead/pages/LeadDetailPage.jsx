@@ -446,6 +446,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
                 industryOptions={industryOptions} categoryOptions={categoryOptions} lostReasonOptions={lostReasonOptions}
                 canManage={canManage} onReassign={() => setReassignOpen(true)}
                 onRequestNewOption={(key) => setRequestOptionFor(key)}
+                onAddOption={(key, opt) => { if (key === 'industry') setIndustryOptions((o) => [...o, opt]); else setCategoryOptions((o) => [...o, opt]); }}
                 showToast={showToast}
                 autoEditCompany={quickEditOnMount}
               />
@@ -479,19 +480,14 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
         onArchived={() => { setArchiveOpen(false); showToast?.('Lead archived'); onBack?.(); }} />
       <ReleaseToPoolModal open={releaseOpen} onClose={() => setReleaseOpen(false)} account={account} showToast={showToast}
         onReleased={() => { setReleaseOpen(false); showToast?.('Lead released to the pool'); fetchAccount(); fetchPoolHistory(); }} />
+      {/* TD-318 Irisan 3: hanya ditempuh non-manager (onAdd di OverviewTab
+          menangani manager LANGSUNG) -- onSubmitted selalu mode:'request',
+          nol tindak lanjut sama seperti sebelumnya untuk cabang itu. */}
       <RequestNewOptionModal
         open={!!requestOptionFor} onClose={() => setRequestOptionFor(null)}
         listKey={requestOptionFor === 'industry' ? 'lead_industry' : 'lead_category'}
         listLabel={requestOptionFor === 'industry' ? 'Industry' : 'Lead Category'}
         companyId={null}
-        onSubmitted={(result) => {
-          if (result.mode === 'direct') {
-            const slug = result.option.label.trim().toLowerCase().replace(/\s+/g, '_');
-            const opt = { id: result.option.id, value: slug, label: result.option.label };
-            if (requestOptionFor === 'industry') setIndustryOptions((o) => [...o, opt]);
-            else setCategoryOptions((o) => [...o, opt]);
-          }
-        }}
       />
     </div>
   );
@@ -514,7 +510,7 @@ function buildCompanyDraft(account) {
 
 function OverviewTab({
   account, setAccount, id, companyId, status, industryOptions, categoryOptions, lostReasonOptions,
-  canManage, onReassign, onRequestNewOption, showToast, autoEditCompany,
+  canManage, onReassign, onRequestNewOption, onAddOption, showToast, autoEditCompany,
 }) {
   const entityCode = ENTITIES.find((e) => e.id === companyId)?.code || '—';
   const isLost = status === 'lost';
@@ -541,6 +537,23 @@ function OverviewTab({
     setAccount((a) => ({ ...a, ...payload }));
     setCompanyEdit(false);
     return undefined;
+  }
+
+  // TD-318 Irisan 3: jalur manager (MasterSelect onAdd), persis
+  // CaptureLeadModal.jsx handleAddOption -- RPC add_dropdown_option_direct
+  // lalu `onAddOption` (prop, lihat LeadDetailPage induk) menaikkan opsi
+  // baru ke state industryOptions/categoryOptions (dimiliki induk, dipakai
+  // ulang HistoryTab/ViewField juga), dan draft Company LANGSUNG memilihnya.
+  async function handleAddOption(key, listKey, name) {
+    const trimmed = name.trim();
+    const { data, error } = await supabase.rpc('add_dropdown_option_direct', {
+      p_list_key: listKey, p_label: trimmed, p_company_id: null,
+    });
+    if (error) { showToast?.(`Failed to add option: ${error.message}`, 'error'); return; }
+    const slug = trimmed.toLowerCase().replace(/\s+/g, '_');
+    onAddOption?.(key, { id: data, value: slug, label: trimmed });
+    setCompanyDraft((d) => ({ ...d, [key]: slug }));
+    showToast?.(`${trimmed} added to ${key === 'industry' ? 'Industry' : 'Lead Category'}`);
   }
 
   const [commercialEdit, setCommercialEdit] = useState(false);
@@ -595,10 +608,24 @@ function OverviewTab({
               <ViewField label="Entity" value={entityCode} />
             </div>
             <div style={grid3}>
-              <MasterSelect label="Industry" value={companyDraft.industry} onChange={(v) => setCompanyDraft((d) => ({ ...d, industry: v }))}
-                options={industryOptions.map((o) => ({ value: o.value, label: o.label }))} onRequestNew={() => onRequestNewOption('industry')} />
-              <MasterSelect label="Lead Category" value={companyDraft.lead_category} onChange={(v) => setCompanyDraft((d) => ({ ...d, lead_category: v }))}
-                options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} onRequestNew={() => onRequestNewOption('lead_category')} />
+              {/* TD-318 Irisan 3, REVISI 1 §6: variant="box" persis mockup
+                  Detail/Overview (:211-212) -- 56px, label kecil di dalam
+                  kotak. Catatan: field tetangga (Company Name/Legal Name/
+                  dst.) di atas memakai FloatingInput kit (44px, label di
+                  atas kotak sejak Irisan 0) -- hasilnya DUA tinggi kotak
+                  berdampingan dalam satu grid; dilaporkan apa adanya dengan
+                  screenshot sebelum/sesudah, BUKAN diseragamkan sendiri
+                  (di luar lingkup irisan ini -- mockup sendiri memang
+                  memperlakukan Industry/Lead Category beda dari field teks
+                  di sekitarnya, lihat :205-214). */}
+              <MasterSelect label="Industry" variant="box" value={companyDraft.industry} onChange={(v) => setCompanyDraft((d) => ({ ...d, industry: v }))}
+                options={industryOptions.map((o) => ({ value: o.value, label: o.label }))}
+                onAdd={canManage ? (name) => handleAddOption('industry', 'lead_industry', name) : undefined}
+                onRequestNew={canManage ? undefined : () => onRequestNewOption('industry')} />
+              <MasterSelect label="Lead Category" variant="box" value={companyDraft.lead_category} onChange={(v) => setCompanyDraft((d) => ({ ...d, lead_category: v }))}
+                options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+                onAdd={canManage ? (name) => handleAddOption('lead_category', 'lead_category', name) : undefined}
+                onRequestNew={canManage ? undefined : () => onRequestNewOption('lead_category')} />
               <FloatingSelect label="Priority" value={companyDraft.priority} onChange={(v) => setCompanyDraft((d) => ({ ...d, priority: v }))}
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </div>
