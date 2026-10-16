@@ -723,6 +723,23 @@
 >
 > ---
 >
+> ### Irisan 2 (Reassign) — hasil eksekusi (16 Okt 2026)
+>
+> Dikerjakan di branch `feat/td318-irisan-2` dari `develop`@`ef17883`, audit disetujui Vir langsung terhadap staging (badan `lead_pool_assign` live identik draft kecuali tambahan `p_reason`; `account_pool_history` sudah punya kolom `reason`).
+>
+> - **Migrasi `20261016000004_lead_pool_assign_reason.sql`** (commit `41a3bf5`) — `lead_pool_assign` 2 argumen → 3 (`p_reason text DEFAULT NULL`), DROP versi lama di migrasi yang sama (kedua pemanggil nyata — `ReassignModal.jsx`, `AssignToSalesModal.jsx` — memanggil dengan argumen bernama, ambigu kalau dua overload hidup berdampingan). Badan disalin verbatim dari `20261012000006` + 1 kolom INSERT `account_pool_history.reason`. **BELUM DIJALANKAN** — siap dijalankan Vir via connector di staging, dicatat di `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 62.
+> - **`ReassignModal.jsx` — tiga commit terpisah, masing-masing diverifikasi build+lint sendiri:**
+>   - `f92434f` — judul modal + label tombol memakai `allUnassigned` (SEMUA target tanpa pemilik, persis mockup `allUn`), BUKAN `bulk` (jumlah target) seperti sebelumnya. Audit menemukan kode lama menyatukan dua sumbu mockup yang sebenarnya independen — akibatnya: satu lead tanpa pemilik dibuka dari Lead Detail salah tampil "Reassign Lead" (seharusnya "Assign to Sales"), dan bulk-select lead yang SEMUA sudah berpemilik salah tampil "Assign to Sales" (seharusnya "Reassign Lead"). `bulk` tetap dipakai di tempat lain (Current Owner, kata "owners" jamak) — dua sumbu, bukan satu.
+>   - `4431f80` — `reason` (trim, `null` kalau kosong) sekarang dikirim ke `lead_pool_assign` sebagai `p_reason` untuk baris pool — sebelumnya hanya tersimpan ke `activities` untuk baris non-pool, baris pool selalu kehilangan alasannya (gap TD-318 #36 lama).
+>   - `f9fac12` — field "Current Owner" saat bulk: label TETAP "Current Owner" (bukan lagi "N Leads Selected"), isi chip jadi badge bundar angka + teks "N leads" — persis mockup `:375/:748`, menggantikan daftar nama lead dipisah koma yang sebelumnya dipakai (tidak ada di mockup).
+> - **`AssignToSalesModal.jsx` SENGAJA TIDAK disentuh** — Reason field di komponen ini tetap dijadwalkan **Irisan 4** (sudah tercatat di §"Keputusan eksekusi tambahan 13 Okt 2026" poin 2 di atas; entri ini menegaskan ulang supaya tertaut langsung dari hasil eksekusi Irisan 2).
+>
+> **Gate (ketiga commit FE, diukur per-commit):** build clean · lint **126/19 = baseline persis, nol perubahan** · `check-menu-paths` tidak terdampak (nol rute/menu disentuh).
+>
+> ⚠️ **NOL tes runtime browser dengan data staging sungguhan** — verifikasi murni lewat pembacaan kode + repro logika boolean (`allUnassigned`) di luar aplikasi; Den menguji di Vercel Preview. Migrasi `20261016000004` **BELUM DIJALANKAN** — baris pool di Preview akan gagal menyimpan `reason` lewat `showToast` error sampai Vir menjalankannya di staging (5 field lain modal tetap berfungsi normal).
+>
+> ---
+>
 > ## Gerbang eksekusi — DIUBAH 13 Okt 2026
 >
 > **Gerbang LAMA** ("tunggu rilis AR terkirim DAN `main` di-merge balik ke `develop`") **DIGANTI**: eksekusi Fase 1 dan Fase 2 boleh mulai SEKARANG di `develop`, tidak perlu menunggu rilis AR. Alasan: rilis AR sendiri mundur ke awal November 2026 (lihat `12_ANTREAN_MIGRASI_PRODUCTION.md` §Naskah Eksekusi) — menunggu gerbang lama berarti Fase 1+2 ikut tertunda tanpa alasan teknis, padahal keduanya tidak bergantung pada isi rilis AR.

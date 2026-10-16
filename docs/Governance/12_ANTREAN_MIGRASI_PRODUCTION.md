@@ -2137,6 +2137,21 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 
 ---
 
+### 62. `20261016000004_lead_pool_assign_reason`
+
+| | |
+|---|---|
+| Isi | TD-318 Irisan 2 (Reassign) — `lead_pool_assign` 2 argumen → 3 (`p_reason text DEFAULT NULL`). DROP versi lama + CREATE versi baru di migrasi yang sama (bukan overload berdampingan — kedua pemanggil nyata, `ReassignModal.jsx` dan `AssignToSalesModal.jsx`, memanggil dengan argumen bernama, ambigu kalau dua overload hidup berdampingan). Badan disalin verbatim dari `20261012000006` + 1 kolom INSERT `account_pool_history.reason` + 1 nilai (`p_reason`). `account_pool_history.event_type` CHECK sudah memuat `'assign'`, kolom `reason` sudah ada — nol perubahan skema lain diperlukan. |
+| Staging | ⛔ belum — siap dijalankan Vir via connector. Audit disetujui Vir langsung terhadap staging sebelum migrasi ditulis: badan `lead_pool_assign` live identik draft kecuali tambahan `p_reason`. |
+| Production | ⛔ belum — **bagian rilis November**, diurutkan SESUDAH `20261012000006` (yang men-CREATE `lead_pool_assign` versi 2-argumen pertama kali). |
+| Sifat | Satu RPC, badan hampir identik versi lama (3 baris berubah: parameter + 1 kolom INSERT + 1 nilai). ACL diajukan ulang utk signature baru (`REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`) — grant versi lama tidak ikut pindah otomatis (arity beda = objek beda bagi Postgres). Kedua pemanggil FE existing tetap jalan tanpa diubah (p_reason implisit NULL) — `ReassignModal.jsx` SEKARANG ikut mengisinya (lihat `08_TECH_DEBT.md` §Irisan 2 hasil eksekusi). |
+
+**Untuk apa.** Field "Reason" sudah ada di modal Reassign tapi tak pernah tersimpan untuk baris pool — RPC lama tak punya parameter untuk itu, sehingga alasan reassign baris pool selalu hilang (gap TD-318 #36 lama, 08_TECH_DEBT.md).
+
+**Rollback.** `DROP FUNCTION IF EXISTS public.lead_pool_assign(uuid, uuid, text);` lalu `CREATE FUNCTION public.lead_pool_assign(uuid, uuid)` badan identik versi lama (`20261012000006_crm_lead_pool_notifications.sql`) + `REVOKE`/`GRANT` lama (lihat ekor file migrasi).
+
+---
+
 ## Cara merawat dokumen ini
 
 1. **Setiap SQL manual di staging masuk ke sini**, di hari yang sama. Perubahan tanpa berkas migrasi adalah perubahan yang paling mudah hilang.
