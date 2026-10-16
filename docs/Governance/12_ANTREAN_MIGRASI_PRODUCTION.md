@@ -2098,9 +2098,9 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 
 | | |
 |---|---|
-| Isi | `CREATE TRIGGER trg_accounts_updated_at`/`trg_contacts_updated_at` BEFORE UPDATE, memakai fungsi yang SUDAH ADA `set_updated_at()` (46 tabel lain sudah memakainya). TD-318 Irisan 1 temuan 4c: `accounts`/`contacts.updated_at` tidak pernah berubah. Nol backfill, nol tabel lain disentuh (31 tabel lain yang punya gap sama dicatat di `08_TECH_DEBT.md` sebagai TD terpisah, bukan bagian migrasi ini). |
-| Staging | ⛔ belum — siap dijalankan Vir via connector |
-| Production | ⛔ belum — SQL identik, sesudah staging |
+| Isi | `CREATE OR REPLACE TRIGGER trg_accounts_updated_at`/`trg_contacts_updated_at` BEFORE UPDATE, memakai fungsi yang SUDAH ADA `set_updated_at()` (46 tabel lain sudah memakainya). TD-318 Irisan 1 temuan 4c: `accounts`/`contacts.updated_at` tidak pernah berubah. Nol backfill, nol tabel lain disentuh (31 tabel lain yang punya gap sama dicatat di `08_TECH_DEBT.md` sebagai TD terpisah, bukan bagian migrasi ini). ⚠️ Draf awal memakai `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` — connector Vir memblokir `DROP TRIGGER` dengan prompt konfirmasi, jadi yang benar-benar dijalankan (dan kini isi file-nya) adalah `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, kedua environment PG 17.6) — hasil akhir identik, tetap idempoten. |
+| Staging | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector. Verifikasi: `UPDATE` PT Prima Tekstil Pekalongan, `updated_at` langsung jadi `2026-10-16 08:10 UTC`. |
+| Production | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector, SQL identik dengan staging. |
 | Sifat | Berdiri sendiri, aditif murni. Nol kode FE yang wajib menyertainya (4 titik tulis manual `updated_at` di `CustomerDetailPage.jsx` jadi redundan-tapi-tidak-konflik, bisa dirapikan belakangan). Nol pembaca `accounts.updated_at` di seluruh `src/`/`supabase/functions/` hari ini — nol risiko regresi. |
 
 **Rollback.** `DROP TRIGGER IF EXISTS trg_accounts_updated_at ON public.accounts; DROP TRIGGER IF EXISTS trg_contacts_updated_at ON public.contacts;` (lihat komentar di ekor file migrasi).
@@ -2112,9 +2112,9 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 | | |
 |---|---|
 | Isi | Peran baru `bd_digital_marketing_manager` (level 4, global) untuk Faris (faris.el@exportimportdept.com, MSI) — akses = salinan persis `role_menu_permissions`+`role_permissions` milik `bd_digital_marketing_spv` (disalin lewat query) ditambah `crm_lead_pool_approval`/`view` eksplisit. Cabut `bd_digital_marketing_spv` Faris di MSI (soft, pola 12 Sep 2026) + `job_title` → "Digital Marketing Manager". `bd_digital_marketing_spv` TETAP ADA di tabel `roles`. |
-| Staging | ⛔ belum — siap dijalankan Vir via connector |
-| Production | ⛔ belum — SQL identik, sesudah staging |
-| Sifat | TANPA hotfix branch — kode FE tidak wajib berubah (fetch role `AuthContext.jsx` generik, `isManagerOrAbove`/`hasMenuPermission` level-based atau data-driven, nol allow-list kode role yang menolak kode baru). Satu baris `ERP_ROLE_PRIORITY` (kosmetik, `src/lib/roleResolution.js`, sesudah `proc_manager`) sudah ikut `develop`, bukan prasyarat keamanan. Key `crm_lead_pool_approval` SUDAH ADA di `module_menus` production (dicek Vir 16 Okt 2026) — §4 file migrasi tetap ber-guard (`RAISE NOTICE` kalau tak ditemukan) sebagai jaga-jaga murah. |
+| Staging | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector. §5 (Faris) dilewati sesuai guard — profil `faris.el@exportimportdept.com` tidak ada di staging. |
+| Production | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector. Verifikasi: izin menu peran lama (SPV) **7**, peran baru **8** (termasuk `crm_lead_pool_approval`). Faris hanya punya `bd_digital_marketing_manager` aktif di MSI — `bd_digital_marketing_spv` dan `manager` lama nonaktif, `job_title` = "Digital Marketing Manager". |
+| Sifat | TANPA hotfix branch — kode FE tidak wajib berubah (fetch role `AuthContext.jsx` generik, `isManagerOrAbove`/`hasMenuPermission` level-based atau data-driven, nol allow-list kode role yang menolak kode baru). Satu baris `ERP_ROLE_PRIORITY` (kosmetik, `src/lib/roleResolution.js`, sesudah `proc_manager`) sudah ikut `develop`, bukan prasyarat keamanan. Key `crm_lead_pool_approval` SUDAH ADA di `module_menus` production (dicek Vir 16 Okt 2026) — §4 file migrasi tetap ber-guard (`RAISE NOTICE` kalau tak ditemukan) sebagai jaga-jaga murah; tidak terpicu karena key-nya memang ada. |
 
 **Untuk apa.** Peran `manager` umum (level 4) membawa akses lintas divisi yang tidak relevan untuk Faris dan tidak punya menu CRM yang ia pakai — peran baru ini menyalin persis cakupan `bd_digital_marketing_spv` (levelnya saja yang naik ke 4, bukan jangkauan RLS-nya — level 4 dan level 6 sama-sama lolos `is_manager_or_above()`/`MANAGER_LEVEL_MAX=6`).
 
