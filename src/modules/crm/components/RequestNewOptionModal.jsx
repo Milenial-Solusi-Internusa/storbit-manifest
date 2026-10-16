@@ -1,86 +1,79 @@
 // src/modules/crm/components/RequestNewOptionModal.jsx
-// Modal "+ Ajukan pilihan baru…" — pasangan MasterSelect (src/kit/) untuk
-// rule 5 mockup Lead Management: "manager menambah langsung, sales
-// mengajukan, peran lain hanya membaca".
+// "Request new option" -- Modal/RequestNewOption,
+// design-handoff/mockup/Lead Management.dc.html:414-422 + MasterSelect.dc.html
+// (dipanggil lewat MasterSelect `onRequestNew(label)`, "Request new option"
+// di popovernya -- rule 5 "sales mengajukan").
 //
-// Batch DS 3 Lead Management, Paket 1 irisan 3. Ditaruh di
-// modules/crm/components/ (bukan modules/crm/lead/components/) karena
-// mekanismenya generik untuk list_key APA PUN di dropdown_options — belum
-// ada sub-fitur "lead/" yang berdiri sendiri pada irisan ini (menyusul
-// Paket 1 irisan 4+ bersama LeadDetailPage/LeadCapturePage); kalau nanti
-// kebutuhan lead berbeda dari kebutuhan master-data CRM lain, pindahkan
-// turunannya ke lead/components/ saat itu — aturan Batch_FS_Fase_0 §5.
+// TD-318 Irisan 3 (16 Okt 2026): SALES-ONLY -- jalur manager/`canAddDirect`
+// yang dulu hidup DI DALAM modal ini DICABUT. Sejak MasterSelect dibangun
+// ulang (src/kit/MasterSelect.jsx), manager menambah LANGSUNG dari popover
+// lewat `onAdd` (optimistik, RPC add_dropdown_option_direct dipanggil di
+// PEMANGGIL -- lihat CaptureLeadModal.jsx/LeadDetailPage.jsx/
+// MarkAsLostModal.jsx) -- modal ini TIDAK PERNAH lagi dibuka untuk manager
+// (ketiga pemanggil hanya memasang `onRequestNew` ke MasterSelect untuk
+// peran NON-manager; diverifikasi: nol pemanggil lain di seluruh `src/`).
+// Diperiksa dulu sebelum mencabut (REVISI 1 §7): grep `RequestNewOptionModal`
+// = persis 2 pemanggil (CaptureLeadModal, LeadDetailPage) + 1 yang baru
+// ditambah (MarkAsLostModal) -- ketiganya SUDAH migrasi ke `onAdd`/
+// `onRequestNew`, nol sisa pemanggil lama yang membuka modal ini dengan
+// asumsi "mungkin manager".
 //
-// Dua jalur tulis, sumbunya SAMA dengan migrasi
-// 20261011000002_crm_lead_master_data_requests.sql:
-//   - manager ke atas / super_admin → RPC add_dropdown_option_direct
-//     (opsi langsung aktif, tanpa alasan).
-//   - role lain (sales dkk)         → INSERT dropdown_option_requests
-//     (status 'pending', menunggu disetujui lewat LeadPoolApprovalPage atau
-//     halaman approval master-data — BELUM ADA, irisan berikutnya). Alasan
-//     wajib diisi supaya manager tahu konteksnya saat menyetujui/menolak.
+// Teks Inggris persis mockup (TD-318 Irisan 3, #15) -- title STATIS
+// "Request new option" (TIDAK menyebut nama field, beda dari versi lama
+// yang menaruh field di title); field disebut di BODY: "Your request goes
+// to the data owner of {label}." (:419).
 //
-// onSubmitted(result) dipanggil sesudah sukses dengan
-// { mode: 'direct', option: { id, label, value } } ATAU
-// { mode: 'request', request: { id, label } } — pemanggil (MasterSelect's
-// pemilik) memutuskan sendiri apa yang dilakukan dengan hasil itu (refetch
-// options, tampilkan label baru optimis, dst).
-
+// Validasi (REVISI 2 Irisan 3, §1): tombol SELALU aktif, persis mockup
+// `sendReq`. Klik dengan Option Name kosong -> flag touched -> span
+// "Option Name is required" (400 12px Inter #8E620D = SEMANTIC.warn.fg) +
+// border kotak #E6CE94 = SEMANTIC.warn.bd. ⭐ Reason TIDAK divalidasi wajib
+// (mockup sendiri: `<span>Reason</span>` TANPA asterisk, `sendReq` tidak
+// mengeceknya) -- DEVIASI SADAR dari kode lama yang mewajibkan Reason;
+// diputuskan Den 16 Okt 2026 (REVISI 2: "DITOLAK, semuanya ikut mockup"),
+// bukan kelupaan. Placeholder Option Name DICABUT (REVISI 2 §5, mockup
+// tak punya placeholder di field itu -- :420).
 import { useState } from 'react';
 import { Modal, FloatingInput, Textarea, SaveButton, OutlineBtn, useToast } from '../../../kit';
 import { INK_SOFT, FONT_BODY } from '../../../kit/tokens';
-import { useAuth } from '../../../contexts/useAuth';
-import { isManagerOrAbove } from '../../../lib/roles';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../contexts/useAuth';
 
 /**
  * @param {Object}   props
  * @param {boolean}  props.open
  * @param {() => void} props.onClose
  * @param {string}   props.listKey      - mis. 'lead_industry' / 'lead_category' / 'lost_reason'
- * @param {string}   [props.listLabel]  - label manusiawi untuk judul modal, mis. 'Industry'
- * @param {string|null} [props.companyId] - NULL → opsi global (semua entitas)
- * @param {(result: Object) => void} [props.onSubmitted]
+ * @param {string}   [props.listLabel]  - label manusiawi, mis. 'Industry' -- dipakai di body paragraf ("data owner of {listLabel}")
+ * @param {string|null} [props.companyId] - NULL -> opsi global (semua entitas)
+ * @param {(result: Object) => void} [props.onSubmitted] - dipanggil dengan { mode:'request', request:{id,label} }
  */
 export default function RequestNewOptionModal({ open, onClose, listKey, listLabel, companyId = null, onSubmitted }) {
-  const { erpRoles, profile } = useAuth();
+  const { profile } = useAuth();
   const [toast, toastNode] = useToast();
   const [label, setLabel] = useState('');
   const [reason, setReason] = useState('');
-
-  const canAddDirect = isManagerOrAbove(erpRoles, { companyId: companyId ?? undefined });
-  const title = listLabel ? `Ajukan pilihan baru — ${listLabel}` : 'Ajukan pilihan baru';
+  const [nameTouched, setNameTouched] = useState(false);
+  const nameInvalid = nameTouched && !label.trim();
 
   function reset() {
     setLabel('');
     setReason('');
+    setNameTouched(false);
   }
 
   async function handleSave() {
     const trimmedLabel = label.trim();
-    if (!trimmedLabel) return { error: new Error('Nama pilihan wajib diisi') };
-    if (!canAddDirect && !reason.trim()) return { error: new Error('Alasan wajib diisi untuk pengajuan') };
+    if (!trimmedLabel) { setNameTouched(true); return false; } // persis sendReq: set({reqT:true}), TIDAK menyentuh network
 
-    if (canAddDirect) {
-      const { data, error } = await supabase.rpc('add_dropdown_option_direct', {
-        p_list_key: listKey, p_label: trimmedLabel, p_company_id: companyId,
-      });
-      if (error) return { error };
-      onSubmitted?.({ mode: 'direct', option: { id: data, label: trimmedLabel } });
-    } else {
-      const { data, error } = await supabase
-        .from('dropdown_option_requests')
-        .insert({
-          list_key: listKey, label: trimmedLabel, reason: reason.trim(),
-          company_id: companyId, requested_by: profile.id,
-        })
-        .select('id, label')
-        .single();
-      if (error) return { error };
-      onSubmitted?.({ mode: 'request', request: data });
-    }
+    const { data, error } = await supabase
+      .from('dropdown_option_requests')
+      .insert({ list_key: listKey, label: trimmedLabel, reason: reason.trim() || null, company_id: companyId, requested_by: profile.id })
+      .select('id, label')
+      .single();
+    if (error) return { error };
 
-    toast(canAddDirect ? 'Pilihan baru ditambahkan' : 'Pengajuan terkirim, menunggu persetujuan');
+    toast(`Request for ${trimmedLabel} sent to the data owner`);
+    onSubmitted?.({ mode: 'request', request: data });
     reset();
     onClose?.();
     return undefined;
@@ -91,33 +84,27 @@ export default function RequestNewOptionModal({ open, onClose, listKey, listLabe
       <Modal
         open={open}
         onClose={() => { reset(); onClose?.(); }}
-        title={title}
-        subtitle={canAddDirect
-          ? 'Opsi akan aktif langsung begitu disimpan.'
-          : 'Pengajuan ini menunggu persetujuan manager sebelum muncul sebagai pilihan.'}
+        title="Request new option"
+        width={440}
         footer={(
           <>
-            <OutlineBtn onClick={() => { reset(); onClose?.(); }}>Batal</OutlineBtn>
-            <SaveButton onSave={handleSave} label={canAddDirect ? 'Tambahkan' : 'Ajukan'} savedLabel={canAddDirect ? 'Ditambahkan!' : 'Terkirim!'} />
+            <OutlineBtn onClick={() => { reset(); onClose?.(); }}>Cancel</OutlineBtn>
+            <SaveButton onSave={handleSave} label="Send Request" savedLabel="Sent!" />
           </>
         )}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 13.5 }}>
+            Your request goes to the data owner of {listLabel || 'this field'}.
+          </p>
           <FloatingInput
-            label="Nama pilihan" value={label} onChange={setLabel} full
-            placeholder="mis. Pharmaceutical" autoFocus
+            label="Option Name" required value={label} onChange={setLabel} full autoFocus
+            error={nameInvalid ? 'Option Name is required' : undefined}
           />
-          {!canAddDirect && (
-            <Textarea
-              label="Alasan pengajuan" value={reason} onChange={setReason} full rows={3}
-              placeholder="Kenapa pilihan ini perlu ditambahkan?"
-            />
-          )}
-          {companyId == null && (
-            <div style={{ fontSize: 11.5, color: INK_SOFT, fontFamily: FONT_BODY }}>
-              Pilihan ini berlaku untuk semua entitas (global).
-            </div>
-          )}
+          <Textarea
+            label="Reason" value={reason} onChange={setReason} full rows={3}
+            placeholder="Why is this option needed?"
+          />
         </div>
       </Modal>
       {toastNode}

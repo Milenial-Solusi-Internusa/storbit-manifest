@@ -33,11 +33,18 @@ const optLabel = (o) => (typeof o === 'string' ? o : o.label);
 const renderIcon = (icon, size) => (typeof icon === 'string' ? <Icon name={icon} size={size} /> : icon);
 
 /* Baris keterangan di bawah kontrol: error mengalahkan hint. Teks pendukung
-   memakai INK_SOFT (5:1), BUKAN INK_FAINT — hint itu informasi, bukan hiasan. */
+   memakai INK_SOFT (5:1), BUKAN INK_FAINT — hint itu informasi, bukan hiasan.
+   Warna error = SEMANTIC.warn (amber #8E620D), BUKAN SEMANTIC.danger (TD-318
+   Irisan 3, REVISI 2) — persis warna span "X is required" di seluruh mockup
+   Lead Management (MarkAsLost/RequestPull/RejectRequest/RequestNewOption,
+   JUGA MasterSelect.dc.html `invalid`). Diubah di SINI (bukan disalin ke
+   pemakai) karena nol pemakai `error` FloatingInput/FloatingSelect/Textarea
+   hari ini (diverifikasi grep sebelum diubah) -- nol blast radius ke
+   pemakai non-CRM manapun. */
 function Note({ hint, error }) {
   if (!hint && !error) return null;
   return (
-    <div style={{ fontSize: 11, color: error ? SEMANTIC.danger.fg : INK_SOFT, marginTop: 5, marginLeft: 3, fontFamily: FONT_BODY }}>
+    <div style={{ fontSize: 11, color: error ? SEMANTIC.warn.fg : INK_SOFT, marginTop: 5, marginLeft: 3, fontFamily: FONT_BODY }}>
       {error || hint}
     </div>
   );
@@ -64,14 +71,16 @@ function Note({ hint, error }) {
    Tanda bintang `required` -- markup mockup persis: `<span>Name <span
    style="color:#8E620D">*</span></span>` di dalam baris flex gap:8px --
    `#8E620D` = SEMANTIC.warn.fg (lihat tokens.js, Keputusan #62) -- NOL hex
-   baru di sini juga. */
+   baru di sini juga. Warna label saat `error` JUGA SEMANTIC.warn.fg (TD-318
+   Irisan 3) -- disamakan dgn `Note`/`borderOf` di bawah supaya satu keadaan
+   invalid tidak terlihat sbg tiga sinyal warna berbeda (label/border/pesan). */
 export function FieldLabel({ label, required, error, focus, htmlFor }) {
   if (!label) return null;
   return (
     <label htmlFor={htmlFor} style={{
       display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
       fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
-      color: error ? SEMANTIC.danger.fg : focus ? INK : INK_SOFT,
+      color: error ? SEMANTIC.warn.fg : focus ? INK : INK_SOFT,
     }}>
       {label}
       {required && <span style={{ color: SEMANTIC.warn.fg }}>*</span>}
@@ -80,7 +89,7 @@ export function FieldLabel({ label, required, error, focus, htmlFor }) {
 }
 
 const borderOf = (focus, error, disabled) =>
-  `1px solid ${error ? SEMANTIC.danger.fg : focus ? INK_SOFT : disabled ? DISABLED_BG : LINE}`;
+  `1px solid ${error ? SEMANTIC.warn.bd : focus ? INK_SOFT : disabled ? DISABLED_BG : LINE}`;
 
 /* =========================================================================
    INPUT (44px) — label DI ATAS kotak (13 Okt 2026, lihat FieldLabel di atas
