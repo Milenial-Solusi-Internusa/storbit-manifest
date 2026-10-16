@@ -45,9 +45,34 @@
 // tetap "Reassign Lead" (allUnassigned=false), bukan "Assign to Sales".
 // `bulk` TETAP dipakai di tempat lain (tampilan Current Owner, kata
 // "owners" jamak) -- dua sumbu berbeda, jangan disatukan.
+//
+// TD-318 Irisan 3, REVISI 3 -- audit ulang token-per-token terhadap mockup
+// :372-380 (tabel Irisan 2 sebelumnya menyatakan "persis mockup" padahal
+// tidak, lihat laporan):
+//   1. width 520->500.
+//   2. Label "Current Owner" SEBELUMNYA uppercase/11px/700 -- mockup
+//      `font:600 12px Inter,color:#5C6B52` TANPA uppercase, SAMA PERSIS
+//      label field lain (Reason/Effective Date). Diperbaiki.
+//   3. Kapsul SELALU dirender (termasuk Unassigned -- SEBELUMNYA nol
+//      avatar sama sekali utk kasus itu) persis :375: `inline-flex, padding
+//      4px 12px 4px 4px, radius pill, bg HEAD_BG, border 1px LINE`; avatar
+//      24px (bukan 22), radius pill, font 700 10px Montserrat, teks avatar
+//      SELALU INK (bukan tone.fg), border avatar 1px dashed TRANSPARENT
+//      selalu (bukan kondisional). Isi 3 keadaan persis script mockup
+//      `:748` (`reCur`/`reCurIni`/`reCurBg`): bulk -> String(count) di atas
+//      HEAD_BG; satu lead berpemilik -> inisial di atas warna avatar; tanpa
+//      pemilik -> KOSONG di atas LINE_SOFT + teks "Unassigned". Warna
+//      avatar pemilik TETAP avatarToneFor() (bukan AV{nama:warna} mockup --
+//      itu fixture 6 nama demo, tak bisa menggeneralisasi ke user nyata;
+//      Kategori E, dicatat di laporan akhir).
+//   4. "New Owner" (FloatingSelect) dapat tanda wajib (prop `required`).
+//   5. Label checkbox SELALU "Notify previous owner" (mockup TIDAK
+//      memplural -- SEBELUMNYA "...owners" saat bulk) + style
+//      accentColor/ukuran persis :378 (`accent-color:#838E7A;
+//      width:16px;height:16px`).
 import { useState } from 'react';
 import { Modal, FloatingInput, FloatingSelect, Textarea, SaveButton, OutlineBtn } from '../../../../kit';
-import { INK, INK_SOFT, FONT_BODY, FONT_HEAD, SP, avatarToneFor } from '../../../../kit/tokens';
+import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, FONT_BODY, FONT_HEAD, RADIUS, SP, avatarToneFor } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { getTodayWIB } from '../../../../lib/dateUtils';
@@ -178,8 +203,15 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
 
   if (!accounts.length) return null;
 
+  // REVISI 3, §3: tiga keadaan kapsul Current Owner persis script mockup
+  // `:748` -- reCur/reCurIni/reCurBg.
+  const name = !bulk ? accounts[0].assigned_profile?.full_name : null;
+  const capsuleText = bulk ? `${accounts.length} leads` : (name || 'Unassigned');
+  const capsuleIni = bulk ? String(accounts.length) : (name ? name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() : '');
+  const capsuleBg = bulk ? HEAD_BG : (name ? avatarToneFor(accounts[0].assigned_to).bg : LINE_SOFT);
+
   return (
-    <Modal open={open} onClose={onClose} title={title ?? (allUnassigned ? 'Assign to Sales' : 'Reassign Lead')} width={520} footer={(
+    <Modal open={open} onClose={onClose} title={title ?? (allUnassigned ? 'Assign to Sales' : 'Reassign Lead')} width={500} footer={(
       <>
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
         <SaveButton onSave={handleSave} label={allUnassigned ? 'Assign' : 'Save and Reassign'} savedLabel={allUnassigned ? 'Assigned!' : 'Reassigned!'} disabled={!canSave}
@@ -187,49 +219,41 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
       </>
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-        <div>
-          {/* TD-318 Irisan 2: label SELALU "Current Owner" (persis mockup
-              `:375`) -- bulk hanya mengubah ISI chip (badge angka + "N
-              leads"), bukan labelnya jadi "N Leads Selected". */}
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>
-            Current Owner
-          </div>
-          {bulk ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 22, height: 22, borderRadius: 999, background: '#EFF3ED', color: INK, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>
-                {accounts.length}
-              </span>
-              <span style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{accounts.length} leads</span>
-            </div>
-          ) : (() => {
-            const name = accounts[0].assigned_profile?.full_name;
-            const tone = name ? avatarToneFor(accounts[0].assigned_to) : null;
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {name && (
-                  <span style={{ width: 22, height: 22, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>
-                    {name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
-                  </span>
-                )}
-                <span style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY, fontWeight: 600 }}>{name || 'Unassigned'}</span>
-              </div>
-            );
-          })()}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          {/* REVISI 3, §2: label PERSIS field lain (600 12px Inter
+              #5C6B52) -- SEBELUMNYA uppercase/11px/700, tak cocok mockup. */}
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: INK_SOFT }}>Current Owner</span>
+          <span style={{
+            alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '4px 12px 4px 4px', borderRadius: RADIUS.pill, background: HEAD_BG, border: `1px solid ${LINE}`,
+          }}>
+            <span style={{
+              width: 24, height: 24, borderRadius: RADIUS.pill, background: capsuleBg, border: '1px dashed transparent',
+              color: INK, fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 24px',
+            }}>
+              {capsuleIni}
+            </span>
+            {capsuleText}
+          </span>
         </div>
 
-        <FloatingSelect label="New Owner" value={newOwner} onChange={setNewOwner}
+        <FloatingSelect label="New Owner" required value={newOwner} onChange={setNewOwner}
           options={[{ value: '', label: 'Select an active salesperson' }, ...profiles
             .filter((p) => bulk || p.id !== accounts[0].assigned_to)
             .map((p) => ({ value: p.id, label: p.full_name }))]} />
 
-        <Textarea label="Reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this lead being reassigned?" />
-        <div style={{ fontSize: 11.5, color: INK_SOFT, fontFamily: FONT_BODY, marginTop: -SP.s2 }}>Recorded in the activity timeline.</div>
+        <Textarea label="Reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this lead being reassigned?"
+          hint="Recorded in the activity timeline." />
 
         <FloatingInput label="Effective Date" type="date" value={effectiveDate} onChange={setEffectiveDate} />
 
+        {/* REVISI 3, §5: label SELALU "Notify previous owner" (mockup tak
+            memplural, :378) + style persis accent-color #838E7A / 16x16. */}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: INK, fontFamily: FONT_BODY, cursor: 'pointer' }}>
-          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
-          Notify previous owner{bulk ? 's' : ''}
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)}
+            style={{ accentColor: INK_FAINT, width: 16, height: 16 }} />
+          Notify previous owner
         </label>
       </div>
     </Modal>
