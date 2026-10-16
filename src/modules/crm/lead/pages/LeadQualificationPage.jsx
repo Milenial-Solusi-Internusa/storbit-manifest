@@ -99,8 +99,20 @@ const primaryContactOf = (acc) => (Array.isArray(acc.contacts) ? acc.contacts : 
 // (boleh wrap, persis mockup); Estimated Value/Qualified On/Last Touched
 // dapat nowrap sendiri-sendiri di pemanggilnya (mockup eksplisit set itu
 // hanya di tiga kolom itu, bukan default semua sel).
+// TD-318 Irisan 1, 3d: judul kartu KPI persis mockup (:152
+// "font:600 12px Inter,sans-serif;color:#5C6B52") -- sebelumnya 11px/700/
+// UPPERCASE/letter-spacing (gaya header tabel yang salah dipakai di sini,
+// bukan kit bersama -- kit nol komponen KPI/StatCard, aman diubah di
+// Irisan 1). Nilai angkanya (28px) TIDAK disentuh -- di luar instruksi Den
+// ("judul kartu" saja); mockup sendiri 24px utk angka, dicatat sebagai
+// temuan terpisah di laporan, bukan diubah diam-diam di sini.
+const kpiLabel = { fontSize: 12, fontWeight: 600, color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 };
 const cell = { padding: '12px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK, minWidth: 0 };
-const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, whiteSpace: 'nowrap' };
+// TD-318 Irisan 1, 3b: TANPA whiteSpace:'nowrap' -- "ACCOUNT CODE" (96px)
+// menempel ke "COMPANY NAME" kalau dipaksa satu baris; kolom 96px ini cacat
+// bawaan mockup sendiri (dilaporkan ke Den utk Claude Design). Lebar kolom
+// TIDAK diubah, hanya judul boleh turun ke baris kedua.
+const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT };
 
 /**
  * @param {(account: Object) => void} onSelectLead
@@ -170,15 +182,15 @@ export default function LeadQualificationPage({ onSelectLead, onCreateInquiry, s
           bukan auto-fit minmax(220px,1fr) -- TD-318 Irisan 0d. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: SP.s4, marginBottom: SP.s4 }}>
         <Card>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 }}>Qualified Leads</div>
+          <div style={kpiLabel}>Qualified Leads</div>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{leads.length}</div>
         </Card>
         <Card>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 }}>Total Estimated Value</div>
+          <div style={kpiLabel}>Total Estimated Value</div>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{fmtRp(totalEstValue)}</div>
         </Card>
         <Card>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 }}>Average BANT Score</div>
+          <div style={kpiLabel}>Average BANT Score</div>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{avgBant.toFixed(1)} / {BANT_MAX_SCORE}</div>
         </Card>
       </div>
@@ -269,8 +281,11 @@ function RowSummary({ row, score, expanded, onToggle, onSelectLead, onCreateInqu
         <div role="cell" style={{ padding: '4px 4px 4px 8px' }}>
           {expanded ? <ChevronDown size={15} color={INK_SOFT} /> : <ChevronRight size={15} color={INK_SOFT} />}
         </div>
+        {/* TD-318 Irisan 1, 3a: garis bawah HANYA saat kode ADA (gaya
+            tautan) -- kode kosong = "—" polos, tanpa garis bawah supaya tak
+            terlihat seperti tautan/"=". */}
         <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); onSelectLead?.(row); }}>
-          <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>{row.code || '—'}</span>
+          {row.code ? <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>{row.code}</span> : '—'}
         </div>
         <div role="cell" style={{ ...cell, fontWeight: 700 }}>{row.name}</div>
         <div role="cell" style={{ ...cell, color: INK_SOFT }}>{primaryContactOf(row)?.name || '—'}</div>
@@ -310,7 +325,12 @@ function RowSummaryPanel({ row }) {
       ))}
       {summaryFields.map((f) => (
         <div key={f.key} role="cell" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: INK_SOFT }}>{f.label}</span>
+          {/* TD-318 Irisan 1, 3c: label panel ini persis mockup
+              (Qualification/BANTPanel: "Frequency", bukan "Shipping
+              Frequency") -- override LOKAL, QUALIFICATION_FIELDS (lib/bant.js)
+              TIDAK disentuh karena dipakai bersama LeadDetailPage, di luar
+              scope irisan ini. */}
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: INK_SOFT }}>{f.key === 'bant_frequency' ? 'Frequency' : f.label}</span>
           <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK }}>{row[f.key] || '—'}</span>
         </div>
       ))}
