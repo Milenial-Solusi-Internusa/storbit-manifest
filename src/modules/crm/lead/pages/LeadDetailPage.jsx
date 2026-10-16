@@ -474,10 +474,12 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
 
       <ReassignModal open={reassignOpen} onClose={() => setReassignOpen(false)} accounts={account ? [account] : []} showToast={showToast}
         onReassigned={() => { setReassignOpen(false); showToast?.('Lead reassigned'); fetchAccount(); fetchActivities(); }} />
+      {/* TD-318 Irisan 3: toast dinamis persis mockup tgtLabel -- selalu
+          satu akun di sini, jadi persis "CODE, Nama" (:606). */}
       <MarkAsLostModal open={lostOpen} onClose={() => setLostOpen(false)} accounts={account ? [account] : []} showToast={showToast}
-        onMarked={() => { setLostOpen(false); showToast?.('Lead marked as Lost'); fetchAccount(); fetchActivities(); }} />
+        onMarked={() => { const label = `${account?.code ? `${account.code}, ` : ''}${account?.name || ''}`; setLostOpen(false); showToast?.(`${label} marked as Lost`); fetchAccount(); fetchActivities(); }} />
       <ArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} accounts={account ? [account] : []} showToast={showToast}
-        onArchived={() => { setArchiveOpen(false); showToast?.('Lead archived'); onBack?.(); }} />
+        onArchived={() => { const label = `${account?.code ? `${account.code}, ` : ''}${account?.name || ''}`; setArchiveOpen(false); showToast?.(`${label} archived`); onBack?.(); }} />
       <ReleaseToPoolModal open={releaseOpen} onClose={() => setReleaseOpen(false)} account={account} showToast={showToast}
         onReleased={() => { setReleaseOpen(false); showToast?.('Lead released to the pool'); fetchAccount(); fetchPoolHistory(); }} />
       {/* TD-318 Irisan 3: hanya ditempuh non-manager (onAdd di OverviewTab

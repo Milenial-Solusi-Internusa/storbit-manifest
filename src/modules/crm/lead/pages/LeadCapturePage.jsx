@@ -101,6 +101,13 @@ const SORT_ORDER_COLUMN = {
   st: 'lead_status_rank', bant: 'bant_score', ow: 'owner_name',
   val: 'estimated_value', t: 'last_activity_at',
 };
+// tgtLabel -- TD-318 Irisan 3, persis mockup Lead Management.dc.html:606
+// (`tgts.length > 1 ? tgts.length + ' leads selected' : t0.code + ', ' + t0.co`),
+// dipakai toast dinamis Mark as Lost/Archive.
+const tgtLabel = (accounts) => (accounts.length > 1
+  ? `${accounts.length} leads selected`
+  : `${accounts[0]?.code ? `${accounts[0].code}, ` : ''}${accounts[0]?.name || ''}`);
+
 const daysAgoIso = (n) => new Date(Date.now() - n * 86400000).toISOString();
 const startOfTodayIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 const startOfMonthIso = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.toISOString(); };
@@ -610,12 +617,16 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
 
       <ReassignModal open={modalAction?.type === 'reassign'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'reassign' ? modalAction.accounts : []} showToast={showToast}
         onReassigned={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead reassigned'); fetchLeads(); }} />
+      {/* TD-318 Irisan 3: toast dinamis persis mockup tgtLabel ("N leads
+          selected" / "CODE, Nama") + saveLost/doArchive ("... marked as
+          Lost"/"... archived") -- accounts dibaca dari modalAction SEBELUM
+          di-null-kan, pola sama dengan ReassignModal Irisan 2. */}
       <MarkAsLostModal open={modalAction?.type === 'lost'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'lost' ? modalAction.accounts : []}
         skippedCount={modalAction?.type === 'lost' ? modalAction.skippedCount : 0} skippedReason={modalAction?.skippedReason}
         showToast={showToast}
-        onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
+        onMarked={() => { const a = modalAction?.accounts || []; setModalAction(null); setSelected(new Set()); showToast?.(`${tgtLabel(a)} marked as Lost`); fetchLeads(); }} />
       <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
-        onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />
+        onArchived={() => { const a = modalAction?.accounts || []; setModalAction(null); setSelected(new Set()); showToast?.(`${tgtLabel(a)} archived`); fetchLeads(); }} />
     </div>
   );
 }
