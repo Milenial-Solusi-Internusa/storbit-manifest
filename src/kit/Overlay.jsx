@@ -9,10 +9,20 @@
    ia di-restyle di Batch DS 4a dan tetap di tempatnya.
    ========================================================================= */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from './Button';
 import { CARD, INK, INK_SOFT, LINE, BG, BACKDROP, SHADOW_2, FONT_HEAD, FONT_BODY, RADIUS, Z, MOTION } from './tokens';
+
+// Tumpukan overlay terbuka (TD-318 Irisan 3, temuan tes Den) -- modul-level,
+// dipakai BERSAMA Modal & SlideOver. Modal/SlideOver yang menumpuk modal lain
+// di atasnya (mis. CaptureLeadModal -> RequestNewOptionModal) sebelumnya
+// SAMA-SAMA bereaksi pada satu Escape, dan listener yang terdaftar LEBIH DULU
+// (modal BAWAH, dibuka lebih dulu) jalan lebih dulu di fase bubble window --
+// Escape pertama menutup modal bawah (isiannya hilang), bukan modal atas yang
+// sedang dilihat user. `useId()` memberi id stabil per instance (React 18+)
+// untuk push/hapus dari tumpukan yang presisi walau re-render.
+let overlayStack = [];
 
 /* Mount/unmount bertahap supaya animasi keluar sempat jalan.
    `mounted` dinaikkan SAAT RENDER (pola "adjust state during render" React),
@@ -36,12 +46,34 @@ function useMounted(open, exitMs) {
 }
 
 function useEscape(open, onClose, enabled) {
+  const id = useId();
+
+  // Push/hapus id SENDIRI dari tumpukan -- terpisah dari effect listener di
+  // bawah supaya tumpukan selalu benar (termasuk saat `enabled`/`onClose`
+  // berubah TANPA `open` berubah) sebelum listener Escape mana pun membaca
+  // "siapa puncaknya sekarang".
+  useEffect(() => {
+    if (!open) return undefined;
+    overlayStack.push(id);
+    return () => { overlayStack = overlayStack.filter((x) => x !== id); };
+  }, [open, id]);
+
   useEffect(() => {
     if (!open || !enabled || !onClose) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      // Bukan puncak tumpukan (ada overlay lain di atasnya, mis. modal yang
+      // dibuka dari dalam modal ini) -- diamkan, JANGAN tutup diri sendiri
+      // dan JANGAN stopImmediatePropagation (biarkan listener overlay yang
+      // benar-benar di puncak -- terdaftar belakangan, jadi jalan
+      // SESUDAHNYA di fase bubble -- yang menutup dirinya sendiri).
+      if (overlayStack[overlayStack.length - 1] !== id) return;
+      e.stopImmediatePropagation();
+      onClose();
+    }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, enabled, onClose]);
+  }, [open, enabled, onClose, id]);
 }
 
 function Head({ title, subtitle, onClose, sticky }) {
