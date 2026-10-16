@@ -73,8 +73,15 @@ function Note({ hint, error }) {
    `#8E620D` = SEMANTIC.warn.fg (lihat tokens.js, Keputusan #62) -- NOL hex
    baru di sini juga. Warna label saat `error` JUGA SEMANTIC.warn.fg (TD-318
    Irisan 3) -- disamakan dgn `Note`/`borderOf` di bawah supaya satu keadaan
-   invalid tidak terlihat sbg tiga sinyal warna berbeda (label/border/pesan). */
-export function FieldLabel({ label, required, error, focus, htmlFor }) {
+   invalid tidak terlihat sbg tiga sinyal warna berbeda (label/border/pesan).
+
+   Kata `optional` (TD-318 Irisan 3, tes Den #3) -- markup mockup persis:
+   `<span>Notes <span style="font-weight:400;color:#838E7A">Optional</span></span>`
+   (Lead Management.dc.html :389, dan "Owner" Import Leads :353) -- SATU
+   baris dengan label, BUKAN hint di bawah kotak (ImportLeadsModal.jsx
+   sebelumnya sudah membangun ini manual lewat JSX `label={<>...}`; prop
+   ini menggantikannya supaya satu sumber kebenaran). `#838E7A` = INK_FAINT. */
+export function FieldLabel({ label, required, optional, error, focus, htmlFor }) {
   if (!label) return null;
   return (
     <label htmlFor={htmlFor} style={{
@@ -84,6 +91,7 @@ export function FieldLabel({ label, required, error, focus, htmlFor }) {
     }}>
       {label}
       {required && <span style={{ color: SEMANTIC.warn.fg }}>*</span>}
+      {optional && <span style={{ fontWeight: 400, color: INK_FAINT }}>Optional</span>}
     </label>
   );
 }
@@ -102,13 +110,13 @@ const borderOf = (focus, error, disabled) =>
    menulis placeholder sebagai atribut polos, nol logika kondisional).
    ========================================================================= */
 export function FloatingInput({
-  label, value, onChange, mono, type = 'text', full, half, third, disabled, readOnly, required,
+  label, value, onChange, mono, type = 'text', full, half, third, disabled, readOnly, required, optional,
   placeholder, hint, error, maxLength, id, name, onBlur, onKeyDown, autoFocus, inputMode, style,
 }) {
   const [focus, setFocus] = useState(false);
   return (
     <div style={{ flex: flexOf(full, half, third), minWidth: 0, ...style }}>
-      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
+      <FieldLabel label={label} required={required} optional={optional} error={error} focus={focus} htmlFor={id} />
       <input
         id={id} name={name} className="nk-input" type={type} value={value ?? ''} disabled={disabled} readOnly={readOnly}
         maxLength={maxLength} autoFocus={autoFocus} inputMode={inputMode}
@@ -131,11 +139,11 @@ export function FloatingInput({
 }
 
 /* ---------- SELECT (44px) — label DI ATAS kotak, pola sama FloatingInput ---------- */
-export function FloatingSelect({ label, value, onChange, options = [], half, third, full, disabled, required, hint, error, id, name, style }) {
+export function FloatingSelect({ label, value, onChange, options = [], half, third, full, disabled, required, optional, hint, error, id, name, style }) {
   const [focus, setFocus] = useState(false);
   return (
     <div style={{ flex: flexOf(full, half, third), minWidth: 0, ...style }}>
-      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
+      <FieldLabel label={label} required={required} optional={optional} error={error} focus={focus} htmlFor={id} />
       <div style={{ position: 'relative' }}>
         <select
           id={id} name={name} className="nk-select" value={value ?? ''} disabled={disabled}
@@ -214,12 +222,12 @@ export function Select({ value, onChange, options = [], width = 220, full, icon,
    kontrol lain). */
 export function Textarea({
   label, value, onChange, rows = 3, placeholder, hint, error, maxLength, disabled, readOnly,
-  mono, full = true, half, required, id, name, style, resize = 'vertical',
+  mono, full = true, half, required, optional, id, name, style, resize = 'vertical',
 }) {
   const [focus, setFocus] = useState(false);
   return (
     <div style={{ flex: flexOf(full && !half, half, false), minWidth: 0, ...style }}>
-      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
+      <FieldLabel label={label} required={required} optional={optional} error={error} focus={focus} htmlFor={id} />
       <textarea
         id={id} name={name} className="nk-area" value={value ?? ''} rows={rows} placeholder={placeholder}
         maxLength={maxLength} disabled={disabled} readOnly={readOnly} aria-invalid={error ? true : undefined}

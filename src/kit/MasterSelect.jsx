@@ -133,6 +133,7 @@ const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 
  * @param {'box'} [props.variant]  - 'box' = 56px, label kecil di dalam kotak (Detail/Overview mockup)
  * @param {boolean}  [props.isNew]    - badge "New" di sebelah label, persis mockup
  * @param {boolean}  [props.required]
+ * @param {boolean}  [props.optional] - label "Optional" sesudah teks label, persis FieldLabel (Form.jsx)
  * @param {boolean}  [props.half]
  * @param {boolean}  [props.third]
  * @param {boolean}  [props.full]
@@ -146,7 +147,7 @@ const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 
  */
 export function MasterSelect({
   label, value, onChange, options = [], loading, onAdd, onRequestNew,
-  variant, isNew, half, third, full, disabled, required, placeholder = 'Select an option',
+  variant, isNew, half, third, full, disabled, required, optional, placeholder = 'Select an option',
   hint, error, id, name, style,
 }) {
   const rootRef = useRef(null);
@@ -269,7 +270,7 @@ export function MasterSelect({
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <FieldLabel label={label} required={required} focus={open} htmlFor={id} />
+              <FieldLabel label={label} required={required} optional={optional} focus={open} htmlFor={id} />
             </div>
             {newBadge}
           </div>

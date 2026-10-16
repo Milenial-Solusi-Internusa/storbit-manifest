@@ -188,7 +188,10 @@ export default function MarkAsLostModal({ open, onClose, accounts = [], skippedC
               </div>
             )}
 
-            <Textarea label="Notes" value={notes} onChange={setNotes} rows={3} hint="Optional" />
+            {/* TD-318 Irisan 3, tes Den #3: "Optional" di DALAM baris label
+                (prop kit `optional`), persis :389 -- sebelumnya hint di
+                bawah kotak. */}
+            <Textarea label="Notes" optional value={notes} onChange={setNotes} rows={3} />
           </>
         )}
       </div>
