@@ -82,7 +82,12 @@ import { getTodayWIB } from '../../../../lib/dateUtils';
  * @param {() => void} onClose
  * @param {Array<{id:string, name:string, code?:string, company_id:string, assigned_to?:string|null, assigned_profile?:{full_name?:string}, is_in_lead_pool?:boolean}>} accounts
  * @param {(msg:string, type?:string)=>void} [showToast]
- * @param {() => void} onReassigned
+ * @param {(newOwnerName?: string) => void} onReassigned - TD-318 Irisan 4: dipanggil
+ *   dengan nama owner baru (string, atau 'Unknown' kalau nol kecocokan di `profiles`
+ *   -- lihat `newOwnerName` di `handleSave`), supaya pemanggil (mis.
+ *   LeadAssignmentPage.jsx assign-from-pool) bisa menyusun toast dinamis tanpa
+ *   query ulang. Argumen OPSIONAL -- pemanggil lama yang tak memakainya nol
+ *   perubahan perilaku.
  * @param {string} [title] - judul modal; default-nya mengikuti kepemilikan SEMUA
  *   target (allUnassigned ? 'Assign to Sales' : 'Reassign Lead'), bukan jumlah
  *   target -- TD-318 Irisan 2, persis mockup `allUn`. Pemanggil non-Lead
@@ -106,14 +111,40 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
 
   // Reset + muat daftar salesperson aktif SAAT modal dibuka -- pola "adjust
   // state during render" (bukan effect), sama dengan CaptureLeadModal.wasOpen.
+  //
+  // TD-318 Irisan 4 (PLAN REVISI 2): saat `allUnassigned` (assign dari Lead
+  // Pool/Free Agent Customer, bukan reassign biasa), kandidat di-scope
+  // lewat `user_roles` (aktif + `valid_until IS NULL` + profil aktif),
+  // PERSIS guard `lead_pool_assign` -- bukan `profiles.company_id` (query
+  // lama, dipertahankan APA ADANYA untuk reassign biasa/`!allUnassigned`,
+  // supaya nol perubahan perilaku pada jalur yang sudah teruji Irisan 2/3).
+  // `profiles.company_id` = lokasi HOME user, bukan "punya peran aktif di
+  // entitas ini" -- untuk target tanpa pemilik, menampilkan kandidat yang
+  // kemudian ditolak RPC adalah UX yang lebih buruk daripada menyaringnya
+  // lebih dulu. Multi-entitas: `user_roles.company_id IN companyIds`
+  // (pola sama `companyIds` yang sudah ada), bukan hanya satu entitas
+  // seperti AssignToSalesModal.jsx lama (yang cuma pernah menangani satu
+  // akun sekaligus).
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open && companyIds.length) {
       setNewOwner(''); setReason(''); setEffectiveDate(getTodayWIB()); setNotify(true);
-      supabase.from('profiles').select('id, full_name').in('company_id', companyIds).eq('active', true)
-        .order('full_name', { ascending: true }).limit(1000)
-        .then(({ data }) => setProfiles(data || []));
+      if (allUnassigned) {
+        supabase.from('user_roles').select('user_id')
+          .in('company_id', companyIds).eq('is_active', true).is('valid_until', null)
+          .then(({ data }) => {
+            const ids = [...new Set((data || []).map((r) => r.user_id).filter(Boolean))];
+            if (!ids.length) { setProfiles([]); return; }
+            supabase.from('profiles').select('id, full_name').in('id', ids).eq('active', true)
+              .order('full_name', { ascending: true }).limit(1000)
+              .then(({ data: profs }) => setProfiles(profs || []));
+          });
+      } else {
+        supabase.from('profiles').select('id, full_name').in('company_id', companyIds).eq('active', true)
+          .order('full_name', { ascending: true }).limit(1000)
+          .then(({ data }) => setProfiles(data || []));
+      }
     }
   }
 
@@ -194,10 +225,10 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     if (failures.length) {
       const detail = failures.map((f) => `${f.name}: ${f.message}`).join(' | ');
       showToast?.(`${okCount} succeeded, ${failures.length} failed — ${detail}`, 'error');
-      onReassigned?.(); // baris yang berhasil tetap tersimpan -- refresh daftar pemanggil
+      onReassigned?.(newOwnerName); // baris yang berhasil tetap tersimpan -- refresh daftar pemanggil
       return false; // SaveButton: idle tanpa "Tersimpan!" -- pesan sudah ditampilkan di atas
     }
-    onReassigned?.();
+    onReassigned?.(newOwnerName);
     return undefined;
   }
 

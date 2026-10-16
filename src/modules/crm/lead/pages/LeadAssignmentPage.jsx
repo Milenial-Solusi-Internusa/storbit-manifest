@@ -29,7 +29,7 @@ import { isAllEntities as isAllEntitiesRole } from '../../../../lib/roles';
 import { SOURCE_LABELS } from '../lib/leadOptions';
 import RequestPullModal from '../components/RequestPullModal';
 import RejectPullModal from '../components/RejectPullModal';
-import AssignToSalesModal from '../components/AssignToSalesModal';
+import ReassignModal from '../components/ReassignModal';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -206,8 +206,17 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           showToast?.(`Request rejected. ${by} has been notified`);
           setRejectTarget(null); refetch();
         }} />
-      <AssignToSalesModal open={!!assignTarget} onClose={() => setAssignTarget(null)} account={assignTarget} showToast={showToast}
-        onAssigned={() => { showToast?.(`"${assignTarget?.name}" assigned to sales`); setAssignTarget(null); refetch(); }} />
+      {/* TD-318 Irisan 4: AssignToSalesModal.jsx DIHAPUS -- assign dari Pool/FAC
+          kini lewat ReassignModal.jsx (sama persis mockup `openAssign`/
+          `saveRe` assignCust -- satu modal, bukan dua). Target SELALU tanpa
+          pemilik di sini (is_in_lead_pool=true dari query utama), jadi
+          `allUnassigned` otomatis true -- judul/tombol "Assign to Sales"/
+          "Assign" muncul lewat logika yang SUDAH ADA, nol kode tambahan. */}
+      <ReassignModal open={!!assignTarget} onClose={() => setAssignTarget(null)} accounts={assignTarget ? [assignTarget] : []} showToast={showToast}
+        onReassigned={(salesName) => {
+          showToast?.(`${assignTarget?.code} assigned to ${salesName || 'sales'}`);
+          setAssignTarget(null); refetch();
+        }} />
     </div>
   );
 }
