@@ -2,19 +2,24 @@
 // Daftar pilihan TETAP (bukan dropdown_options/master-data-tiered) dipakai
 // bersama LeadCapturePage (filter + kolom) dan CaptureLeadModal (form).
 //
-// Source: 12 nilai, SAMA PERSIS urutan+label dgn ProspectFormPage.jsx --
-// terikat CHECK constraint `prospects_source_check` pada accounts.source.
-// Kalau nilainya bertambah, ubah DI SINI dan di ProspectFormPage berbarengan
-// (dua daftar belum disatukan -- pola yang sudah ada, bukan baru dari sini).
+// Source: 12 nilai -- terikat CHECK constraint `prospects_source_check` pada
+// accounts.source. [Koreksi 16 Okt 2026: komentar lama merujuk
+// ProspectFormPage.jsx sebagai acuan label kembar -- file itu sudah tidak
+// ada (diganti LeadCapturePage/CaptureLeadModal), rujukannya basi, dicabut.]
 export const SOURCES = [
   'sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition',
   'instagram', 'linkedin', 'tiktok', 'whatsapp', 'website', 'walk_in', 'other',
 ];
+// TD-318 Irisan 1, N6: label Inggris MURNI -- mockup (Lead Management.dc.html,
+// `<option>` Source filter + Capture Lead) seluruhnya Inggris; tiga label
+// SEBELUMNYA dicampur ("Exhibition / Pameran", "Walk-in" beda ejaan dari
+// mockup "Walk In", "Lainnya" utk Other) -- satu-satunya titik non-Inggris
+// di modul ini.
 export const SOURCE_LABELS = {
   sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
-  existing_network: 'Existing Network', exhibition: 'Exhibition / Pameran', instagram: 'Instagram',
+  existing_network: 'Existing Network', exhibition: 'Exhibition', instagram: 'Instagram',
   linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website',
-  walk_in: 'Walk-in', other: 'Lainnya',
+  walk_in: 'Walk In', other: 'Other',
 };
 
 // Priority: field tetap (bukan master-data), nilai teks bebas "High/Medium/

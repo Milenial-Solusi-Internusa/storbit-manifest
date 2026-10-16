@@ -53,14 +53,33 @@ const OWNER_UNASSIGNED = '__unowned__';
 // bukan kontrol filter baru.
 const STATUS_STALE = '__stale__';
 const ESTIMATED_MAX_JUTA = 600; // slider "Estimated Value, up to" -- mockup: ujung kanan = Rp 600 juta
-const DATE_BUCKETS = [
-  { value: 'all', label: 'Any time' },
+// TD-318 Irisan 1, N5: Created Date dan Last Touched BUKAN satu daftar --
+// mockup (Lead Management.dc.html:59 vs :67) memberi dua field ini opsi yang
+// BERBEDA. Created Date mockup TIDAK punya opsi "All" (Today/Last 7 days/
+// Last 30 days/This month/Custom, 5 nilai) -- "All" ditambah DI SINI sebagai
+// penyimpangan sengaja supaya "Clear all" (#6, checklist Preview Den butir 3)
+// punya state nyata untuk direset, bukan dipaksa jatuh ke salah satu dari
+// kelima opsi lain yang semuanya menyaring.
+const CREATED_DATE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'today', label: 'Today' },
   { value: '7', label: 'Last 7 days' },
   { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
+  { value: 'month', label: 'This month' },
+  { value: 'custom', label: 'Custom' },
+];
+// Last Touched mockup (:67): Any time/More than 7/14/30 days -- PERSIS, nol
+// penyimpangan (opsi pertama mockup SUDAH "Any time" = sentinel 'all' kita).
+const TOUCHED_OPTIONS = [
+  { value: 'all', label: 'Any time' },
+  { value: '7', label: 'More than 7 days' },
+  { value: '14', label: 'More than 14 days' },
+  { value: '30', label: 'More than 30 days' },
 ];
 const primaryContactOf = (acc) => (Array.isArray(acc.contacts) ? acc.contacts : []).find((k) => k.is_primary && !k.deleted_at) || null;
 const daysAgoIso = (n) => new Date(Date.now() - n * 86400000).toISOString();
+const startOfTodayIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
+const startOfMonthIso = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -132,6 +151,9 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
   const [owner, setOwner] = useState('all');
   const [entity, setEntity] = useState('all');
   const [createdBucket, setCreatedBucket] = useState('30');
+  // Rentang Custom (N5) -- hanya dipakai saat createdBucket === 'custom'.
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [industry, setIndustry] = useState('all');
   const [priority, setPriority] = useState('all');
@@ -167,10 +189,17 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
       .then(({ data }) => setOwners(data || []));
   }, [entity, profile?.company_id]);
 
+  // TD-318 Irisan 1, #7: di-scope company_id persis CaptureLeadModal.jsx
+  // (.or company_id.is.null,company_id.eq.X) -- dulu daftar INI nol scope
+  // sementara daftar form sudah benar, dua pintu bisa beda isi (temuan #7).
+  // Re-fetch saat entity/company_id berubah (dulu mount-sekali) supaya
+  // "All"/entitas lain di filter Entity tetap menunjukkan daftar yang benar.
   useEffect(() => {
+    const companyId = entity !== 'all' ? entity : profile?.company_id;
     supabase.from('dropdown_options').select('id, label, value').eq('list_key', 'lead_industry').eq('is_active', true).is('deleted_at', null)
+      .or(`company_id.is.null,company_id.eq.${companyId || '00000000-0000-0000-0000-000000000000'}`)
       .order('sort_order', { ascending: true }).limit(1000).then(({ data }) => setIndustryOptions(data || []));
-  }, []);
+  }, [entity, profile?.company_id]);
 
   const fetchLeads = useCallback(async () => {
     if (!profile?.id) return;
@@ -206,10 +235,35 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
       else if (owner !== 'all') query = query.eq('assigned_to', owner);
       if (industry !== 'all') query = query.eq('industry', industry);
       if (priority !== 'all') query = query.eq('priority', priority);
-      if (createdBucket !== 'all') query = query.gte('created_at', daysAgoIso(Number(createdBucket)));
-      if (touchedBucket !== 'all') query = query.gte('last_activity_at', daysAgoIso(Number(touchedBucket)));
+      // TD-318 Irisan 1, N5: enam nilai Created Date (bukan lagi bucket hari
+      // generik) -- 'today'/'month' punya predikat sendiri, 'custom' memakai
+      // rentang customFrom/customTo (salah satu sisi boleh kosong).
+      if (createdBucket === 'today') query = query.gte('created_at', startOfTodayIso());
+      else if (createdBucket === 'month') query = query.gte('created_at', startOfMonthIso());
+      else if (createdBucket === 'custom') {
+        if (customFrom) query = query.gte('created_at', new Date(`${customFrom}T00:00:00`).toISOString());
+        if (customTo) query = query.lte('created_at', new Date(`${customTo}T23:59:59`).toISOString());
+      } else if (createdBucket !== 'all') query = query.gte('created_at', daysAgoIso(Number(createdBucket)));
+      // TD-318 Irisan 1, #4: predikat DIBALIK ke `.lte` -- label "More than N
+      // days" berarti TERBENGKALAI lebih dari N hari (last_activity_at <= N
+      // hari lalu), bukan "disentuh dalam N hari terakhir" (`.gte`, bug lama).
+      if (touchedBucket !== 'all') query = query.lte('last_activity_at', daysAgoIso(Number(touchedBucket)));
       if (estimatedMaxJuta < ESTIMATED_MAX_JUTA) query = query.lte('estimated_value', estimatedMaxJuta * 1_000_000);
-      if (search.trim()) query = query.or(`name.ilike.%${search.trim()}%,code.ilike.%${search.trim()}%`);
+      // TD-318 Irisan 1, #5: pencarian kini juga menemukan nama kontak --
+      // placeholder (mockup :60) menjanjikan ini, kode lama hanya name/code.
+      // PostgREST tak bisa meng-OR-kan kondisi ke dalam tabel embed tanpa
+      // `!inner` (yang akan ikut MEMBUANG lead tanpa kontak dari hasil) --
+      // jadi account_id yang kontaknya cocok dicari lebih dulu lewat query
+      // terpisah, lalu digabung ke `.or()` utama lewat `id.in.(...)`.
+      const term = search.trim();
+      if (term) {
+        const { data: contactHits } = await supabase.from('contacts').select('account_id')
+          .ilike('name', `%${term}%`).is('deleted_at', null).limit(200);
+        const orParts = [`name.ilike.%${term}%`, `code.ilike.%${term}%`];
+        const contactAccountIds = [...new Set((contactHits || []).map((c) => c.account_id))];
+        if (contactAccountIds.length) orParts.push(`id.in.(${contactAccountIds.join(',')})`);
+        query = query.or(orParts.join(','));
+      }
 
       query = query.order('last_activity_at', { ascending: false, nullsFirst: false }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -227,7 +281,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
     // React Compiler menyimpulkan dependensinya sebagai objek `profile` (bukan
     // sub-path-nya), dan menyebut keduanya "kurang spesifik dari sumber" kalau
     // dibiarkan optional-chained (react-hooks/preserve-manual-memoization).
-  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, touchedBucket, estimatedMaxJuta, search, page, showToast]);
+  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, customFrom, customTo, touchedBucket, estimatedMaxJuta, search, page, showToast]);
 
   // Promise.resolve().then(...) -- pola yang sudah dipakai di tempat lain
   // (AssetDetailITPage.jsx, useHrgaRequests.js) untuk menghindari
@@ -237,7 +291,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
   // Halaman kembali ke 0 tiap filter berubah -- pola "adjust state during
   // render" (bukan effect terpisah), sama dengan ImportLeadsModal.previewKey.
-  const filterKey = `${effectiveScope}|${status}|${source}|${owner}|${entity}|${industry}|${priority}|${createdBucket}|${touchedBucket}|${estimatedMaxJuta}|${search}`;
+  const filterKey = `${effectiveScope}|${status}|${source}|${owner}|${entity}|${industry}|${priority}|${createdBucket}|${customFrom}|${customTo}|${touchedBucket}|${estimatedMaxJuta}|${search}`;
   const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   if (filterKey !== lastFilterKey) {
     setLastFilterKey(filterKey);
@@ -281,7 +335,15 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
           {isAllEntities && (
             <Field label="Entity"><Select value={entity} onChange={setEntity} width={110} options={[{ value: 'all', label: 'All' }, ...ENTITIES.map((e) => ({ value: e.id, label: e.code }))]} /></Field>
           )}
-          <Field label="Created Date"><Select value={createdBucket} onChange={setCreatedBucket} width={150} options={DATE_BUCKETS} /></Field>
+          <Field label="Created Date"><Select value={createdBucket} onChange={setCreatedBucket} width={150} options={CREATED_DATE_OPTIONS} /></Field>
+          {createdBucket === 'custom' && (
+            <>
+              <Field label="From"><input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                style={{ height: 44, width: 150, borderRadius: RADIUS.md, border: `1px solid ${LINE}`, padding: '0 10px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK }} /></Field>
+              <Field label="To"><input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+                style={{ height: 44, width: 150, borderRadius: RADIUS.md, border: `1px solid ${LINE}`, padding: '0 10px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK }} /></Field>
+            </>
+          )}
           <div style={{ flex: '1 1 240px', minWidth: 200 }}>
             <Field label="Search"><SearchInput value={search} onChange={setSearch} placeholder="Company name, contact name, or account code" /></Field>
           </div>
@@ -292,8 +354,12 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
             display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', borderRadius: RADIUS.md,
             border: `1px solid ${LINE}`, background: advancedOpen ? ROW_HOVER : '#fff', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK, cursor: 'pointer',
           }}>Advanced</button>
-          {(status !== 'all' || source !== 'all' || owner !== 'all' || entity !== 'all' || industry !== 'all' || priority !== 'all' || touchedBucket !== 'all' || estimatedMaxJuta !== ESTIMATED_MAX_JUTA || search) && (
-            <button type="button" onClick={() => { setStatus('all'); setSource('all'); setOwner('all'); setEntity('all'); setIndustry('all'); setPriority('all'); setTouchedBucket('all'); setEstimatedMaxJuta(ESTIMATED_MAX_JUTA); setSearch(''); }}
+          {/* TD-318 Irisan 1, #6: createdBucket/customFrom/customTo kini ikut
+              dihitung sebagai "filter aktif" dan ikut direset -- dulu nol
+              keduanya, jadi Clear all tak pernah bisa melepas Created Date
+              (defaultnya '30', bukan 'all', sehingga diam-diam selalu aktif). */}
+          {(status !== 'all' || source !== 'all' || owner !== 'all' || entity !== 'all' || industry !== 'all' || priority !== 'all' || createdBucket !== 'all' || touchedBucket !== 'all' || estimatedMaxJuta !== ESTIMATED_MAX_JUTA || search) && (
+            <button type="button" onClick={() => { setStatus('all'); setSource('all'); setOwner('all'); setEntity('all'); setIndustry('all'); setPriority('all'); setCreatedBucket('all'); setCustomFrom(''); setCustomTo(''); setTouchedBucket('all'); setEstimatedMaxJuta(ESTIMATED_MAX_JUTA); setSearch(''); }}
               style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 13, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>Clear all</button>
           )}
         </div>
@@ -309,7 +375,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
                 formatValue={(v) => `Rp ${v} million`}
               />
             </div>
-            <Field label="Last Touched"><Select value={touchedBucket} onChange={setTouchedBucket} width={150} options={DATE_BUCKETS} /></Field>
+            <Field label="Last Touched"><Select value={touchedBucket} onChange={setTouchedBucket} width={150} options={TOUCHED_OPTIONS} /></Field>
           </div>
         )}
       </Card>
@@ -322,8 +388,10 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
       {selected.size > 0 && (
         <div style={{
+          // TD-318 Irisan 1, N4: HEAD_BG (bukan ROW_HOVER) -- mockup
+          // Capture/BulkBar (:70) background #EFF3ED = HEAD_BG, token lama salah.
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s3, flexWrap: 'wrap',
-          background: ROW_HOVER, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 16px', marginBottom: SP.s3,
+          background: HEAD_BG, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 16px', marginBottom: SP.s3,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontFamily: FONT_BODY }}>{selected.size} selected</span>
@@ -513,10 +581,18 @@ function calcBantScoreSafe(row) {
   return dims.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
 }
 
+// TD-318 Irisan 1, N1: label persis FieldLabel kit (src/kit/Form.jsx) --
+// 12px/600/Inter/INK_SOFT/marginBottom 8, NOL uppercase/letter-spacing.
+// Sebelumnya dipakai gaya "th" (11px/700/UPPERCASE/letter-spacing .04em) --
+// cocok untuk header tabel, salah untuk label field. Wrapper lokal
+// dipertahankan (bukan ganti ke FloatingSelect) supaya width per-field tetap
+// bisa diatur eksplisit -- mockup sendiri CSS grid auto-fill, bukan lebar
+// tetap per field, jadi menyamakan wrapper-nya juga akan menambah
+// penyimpangan baru yang belum diputuskan, di luar scope N1.
 function Field({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 8, fontFamily: FONT_BODY }}>{label}</div>
       {children}
     </div>
   );
