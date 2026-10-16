@@ -69,9 +69,33 @@
         `isManagerOrAbove` (src/lib/roles.js) dan memasang `onAdd` ATAU
         `onRequestNew` sesuai hasilnya (lihat MarkAsLostModal.jsx/
         CaptureLeadModal.jsx/LeadDetailPage.jsx untuk pola persis).
+
+   POPOVER LEWAT PORTAL (TD-318 Irisan 3, perbaikan tes Den): popover versi
+   pertama `position:absolute` di dalam `rootRef` (yang sendiri ada di
+   dalam `<div className="nk-scroll">` ber-`overflow-y:auto` milik Modal,
+   Overlay.jsx) -- absolute TIDAK keluar dari overflow leluhurnya, jadi
+   popover justru MENAMBAH tinggi area scroll Modal alih-alih melayang di
+   atasnya (mockup sendiri sengaja memakai overflow-y VISIBLE di body
+   Modal/MarkAsLost, :384 -- app ini TIDAK bisa mengubahnya krn Modal
+   bersama dipakai lintas kit). Diperbaiki dengan `createPortal` ke
+   `document.body` + `position:fixed`, posisi dihitung dari
+   `triggerRef.current.getBoundingClientRect()` (lebar = lebar tombol,
+   top = bawah tombol + 4px; membuka ke ATAS kalau ruang di bawah kurang
+   dari tinggi popover TERUKUR -- dua-pass lewat `useLayoutEffect`, popover
+   dirender dulu tersembunyi [`visibility:hidden`] untuk diukur, posisi
+   final dipasang SEBELUM browser paint, jadi tidak ada kedipan).
+   Dihitung ulang saat scroll (fase CAPTURE, supaya menangkap scroll
+   `overflow-y:auto` Modal yang BUKAN window) dan resize; popover TUTUP
+   sendiri kalau tombol pemicu bergeser keluar viewport. `zIndex: Z.popover`
+   (150) > `Z.modal` (90) — menang terlepas urutan DOM karena keduanya
+   di-append langsung ke body. Klik-di-luar memeriksa DUA ref (`rootRef`
+   DAN `popoverRef`, yang kini di pohon DOM BERBEDA sejak portal) supaya
+   klik di dalam popover (termasuk input "Add") tetap tidak dihitung
+   sebagai klik di luar. Tampilan popover sendiri TIDAK berubah.
    ========================================================================= */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Plus } from 'lucide-react';
 import { FieldLabel } from './Form';
 import {
@@ -126,9 +150,12 @@ export function MasterSelect({
   hint, error, id, name, style,
 }) {
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
+  const [pos, setPos] = useState(null); // {top,left,width} dalam koordinat viewport, null = belum terukur
 
   const isDisabled = !!disabled || !!loading;
   const isBox = variant === 'box';
@@ -138,11 +165,49 @@ export function MasterSelect({
   useEffect(() => {
     if (!open) return undefined;
     function onDocMouseDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) { setOpen(false); setAdding(false); }
+      if (rootRef.current?.contains(e.target)) return;
+      if (popoverRef.current?.contains(e.target)) return;
+      setOpen(false); setAdding(false);
     }
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [open]);
+
+  // Posisi popover dihitung dari tombol pemicu, bukan dari rootRef -- dua
+  // pass (pos awal null -> diukur -> dipasang) lewat useLayoutEffect supaya
+  // koreksi arah (atas/bawah) terjadi SEBELUM paint, nol kedipan. Scroll
+  // CAPTURE menangkap scroll overflow-y:auto Modal (bukan cuma window).
+  useLayoutEffect(() => {
+    // Tanpa reset `pos` di sini saat !open -- popover tak dirender saat
+    // tertutup (`{open && ... && createPortal(...)}`), dan kali berikutnya
+    // `open` jadi true, `measure()` di bawah langsung memperbaikinya DALAM
+    // pass yang sama sebelum paint. Men-set state di sini (bukan di
+    // callback event) melanggar react-hooks/set-state-in-effect.
+    if (!open || isDisabled) return undefined;
+    function measure() {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const tr = trigger.getBoundingClientRect();
+      const vh = window.innerHeight;
+      if (tr.bottom < 0 || tr.top > vh || tr.right < 0 || tr.left > window.innerWidth) {
+        setOpen(false); setAdding(false); return; // tombol keluar viewport -- tutup
+      }
+      const panelH = popoverRef.current?.offsetHeight || 0;
+      const spaceBelow = vh - tr.bottom;
+      const openUp = panelH > 0 && spaceBelow < panelH + 4 && tr.top > panelH + 4;
+      setPos({
+        left: tr.left, width: tr.width,
+        top: openUp ? tr.top - panelH - 4 : tr.bottom + 4,
+      });
+    }
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open, isDisabled, options.length, adding]);
 
   function toggle() {
     if (isDisabled) return;
@@ -182,7 +247,7 @@ export function MasterSelect({
     <div ref={rootRef} style={{ flex: flexOf(full, half, third), minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8, position: 'relative', ...style }}>
       {isBox ? (
         <button
-          type="button" id={id} name={name} className="nk-focus" onClick={toggle} onKeyDown={onTriggerKeyDown} disabled={isDisabled}
+          ref={triggerRef} type="button" id={id} name={name} className="nk-focus" onClick={toggle} onKeyDown={onTriggerKeyDown} disabled={isDisabled}
           aria-haspopup="listbox" aria-expanded={open} aria-invalid={error ? true : undefined}
           style={{
             position: 'relative', height: SIZE.inputFloating, width: '100%', borderRadius: RADIUS.md,
@@ -209,7 +274,7 @@ export function MasterSelect({
             {newBadge}
           </div>
           <button
-            type="button" id={id} name={name} className="nk-focus" onClick={toggle} onKeyDown={onTriggerKeyDown} disabled={isDisabled}
+            ref={triggerRef} type="button" id={id} name={name} className="nk-focus" onClick={toggle} onKeyDown={onTriggerKeyDown} disabled={isDisabled}
             aria-haspopup="listbox" aria-expanded={open} aria-invalid={error ? true : undefined}
             style={{
               marginTop: -8, height: SIZE.input, width: '100%', borderRadius: RADIUS.md,
@@ -226,9 +291,10 @@ export function MasterSelect({
         </>
       )}
 
-      {open && !isDisabled && (
-        <div role="listbox" className="nk-scroll" style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: Z.popover,
+      {open && !isDisabled && createPortal(
+        <div ref={popoverRef} role="listbox" className="nk-scroll" style={{
+          position: 'fixed', top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: pos?.width, zIndex: Z.popover,
+          visibility: pos ? 'visible' : 'hidden',
           background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: POPOVER_SHADOW,
           padding: 4, display: 'flex', flexDirection: 'column', maxHeight: 280, overflowY: 'auto',
         }}>
@@ -273,7 +339,8 @@ export function MasterSelect({
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
 
       <Note hint={hint} error={error} />
