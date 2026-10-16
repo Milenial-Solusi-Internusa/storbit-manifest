@@ -702,6 +702,8 @@
 >
 > **Gate (semua 4 commit, diukur per-commit):** build clean · lint **126/19 = baseline `develop` persis, nol perubahan** · `check-menu-paths` tidak terdampak (nol rute baru/berubah). ⚠️ **NOL tes runtime browser dengan data staging sungguhan** — verifikasi murni lewat faithful-repro Playwright (markup disalin manual dari JSX pasca-edit) + pembacaan kode; Den menguji di Vercel Preview.
 >
+> ✅ **Irisan 1 MERGE ke `develop` 16 Okt 2026** (merge commit `4f6535f`, `git merge --no-ff feat/td318-irisan-1`, nol konflik, 8 file/+423/−171) — sesudah Den menguji Preview `feat/td318-irisan-1`@`c425998` (8 butir checklist lolos: filter Last Touched, pencarian nama kontak, Clear all, Opportunity di Capture Lead, Phone/Email + kartu file di Import, menu baris 3-item + bulk bar, kode kosong polos, judul kolom dua baris + label non-uppercase). Build clean, lint **126/19 = baseline persis, nol perubahan** (baseline TIDAK perlu diperbarui di `CLAUDE.md`), `check-menu-paths` ✔ 334 id/325 rute tak berubah. Branch `feat/td318-irisan-1` **belum dihapus**.
+>
 > ---
 >
 > ## Gerbang eksekusi — DIUBAH 13 Okt 2026
