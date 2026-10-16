@@ -3,16 +3,26 @@
 // halaman yang dimount di menu crm-prospects (/crm/lead/capture). Konsumen
 // PERTAMA src/kit/ untuk halaman non-admin (giliran Lead Management, Batch DS 3).
 //
-// Acuan visual: design-handoff/crm-2026-10-11/shots/lead/01,02,03,04,24,25.
-// Bulk bar (Reassign/Archive/Mark as Lost) + menu baris "⋮" datang di
-// irisan 5. Koreksi visual Paket 1 (sisir ulang ketat terhadap mockup):
+// Acuan implementasi: design-handoff/mockup/Lead Management.dc.html, tab
+// Capture (Capture/Filters + Capture/BulkBar + Capture/Table +
+// Capture/EmptyState) -- bukan lagi PNG lama (rujukan folder
+// design-handoff/crm-2026-10-11/ yang pernah ada di sini sudah basi, folder
+// itu sudah dihapus total, lihat 08_TECH_DEBT.md TD-318 "Akar masalah").
+// Bulk bar (Assign to Sales/Archive/Mark as Lost) + menu baris "⋮" datang di
+// irisan 5, disisir ulang terhadap mockup di TD-318 Irisan 1 (16 Okt 2026):
+// menu baris "⋮" kini PERSIS mockup menuIsRow, TIGA item (Quick Edit/Add
+// Note/Mark as Lost) -- Reassign dan Archive DICABUT dari menu baris
+// (mockup tak punya keduanya di situ), tetap di bulk bar. "Quick Edit"
+// (irisan 7, KEPUTUSAN Den): ikut perilaku rmEdit mockup -- membuka
+// LeadDetailPage lead itu dengan Company langsung dalam mode edit
+// (onQuickEdit, dirutekan lewat location.state `quickEdit`, lihat
+// LeadDetailRoute/crm.routes.jsx). "Add Note" (TD-318 Irisan 1, N3): ikut
+// perilaku rmNote mockup -- membuka LeadDetailPage lead itu dengan tab
+// Activity aktif DAN kotak catatan sudah terbuka (onAddNote, location.state
+// `openNote`) -- GANTI dari AddNoteModal lokal (mockup tak punya modal
+// terpisah untuk aksi ini, satu-satunya jalur edit/catat tetap Lead Detail).
 // Pager bernomor (komponen baru, src/modules/crm/lead/components/Pager.jsx)
-// menggantikan ‹ Prev / Next › polos; menu baris "⋮" dapat "Add Note" (mockup
-// 03) yang dibangun di atas mekanisme Add Note yang sudah ada (lihat
-// AddNoteModal.jsx). "Quick Edit" (irisan 7, KEPUTUSAN Den): ikut perilaku
-// rmEdit di mockup -- membuka LeadDetailPage lead itu dengan Company
-// langsung dalam mode edit (onQuickEdit, dirutekan lewat location.state
-// `quickEdit`, lihat LeadDetailRoute/crm.routes.jsx).
+// menggantikan ‹ Prev / Next › polos.
 //
 // Dua deviasi dari batas awal irisan ini, DIPUTUSKAN Den sesudah verifikasi
 // visual (ikut mockup, bukan lagi dicatat sebagai "tidak ada"): filter
@@ -37,7 +47,6 @@ import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
 import Pager from '../components/Pager';
-import AddNoteModal from '../components/AddNoteModal';
 
 const PAGE_SIZE = 20;
 // Sentinel filter Owner (irisan 7 Bagian 2, poin 3 Paket 2) -- bukan id
@@ -125,12 +134,13 @@ function BantCell({ score }) {
 /**
  * @param {(acc: {id:string}) => void} onSelectProspect
  * @param {(acc: {id:string}) => void} [onQuickEdit] - "Quick Edit" (menu baris "⋮", mockup rmEdit): buka Detail Lead dengan Company langsung dalam mode edit
+ * @param {(acc: {id:string}) => void} [onAddNote] - "Add Note" (menu baris "⋮", mockup rmNote): buka Detail Lead tab Activity dengan kotak catatan TERBUKA (TD-318 Irisan 1, N3 -- dulu modal AddNoteModal di tempat, mockup tak punya modal terpisah untuk ini)
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {boolean} [openCaptureOnMount]
  * @param {string} [captureInitialName]
  * @param {() => void} [onCaptureClosed]
  */
-export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToast, openCaptureOnMount, captureInitialName, onCaptureClosed }) {
+export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNote, showToast, openCaptureOnMount, captureInitialName, onCaptureClosed }) {
   const { profile, erpRole, erpRoles } = useAuth();
   const isAllEntities = isAllEntitiesRole(erpRoles);
   const isSalesOnly = isSalesOnlyRole(erpRole);
@@ -178,7 +188,6 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
   // jadi satu negara cukup untuk keduanya.
   const [modalAction, setModalAction] = useState(null); // { type:'reassign'|'lost'|'archive', accounts:[...] } | null
   const [rowMenuFor, setRowMenuFor] = useState(null);
-  const [noteForAccount, setNoteForAccount] = useState(null); // "Add Note" dari menu baris "⋮" (mockup 03)
 
   const effectiveScope = isSalesOnly ? 'mine' : scope;
 
@@ -305,8 +314,20 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
   const scopeLabel = effectiveScope === 'mine' ? 'showing your leads only' : 'showing all team leads';
 
-  const th = { padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, fontFamily: FONT_BODY, whiteSpace: 'nowrap' };
-  const td = { padding: '12px', fontSize: 13, color: INK, fontFamily: FONT_BODY };
+  // TD-318 Irisan 1, N7: grid-template-columns PERSIS mockup Capture/Table
+  // (disalin literal -- JANGAN dihitung ulang/dibulatkan, pola sama dengan
+  // QUAL_GRID_COLS Irisan 0c). min-width:1180px mockup SALAH HITUNG lagi
+  // (lantai asli = 752px 8 kolom tetap + 440px minimum 3 kolom minmax =
+  // 1192px) -- diterima sesuai keputusan Irisan 1 (geser 7px di 1475px
+  // DITERIMA, kolom tidak diubah).
+  const CAPTURE_GRID_COLS = '40px 96px 124px minmax(170px,1.4fr) minmax(120px,1fr) 108px 100px minmax(150px,1fr) 136px 104px 44px';
+  const CAPTURE_GRID_MIN_W = 1180;
+  // headCell TANPA whiteSpace:'nowrap' (TD-318 Irisan 1, 3b) -- "ACCOUNT CODE"
+  // (96px) menempel ke "COMPANY NAME" kalau dipaksa satu baris; kolom 96px
+  // ini cacat bawaan mockup sendiri (dilaporkan ke Den utk Claude Design).
+  // Lebar kolom TIDAK diubah, hanya judul boleh turun ke baris kedua.
+  const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT };
+  const cell = { padding: '12px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK, minWidth: 0 };
 
   return (
     <div>
@@ -427,7 +448,12 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
 
       <div style={{ fontSize: 13, color: INK_SOFT, marginBottom: SP.s2, fontFamily: FONT_BODY }}>{total} lead{total === 1 ? '' : 's'}, {scopeLabel}</div>
 
-      <Card padded={false}>
+      {/* TD-318 Irisan 1, N7: border diganti inset box-shadow (pola persis
+          Irisan 0d LeadQualificationPage) -- border 1px x2 sisi kartu
+          `padded={false}` memakan 2px yang tak terhitung di kalkulasi lebar
+          jendela Den (1475-248-40=1187), inset box-shadow membebaskannya
+          tanpa mengubah tampilan atau menyentuh Card bersama. */}
+      <Card padded={false} style={{ border: 'none', boxShadow: `inset 0 0 0 1px ${LINE}` }}>
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: INK_FAINT, fontFamily: FONT_BODY }}>Loading data…</div>
         ) : leads.length === 0 ? (
@@ -441,104 +467,98 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
             )}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: HEAD_BG, borderBottom: `1px solid ${LINE}` }}>
-                  <th style={{ ...th, width: 36 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></th>
-                  <th style={th}>Account Code</th>
-                  <th style={th}>Source</th>
-                  <th style={th}>Company Name</th>
-                  <th style={th}>Primary Contact</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>BANT Score</th>
-                  <th style={th}>Owner</th>
-                  <th style={th}>Estimated Value</th>
-                  <th style={th}>Last Touched</th>
-                  <th style={{ ...th, width: 36 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map((l, i) => {
-                  const lstatus = deriveLeadStatus(l);
-                  const meta = lstatus ? LEAD_STATUS_META[lstatus] : null;
-                  // 'customer' dikecualikan juga -- akun yang sudah jadi customer tak
-                  // boleh ditandai Lost dari sini (LeadDetailPage sendiri tak bisa
-                  // dibuka untuk akun ini sama sekali, redirect ke /crm/customer/:id,
-                  // tapi menu baris '⋮' di daftar ini jalur TERPISAH yang butuh
-                  // penjagaan sendiri).
-                  const rowCanMarkLost = canMarkLost && lstatus !== 'lost' && lstatus !== 'customer';
-                  const rowMenuOpen = rowMenuFor === l.id;
-                  return (
-                    <tr key={l.id}
-                      onClick={() => onSelectProspect?.(l)}
-                      style={{ borderBottom: i < leads.length - 1 ? `1px solid ${LINE_SOFT}` : 'none', cursor: 'pointer' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = ROW_HOVER; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <td style={{ ...td, width: 36 }} onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} aria-label={`Select ${l.name}`} />
-                      </td>
-                      <td style={{ ...td, fontFamily: FONT_MONO, fontWeight: 600 }}>{l.code || '—'}</td>
-                      <td style={td}><Badge tone="neutral">{SOURCE_LABELS[l.source] || l.source || '—'}</Badge></td>
-                      <td style={{ ...td, fontWeight: 700 }}>{l.name}</td>
-                      <td style={{ ...td, color: INK_SOFT }}>{primaryContactOf(l)?.name || '—'}</td>
-                      <td style={td}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {meta ? <Badge tone={meta.tone}>{meta.label}</Badge> : '—'}
-                          {l.is_stale && <Badge tone="warn" title={`Not touched since ${fmtDate(l.stale_flagged_at)}`}>Stale</Badge>}
-                        </span>
-                      </td>
-                      <td style={td}><BantCell score={calcBantScoreSafe(l)} /></td>
-                      <td style={td}><OwnerCell id={l.assigned_to} name={l.assigned_profile?.full_name} /></td>
-                      <td style={{ ...td, fontFamily: FONT_MONO }}>{l.estimated_value != null ? fmtRp(l.estimated_value) : '—'}</td>
-                      <td style={{ ...td, color: INK_FAINT, fontSize: 12.5 }}>{fmtDate(l.last_activity_at)}</td>
-                      <td style={{ ...td, width: 60, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
-                          <IconButton size="xs" variant="ghost" icon={<MoreVertical size={14} />} label="Row actions" onClick={() => setRowMenuFor(rowMenuOpen ? null : l.id)} />
-                          {rowMenuOpen && (
-                            <>
-                              <div onClick={() => setRowMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
-                              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 150, zIndex: 10, overflow: 'hidden' }}>
-                                {onQuickEdit && (
-                                  <button type="button" onClick={() => { setRowMenuFor(null); onQuickEdit(l); }}
-                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
-                                    Quick Edit
-                                  </button>
-                                )}
-                                <button type="button" onClick={() => { setRowMenuFor(null); setNoteForAccount(l); }}
-                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
-                                  Add Note
-                                </button>
-                                {canManage && (
-                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'reassign', accounts: [l] }); }}
-                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
-                                    Reassign
-                                  </button>
-                                )}
-                                {canManage && (
-                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'archive', accounts: [l] }); }}
-                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
-                                    Archive
-                                  </button>
-                                )}
-                                {rowCanMarkLost && (
-                                  <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'lost', accounts: [l] }); }}
-                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: '#B4432A' }}>
-                                    Mark as Lost
-                                  </button>
-                                )}
-                              </div>
-                            </>
-                          )}
-                          <ChevronRight size={15} color={INK_FAINT} />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="nk-scroll" role="table" aria-label="Leads" style={{ overflowX: 'auto' }}>
+            <div role="row" style={{ display: 'grid', gridTemplateColumns: CAPTURE_GRID_COLS, minWidth: CAPTURE_GRID_MIN_W, alignItems: 'center', background: HEAD_BG, borderBottom: `1px solid ${LINE}` }}>
+              <div role="columnheader" style={headCell}><input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></div>
+              <div role="columnheader" style={headCell}>Account Code</div>
+              <div role="columnheader" style={headCell}>Source</div>
+              <div role="columnheader" style={headCell}>Company Name</div>
+              <div role="columnheader" style={headCell}>Primary Contact</div>
+              <div role="columnheader" style={headCell}>Status</div>
+              <div role="columnheader" style={headCell}>BANT Score</div>
+              <div role="columnheader" style={headCell}>Owner</div>
+              <div role="columnheader" style={{ ...headCell, textAlign: 'right' }}>Estimated Value</div>
+              <div role="columnheader" style={headCell}>Last Touched</div>
+              <div role="columnheader" style={headCell} />
+            </div>
+            {leads.map((l, i) => {
+              const lstatus = deriveLeadStatus(l);
+              const meta = lstatus ? LEAD_STATUS_META[lstatus] : null;
+              // 'customer' dikecualikan juga -- akun yang sudah jadi customer tak
+              // boleh ditandai Lost dari sini (LeadDetailPage sendiri tak bisa
+              // dibuka untuk akun ini sama sekali, redirect ke /crm/customer/:id,
+              // tapi menu baris '⋮' di daftar ini jalur TERPISAH yang butuh
+              // penjagaan sendiri).
+              const rowCanMarkLost = canMarkLost && lstatus !== 'lost' && lstatus !== 'customer';
+              const rowMenuOpen = rowMenuFor === l.id;
+              return (
+                <div key={l.id} role="row"
+                  onClick={() => onSelectProspect?.(l)}
+                  style={{ display: 'grid', gridTemplateColumns: CAPTURE_GRID_COLS, minWidth: CAPTURE_GRID_MIN_W, alignItems: 'center', borderBottom: i < leads.length - 1 ? `1px solid ${LINE_SOFT}` : 'none', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = ROW_HOVER; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div role="cell" style={cell} onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} aria-label={`Select ${l.name}`} />
+                  </div>
+                  {/* TD-318 Irisan 1, 3a: garis bawah HANYA saat kode ADA (gaya
+                      tautan, mockup `<a>` persis) -- kode kosong = "—" polos,
+                      tanpa garis bawah supaya tak terlihat seperti tautan/"=". */}
+                  <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, fontWeight: 600 }}>
+                    {l.code ? <span style={{ textDecoration: 'underline' }}>{l.code}</span> : '—'}
+                  </div>
+                  <div role="cell" style={cell}><Badge tone="neutral">{SOURCE_LABELS[l.source] || l.source || '—'}</Badge></div>
+                  <div role="cell" style={{ ...cell, fontWeight: 500 }}>{l.name}</div>
+                  <div role="cell" style={{ ...cell, color: INK_SOFT }}>{primaryContactOf(l)?.name || '—'}</div>
+                  <div role="cell" style={cell}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {meta ? <Badge tone={meta.tone}>{meta.label}</Badge> : '—'}
+                      {l.is_stale && <Badge tone="warn" title={`Not touched since ${fmtDate(l.stale_flagged_at)}`}>Stale</Badge>}
+                    </span>
+                  </div>
+                  <div role="cell" style={cell}><BantCell score={calcBantScoreSafe(l)} /></div>
+                  <div role="cell" style={cell}><OwnerCell id={l.assigned_to} name={l.assigned_profile?.full_name} /></div>
+                  <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, whiteSpace: 'nowrap', textAlign: 'right' }}>{l.estimated_value != null ? fmtRp(l.estimated_value) : '—'}</div>
+                  <div role="cell" style={{ ...cell, color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDate(l.last_activity_at)}</div>
+                  <div role="cell" style={{ ...cell, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+                      <IconButton size="xs" variant="ghost" icon={<MoreVertical size={14} />} label="Row actions" onClick={() => setRowMenuFor(rowMenuOpen ? null : l.id)} />
+                      {rowMenuOpen && (
+                        <>
+                          <div onClick={() => setRowMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
+                          {/* TD-318 Irisan 1, N3: PERSIS mockup menuIsRow -- TIGA item
+                              saja (Quick Edit/Add Note/Mark as Lost). Reassign dan
+                              Archive DICABUT dari sini (mockup tak punya keduanya
+                              di menu baris) -- tetap tersedia lewat bulk bar di
+                              atas untuk baris yang dicentang. */}
+                          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, boxShadow: '0 8px 24px rgba(0,0,0,.12)', minWidth: 150, zIndex: 10, overflow: 'hidden' }}>
+                            {onQuickEdit && (
+                              <button type="button" onClick={() => { setRowMenuFor(null); onQuickEdit(l); }}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                Quick Edit
+                              </button>
+                            )}
+                            {onAddNote && (
+                              <button type="button" onClick={() => { setRowMenuFor(null); onAddNote(l); }}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>
+                                Add Note
+                              </button>
+                            )}
+                            {rowCanMarkLost && (
+                              <button type="button" onClick={() => { setRowMenuFor(null); setModalAction({ type: 'lost', accounts: [l] }); }}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: '#B4432A' }}>
+                                Mark as Lost
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <ChevronRight size={15} color={INK_FAINT} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
@@ -564,8 +584,6 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, showToa
         onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
       <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
         onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />
-      <AddNoteModal open={!!noteForAccount} onClose={() => setNoteForAccount(null)} account={noteForAccount} userId={profile?.id} showToast={showToast}
-        onSaved={() => { setNoteForAccount(null); showToast?.('Note added'); fetchLeads(); }} />
     </div>
   );
 }

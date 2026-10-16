@@ -121,8 +121,10 @@ function OwnerLine({ id, name, canReassign, onReassign }) {
  * @param {(inquiryId:string) => void} [onOpenInquiry]
  * @param {(quotationId:string) => void} [onOpenQuotation]
  * @param {(msg:string, type?:string)=>void} [showToast]
+ * @param {boolean} [quickEditOnMount] - "Quick Edit" dari Lead Capture (mockup rmEdit): buka dengan Company langsung mode edit
+ * @param {boolean} [openNoteOnMount] - "Add Note" dari Lead Capture (mockup rmNote, TD-318 Irisan 1 N3): buka dengan tab Activity aktif + kotak catatan terbuka
  */
-export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInquiry, onOpenQuotation, showToast, quickEditOnMount }) {
+export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInquiry, onOpenQuotation, showToast, quickEditOnMount, openNoteOnMount }) {
   const { profile, erpRoles, hasMenuPermission } = useAuth();
 
   const [account, setAccount] = useState(null);
@@ -138,7 +140,10 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const [lostReasonOptions, setLostReasonOptions] = useState([]);
   const [requestOptionFor, setRequestOptionFor] = useState(null);
 
-  const [tab, setTab] = useState('overview');
+  // TD-318 Irisan 1, N3: "Add Note" dari menu baris "⋮" Lead Capture (mockup
+  // rmNote) mendarat di sini dengan tab Activity SUDAH aktif -- lihat juga
+  // ActivityTab di bawah untuk kotak catatan yang ikut terbuka.
+  const [tab, setTab] = useState(() => (openNoteOnMount ? 'activity' : 'overview'));
   const [menuOpen, setMenuOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
@@ -450,7 +455,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
             )}
             {tab === 'activity' && (
               <ActivityTab activities={activities} poolHistory={poolHistory} actorMap={actorMap} accountId={id} companyId={companyId}
-                profile={profile} showToast={showToast} onChanged={fetchActivities} />
+                profile={profile} showToast={showToast} onChanged={fetchActivities} autoOpenNote={openNoteOnMount} />
             )}
             {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
             {tab === 'history' && <HistoryTab inquiries={inquiries} onOpenInquiry={onOpenInquiry} />}
@@ -896,8 +901,11 @@ function poolHistoryNotes(h, actorMap) {
   }
 }
 
-function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged }) {
-  const [composer, setComposer] = useState(null); // null | 'note' | 'followup'
+function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged, autoOpenNote }) {
+  // TD-318 Irisan 1, N3 (rmNote): kotak catatan sudah TERBUKA saat tab ini
+  // mendarat dari "Add Note" Lead Capture -- persis satu kondisi dgn
+  // autoEditCompany/CompanyTab di atas (lazy initializer, bukan effect).
+  const [composer, setComposer] = useState(() => (autoOpenNote ? 'note' : null)); // null | 'note' | 'followup'
   const [text, setText] = useState('');
   const [followDate, setFollowDate] = useState('');
   const [saving, setSaving] = useState(false);
