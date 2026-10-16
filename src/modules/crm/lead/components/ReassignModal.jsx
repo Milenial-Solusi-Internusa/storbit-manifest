@@ -29,10 +29,13 @@
 // (LeadCapturePage/LeadDetailPage/CustomerDetailPage) memakai
 // isManagerOrAbove -- LEBIH LUAS dari izin crm_lead_pool_approval yang
 // dicek lead_pool_assign di server, jadi baris pool BISA ditolak RPC
-// walau tombolnya terlihat. Reason/Effective Date di bawah TIDAK dipakai
-// RPC lead_pool_assign (tak punya parameter itu) -- hanya relevan utk
-// baris non-pool; dibiarkan terisi apa adanya, bukan disembunyikan
-// kondisional (kompleksitas UI yang tak diminta).
+// walau tombolnya terlihat. Effective Date TIDAK dipakai RPC
+// lead_pool_assign (tak punya parameter itu) -- hanya relevan utk baris
+// non-pool; dibiarkan terisi apa adanya, bukan disembunyikan kondisional
+// (kompleksitas UI yang tak diminta). Reason SEKARANG ikut dikirim ke
+// lead_pool_assign sebagai p_reason (TD-318 Irisan 2, migrasi
+// 20261016000004) -- tersimpan di account_pool_history.reason utk baris
+// pool juga, bukan cuma di activities utk baris non-pool.
 //
 // TD-318 Irisan 2: judul modal + label tombol memakai `allUnassigned`
 // (SEMUA target tanpa pemilik), persis mockup `allUn` -- BUKAN `bulk`
@@ -148,10 +151,14 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     // Pool: SATU PER SATU lewat RPC lead_pool_assign -- gerbangnya
     // crm_lead_pool_approval di server, lebih sempit dari gate tombol
     // (isManagerOrAbove) pemanggil; pesan gagal RPC ditampilkan apa
-    // adanya, bukan diseragamkan.
+    // adanya, bukan diseragamkan. p_reason dikirim sama dengan baris
+    // non-pool (TD-318 Irisan 2, migrasi 20261016000004) -- trim, null
+    // kalau kosong (bukan string kosong -- account_pool_history.reason
+    // lebih bersih NULL daripada '').
+    const trimmedReason = reason.trim() || null;
     let poolOkCount = 0;
     for (const a of poolAccounts) {
-      const { error } = await supabase.rpc('lead_pool_assign', { p_account_id: a.id, p_user_id: newOwner });
+      const { error } = await supabase.rpc('lead_pool_assign', { p_account_id: a.id, p_user_id: newOwner, p_reason: trimmedReason });
       if (error) failures.push({ name: a.name, message: error.message });
       else { okCount++; poolOkCount++; }
     }
