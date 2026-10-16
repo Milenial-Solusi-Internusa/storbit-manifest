@@ -86,6 +86,21 @@ const TOUCHED_OPTIONS = [
   { value: '30', label: 'More than 30 days' },
 ];
 const primaryContactOf = (acc) => (Array.isArray(acc.contacts) ? acc.contacts : []).find((k) => k.is_primary && !k.deleted_at) || null;
+// TD-318 Irisan Sorting -- 9 kolom sortable Capture/Table (mockup :81,
+// sortBy.X/arrow.X). Kunci PERSIS kunci mockup (code/src/co/contact/st/
+// bant/ow/val/t), dipetakan ke kolom .order() di sini -- 5 kolom asli
+// langsung, 4 computed column PostgREST (bant_score/lead_status_rank/
+// owner_name/primary_contact_name, migrasi 20261016000003, BELUM
+// DIJALANKAN). Sengaja TIDAK di-select -- hanya dipakai di .order(), jadi
+// 5 kolom pertama tetap bekerja normal sebelum migrasi computed column
+// itu jalan; mengklik salah satu dari 4 kolom computed sebelum migrasi
+// jalan akan gagal lewat showToast error (PostgREST: kolom tak dikenal),
+// bukan mematikan seluruh halaman.
+const SORT_ORDER_COLUMN = {
+  code: 'code', src: 'source', co: 'name', contact: 'primary_contact_name',
+  st: 'lead_status_rank', bant: 'bant_score', ow: 'owner_name',
+  val: 'estimated_value', t: 'last_activity_at',
+};
 const daysAgoIso = (n) => new Date(Date.now() - n * 86400000).toISOString();
 const startOfTodayIso = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 const startOfMonthIso = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.toISOString(); };
@@ -151,6 +166,10 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
   const canMarkLost = isSalesOnly || canManage;
 
   const [scope, setScope] = useState('all'); // 'mine' | 'all' -- paksa 'mine' kalau isSalesOnly
+  // TD-318 Irisan Sorting -- default persis mockup (sort:'t', dir:-1 --
+  // Last Touched terbaru dulu), sama dengan .order() hardcode lama.
+  const [sortKey, setSortKey] = useState('t');
+  const [sortDir, setSortDir] = useState(-1); // 1 = ascending, -1 = descending
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -274,7 +293,13 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
         query = query.or(orParts.join(','));
       }
 
-      query = query.order('last_activity_at', { ascending: false, nullsFirst: false }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      // TD-318 Irisan Sorting -- kolom & arah dinamis (mockup :538-539: klik
+      // kolom baru = ascending, klik ulang = dibalik). nullsFirst:false di
+      // KEDUA arah (bukan hanya default Postgres utk DESC) supaya Unassigned/
+      // tanpa kontak/status tak dikenal selalu di akhir, bukan di depan saat
+      // sort dibalik.
+      query = query.order(SORT_ORDER_COLUMN[sortKey] || 'last_activity_at', { ascending: sortDir === 1, nullsFirst: false })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
       const { data, error, count } = await query;
       if (error) throw error;
@@ -290,7 +315,7 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
     // React Compiler menyimpulkan dependensinya sebagai objek `profile` (bukan
     // sub-path-nya), dan menyebut keduanya "kurang spesifik dari sumber" kalau
     // dibiarkan optional-chained (react-hooks/preserve-manual-memoization).
-  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, customFrom, customTo, touchedBucket, estimatedMaxJuta, search, page, showToast]);
+  }, [profile, isAllEntities, effectiveScope, entity, status, source, owner, industry, priority, createdBucket, customFrom, customTo, touchedBucket, estimatedMaxJuta, search, page, sortKey, sortDir, showToast]);
 
   // Promise.resolve().then(...) -- pola yang sudah dipakai di tempat lain
   // (AssetDetailITPage.jsx, useHrgaRequests.js) untuk menghindari
@@ -311,6 +336,13 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
   const allChecked = leads.length > 0 && leads.every((l) => selected.has(l.id));
   const toggleAll = () => setSelected(allChecked ? new Set() : new Set(leads.map((l) => l.id)));
   const toggleOne = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // TD-318 Irisan Sorting -- mekanika PERSIS mockup (:538-539): kolom baru
+  // selalu mulai ascending (dir=1); klik kolom yang sedang aktif membalik
+  // arah, bukan mengulang ascending.
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir((d) => -d);
+    else { setSortKey(key); setSortDir(1); }
+  };
 
   const scopeLabel = effectiveScope === 'mine' ? 'showing your leads only' : 'showing all team leads';
 
@@ -470,15 +502,15 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
           <div className="nk-scroll" role="table" aria-label="Leads" style={{ overflowX: 'auto' }}>
             <div role="row" style={{ display: 'grid', gridTemplateColumns: CAPTURE_GRID_COLS, minWidth: CAPTURE_GRID_MIN_W, alignItems: 'center', background: HEAD_BG, borderBottom: `1px solid ${LINE}` }}>
               <div role="columnheader" style={headCell}><input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></div>
-              <div role="columnheader" style={headCell}>Account Code</div>
-              <div role="columnheader" style={headCell}>Source</div>
-              <div role="columnheader" style={headCell}>Company Name</div>
-              <div role="columnheader" style={headCell}>Primary Contact</div>
-              <div role="columnheader" style={headCell}>Status</div>
-              <div role="columnheader" style={headCell}>BANT Score</div>
-              <div role="columnheader" style={headCell}>Owner</div>
-              <div role="columnheader" style={{ ...headCell, textAlign: 'right' }}>Estimated Value</div>
-              <div role="columnheader" style={headCell}>Last Touched</div>
+              <SortHeadCell col="code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Account Code</SortHeadCell>
+              <SortHeadCell col="src" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Source</SortHeadCell>
+              <SortHeadCell col="co" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Company Name</SortHeadCell>
+              <SortHeadCell col="contact" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Primary Contact</SortHeadCell>
+              <SortHeadCell col="st" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Status</SortHeadCell>
+              <SortHeadCell col="bant" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>BANT Score</SortHeadCell>
+              <SortHeadCell col="ow" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Owner</SortHeadCell>
+              <SortHeadCell col="val" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={{ ...headCell, textAlign: 'right' }} align="right">Estimated Value</SortHeadCell>
+              <SortHeadCell col="t" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} style={headCell}>Last Touched</SortHeadCell>
               <div role="columnheader" style={headCell} />
             </div>
             {leads.map((l, i) => {
@@ -584,6 +616,24 @@ export default function LeadCapturePage({ onSelectProspect, onQuickEdit, onAddNo
         onMarked={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead marked as Lost'); fetchLeads(); }} />
       <ArchiveModal open={modalAction?.type === 'archive'} onClose={() => setModalAction(null)} accounts={modalAction?.type === 'archive' ? modalAction.accounts : []} showToast={showToast}
         onArchived={() => { setModalAction(null); setSelected(new Set()); showToast?.('Lead archived'); fetchLeads(); }} />
+    </div>
+  );
+}
+
+// TD-318 Irisan Sorting -- header kolom sortable, gaya interaksi ikut pola
+// `Th` SalesOrderPage.jsx (warna aktif + panah ↑/↓/⇅, cursor pointer) --
+// diadaptasi dari `<th>` ke `<div role="columnheader">` karena Capture/Table
+// CSS grid (bukan <table>), bukan konvensi baru. Arrow TANPA label arah di
+// aria (cukup ganti warna+bold saat aktif utk screen reader via :active).
+function SortHeadCell({ col, sortKey, sortDir, onClick, style, align, children }) {
+  const active = sortKey === col;
+  return (
+    <div role="columnheader" style={{ ...style, display: 'flex', alignItems: 'center', gap: 4, justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
+      <button type="button" onClick={() => onClick(col)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 0, padding: 0, margin: 0, cursor: 'pointer', userSelect: 'none', font: 'inherit', color: active ? INK : 'inherit' }}>
+        {children}
+        <span style={{ opacity: active ? 1 : 0.4, fontSize: 10 }}>{active ? (sortDir > 0 ? '↑' : '↓') : '⇅'}</span>
+      </button>
     </div>
   );
 }
