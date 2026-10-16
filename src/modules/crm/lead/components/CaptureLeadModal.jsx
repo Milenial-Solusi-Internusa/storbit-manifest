@@ -17,7 +17,7 @@ import { Modal, FloatingInput, FloatingSelect, Textarea, SaveButton, OutlineBtn,
 import { SEMANTIC, FONT_BODY, FONT_MONO, INK, INK_SOFT, INK_FAINT, LINE, INPUT_BG, RADIUS, SIZE, SP } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
-import { isSalesOnly as isSalesOnlyRole, isAllEntities as isAllEntitiesRole } from '../../../../lib/roles';
+import { isSalesOnly as isSalesOnlyRole, isAllEntities as isAllEntitiesRole, isManagerOrAbove } from '../../../../lib/roles';
 import { ENTITIES } from '../../../../lib/entities';
 import { SOURCES, SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
 import { formatIdNumber, readMoneyInput } from '../../../../lib/numberFormat';
@@ -44,6 +44,12 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
   const { profile, erpRole, erpRoles } = useAuth();
   const isSalesOnly = isSalesOnlyRole(erpRole);
   const isAllEntities = isAllEntitiesRole(erpRoles);
+  // TD-318 Irisan 3: rule 5 mockup -- manager ke atas menambah opsi
+  // dropdown LANGSUNG lewat popover MasterSelect (onAdd), peran lain
+  // mengajukan (onRequestNew, RequestNewOptionModal). lead_industry/
+  // lead_category GLOBAL (company_id selalu NULL, migrasi
+  // 20261011000002) -- nol scope company pada pengecekan peran.
+  const canAddOptions = isManagerOrAbove(erpRoles);
 
   const [form, setForm] = useState(() => emptyForm(profile?.company_id));
   // WhatsApp mengikuti Phone SAMPAI user mengetik langsung di WhatsApp --
@@ -96,6 +102,26 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
   useEffect(() => { if (open) fetchOptions('lead_category', setCategoryOptions); }, [open, form.company_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // TD-318 Irisan 3: jalur manager (MasterSelect onAdd) -- OPTIMISTIK di sisi
+  // MasterSelect (popover sudah tertutup saat ini jalan), jadi gagal RPC di
+  // sini ditampilkan via toast, bukan dikembalikan ke popover yang sudah
+  // tutup. Slug direplikasi persis rumus SQL add_dropdown_option_direct:
+  // lower(regexp_replace(trim(label), '\s+', '_', 'g')) -- sama dengan
+  // onSubmitted mode:'direct' yang digantikan handler ini.
+  async function handleAddOption(key, listKey, name) {
+    const trimmed = name.trim();
+    const { data, error } = await supabase.rpc('add_dropdown_option_direct', {
+      p_list_key: listKey, p_label: trimmed, p_company_id: null,
+    });
+    if (error) { showToast?.(`Failed to add option: ${error.message}`, 'error'); return; }
+    const slug = trimmed.toLowerCase().replace(/\s+/g, '_');
+    const opt = { id: data, value: slug, label: trimmed };
+    if (key === 'industry') setIndustryOptions((o) => [...o, opt]);
+    else setCategoryOptions((o) => [...o, opt]);
+    set(key)(slug);
+    showToast?.(`${trimmed} added to ${key === 'industry' ? 'Industry' : 'Lead Category'}`);
+  }
 
   // Cek mirip -- RPC check_similar_accounts, sama seperti ProspectFormPage.
   // Debounce sederhana lewat onBlur (bukan live), pola yang sama dgn form lama.
@@ -190,10 +216,12 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
           <div style={grid2}>
             <MasterSelect label="Industry" value={form.industry} onChange={set('industry')}
               options={industryOptions.map((o) => ({ value: o.value, label: o.label }))}
-              onRequestNew={() => setRequestOptionFor('industry')} />
+              onAdd={canAddOptions ? (name) => handleAddOption('industry', 'lead_industry', name) : undefined}
+              onRequestNew={canAddOptions ? undefined : () => setRequestOptionFor('industry')} />
             <MasterSelect label="Lead Category" value={form.lead_category} onChange={set('lead_category')}
               options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
-              onRequestNew={() => setRequestOptionFor('lead_category')} />
+              onAdd={canAddOptions ? (name) => handleAddOption('lead_category', 'lead_category', name) : undefined}
+              onRequestNew={canAddOptions ? undefined : () => setRequestOptionFor('lead_category')} />
           </div>
 
           <div style={grid2}>
@@ -249,23 +277,16 @@ export default function CaptureLeadModal({ open, onClose, initialName = '', onSa
         </div>
       </Modal>
 
+      {/* TD-318 Irisan 3: hanya ditempuh non-manager (`onAdd` di atas
+          menangani manager LANGSUNG) -- onSubmitted selalu mode:'request',
+          dan mockup sendiri tidak menyeleksi opsi yang baru DIAJUKAN (baru
+          aktif sesudah disetujui), jadi nol tindak lanjut di sini -- sama
+          seperti sebelumnya untuk cabang 'request'. */}
       <RequestNewOptionModal
         open={!!requestOptionFor} onClose={() => setRequestOptionFor(null)}
         listKey={requestOptionFor === 'industry' ? 'lead_industry' : 'lead_category'}
         listLabel={requestOptionFor === 'industry' ? 'Industry' : 'Lead Category'}
         companyId={null}
-        onSubmitted={(result) => {
-          if (result.mode === 'direct') {
-            // add_dropdown_option_direct mengembalikan id SAJA (RETURNS uuid) --
-            // `value` (slug) dihitung server-side dan tidak dikirim balik, jadi
-            // direplikasi di sini persis rumus SQL-nya:
-            // lower(regexp_replace(trim(label), '\s+', '_', 'g')).
-            const slug = result.option.label.trim().toLowerCase().replace(/\s+/g, '_');
-            const opt = { id: result.option.id, value: slug, label: result.option.label };
-            if (requestOptionFor === 'industry') { setIndustryOptions((o) => [...o, opt]); set('industry')(opt.value); }
-            else { setCategoryOptions((o) => [...o, opt]); set('lead_category')(opt.value); }
-          }
-        }}
       />
     </>
   );
