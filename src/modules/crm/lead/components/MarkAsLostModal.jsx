@@ -28,7 +28,7 @@
 // amber (prop `error`) -- bukan lagi tombol ter-disable tanpa pesan.
 import { useState } from 'react';
 import { Modal, Textarea, FloatingInput, MasterSelect, Button, OutlineBtn } from '../../../../kit';
-import { INK, INK_SOFT, LINE, SEMANTIC, FONT_BODY, FONT_MONO, RADIUS, SP } from '../../../../kit/tokens';
+import { INK, INK_SOFT, BG, LINE_SOFT, SEMANTIC, FONT_BODY, RADIUS, SP } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { isManagerOrAbove } from '../../../../lib/roles';
@@ -159,7 +159,11 @@ export default function MarkAsLostModal({ open, onClose, accounts = [], skippedC
           <div style={{ fontSize: 13.5, color: INK, fontFamily: FONT_BODY }}>No eligible leads left to mark as lost.</div>
         ) : (
           <>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT, border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 14px' }}>
+            {/* TD-318 Irisan 3, tes Den #2: kotak persis :385 (padding
+                12px 16px, bg BG #F6F8F3, border LINE_SOFT #ECF0E9, radius
+                10) -- teks Inter 400 INK_SOFT, BUKAN IBM Plex Mono
+                (sebelumnya salah font DAN salah token border/padding/bg). */}
+            <div style={{ fontFamily: FONT_BODY, fontWeight: 400, fontSize: 13, color: INK_SOFT, background: BG, border: `1px solid ${LINE_SOFT}`, borderRadius: RADIUS.md, padding: '12px 16px' }}>
               {bulk ? `${accounts.length} leads selected` : `${accounts[0].code ? `${accounts[0].code}, ` : ''}${accounts[0].name}`}
             </div>
 
