@@ -21,7 +21,7 @@ import { Check, ChevronDown, Lock, Minus, Plus, Search } from 'lucide-react';
 import Icon from './Icon';
 import { ENTITIES } from '../lib/entities';
 import {
-  ACCENT, ACCENT_HOVER, INK, INK_SOFT, INK_FAINT, LINE, HEAD_BG, ROW_HOVER, INPUT_BG,
+  ACCENT, ACCENT_HOVER, INK, INK_SOFT, INK_FAINT, LINE, HEAD_BG, ROW_HOVER, INPUT_BG, CARD,
   DISABLED_BG, DISABLED_INK, FOCUS_RING, SHADOW_1, SEMANTIC,
   FONT_HEAD, FONT_BODY, FONT_MONO, RADIUS, SIZE, SP, MOTION,
 } from './tokens';
@@ -381,6 +381,23 @@ export function Slider({ label, value, onChange, min = 0, max = 100, step = 1, f
    terpisah menangkap resize viewport/container. Prop `full` tidak diubah
    perilakunya (tombol tetap flex:1, dibagi rata) -- yang berubah hanya
    CARA kotak sorot mengukur, bukan cara tombol disusun.
+
+   TD-318 Irisan 4 (tes token-per-token vs TIGA pemakaian pola segmented-pill
+   di mockup Lead Management.dc.html -- My Leads/All Leads di Capture [seg()
+   helper, :668] DAN Qualification [:154], Pool/FAC/Approvals di Lead
+   Assignment [poolOpts, :811] -- ketiganya SEPAKAT persis, sumber yang
+   SAMA (helper `seg()`): kotak sorot aktif SELALU putih `#FFFFFF`
+   (bukan INPUT_BG/BG sage-tinted), TEKS tombol SELALU INK (aktif maupun
+   tidak -- mockup tak punya cabang warna teks sama sekali), tinggi tombol
+   32px (bukan 38), font 13.5px (bukan 13). Diperbaiki DI KIT karena
+   seluruh mockup yang memakai pola ini sepakat -- bukan satu halaman yang
+   menyimpang. Dampak visual ke pemakai LAIN (6 halaman Admin/Foundation,
+   di luar lingkup Lead Management): DocumentSettingsPage, ApprovalWorkflowsPage,
+   IntegrationsPage, FinanceDefaultsPage, SecurityPolicyPage,
+   GeneralPreferencesPage -- tab aktifnya akan tampak PUTIH POLOS (bukan
+   lagi off-white sage) dan tab TIDAK aktif teksnya akan lebih gelap
+   (INK, bukan INK_SOFT yang diredam). Dilaporkan eksplisit di laporan
+   Irisan 4, bukan disembunyikan sebagai efek samping.
    ========================================================================= */
 export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
   const idx = options.findIndex((o) => optVal(o) === value);
@@ -419,7 +436,7 @@ export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
     }}>
       <div style={{
         position: 'absolute', top: 4, bottom: 4, left: highlight.left, width: highlight.width,
-        background: INPUT_BG, border: `1px solid ${LINE}`,
+        background: CARD, border: `1px solid ${LINE}`,
         borderRadius: 8, boxShadow: SHADOW_1, transition: `left .28s ${MOTION.ease}, width .28s ${MOTION.ease}`, opacity: highlight.visible ? 1 : 0,
       }} />
       {options.map((o, i) => {
@@ -431,8 +448,8 @@ export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
             key={val} ref={(el) => { btnRefs.current[i] = el; }}
             type="button" role="radio" aria-checked={active} onClick={() => onChange(val)} className="nk-focus"
             style={{
-              position: 'relative', zIndex: 1, flex: 1, height: 38, border: 'none', background: 'transparent', cursor: 'pointer',
-              fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: active ? INK : INK_SOFT,
+              position: 'relative', zIndex: 1, flex: 1, height: 32, border: 'none', background: 'transparent', cursor: 'pointer',
+              fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, color: INK,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'color .25s', whiteSpace: 'nowrap', padding: '0 14px',
               borderRadius: 8,
             }}
