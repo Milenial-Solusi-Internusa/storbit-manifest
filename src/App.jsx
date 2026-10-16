@@ -2818,7 +2818,11 @@ export default function StorbitManifest() {
           <header className="hidden lg:block sticky top-0 z-20 border-b"
             style={{ borderColor: '#E8ECF2', background: '#FFFFFF', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
           >
-            <div className="flex min-h-[68px] items-center gap-3 px-5 sm:px-7 xl:px-9">
+            {/* min-h 56px -- TD-318 Irisan 0d: persis <header style="min-height:56px">
+                di seluruh mockup design-handoff/mockup/*.dc.html (baris 20). Elemen
+                tertinggi di baris ini = input search 42px -- aman di 56px (7px
+                sisa atas/bawah), lihat PROGRESS.md 2026-10-13. */}
+            <div className="flex min-h-[56px] items-center gap-3 px-5 sm:px-7 xl:px-9">
 
               {/* ── LEFT: MSI logo ── */}
               <div className="lg:shrink-0">
@@ -3137,7 +3141,11 @@ export function LegacyMenuOutlet() {
             </ErrorBoundary>
           )}
 
-          <div className={`nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7`} style={{ display: activeMenu === 'home' ? 'none' : undefined }}>
+          {/* Padding >=1280px diturunkan 36px/28px -> 20px/24px-32px (TD-318
+              Irisan 0b) supaya cocok mockup `<main style="padding:24px 20px
+              32px">` -- lihat komentar sama di ModuleShell.jsx (dua salinan
+              bingkai, TD-273, wajib bergerak bersama). */}
+          <div className={`nexus-main-surface w-full min-w-0 px-5 py-6 lg:pt-6 lg:pb-8`} style={{ display: activeMenu === 'home' ? 'none' : undefined }}>
 
           {/* Content-level access gate (Fix C): deny render only once permissions
               have loaded — never during the loading window. */}

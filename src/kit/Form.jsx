@@ -1,7 +1,8 @@
 /* =========================================================================
    Kontrol form kit tunggal (Batch DS 1) — pindahan AdminKit + input search v3.
 
-   FloatingInput / FloatingSelect (56px) · Select ringkas (44px) · Textarea ·
+   FloatingInput / FloatingSelect (44px, label di atas kotak sejak 13 Okt
+   2026 -- lihat FieldLabel) · Select ringkas (44px) · Textarea ·
    SearchInput · Toggle · NumberStepper · Segmented · PillToggle · EntitySwitcher.
 
    Yang beda dari AdminKit, semuanya ADITIF (celah TD-14 §17.9 ditutup di sini):
@@ -42,38 +43,73 @@ function Note({ hint, error }) {
   );
 }
 
+/* Label field DI ATAS kotak isian (13 Okt 2026, menggantikan floating label
+   Batch DS 1 -- keputusan Den, mengikuti mockup Lead/Inquiry/Customer/
+   Quotation Management: KEEMPAT sepakat persis `font:600 12px Inter`,
+   `color:#5C6B52`, jarak 8px ke kotak -- diverifikasi grep ke keempat file
+   .dc.html, bukan ditebak dari satu mockup. Dipakai bersama oleh
+   FloatingInput/FloatingSelect/Textarea supaya ketiganya SATU sumber
+   kebenaran tata letak label, bukan tiga salinan yang bisa melenceng.
+   DIEKSPOR (bukan lagi lokal file ini) supaya `MasterSelect.jsx` ikut
+   memakainya -- tanpa itu `CaptureLeadModal.jsx` (satu-satunya pemakai
+   MasterSelect hari ini, field Industry + Lead Category) akan punya DUA
+   gaya label dalam satu modal, berdampingan dengan field lain (Entity/
+   Source/Priority) yang lewat kontrol di file ini.
+   Token: fontSize 12 + fontWeight 600 + FONT_BODY (Inter) = spesifikasi
+   mockup persis; color INK_SOFT = #5C6B52 persis (lihat komentar token-nya
+   sendiri: "label, subtitle, teks redup") -- NOL hex baru. `focus` dipakai
+   SAMA seperti floating label lama (INK saat fokus, INK_SOFT saat tidak) --
+   satu-satunya nuansa interaktif lama yang dipertahankan, cuma pindah dari
+   label yang melayang ke label yang diam.
+   Tanda bintang `required` -- markup mockup persis: `<span>Name <span
+   style="color:#8E620D">*</span></span>` di dalam baris flex gap:8px --
+   `#8E620D` = SEMANTIC.warn.fg (lihat tokens.js, Keputusan #62) -- NOL hex
+   baru di sini juga. */
+export function FieldLabel({ label, required, error, focus, htmlFor }) {
+  if (!label) return null;
+  return (
+    <label htmlFor={htmlFor} style={{
+      display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
+      fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+      color: error ? SEMANTIC.danger.fg : focus ? INK : INK_SOFT,
+    }}>
+      {label}
+      {required && <span style={{ color: SEMANTIC.warn.fg }}>*</span>}
+    </label>
+  );
+}
+
 const borderOf = (focus, error, disabled) =>
   `1px solid ${error ? SEMANTIC.danger.fg : focus ? INK_SOFT : disabled ? DISABLED_BG : LINE}`;
 
 /* =========================================================================
-   FLOATING-LABEL INPUT (56px)
+   INPUT (44px) — label DI ATAS kotak (13 Okt 2026, lihat FieldLabel di atas
+   untuk alasan + spesifikasi). Tinggi kotak turun dari SIZE.inputFloating
+   (56, utk ruang label melayang) ke SIZE.input (44, SUDAH ADA, persis
+   height:44px mockup) -- nol token baru. `placeholder` kini SELALU tampil
+   saat kosong (dulu `focus ? placeholder : ''` -- disembunyikan saat tidak
+   fokus supaya tak tumpang-tindih dengan label besar yang belum melayang;
+   alasan itu hilang begitu label pindah keluar kotak, dan mockup sendiri
+   menulis placeholder sebagai atribut polos, nol logika kondisional).
    ========================================================================= */
 export function FloatingInput({
-  label, value, onChange, mono, type = 'text', full, half, third, disabled, readOnly,
+  label, value, onChange, mono, type = 'text', full, half, third, disabled, readOnly, required,
   placeholder, hint, error, maxLength, id, name, onBlur, onKeyDown, autoFocus, inputMode, style,
 }) {
   const [focus, setFocus] = useState(false);
-  const floated = focus || (value !== undefined && value !== null && String(value).length > 0);
   return (
-    <div style={{ position: 'relative', flex: flexOf(full, half, third), minWidth: 0, ...style }}>
-      <label htmlFor={id} style={{
-        position: 'absolute', left: 14, pointerEvents: 'none', fontFamily: FONT_BODY,
-        transition: `all ${MOTION.base} ${MOTION.ease}`,
-        top: floated ? 7 : 18, fontSize: floated ? 11 : 13.5, fontWeight: floated ? 600 : 400,
-        color: error ? SEMANTIC.danger.fg : focus ? INK : INK_SOFT,
-      }}>
-        {label}
-      </label>
+    <div style={{ flex: flexOf(full, half, third), minWidth: 0, ...style }}>
+      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
       <input
         id={id} name={name} className="nk-input" type={type} value={value ?? ''} disabled={disabled} readOnly={readOnly}
         maxLength={maxLength} autoFocus={autoFocus} inputMode={inputMode}
-        placeholder={focus ? placeholder : ''}
+        placeholder={placeholder}
         aria-invalid={error ? true : undefined}
         onChange={(e) => onChange && onChange(e.target.value)}
         onFocus={() => setFocus(true)} onBlur={(e) => { setFocus(false); onBlur?.(e); }} onKeyDown={onKeyDown}
         style={{
-          width: '100%', height: SIZE.inputFloating, borderRadius: RADIUS.md, border: borderOf(focus, error, disabled),
-          background: disabled ? DISABLED_BG : INPUT_BG, padding: '20px 14px 7px',
+          width: '100%', height: SIZE.input, borderRadius: RADIUS.md, border: borderOf(focus, error, disabled),
+          background: disabled ? DISABLED_BG : INPUT_BG, padding: '0 14px',
           fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: mono ? 13.5 : 14, fontWeight: 500,
           color: disabled ? DISABLED_INK : INK, letterSpacing: mono ? 0.3 : 0,
           boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
@@ -85,49 +121,46 @@ export function FloatingInput({
   );
 }
 
-/* ---------- floating-label SELECT (56px) ---------- */
-export function FloatingSelect({ label, value, onChange, options = [], half, third, full, disabled, hint, error, id, name, style }) {
+/* ---------- SELECT (44px) — label DI ATAS kotak, pola sama FloatingInput ---------- */
+export function FloatingSelect({ label, value, onChange, options = [], half, third, full, disabled, required, hint, error, id, name, style }) {
   const [focus, setFocus] = useState(false);
   return (
-    <div style={{ position: 'relative', flex: flexOf(full, half, third), minWidth: 0, ...style }}>
-      <label htmlFor={id} style={{
-        position: 'absolute', left: 14, top: 7, pointerEvents: 'none', fontFamily: FONT_BODY,
-        fontSize: 11, fontWeight: 600, color: error ? SEMANTIC.danger.fg : focus ? INK : INK_SOFT, transition: `color ${MOTION.base}`,
-      }}>
-        {label}
-      </label>
-      <select
-        id={id} name={name} className="nk-select" value={value ?? ''} disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        onChange={(e) => onChange && onChange(e.target.value)}
-        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-        style={{
-          width: '100%', height: SIZE.inputFloating, borderRadius: RADIUS.md, border: borderOf(focus, error, disabled),
-          background: disabled ? DISABLED_BG : INPUT_BG, padding: '20px 38px 7px 14px',
-          fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: disabled ? DISABLED_INK : INK,
-          appearance: 'none', WebkitAppearance: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
-          boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
-        }}
-      >
-        {/* Placeholder kosong SAAT `value` belum ada nilai yang cocok DAN
-            `options` sendiri belum punya opsi value="" -- tanpa guard
-            pertama, <select> terkontrol dengan value="" yang tak punya opsi
-            value="" menampilkan opsi PERTAMA secara visual (kuirk HTML
-            native) padahal React state-nya tetap kosong, sehingga memilih
-            ulang opsi yang "sudah terlihat terpilih" itu tidak memicu
-            onChange sama sekali -- kebuntuan yang ditemukan di
-            CaptureLeadModal (field Source). Pola sama dengan
-            MasterSelect.jsx. Guard KEDUA (`!options.some(...)`) ditambahkan
-            setelah audit menemukan 8 dari 17 pemakai FloatingSelect sudah
-            menyertakan opsi value="" miliknya sendiri (mis. "— Pilih
-            entitas —") -- tanpa guard kedua, placeholder di sini jadi OPSI
-            KOSONG KEDUA yang tak berlabel, duplikat yang terlihat di
-            dropdown. Dua guard sekaligus = aman untuk pemakai yang SUDAH
-            menjaga sendiri maupun yang BELUM. */}
-        {!value && !options.some((o) => optVal(o) === '') && <option value="" />}
-        {options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
-      </select>
-      <span style={{ position: 'absolute', right: 14, top: 20, color: INK_SOFT, pointerEvents: 'none' }}><ChevronDown size={16} /></span>
+    <div style={{ flex: flexOf(full, half, third), minWidth: 0, ...style }}>
+      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
+      <div style={{ position: 'relative' }}>
+        <select
+          id={id} name={name} className="nk-select" value={value ?? ''} disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => onChange && onChange(e.target.value)}
+          onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+          style={{
+            width: '100%', height: SIZE.input, borderRadius: RADIUS.md, border: borderOf(focus, error, disabled),
+            background: disabled ? DISABLED_BG : INPUT_BG, padding: '0 38px 0 14px',
+            fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: disabled ? DISABLED_INK : INK,
+            appearance: 'none', WebkitAppearance: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+            boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
+          }}
+        >
+          {/* Placeholder kosong SAAT `value` belum ada nilai yang cocok DAN
+              `options` sendiri belum punya opsi value="" -- tanpa guard
+              pertama, <select> terkontrol dengan value="" yang tak punya opsi
+              value="" menampilkan opsi PERTAMA secara visual (kuirk HTML
+              native) padahal React state-nya tetap kosong, sehingga memilih
+              ulang opsi yang "sudah terlihat terpilih" itu tidak memicu
+              onChange sama sekali -- kebuntuan yang ditemukan di
+              CaptureLeadModal (field Source). Pola sama dengan
+              MasterSelect.jsx. Guard KEDUA (`!options.some(...)`) ditambahkan
+              setelah audit menemukan 8 dari 17 pemakai FloatingSelect sudah
+              menyertakan opsi value="" miliknya sendiri (mis. "— Pilih
+              entitas —") -- tanpa guard kedua, placeholder di sini jadi OPSI
+              KOSONG KEDUA yang tak berlabel, duplikat yang terlihat di
+              dropdown. Dua guard sekaligus = aman untuk pemakai yang SUDAH
+              menjaga sendiri maupun yang BELUM. */}
+          {!value && !options.some((o) => optVal(o) === '') && <option value="" />}
+          {options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
+        </select>
+        <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: INK_SOFT, pointerEvents: 'none' }}><ChevronDown size={16} /></span>
+      </div>
       <Note hint={hint} error={error} />
     </div>
   );
@@ -164,19 +197,20 @@ export function Select({ value, onChange, options = [], width = 220, full, icon,
   );
 }
 
-/* ---------- TEXTAREA ---------- */
+/* ---------- TEXTAREA — label lewat FieldLabel yang sama (13 Okt 2026) ----------
+   Sudah "label di atas" sejak awal; yang berubah cuma menyatukannya dengan
+   FloatingInput/FloatingSelect (fontSize 12.5→12, marginBottom 6→8, persis
+   mockup) + `required` + warna label jadi reaktif-fokus juga (dulu HANYA
+   error/INK_SOFT, TIDAK ada cabang fokus -- sekarang konsisten dgn kedua
+   kontrol lain). */
 export function Textarea({
   label, value, onChange, rows = 3, placeholder, hint, error, maxLength, disabled, readOnly,
-  mono, full = true, half, id, name, style, resize = 'vertical',
+  mono, full = true, half, required, id, name, style, resize = 'vertical',
 }) {
   const [focus, setFocus] = useState(false);
   return (
     <div style={{ flex: flexOf(full && !half, half, false), minWidth: 0, ...style }}>
-      {label && (
-        <label htmlFor={id} style={{ display: 'block', fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: error ? SEMANTIC.danger.fg : INK_SOFT, marginBottom: 6 }}>
-          {label}
-        </label>
-      )}
+      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
       <textarea
         id={id} name={name} className="nk-area" value={value ?? ''} rows={rows} placeholder={placeholder}
         maxLength={maxLength} disabled={disabled} readOnly={readOnly} aria-invalid={error ? true : undefined}

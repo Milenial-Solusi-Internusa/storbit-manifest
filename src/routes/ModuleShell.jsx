@@ -6,8 +6,13 @@
 //   1. BINGKAI `.nexus-main-surface` — div ini hidup DI DALAM LegacyMenuOutlet
 //      (App.jsx), bukan di App shell, karena di G1 ia ikut terbawa saat region
 //      dipindah utuh. Halaman yang keluar dari sana otomatis kehilangan padding
-//      (`px-5 sm:px-7 xl:px-9 py-6 lg:py-7`) DAN dua aturan CSS yang menempel
-//      pada kelas itu (`.nexus-main-surface .rounded-3xl` box-shadow,
+//      (`px-5 py-6 lg:pt-6 lg:pb-8` -- lihat TD-318 Irisan 0b+0d: nilai
+//      >=1280px diturunkan dari 36px/28px ke 20px/24px-32px persis `<main
+//      style="padding:24px 20px 32px">` di seluruh mockup design-handoff/mockup/
+//      *.dc.html (diukur Playwright 13 Okt 2026); Irisan 0d (sesi lanjutan)
+//      mencabut `sm:px-7` [28px, 640-1279px] -- mockup 20px di SEMUA lebar,
+//      bukan hanya >=1280px seperti yang sempat berlaku di 0b)
+//      DAN dua aturan CSS yang menempel pada kelas itu (`.nexus-main-surface .rounded-3xl` box-shadow,
 //      `.nexus-main-surface table` min-width) — ketahuan di uji G2: seluruh
 //      halaman Storbit kehilangan bingkainya. Kelasnya dipertahankan apa adanya
 //      supaya CSS, dan alat QA yang memakainya sebagai penanda, tetap bekerja.
@@ -29,7 +34,7 @@ export default function ModuleShell({ children }) {
   const { canAccessActiveMenu, permissionsLoading, bnfAuthLoading, setActiveMenu } = useAppShell();
   const denied = !canAccessActiveMenu && !permissionsLoading && !bnfAuthLoading;
   return (
-    <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7">
+    <div className="nexus-main-surface w-full min-w-0 px-5 py-6 lg:pt-6 lg:pb-8">
       {denied ? <AccessDeniedPage onGoHome={() => setActiveMenu('home')} /> : children}
     </div>
   );

@@ -371,9 +371,15 @@ export function ListView({
     );
   }
 
-  /* Kerangka tabel dipakai baris data DAN skeleton — header tetap saat memuat. */
+  /* Kerangka tabel dipakai baris data DAN skeleton — header tetap saat memuat.
+     `nk-scroll` (TD-318 Irisan 0b) -- scrollbar horizontal SELALU terlihat
+     (webkit classic, bukan overlay auto-hide macOS) begitu tabel meluber di
+     dalam kartunya sendiri -- tanpa ini, overflow yang BENAR secara desain
+     (tabel padat memang boleh scroll di dalam kartu, pola yang sama dengan
+     mockup) tidak kelihatan ADA-nya di macOS sampai pengguna kebetulan
+     menggeser trackpad, diukur jadi akar persepsi "kepotong"/"kebesaran". */
   const shell = (body) => (
-    <div style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
+    <div className="nk-scroll" style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT_BODY, fontSize: 13.5 }}>
         <thead>
           <tr style={{ background: HEAD_BG }}>

@@ -20,6 +20,7 @@ import {
   FloatingInput, FloatingSelect, Select, Textarea, SearchInput, Toggle, NumberStepper, Segmented, PillToggle, EntitySwitcher,
   PageHeader, SectionLabel, Card, EmptyState, Skeleton, DocNo, FormSheet, Notebook,
   Badge, StatusBar, ListView, Modal, SlideOver, Tooltip, DropZone, UploadBox, Icon, useToast,
+  MasterSelect,
 } from '../index';
 import {
   BG, CARD, ACCENT, ACCENT_HOVER, ACCENT_2, ACCENT_2_HOVER, LINE, INK, INK_SOFT, INK_FAINT,
@@ -110,6 +111,7 @@ export default function KitGallery() {
   const [mono, setMono] = useState('INQ/MSI/BD/2026/0184');
   const [sel, setSel] = useState('PT');
   const [note, setNote] = useState('');
+  const [master, setMaster] = useState('');
   const [logo, setLogo] = useState(null);
   const [sig, setSig] = useState(null);
   const [lastErr, setLastErr] = useState('');
@@ -218,16 +220,17 @@ export default function KitGallery() {
         </Section>
 
         {/* ── 4. Form ── */}
-        <Section n="4" title="Kontrol form" note="Latar input = INPUT_BG (= BG) supaya timbul di atas kartu; fokus = border INK_SOFT + ring. FloatingSelect kini punya disabled; FloatingInput punya maxLength & error.">
+        <Section n="4" title="Kontrol form" note="Label di atas kotak sejak 13 Okt 2026 (bukan floating lagi) -- lihat FieldLabel di Form.jsx, dipakai bersama MasterSelect.jsx. Latar input = INPUT_BG (= BG) supaya timbul di atas kartu; fokus = border INK_SOFT + ring. FloatingSelect kini punya disabled; FloatingInput punya maxLength & error; ketiganya + MasterSelect punya required.">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: SP.s4 }}>
-            <FloatingInput label="Nama perusahaan" value={text} onChange={setText} hint="Nama legal sesuai akta" />
+            <FloatingInput label="Nama perusahaan" value={text} onChange={setText} required hint="Nama legal sesuai akta" />
             <FloatingInput label="Nomor dokumen" value={mono} onChange={setMono} mono maxLength={24} />
             <FloatingInput label="NPWP" value="" onChange={() => {}} placeholder="00.000.000.0-000.000" third />
             <FloatingInput label="Email" value="admin@msigroup.co.id" onChange={() => {}} third error="Format email tidak valid" />
             <FloatingInput label="Kode" value="MSI" onChange={() => {}} third disabled />
-            <FloatingSelect label="Bentuk badan" value={sel} onChange={setSel} options={['PT', 'CV', 'Koperasi']} />
+            <FloatingSelect label="Bentuk badan" value={sel} onChange={setSel} options={['PT', 'CV', 'Koperasi']} required />
             <FloatingSelect label="Mata uang" value="IDR" onChange={() => {}} options={[{ value: 'IDR', label: 'IDR — Rupiah' }, { value: 'USD', label: 'USD' }]} disabled />
-            <Textarea label="Catatan" value={note} onChange={setNote} placeholder="Tulis catatan…" hint="Maks 500 karakter" maxLength={500} />
+            <MasterSelect label="Source" value={master} onChange={setMaster} required options={['Website', 'Referral', 'Cold Call']} onRequestNew={() => {}} half hint="Master data dropdown_options, bisa diajukan baru" />
+            <Textarea label="Catatan" value={note} onChange={setNote} required placeholder="Tulis catatan…" hint="Maks 500 karakter" maxLength={500} />
           </div>
           <Row gap={SP.s3}>
             <Select value={seg} onChange={setSeg} options={[{ value: 'table', label: 'Tampilan tabel' }, { value: 'lanes', label: 'Tampilan papan' }]} icon={<Filter size={15} />} />

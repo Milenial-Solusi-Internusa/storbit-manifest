@@ -178,7 +178,13 @@ export function FormSheet({
         )}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s4, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 30, fontWeight: 700, letterSpacing: '-.01em', color: INK, lineHeight: 1.15 }}>
+            {/* fontSize 24 (dulu 30) -- TD-318 Irisan 0d: persis <h1 style="font:700 24px
+                Montserrat,sans-serif"> h1 Detail di seluruh mockup design-handoff/mockup/
+                *.dc.html (verifikasi 2 kemunculan: baris 48 + 185 "Lead Management.dc.html").
+                fontWeight 700 + fontFamily Montserrat (FONT_HEAD) SUDAH cocok mockup sebelum
+                perubahan ini -- hanya fontSize yang meleset, nol pertanyaan IBM Plex Mono
+                (itu FONT_MONO, dipakai angka/kode, bukan h1). */}
+            <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, letterSpacing: '-.01em', color: INK, lineHeight: 1.15 }}>
               {title}
             </h1>
             {(docNo || meta) && (

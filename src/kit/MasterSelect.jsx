@@ -1,12 +1,23 @@
 /* =========================================================================
-   MasterSelect — floating-label select (gaya FloatingSelect, 56px) untuk
-   dropdown yang sumber opsinya tabel `dropdown_options` (master data
+   MasterSelect — select (gaya FloatingSelect, 44px, label di atas kotak)
+   untuk dropdown yang sumber opsinya tabel `dropdown_options` (master data
    bertingkat, bukan daftar literal di kode).
 
    Batch DS 3 Lead Management, Paket 1 irisan 3 — infrastruktur rule 5
    mockup Lead Management ("manager menambah langsung, sales mengajukan,
    peran lain hanya membaca"). Lihat migrasi
    20261011000002_crm_lead_master_data_requests.sql.
+
+   13 Okt 2026 (TD-318 Irisan 0, lanjutan): label pindah dari floating ke
+   DI ATAS kotak + tinggi 56px→44px + prop `required`, SAMA PERSIS dengan
+   FloatingSelect di Form.jsx — memakai `FieldLabel` yang diekspor dari
+   sana, bukan salinan kedua. Alasannya murni supaya `CaptureLeadModal.jsx`
+   (satu-satunya pemakai `MasterSelect` hari ini, field Industry + Lead
+   Category) tidak lagi menampilkan DUA gaya label dalam satu modal --
+   field lain di modal itu (Entity/Source/Priority) sudah lewat
+   FloatingSelect. Nol perubahan perilaku pilihan/
+   "+ Ajukan pilihan baru…"/Request new option — murni tampilan label +
+   tinggi kotak.
 
    KOMPONEN INI MURNI PRESENTASIONAL — sama seperti kontrol lain di
    src/kit/, ia TIDAK memanggil Supabase maupun useAuth. Pemanggil yang
@@ -32,6 +43,7 @@
 
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { FieldLabel } from './Form';
 import {
   INK, INK_SOFT, LINE, DISABLED_BG, DISABLED_INK, INPUT_BG, FOCUS_RING,
   SEMANTIC, FONT_BODY, RADIUS, SIZE, MOTION,
@@ -65,6 +77,7 @@ const borderOf = (focus, error, disabled) =>
  * @param {boolean}  [props.loading]      - true saat `options` masih di-fetch pemanggil
  * @param {() => void} [props.onRequestNew] - ADA → baris "+ Ajukan pilihan baru…" tampil di akhir daftar
  * @param {string}   [props.requestNewLabel='+ Ajukan pilihan baru…']
+ * @param {boolean}  [props.required]
  * @param {boolean}  [props.half]
  * @param {boolean}  [props.third]
  * @param {boolean}  [props.full]
@@ -78,7 +91,7 @@ const borderOf = (focus, error, disabled) =>
 export function MasterSelect({
   label, value, onChange, options = [], loading, onRequestNew,
   requestNewLabel = '+ Ajukan pilihan baru…',
-  half, third, full, disabled, hint, error, id, name, style,
+  half, third, full, disabled, required, hint, error, id, name, style,
 }) {
   const [focus, setFocus] = useState(false);
   const isDisabled = disabled || loading;
@@ -93,34 +106,31 @@ export function MasterSelect({
   }
 
   return (
-    <div style={{ position: 'relative', flex: flexOf(full, half, third), minWidth: 0, ...style }}>
-      <label htmlFor={id} style={{
-        position: 'absolute', left: 14, top: 7, pointerEvents: 'none', fontFamily: FONT_BODY,
-        fontSize: 11, fontWeight: 600, color: error ? SEMANTIC.danger.fg : focus ? INK : INK_SOFT, transition: `color ${MOTION.base}`,
-      }}>
-        {label}
-      </label>
-      <select
-        id={id} name={name} className="nk-select" value={value ?? ''} disabled={isDisabled}
-        aria-invalid={error ? true : undefined}
-        onChange={handleChange}
-        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-        style={{
-          width: '100%', height: SIZE.inputFloating, borderRadius: RADIUS.md, border: borderOf(focus, error, isDisabled),
-          background: isDisabled ? DISABLED_BG : INPUT_BG, padding: '20px 38px 7px 14px',
-          fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: isDisabled ? DISABLED_INK : INK,
-          appearance: 'none', WebkitAppearance: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer',
-          boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
-        }}
-      >
-        {loading && <option value="">Memuat…</option>}
-        {!loading && !value && <option value="" />}
-        {!loading && options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
-        {!loading && onRequestNew && <option value={REQUEST_NEW_VALUE}>{requestNewLabel}</option>}
-      </select>
-      <span style={{ position: 'absolute', right: 14, top: 20, color: INK_SOFT, pointerEvents: 'none' }}>
-        <ChevronDown size={16} />
-      </span>
+    <div style={{ flex: flexOf(full, half, third), minWidth: 0, ...style }}>
+      <FieldLabel label={label} required={required} error={error} focus={focus} htmlFor={id} />
+      <div style={{ position: 'relative' }}>
+        <select
+          id={id} name={name} className="nk-select" value={value ?? ''} disabled={isDisabled}
+          aria-invalid={error ? true : undefined}
+          onChange={handleChange}
+          onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+          style={{
+            width: '100%', height: SIZE.input, borderRadius: RADIUS.md, border: borderOf(focus, error, isDisabled),
+            background: isDisabled ? DISABLED_BG : INPUT_BG, padding: '0 38px 0 14px',
+            fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: isDisabled ? DISABLED_INK : INK,
+            appearance: 'none', WebkitAppearance: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer',
+            boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
+          }}
+        >
+          {loading && <option value="">Memuat…</option>}
+          {!loading && !value && <option value="" />}
+          {!loading && options.map((o) => <option key={optVal(o)} value={optVal(o)}>{optLabel(o)}</option>)}
+          {!loading && onRequestNew && <option value={REQUEST_NEW_VALUE}>{requestNewLabel}</option>}
+        </select>
+        <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: INK_SOFT, pointerEvents: 'none' }}>
+          <ChevronDown size={16} />
+        </span>
+      </div>
       <Note hint={hint} error={error} />
     </div>
   );
