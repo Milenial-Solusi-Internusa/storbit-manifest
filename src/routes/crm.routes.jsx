@@ -212,6 +212,7 @@ function LeadCaptureRoute() {
         <LeadCapturePage
           onSelectProspect={(p) => navigate(`${P_LEAD}/${p.id}`)}
           onQuickEdit={(p) => navigate(`${P_LEAD}/${p.id}`, { state: { quickEdit: true } })}
+          onAddNote={(p) => navigate(`${P_LEAD}/${p.id}`, { state: { openNote: true } })}
           showToast={showToast}
           openCaptureOnMount={openCapture}
           captureInitialName={location.state?.captureName || ''}
@@ -245,6 +246,7 @@ function LeadDetailRoute() {
         onBack={() => navigate(P_LEAD)}
         showToast={showToast}
         quickEditOnMount={!!location.state?.quickEdit}
+        openNoteOnMount={!!location.state?.openNote}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
           ? (account) => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
           : undefined}
