@@ -784,7 +784,7 @@
 >
 > **Migrasi:** Irisan 3 **TIDAK membuat migrasi baru**. Fitur Competitor Price (#9) dan Add/Request option (#11/#15-17) bergantung pada migrasi yang SUDAH ADA di antrean rilis November: `20261011000001` (`accounts.competitor_price`) dan `20261011000002` (`dropdown_option_requests` + 3 RPC) — keduanya staging-only, belum production; lihat `12_ANTREAN_MIGRASI_PRODUCTION.md` butir 47/49 untuk rincian kolom per-migrasi. Tidak ada butir baru yang perlu ditambahkan ke antrean itu akibat Irisan 3.
 >
-> ✅ **Irisan 3 MERGE ke `develop` 17 Okt 2026.**
+> ✅ **Irisan 3 MERGE ke `develop` 17 Okt 2026** — `git merge --ff-only feat/td318-irisan-3` (fast-forward, nol merge commit terpisah — `develop` dan `feat/td318-irisan-3` sama-sama di `5895758` sesudahnya; `develop` tidak bergerak sejak `ad231f0` saat branch dibuat, jadi fast-forward valid). Build clean, lint **126/19 = baseline persis**, `check-menu-paths` ✔ 334 id/325 rute tak berubah — diverifikasi ulang di `develop` sesudah merge, bukan disalin dari branch. Branch `feat/td318-irisan-3` belum dihapus.
 >
 > ---
 >
