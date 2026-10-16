@@ -1,12 +1,15 @@
 // src/modules/crm/lead/components/ImportLeadsModal.jsx
-// "Import Leads" -- design-handoff/crm-2026-10-11/shots/lead/07..11.
-// 4 langkah: Upload File / Column Mapping / Defaults and Preview / sukses.
+// "Import Leads" -- design-handoff/mockup/Lead Management.dc.html,
+// Modal/ImportLeads (rujukan PNG lama design-handoff/crm-2026-10-11/ sudah
+// basi, folder itu sudah dihapus total -- lihat 08_TECH_DEBT.md TD-318
+// "Akar masalah"). 4 langkah: Upload File / Column Mapping / Defaults and
+// Preview / sukses.
 // Beda dari mockup (instruksi eksplisit, BUKAN ada di Lead Management.dc.html):
 // baris yang mirip akun existing (check_similar_accounts) ditandai di
 // pratinjau step 3, defaultnya DILEWATI (include=false), user boleh
 // mencentangnya balik untuk tetap memasukkan.
 import { useEffect, useMemo, useState } from 'react';
-import { Upload, Check, AlertTriangle } from 'lucide-react';
+import { Upload, Check, AlertTriangle, FileText, X } from 'lucide-react';
 import { Modal, FloatingSelect, SaveButton, OutlineBtn, PrimaryBtn } from '../../../../kit';
 import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, SEMANTIC, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP } from '../../../../kit/tokens';
 import Pager from './Pager';
@@ -95,6 +98,11 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
     setMapping(autoMatchColumns(p.headers));
   }
 
+  // TD-318 Irisan 1, N11: "Remove" mockup (Modal/ImportLeads :340) -- jalur
+  // ganti file sebelumnya cuma "pilih file lain", nol cara melepas tanpa
+  // menggantinya.
+  function removeFile() { setFile(null); setParsed({ headers: [], rows: [] }); setMapping({}); }
+
   function goToMapping() { if (file && parsed.rows.length > 0) setStep(2); }
 
   // Pratinjau dibangun ULANG tiap kali Default Values berubah SELAMA di step
@@ -177,7 +185,9 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
   const td = { padding: '10px 12px', fontSize: 13, color: INK, fontFamily: FONT_BODY, borderTop: `1px solid ${LINE_SOFT}` };
 
   return (
-    <Modal open={open} onClose={onClose} title="Import Leads" width={700} footer={step === 4 ? null : (
+    // TD-318 Irisan 1, N10: 760px persis mockup Modal/ImportLeads
+    // (max-width:760px) -- sebelumnya 700.
+    <Modal open={open} onClose={onClose} title="Import Leads" width={760} footer={step === 4 ? null : (
       <>
         {step > 1 && <OutlineBtn style={{ marginRight: 'auto' }} onClick={() => setStep((s) => s - 1)}>Back</OutlineBtn>}
         <OutlineBtn onClick={onClose}>Cancel</OutlineBtn>
@@ -193,14 +203,32 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
           <div style={{ fontSize: 13, color: INK_SOFT, marginBottom: SP.s3, fontFamily: FONT_BODY }}>
             Upload a CSV or Excel file with these columns: Company Name, Contact Name, Phone, Email, Source, Description.
           </div>
-          <label style={dropZoneStyle}>
-            <input type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }} onChange={(e) => handleFileChosen(e.target.files?.[0])} />
-            <Upload size={22} color={INK_SOFT} style={{ marginBottom: 8 }} />
-            <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 14, color: INK }}>
-              {file ? file.name : 'Choose a file or drag it here'}
+          {/* TD-318 Irisan 1, N11: dua keadaan TERPISAH persis mockup (noFile
+              :339 vs hasFile :340) -- sebelumnya satu dropzone yang teksnya
+              diganti jadi nama file, nol ikon/metadata/tombol Remove. */}
+          {!file ? (
+            <label style={dropZoneStyle}>
+              <input type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }} onChange={(e) => handleFileChosen(e.target.files?.[0])} />
+              <Upload size={22} color={INK_SOFT} style={{ marginBottom: 8 }} />
+              <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 14, color: INK }}>Choose a file or drag it here</div>
+              <div style={{ fontSize: 12, color: INK_FAINT, marginTop: 4 }}>.csv or .xlsx, up to 5 MB</div>
+            </label>
+          ) : (
+            <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ width: 36, height: 36, borderRadius: RADIUS.md, background: SEMANTIC.ok.bg, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 36px' }}>
+                <FileText size={18} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontFamily: FONT_BODY, fontSize: 13.5, color: INK }}>{file.name}</div>
+                <div style={{ fontSize: 12, color: INK_FAINT, fontFamily: FONT_BODY }}>
+                  {parsed.rows.length} rows, {parsed.headers.length} columns, {Math.max(1, Math.round(file.size / 1024))} KB
+                </div>
+              </div>
+              <button type="button" onClick={removeFile} style={{ marginLeft: 'auto', border: 0, background: 'none', color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <X size={13} /> Remove
+              </button>
             </div>
-            <div style={{ fontSize: 12, color: INK_FAINT, marginTop: 4 }}>.csv or .xlsx, up to 5 MB</div>
-          </label>
+          )}
           <button type="button" onClick={downloadLeadImportTemplate} style={{ background: 'none', border: 'none', padding: 0, marginTop: SP.s3, color: INK_SOFT, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>
             Download Template
           </button>
@@ -253,7 +281,10 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
             </div>
             <FloatingSelect label="Entity" value={defaultCompanyId} onChange={setDefaultCompanyId}
               options={(isAllEntities ? ENTITIES : ENTITIES.filter((e) => e.id === profile?.company_id)).map((e) => ({ value: e.id, label: e.code }))} />
-            <FloatingSelect label="Owner (optional)" value={defaultOwner} onChange={setDefaultOwner}
+            {/* TD-318 Irisan 1, N12: label "Owner" + kata "Optional" terpisah
+                warna lebih terang, persis mockup (:353) -- sebelumnya satu
+                string "Owner (optional)" polos. */}
+            <FloatingSelect label={<>Owner <span style={{ fontWeight: 400, color: INK_FAINT }}>Optional</span></>} value={defaultOwner} onChange={setDefaultOwner}
               options={[{ value: '', label: 'Leave unassigned' }, ...owners.map((o) => ({ value: o.id, label: o.full_name }))]} />
           </div>
 
@@ -261,9 +292,14 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
             <>
               <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 14, marginBottom: SP.s2 }}>Preview</div>
               <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, overflow: 'hidden', marginBottom: SP.s2 }}>
+                {/* TD-318 Irisan 1, #2/#3: kolom Phone + Email ditambahkan --
+                    datanya SUDAH ada di tiap baris (buildPreviewRows,
+                    leadImport.js), hanya belum ditampilkan di sini. Mockup
+                    (:358) 6 kolom: Company Name/Contact/Phone/Email/Source/
+                    Owner -- kode lama berhenti di 4 (Phone+Email hilang). */}
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr style={{ background: HEAD_BG }}>
-                    <th style={th}></th><th style={th}>Company Name</th><th style={th}>Contact</th><th style={th}>Source</th><th style={th}>Owner</th>
+                    <th style={th}></th><th style={th}>Company Name</th><th style={th}>Contact</th><th style={th}>Phone</th><th style={th}>Email</th><th style={th}>Source</th><th style={th}>Owner</th>
                   </tr></thead>
                   <tbody>
                     {previewRows.slice(previewPage * PREVIEW_PAGE_SIZE, previewPage * PREVIEW_PAGE_SIZE + PREVIEW_PAGE_SIZE).map((r) => {
@@ -280,6 +316,8 @@ export default function ImportLeadsModal({ open, onClose, onImported, showToast 
                             )}
                           </td>
                           <td style={{ ...td, color: INK_SOFT }}>{r.contact_name || '—'}</td>
+                          <td style={{ ...td, fontFamily: FONT_MONO, whiteSpace: 'nowrap' }}>{r.phone || '—'}</td>
+                          <td style={{ ...td, color: INK_SOFT }}>{r.email || '—'}</td>
                           <td style={td}>{SOURCE_LABELS[r.source] || r.source || '—'}</td>
                           <td style={{ ...td, color: INK_SOFT }}>{r.assigned_to ? owners.find((o) => o.id === r.assigned_to)?.full_name : 'Unassigned'}</td>
                         </tr>
