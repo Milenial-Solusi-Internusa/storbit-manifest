@@ -300,7 +300,16 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
             const { error } = await supabase.rpc('lead_pool_approve_pull', { p_account_id: a.id });
             if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
             window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
-            const ownerName = profMap[profile?.id] || profile?.full_name || 'you';
+            // TD-318 Irisan 4, tindak lanjut (tes Den + review Vir, 17 Okt
+            // 2026): toast SEBELUMNYA menyebut APPROVER (profile.id yang
+            // login), bukan PENGAJU -- owner baru hasil RPC
+            // lead_pool_approve_pull SELALU pull_requested_by (persis
+            // mockup `:773` 'Approved. ' + f.code + ' is now owned by ' +
+            // f.by, f.by = pengaju), bukan siapa yang mengklik Approve.
+            // pull_requested_by sudah ter-select di query utama, diresolve
+            // lewat profMap yang sudah ada -- pola sama onRejected di
+            // bawah, nol query baru.
+            const ownerName = a.pull_requested_by ? (profMap[a.pull_requested_by] || 'the requester') : 'the requester';
             showToast?.(`Approved. ${codeOrName(a)} is now owned by ${ownerName}`, 'success');
             refetch();
           }}
