@@ -152,6 +152,26 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
 
   async function handleSave() {
     if (!canSave) return { error: new Error('Select a new owner') };
+
+    // TD-318 Irisan 4, temuan A (KRITIS, tes Den + review Vir): `.filter(a
+    // => !a.is_in_lead_pool)` menganggap `undefined` sebagai "bukan pool"
+    // (!undefined === true) -- kalau PEMANGGIL lupa menyertakan
+    // `is_in_lead_pool` di query/props-nya, SEMUA akun diam-diam jatuh ke
+    // jalur .update() langsung (DILARANG komentar header file ini sendiri,
+    // :23) walau sebenarnya is_in_lead_pool=true -- assigned_to terisi
+    // tapi is_in_lead_pool/lifecycle_stage/account_pool_history tak pernah
+    // tersentuh (bukti staging: LeadAssignmentPage.jsx tak men-select
+    // kolom ini). Pengaman: TOLAK secara eksplisit kalau `is_in_lead_pool`
+    // tak diketahui (undefined) pada akun MANA PUN -- JANGAN diam-diam
+    // menebak jalur, supaya kesalahan wiring seperti ini ketahuan saat tes
+    // (console.error + toast), bukan sukses-tapi-salah secara senyap.
+    const unknownPool = accounts.filter((a) => a.is_in_lead_pool === undefined);
+    if (unknownPool.length) {
+      console.error('[ReassignModal] is_in_lead_pool tidak diketahui (undefined) pada akun:', unknownPool.map((a) => a.id),
+        '-- pemanggil lupa menyertakan kolom ini di query/props. Dibatalkan supaya tidak diam-diam memakai jalur .update() yang salah.');
+      return { error: new Error('Internal error: is_in_lead_pool missing on target account(s) — reassign cancelled, contact support') };
+    }
+
     const newOwnerName = profiles.find((p) => p.id === newOwner)?.full_name || 'Unknown';
 
     const poolAccounts = accounts.filter((a) => a.is_in_lead_pool);

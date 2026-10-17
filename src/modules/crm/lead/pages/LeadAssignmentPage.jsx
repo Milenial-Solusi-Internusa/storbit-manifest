@@ -157,10 +157,17 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
     // mulai `true` lewat useState awal, jadi pemuatan PERTAMA tetap
     // menampilkan "Loading data…"; refetch berikutnya (reloadKey berubah,
     // sesudah aksi RPC) memperbarui baris tanpa kedipan loading.
+    // TD-318 Irisan 4, temuan A (KRITIS): `is_in_lead_pool` DAN `assigned_to`
+    // WAJIB ikut di-select -- ReassignModal.jsx (`:157-158`) menentukan
+    // jalur tulis (RPC lead_pool_assign vs .update() langsung) PERSIS dari
+    // `is_in_lead_pool` pada setiap akun yang diterimanya. Tanpa kolom ini,
+    // nilainya undefined -- lihat guard baru ReassignModal.jsx yang
+    // sekarang menolak (bukan menebak) kalau kolom ini tak ada.
     let query = supabase
       .from('accounts')
       .select(`
         id, code, name, source, lifecycle_stage, estimated_value, company_id,
+        is_in_lead_pool, assigned_to,
         lead_pool_reason, lead_pool_at, lead_pool_last_owner,
         pull_status, pull_requested_by, pull_requested_at, pull_justification,
         entity:companies!prospects_company_id_fkey(code, name)
@@ -275,7 +282,14 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           pemilik di sini (is_in_lead_pool=true dari query utama), jadi
           `allUnassigned` otomatis true -- judul/tombol "Assign to Sales"/
           "Assign" muncul lewat logika yang SUDAH ADA, nol kode tambahan. */}
-      <ReassignModal open={!!assignTarget} onClose={() => setAssignTarget(null)} accounts={assignTarget ? [assignTarget] : []} showToast={showToast}
+      {/* TD-318 Irisan 4, temuan A: `is_in_lead_pool: true` dipaksa EKSPLISIT
+          di sini sbg pengaman LAPIS KEDUA -- SELURUH baris di halaman ini
+          berasal dari query ber-`.eq('is_in_lead_pool', true)` (lihat atas),
+          jadi nilainya SELALU true, tapi menuliskannya ulang di titik
+          pemanggilan modal bersama membuatnya tidak bergantung diam-diam
+          pada bentuk SELECT yang mungkin berubah lagi di masa depan. */}
+      <ReassignModal open={!!assignTarget} onClose={() => setAssignTarget(null)}
+        accounts={assignTarget ? [{ ...assignTarget, is_in_lead_pool: true }] : []} showToast={showToast}
         onReassigned={(salesName) => {
           showToast?.(`${assignTarget?.code} assigned to ${salesName || 'sales'}`);
           setAssignTarget(null); refetch();
