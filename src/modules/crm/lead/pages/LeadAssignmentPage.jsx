@@ -79,6 +79,27 @@ function CodeLink({ row, onSelectAccount, children }) {
   );
 }
 
+// TD-318 Irisan 4, temuan B (tes Den + review Vir): toast yang memakai
+// `.code` langsung berbunyi "null assigned to ..." saat code kosong --
+// pakai code kalau ada, kalau kosong pakai nama akun (konvensi yang sama
+// dgn `tgtLabel`/label Mark-as-Lost-Archive di LeadCapturePage.jsx/
+// LeadDetailPage.jsx, Irisan 3).
+function codeOrName(a) { return a?.code || a?.name || ''; }
+
+// TD-318 Irisan 4, temuan C (tes Den + review Vir): Account Code kosong
+// dulu tetap jadi LINK berisi '--' bergaris bawah (terbaca seperti '=').
+// Kalau code ADA: Account Code jadi link (persis mockup), Company Name teks
+// biasa. Kalau code KOSONG: Account Code '--' POLOS INK_FAINT tanpa link,
+// Company Name JADI link supaya baris tetap bisa dibuka.
+function AccountCodeCell({ row, onSelectAccount }) {
+  if (!row.code) return <span style={{ color: INK_FAINT, fontFamily: FONT_BODY, fontWeight: 400 }}>—</span>;
+  return <CodeLink row={row} onSelectAccount={onSelectAccount}>{row.code}</CodeLink>;
+}
+function CompanyNameCell({ row, onSelectAccount }) {
+  if (row.code) return row.name;
+  return <CodeLink row={row} onSelectAccount={onSelectAccount}>{row.name}</CodeLink>;
+}
+
 const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, whiteSpace: 'nowrap' };
 const cell = { padding: '12px', fontFamily: FONT_BODY, fontSize: 13, color: INK, minWidth: 0 };
 
@@ -258,7 +279,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
             if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
             window.dispatchEvent(new CustomEvent('nexus:lead-pool-changed'));
             const ownerName = profMap[profile?.id] || profile?.full_name || 'you';
-            showToast?.(`Approved. ${a.code} is now owned by ${ownerName}`, 'success');
+            showToast?.(`Approved. ${codeOrName(a)} is now owned by ${ownerName}`, 'success');
             refetch();
           }}
         />
@@ -269,7 +290,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
           SUDAH ter-select di query utama (lihat komentar header) lewat
           profMap yang SUDAH ada di scope ini, NOL query baru. */}
       <RequestPullModal open={!!pullTarget} onClose={() => setPullTarget(null)} account={pullTarget} showToast={showToast}
-        onRequested={() => { setPullTarget(null); showToast?.(`Pull request for ${pullTarget?.code} sent for approval`); refetch(); }} />
+        onRequested={() => { setPullTarget(null); showToast?.(`Pull request for ${codeOrName(pullTarget)} sent for approval`); refetch(); }} />
       <RejectPullModal open={!!rejectTarget} onClose={() => setRejectTarget(null)} account={rejectTarget} showToast={showToast}
         onRejected={() => {
           const by = rejectTarget?.pull_requested_by ? (profMap[rejectTarget.pull_requested_by] || 'the requester') : 'the requester';
@@ -291,7 +312,7 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
       <ReassignModal open={!!assignTarget} onClose={() => setAssignTarget(null)}
         accounts={assignTarget ? [{ ...assignTarget, is_in_lead_pool: true }] : []} showToast={showToast}
         onReassigned={(salesName) => {
-          showToast?.(`${assignTarget?.code} assigned to ${salesName || 'sales'}`);
+          showToast?.(`${codeOrName(assignTarget)} assigned to ${salesName || 'sales'}`);
           setAssignTarget(null); refetch();
         }} />
     </div>
@@ -327,9 +348,9 @@ function PoolTable({ rows, loading, profMap, canApprove, profileId, onSelectAcco
             <div key={r.id} role="row" {...hoverHandlers()}
               style={gridRow(POOL_GRID_COLS, POOL_GRID_MIN_W, { borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' })}>
               <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                <CodeLink row={r} onSelectAccount={onSelectAccount}>{r.code || '—'}</CodeLink>
+                <AccountCodeCell row={r} onSelectAccount={onSelectAccount} />
               </div>
-              <div role="cell" style={{ ...cell, fontWeight: 500 }}>{r.name}</div>
+              <div role="cell" style={{ ...cell, fontWeight: 500 }}><CompanyNameCell row={r} onSelectAccount={onSelectAccount} /></div>
               <div role="cell" style={cell}><Badge tone="neutral">{SOURCE_LABELS[r.source] || r.source || '—'}</Badge></div>
               <div role="cell" style={{ ...cell, color: INK_SOFT }}>{r.lead_pool_reason || '—'}</div>
               <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, color: INK_SOFT }}>{fmtDate(r.lead_pool_at)}</div>
@@ -372,9 +393,9 @@ function FreeAgentTable({ rows, loading, profMap, canApprove, profileId, onSelec
             <div key={r.id} role="row" {...hoverHandlers()}
               style={gridRow(FAC_GRID_COLS, FAC_GRID_MIN_W, { borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' })}>
               <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                <CodeLink row={r} onSelectAccount={onSelectAccount}>{r.code || '—'}</CodeLink>
+                <AccountCodeCell row={r} onSelectAccount={onSelectAccount} />
               </div>
-              <div role="cell" style={{ ...cell, fontWeight: 500 }}>{r.name}</div>
+              <div role="cell" style={{ ...cell, fontWeight: 500 }}><CompanyNameCell row={r} onSelectAccount={onSelectAccount} /></div>
               {/* TD-318 Irisan 4, #34: Entity dari company_id (embed
                   prospects_company_id_fkey), BUKAN owner_company_id yang
                   nullable dan bukan sumbu scoping -- lihat catatan header. */}
@@ -446,10 +467,10 @@ function ApprovalsTable({ rows, loading, profMap, profile, onSelectAccount, onAp
               <div key={r.id} role="row" {...hoverHandlers()}
                 style={gridRow(APPR_GRID_COLS, APPR_GRID_MIN_W, { borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none' })}>
                 <div role="cell" style={{ ...cell, fontFamily: FONT_MONO, fontWeight: 600 }}>
-                  <CodeLink row={r} onSelectAccount={onSelectAccount}>{r.code || '—'}</CodeLink>
+                  <AccountCodeCell row={r} onSelectAccount={onSelectAccount} />
                 </div>
                 <div role="cell" style={cell}><Badge tone="neutral">{r.lifecycle_stage === 'free_agent' ? 'Customer' : 'Lead'}</Badge></div>
-                <div role="cell" style={{ ...cell, fontWeight: 500 }}>{r.name}</div>
+                <div role="cell" style={{ ...cell, fontWeight: 500 }}><CompanyNameCell row={r} onSelectAccount={onSelectAccount} /></div>
                 <div role="cell" style={cell}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {tone && (
