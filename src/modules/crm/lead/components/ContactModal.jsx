@@ -17,13 +17,7 @@ import { useState } from 'react';
 import { Modal, FloatingInput, FloatingSelect, SaveButton, OutlineBtn } from '../../../../kit';
 import { SP } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
-import { PREFERRED_CHANNELS, PREFERRED_CHANNEL_LABELS } from '../lib/leadOptions';
-
-const ROLE_TYPES = ['decision_maker', 'requester', 'finance', 'operations', 'other'];
-const ROLE_TYPE_LABELS = {
-  decision_maker: 'Decision Maker', requester: 'Requester', finance: 'Finance',
-  operations: 'Operations', other: 'Other',
-};
+import { PREFERRED_CHANNELS, PREFERRED_CHANNEL_LABELS, ROLE_TYPES, ROLE_TYPE_LABELS } from '../lib/leadOptions';
 
 const emptyForm = () => ({
   name: '', position: '', role_type: '', phone: '', whatsapp: '', email: '', preferred_channel: '',

@@ -30,3 +30,14 @@ export const PRIORITIES = ['High', 'Medium', 'Low'];
 // Kontak -- preferred_channel, CHECK tiga nilai (migrasi 20261011000001).
 export const PREFERRED_CHANNELS = ['whatsapp', 'call', 'email'];
 export const PREFERRED_CHANNEL_LABELS = { whatsapp: 'WhatsApp', call: 'Call', email: 'Email' };
+
+// Kontak -- role_type, CHECK lima nilai (contacts_role_type_check,
+// schema_snapshot.sql). TD-318 Lead Detail, #28: dipindah dari ContactModal.jsx
+// (lokal) ke sini supaya ContactsTab.jsx (LeadDetailPage.jsx) bisa memetakan
+// slug -> label TANPA menyalin daftar kedua yang bisa melenceng -- pola yang
+// sama dgn PREFERRED_CHANNELS/PREFERRED_CHANNEL_LABELS di atas.
+export const ROLE_TYPES = ['decision_maker', 'requester', 'finance', 'operations', 'other'];
+export const ROLE_TYPE_LABELS = {
+  decision_maker: 'Decision Maker', requester: 'Requester', finance: 'Finance',
+  operations: 'Operations', other: 'Other',
+};

@@ -29,7 +29,7 @@ import { ENTITIES } from '../../../../lib/entities';
 import { readMoneyInput, formatIdNumber } from '../../../../lib/numberFormat';
 import { BANT_DIMENSIONS, BANT_MAX_SCORE, calcBantScore, QUALIFICATION_FIELDS } from '../../lib/bant';
 import { LEAD_STATUS_META, deriveLeadStatus } from '../lib/leadStatus';
-import { SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
+import { SOURCE_LABELS, PRIORITIES, ROLE_TYPE_LABELS } from '../lib/leadOptions';
 import { ACTIVITY_TYPE_LABEL, listLeadActivities, addLeadNote, scheduleLeadFollowUp } from '../lib/leadActivity';
 import RequestNewOptionModal from '../../components/RequestNewOptionModal';
 import ContactModal from '../components/ContactModal';
@@ -65,6 +65,30 @@ function ViewField({ label, value, mono, full, span }) {
       </div>
     </div>
   );
+}
+
+// Varian ViewField yang nilainya bisa diklik (tel:/wa.me/mailto:) -- TD-318
+// Lead Detail, #27, kartu kontak. Bentuk kotak IDENTIK ViewField, persis
+// mockup (Detail/Contacts :254-255: <a> di dalam kotak yang sama).
+function ViewFieldLink({ label, value, href, mono }) {
+  return (
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD, minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 4, fontFamily: FONT_BODY }}>{label}</div>
+      {value ? (
+        <a href={href} style={{ display: 'block', fontSize: 14, color: INK, fontFamily: mono ? FONT_MONO : FONT_BODY, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value}
+        </a>
+      ) : (
+        <div style={{ fontSize: 14, color: INK_FAINT, fontFamily: mono ? FONT_MONO : FONT_BODY, fontWeight: 500, fontStyle: 'italic' }}>Not set</div>
+      )}
+    </div>
+  );
+}
+
+// Persis mockup `waLink` (Lead Management.dc.html :698): buang karakter
+// bukan digit, buang '0' di depan, tambah kode negara '62'.
+function waLink(wa) {
+  return '62' + String(wa || '').replace(/[^0-9]/g, '').replace(/^0/, '');
 }
 
 // Owner di kartu Commercial (OverviewTab) -- bentuk kotak sama dengan
@@ -852,12 +876,16 @@ function ContactsTab({ contacts, accountId, companyId, showToast, onChanged }) {
                 </div>
                 <div style={grid2}>
                   <ViewField label="Position" value={c.position} />
-                  <ViewField label="Role" value={c.role_type} />
-                  <ViewField label="Phone" value={c.phone} mono />
-                  <ViewField label="WhatsApp" value={c.whatsapp} mono />
+                  {/* TD-318 Lead Detail, #28: label manusiawi (ROLE_TYPE_LABELS,
+                      kini di leadOptions.js), bukan slug mentah role_type. */}
+                  <ViewField label="Role" value={ROLE_TYPE_LABELS[c.role_type] || c.role_type} />
+                  {/* TD-318 Lead Detail, #27: tel:/wa.me/mailto: persis mockup
+                      (:254-255), bukan teks biasa yang tak bisa diklik. */}
+                  <ViewFieldLink label="Phone" value={c.phone} href={c.phone ? `tel:${c.phone}` : undefined} mono />
+                  <ViewFieldLink label="WhatsApp" value={c.whatsapp} href={c.whatsapp ? `https://wa.me/${waLink(c.whatsapp)}` : undefined} mono />
                 </div>
                 <div style={{ marginTop: SP.s4, display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-                  <ViewField label="Email" value={c.email} full />
+                  <ViewFieldLink label="Email" value={c.email} href={c.email ? `mailto:${c.email}` : undefined} />
                   <ViewField label="Preferred Channel" value={c.preferred_channel ? (c.preferred_channel === 'whatsapp' ? 'WhatsApp' : c.preferred_channel === 'call' ? 'Call' : 'Email') : null} full />
                 </div>
               </div>
