@@ -748,7 +748,7 @@ function OverviewTab({
             </div>
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
               <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
-              <SaveButton size="sm" onSave={saveCompany} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
+              <SaveButton size="sm" onSave={saveCompany} label="Save" savedLabel="Saved!" onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
         ) : (
@@ -790,7 +790,7 @@ function OverviewTab({
             <FloatingInput label="Expected Closing Date" type="date" half value={commercialDraft.estimated_closing_date} onChange={(v) => setCommercialDraft((d) => ({ ...d, estimated_closing_date: v }))} />
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
               <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
-              <SaveButton size="sm" onSave={saveCommercial} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
+              <SaveButton size="sm" onSave={saveCommercial} label="Save" savedLabel="Saved!" onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
         ) : (
@@ -820,7 +820,7 @@ function OverviewTab({
               : showQR && <Textarea label="Qualified Reason" value={notesDraft.qualified_reason} onChange={(v) => setNotesDraft((d) => ({ ...d, qualified_reason: v }))} rows={3} />}
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
               <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
-              <SaveButton size="sm" onSave={saveNotes} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
+              <SaveButton size="sm" onSave={saveNotes} label="Save" savedLabel="Saved!" onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
         ) : (
@@ -1311,7 +1311,7 @@ function BantTab({ account, id, setAccount, showToast }) {
             </div>
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
               <OutlineBtn size="sm" onClick={() => setQualEdit(false)}>Cancel</OutlineBtn>
-              <SaveButton size="sm" onSave={saveQual} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
+              <SaveButton size="sm" onSave={saveQual} label="Save" savedLabel="Saved!" onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
         ) : (
