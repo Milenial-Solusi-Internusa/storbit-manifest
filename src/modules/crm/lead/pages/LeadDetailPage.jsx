@@ -96,20 +96,25 @@ function SectionBlock({ title, action, children, first }) {
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: SP.s4 };
 const grid3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: SP.s4 };
 
+// TD-318 Lead Detail, token: avatar SELALU dirender (24px, persis D.avBg/
+// D.avBd mockup -- :195) -- kosong jadi lingkaran dashed LINE/LINE_SOFT
+// TANPA inisial, bukan diganti teks polos. "Reassign" FONT_HEAD weight
+// 600 persis mockup (`font:600 12.5px Montserrat,sans-serif`, :195), bukan
+// FONT_BODY.
 function OwnerLine({ id, name, canReassign, onReassign }) {
   const tone = name ? avatarToneFor(id) : null;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {name ? (
-        <>
-          <span style={{ width: 22, height: 22, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 22px' }}>
-            {name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
-          </span>
-          <span style={{ fontSize: 14, color: INK, fontFamily: FONT_BODY }}>{name}</span>
-        </>
-      ) : <span style={{ fontSize: 14, color: INK_FAINT, fontFamily: FONT_BODY, fontStyle: 'italic' }}>Unassigned</span>}
+        <span style={{ width: 24, height: 24, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_HEAD, flex: '0 0 24px', border: '1px dashed transparent' }}>
+          {name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+        </span>
+      ) : (
+        <span style={{ width: 24, height: 24, borderRadius: 999, background: LINE_SOFT, border: `1px dashed ${LINE}`, flex: '0 0 24px' }} />
+      )}
+      <span style={{ fontSize: 14, color: name ? INK : INK_FAINT, fontFamily: FONT_BODY, fontStyle: name ? 'normal' : 'italic' }}>{name || 'Unassigned'}</span>
       {canReassign && (
-        <button type="button" onClick={onReassign} style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_BODY }}>Reassign</button>
+        <button type="button" onClick={onReassign} style={{ background: 'none', border: 'none', padding: 0, color: INK_SOFT, fontSize: 12.5, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: FONT_HEAD }}>Reassign</button>
       )}
     </div>
   );
@@ -255,7 +260,11 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const entityCode = ENTITIES.find((e) => e.id === companyId)?.code || '—';
 
   const canMarkQualified = account && status === 'raw' && (isOwner || canManage);
-  const canMarkLost = account && status !== 'lost' && (isOwner || canManage);
+  // TD-318 Lead Detail (tes Den, LINGKUP #5): persis mockup `canLost = st
+  // ==='Raw' || st==='Qualified'` (:584) -- SEBELUMNYA `status !== 'lost'`
+  // meloloskan 'converted' juga, padahal lead yang sudah punya inquiry
+  // aktif ditutup lewat inquiry-nya, bukan lewat Lead Management.
+  const canMarkLost = account && (status === 'raw' || status === 'qualified') && (isOwner || canManage);
   const canArchive = !!canManage;
   // Release to Pool (irisan 9 Paket 2, Task A.5) -- menu item tampil kalau
   // pemilik ATAU pemegang crm_lead_pool_approval, DAN lead/mql, DAN belum
@@ -339,7 +348,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s4, flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: INK_SOFT }}>
               Lead
             </div>
             <div style={{ display: 'flex', gap: SP.s2, alignItems: 'center', position: 'relative' }}>
@@ -364,6 +373,14 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               {status === 'lost' && canReactivate && (
                 <SaveButton onSave={handleReactivate} label="Reactivate" savedLabel="Reactivated!"
                   onError={(err) => showToast?.('Failed to update: ' + err.message, 'error')} />
+              )}
+              {/* TD-318 Lead Detail, #21: persis mockup `isConverted` (:190)
+                  -- slot SAMA dengan tombol primer, karena status 'converted'
+                  TIDAK punya tombol primer sendiri (lihat komentar di atas). */}
+              {status === 'converted' && latestInquiry && (
+                <span style={{ fontSize: 13.5, color: INK_SOFT, fontFamily: FONT_BODY }}>
+                  Converted to <DocNo style={{ fontWeight: 600 }}>{latestInquiry.inquiry_no}</DocNo>
+                </span>
               )}
               {(canMarkLost || canArchive || canReleasePool) && (
                 <>
@@ -408,6 +425,8 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
             {account.is_stale && <Badge tone="warn" title={`Not touched since ${fmtDate(account.stale_flagged_at)}`}>Stale</Badge>}
             <Badge tone="neutral">{entityCode}</Badge>
             <Badge tone="neutral">{SOURCE_LABELS[account.source] || account.source || '—'}</Badge>
+            {/* TD-318 Lead Detail, #20: persis mockup D.inPool (:186). */}
+            {account.is_in_lead_pool && <Badge tone="neutral">In Lead Pool</Badge>}
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s5, paddingTop: SP.s3, borderTop: `1px solid ${LINE_SOFT}` }}>
@@ -427,7 +446,8 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>BANT Score</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 14, color: INK, fontWeight: 600 }}>{bantScore}/{BANT_MAX_SCORE}</span>
-                <span style={{ width: 60, height: 5, borderRadius: 999, background: HEAD_BG, overflow: 'hidden', display: 'inline-block' }}>
+                {/* TD-318 Lead Detail, token: 40x4 persis mockup D.scorePct (:198), bukan 60x5. */}
+                <span style={{ width: 40, height: 4, borderRadius: 999, background: HEAD_BG, overflow: 'hidden', display: 'inline-block' }}>
                   <span style={{ display: 'block', height: '100%', width: `${(bantScore / BANT_MAX_SCORE) * 100}%`, background: INK_SOFT, borderRadius: 999 }} />
                 </span>
               </div>
