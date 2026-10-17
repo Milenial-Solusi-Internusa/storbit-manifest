@@ -195,6 +195,12 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   // Lazy initializer sama dgn `tab` di atas: Quick Edit (mockup rmEdit) set
   // 'Company' SEKALI di sini, bukan di-derive ulang tiap OverviewTab mount.
   const [editSec, setEditSec] = useState(() => (quickEditOnMount ? 'Company' : null));
+  // TD-318 Lead Detail, review Vir (temuan baru #2 ditutup): `composer`
+  // (Activity -- Add Note/Schedule Follow Up) DI-HOIST persis `editSec` di
+  // atas, pola yang SAMA, TAPI aturan reset BERBEDA -- lihat komentar
+  // ActivityTab untuk alasannya. Diinisialisasi SEKALI dari `openNoteOnMount`
+  // (mockup rmNote), BUKAN di-derive ulang tiap ActivityTab mount.
+  const [composer, setComposer] = useState(() => (openNoteOnMount ? 'note' : null)); // null | 'note' | 'followup'
   const [menuOpen, setMenuOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
@@ -553,7 +559,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
             )}
             {tab === 'activity' && (
               <ActivityTab activities={activities} poolHistory={poolHistory} actorMap={actorMap} accountId={id} companyId={companyId}
-                profile={profile} showToast={showToast} onChanged={fetchActivities} autoOpenNote={openNoteOnMount} />
+                profile={profile} showToast={showToast} onChanged={fetchActivities} composer={composer} setComposer={setComposer} />
             )}
             {tab === 'bant' && <BantTab account={account} id={id} setAccount={setAccount} showToast={showToast} />}
             {tab === 'history' && <HistoryTab inquiries={inquiries} onOpenInquiry={onOpenInquiry} />}
@@ -1074,18 +1080,17 @@ function poolHistoryNotes(h, actorMap) {
   }
 }
 
-function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged, autoOpenNote }) {
-  // TD-318 Irisan 1, N3 (rmNote): kotak catatan sudah TERBUKA saat tab ini
-  // mendarat dari "Add Note" Lead Capture -- lazy initializer lokal, pola
-  // yang SAMA dengan `companyDraft` OverviewTab SEBELUM diperbaiki (lihat
-  // #25 di atas). ⚠️ BELUM diaudit apakah bug kelas yang SAMA (kotak
-  // catatan terbuka lagi tiap balik ke tab Activity) juga terjadi di sini
-  // -- `autoOpenNote` adalah PROP murni (`openNoteOnMount` LeadDetailPage),
-  // bukan state yang di-hoist, dan `ActivityTab` ikut unmount/remount tiap
-  // pindah tab PERSIS seperti OverviewTab dulu. Ditemukan saat menutup
-  // #25/#26, SENGAJA TIDAK diperbaiki di irisan ini (di luar lingkup yang
-  // disetujui Den) -- dicatat sebagai temuan baru di laporan akhir.
-  const [composer, setComposer] = useState(() => (autoOpenNote ? 'note' : null)); // null | 'note' | 'followup'
+// TD-318 Lead Detail, review Vir (temuan baru #2 ditutup): `composer` DI-
+// HOIST ke LeadDetailPage -- pola PERSIS `editSec` -- supaya bertahan lintas
+// tab. SEBELUMNYA lazy initializer LOKAL (`autoOpenNote` prop murni, tak
+// pernah berubah) re-trigger tiap ActivityTab remount (ganti tab), jadi
+// kotak Add Note terbuka LAGI tiap balik ke Activity -- bahkan SESUDAH
+// di-Cancel. Mockup `showNote` HANYA di-set sekali saat rmNote membuka
+// detail, TIDAK di-reset oleh klik tab (beda dari `editSec`/`dtab` yang
+// SENGAJA direset tiap ganti tab) -- jadi tab-switch handler LeadDetailPage
+// SENGAJA TIDAK menyentuh `composer` sama sekali. Ditutup lewat
+// Cancel/Save seperti sebelumnya (lihat submitNote/submitFollowUp di bawah).
+function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged, composer, setComposer }) {
   const [text, setText] = useState('');
   const [followDate, setFollowDate] = useState('');
   // TD-318 Lead Detail, #29: default '10:00' persis mockup `fuTime`.
