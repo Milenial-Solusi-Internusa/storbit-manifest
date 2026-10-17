@@ -100,11 +100,27 @@ function CompanyNameCell({ row, onSelectAccount }) {
   return <CodeLink row={row} onSelectAccount={onSelectAccount}>{row.name}</CodeLink>;
 }
 
-const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, whiteSpace: 'nowrap' };
+// headCell TANPA whiteSpace:'nowrap' (TD-318 Irisan 4, temuan E -- tes Den +
+// review Vir, pola sama Irisan 1 LeadCapturePage.jsx) -- "ACCOUNT CODE"
+// menempel "COMPANY NAME" (Leads) dan "INVOICE VALUE BEFORE RELEASE"
+// menimpa "RELEASE REASON" (FAC) kalau dipaksa satu baris; mockup sendiri
+// bertabrakan di kolom sempit (dilaporkan ke Den utk Claude Design). Lebar
+// kolom TIDAK diubah, hanya judul boleh turun ke baris kedua.
+const headCell = { padding: '12px', fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT };
 const cell = { padding: '12px', fontFamily: FONT_BODY, fontSize: 13, color: INK, minWidth: 0 };
 
-const POOL_GRID_COLS = '96px minmax(170px,1.4fr) 124px minmax(180px,1.3fr) 108px minmax(130px,1fr) 136px 140px 160px';
-const POOL_GRID_MIN_W = 1180;
+// TD-318 Irisan 4, temuan F (tes Den + review Vir): kolom aksi Pool diukur
+// headless (Montserrat 600, icon UserPlus 14px, gap 6px -- ukuran NYATA
+// OutlineBtn size="sm" di RowActions, bukan angka mockup 13.5px/16px/8px
+// yang dipakai kit-nya ReassignModal bukan sini) -- tombol "Assign to
+// Sales" BER-ikon = 142px, sementara kolom lama 160px cuma menyisakan
+// 136px (padding cell 12px kiri-kanan) -> terpotong 6px, persis laporan.
+// 180px -> sisa 156px, selisih 14px thd 142px. FAC TIDAK diubah: variannya
+// TANPA ikon (showAssignIcon=false, keputusan REVISI 2) = 122px, muat
+// nyaman di kolom 160px lama. Approvals (Approve+Reject, gap 8) = 155px,
+// muat nyaman di kolom 196px lama (sisa 172px) -- tidak disentuh.
+const POOL_GRID_COLS = '96px minmax(170px,1.4fr) 124px minmax(180px,1.3fr) 108px minmax(130px,1fr) 136px 140px 180px';
+const POOL_GRID_MIN_W = 1200;
 const FAC_GRID_COLS = '110px minmax(200px,1.4fr) 72px minmax(130px,1fr) 112px 112px 160px minmax(200px,1.4fr) 140px 160px';
 const FAC_GRID_MIN_W = 1460;
 const APPR_GRID_COLS = '96px 96px minmax(170px,1.3fr) minmax(150px,1fr) 116px minmax(220px,1.8fr) 136px 196px';
@@ -220,10 +236,16 @@ export default function LeadAssignmentPage({ canApprove, initialView = 'pool', o
   const facRows = rows.filter((r) => r.lifecycle_stage === 'free_agent');
   const apprRows = rows.filter((r) => r.pull_status === 'pending');
 
+  // TD-318 Irisan 4, temuan D (tes Den + review Vir): label persis mockup
+  // :811 -- "Leads"/"Free Agent Customers" TANPA angka (hasCount=false,
+  // `o[2]` undefined), "Pull Approvals" DENGAN badge angka (hasCount=true,
+  // `o[2] = pend.length + facPend.length`). `apprRows` di file ini SUDAH
+  // persis gabungan pending lead + pending FAC (satu query digabung), jadi
+  // `apprRows.length` dipakai langsung, nol hitungan baru.
   const tabs = [
-    { value: 'pool', label: `Leads (${poolRows.length})` },
-    { value: 'fac', label: `Free Agent Customers (${facRows.length})` },
-    ...(canApprove ? [{ value: 'approvals', label: `Pull Approvals (${apprRows.length})` }] : []),
+    { value: 'pool', label: 'Leads' },
+    { value: 'fac', label: 'Free Agent Customers' },
+    ...(canApprove ? [{ value: 'approvals', label: 'Pull Approvals', count: apprRows.length }] : []),
   ];
   // Pengaju tanpa izin approval tidak boleh terdampar di tab Approvals kalau
   // izinnya dicabut sesudah mount -- jatuh balik ke Leads (pola sama dgn

@@ -443,6 +443,11 @@ export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
         const val = optVal(o);
         const active = val === value;
         const icon = typeof o === 'object' ? o.icon : null;
+        // `count` ADITIF (TD-318 Irisan 4, item D) -- persis mockup
+        // Lead Management.dc.html :106/:811 (`o.hasCount`/`o.count`): badge
+        // tampil HANYA kalau opsi ini membawa `count` (bukan undefined),
+        // nol dampak ke 9 konsumen lain yang opsinya tak punya field ini.
+        const hasCount = typeof o === 'object' && o.count !== undefined;
         return (
           <button
             key={val} ref={(el) => { btnRefs.current[i] = el; }}
@@ -456,6 +461,15 @@ export function Segmented({ options = [], value, onChange, full, ariaLabel }) {
           >
             {icon && renderIcon(icon, 15)}
             {optLabel(o)}
+            {hasCount && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: RADIUS.sm,
+                border: `1px solid ${SEMANTIC.warn.bd}`, background: SEMANTIC.warn.bg, color: SEMANTIC.warn.fg,
+                fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+              }}>
+                {o.count}
+              </span>
+            )}
           </button>
         );
       })}
