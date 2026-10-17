@@ -2154,6 +2154,21 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 
 ---
 
+### 63. `20261017000001_lead_pool_assign_candidates`
+
+| | |
+|---|---|
+| Isi | TD-318 Irisan 4 (Lead Assignment, tes Den + review Vir), item G. RPC baru `lead_pool_assign_candidates(p_company_id uuid) RETURNS TABLE (id uuid, full_name text)`, `SECURITY DEFINER`, digerbang **syarat persis sama** dengan `lead_pool_assign` sendiri (`has_menu_permission_in(p_company_id, 'crm_lead_pool_approval', 'view')`). Mengembalikan profil aktif dengan peran aktif (`user_roles.is_active=true`, `valid_until IS NULL`) di entitas akun, tanpa diri sendiri. `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`. |
+| Staging | ⛔ belum dijalankan. |
+| Production | ⛔ belum — **rilis November**, SESUDAH `20261016000004`. ⛔ **Kode `ReassignModal.jsx` (cabang `allUnassigned`, TD-318 Irisan 4) sudah memanggil RPC ini — WAJIB jalan SEBELUM ATAU BERSAMAAN kode itu naik ke `main`, BUKAN sesudahnya.** Tanpa migrasi ini, cabang `allUnassigned` (assign dari Lead Pool/Free Agent Customer) selalu mendapat `function … does not exist` dari PostgREST — daftar kandidat kosong, tidak ada yang bisa di-assign lewat UI sampai migrasi ini menyusul. |
+| Sifat | Satu RPC baca-saja (`STABLE`), nol tabel/kolom baru, nol dampak ke `lead_pool_assign` atau fungsi lain. |
+
+**Untuk apa.** RLS `user_roles_read` hanya mengizinkan baris sendiri, atau `company_id = get_user_company_id() AND is_manager_or_above()`, atau super admin — approver Lead Pool **lintas entitas** (contoh staging: peran `ceo` di SOA punya `crm_lead_pool_approval`) mendapat daftar kandidat **kosong** lewat query `user_roles`+`profiles` langsung dari client (kelas bug yang sama dengan gotcha #26/#35 — perbaikan policy tidak otomatis memperbaiki jalur yang menembus RLS dari sisi lain). RPC `SECURITY DEFINER` ini menembus RLS itu dengan guard yang sama persis dengan `lead_pool_assign`, supaya kandidat yang ditampilkan selalu kandidat yang akan DITERIMA RPC assign-nya.
+
+**Rollback.** `DROP FUNCTION IF EXISTS public.lead_pool_assign_candidates(uuid);` — `ReassignModal.jsx` cabang `allUnassigned` akan kembali gagal (daftar kandidat kosong untuk approver lintas entitas) sampai fungsi ini dipasang ulang; cabang `!allUnassigned` (reassign biasa) tidak terpengaruh.
+
+---
+
 ## Cara merawat dokumen ini
 
 1. **Setiap SQL manual di staging masuk ke sini**, di hari yang sama. Perubahan tanpa berkas migrasi adalah perubahan yang paling mudah hilang.

@@ -131,14 +131,35 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     if (open && companyIds.length) {
       setNewOwner(''); setReason(''); setEffectiveDate(getTodayWIB()); setNotify(true);
       if (allUnassigned) {
-        supabase.from('user_roles').select('user_id')
-          .in('company_id', companyIds).eq('is_active', true).is('valid_until', null)
-          .then(({ data }) => {
-            const ids = [...new Set((data || []).map((r) => r.user_id).filter(Boolean))];
-            if (!ids.length) { setProfiles([]); return; }
-            supabase.from('profiles').select('id, full_name').in('id', ids).eq('active', true)
-              .order('full_name', { ascending: true }).limit(1000)
-              .then(({ data: profs }) => setProfiles(profs || []));
+        // TD-318 Irisan 4, item G (tes Den + review Vir): RLS
+        // user_roles_read hanya mengizinkan baris sendiri, atau
+        // company_id=home + is_manager_or_above(), atau super admin --
+        // approver Lead Pool LINTAS entitas (mis. staging: peran ceo di
+        // SOA punya crm_lead_pool_approval) akan mendapat daftar kandidat
+        // KOSONG lewat query user_roles+profiles langsung di atas (kelas
+        // bug yang sama dgn gotcha #26/#35). Diganti RPC SECURITY DEFINER
+        // `lead_pool_assign_candidates` (migrasi
+        // 20261017000001_lead_pool_assign_candidates.sql, BELUM
+        // DIJALANKAN) yang digerbang syarat PERSIS SAMA dgn
+        // lead_pool_assign sendiri -- dipanggil SATU KALI per entitas di
+        // `companyIds`, diambil IRISAN kalau target lebih dari satu
+        // entitas. RPC error -> tampilkan pesannya, daftar dibiarkan
+        // kosong (bukan diam-diam jatuh balik ke query lama).
+        Promise.all(companyIds.map((cid) => supabase.rpc('lead_pool_assign_candidates', { p_company_id: cid })))
+          .then((results) => {
+            const firstError = results.find((r) => r.error)?.error;
+            if (firstError) {
+              showToast?.('Failed to load candidates: ' + firstError.message, 'error');
+              setProfiles([]);
+              return;
+            }
+            const sets = results.map((r) => r.data || []);
+            const intersected = sets.reduce((acc, list) => {
+              if (acc === null) return list;
+              const ids = new Set(list.map((p) => p.id));
+              return acc.filter((p) => ids.has(p.id));
+            }, null) || [];
+            setProfiles(intersected);
           });
       } else {
         supabase.from('profiles').select('id, full_name').in('company_id', companyIds).eq('active', true)
