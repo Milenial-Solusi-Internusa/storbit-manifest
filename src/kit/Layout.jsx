@@ -116,13 +116,25 @@ export function Card({ title, icon, right, children, padded = true, pad, style, 
 }
 
 /* ---------- EmptyState ---------- */
+// TD-318 Irisan Kit, N9: persis mockup Capture/EmptyState (Lead Management.
+// dc.html :99-104) -- badge lingkaran 48px (HEAD_BG=#EFF3ED, ikon INK_SOFT=
+// #5C6B52, nol hex baru), judul 15px INK (bukan INK_SOFT 13.5px), teks
+// maxWidth 360px tengah, padding 64px 24px. Kontrak prop TIDAK berubah
+// (icon/title/sub/action tetap string/node bebas) -- 7 pemanggil nyata
+// (LeadAssignmentPage/LeadCapturePage/LeadDetailPage) tidak perlu disentuh.
 export function EmptyState({ title, sub, icon, action, style }) {
   return (
-    <div style={{ padding: `${SP.s6}px ${SP.s4}px`, textAlign: 'center', ...style }}>
-      {icon && <div style={{ display: 'flex', justifyContent: 'center', color: INK_FAINT, marginBottom: SP.s2 }}>{renderIcon(icon, 28)}</div>}
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 700, color: INK_SOFT }}>{title}</div>
-      {sub && <div style={{ marginTop: SP.s1, fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{sub}</div>}
-      {action && <div style={{ marginTop: SP.s3, display: 'flex', justifyContent: 'center' }}>{action}</div>}
+    <div style={{ padding: '64px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: SP.s3, ...style }}>
+      {icon && (
+        <span style={{ width: 48, height: 48, borderRadius: 24, background: HEAD_BG, color: INK_SOFT, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 48px' }}>
+          {renderIcon(icon, 18)}
+        </span>
+      )}
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: INK }}>{title}</div>
+      {sub && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT, maxWidth: 360 }}>{sub}</div>}
+      {/* mockup: gap:12 (parent) + margin-top:8px (lokal, :103) -- 20px total
+          dari teks ke baris tombol, bukan 12px seperti jarak icon/judul/teks. */}
+      {action && <div style={{ display: 'flex', justifyContent: 'center', gap: SP.s2, marginTop: SP.s2 }}>{action}</div>}
     </div>
   );
 }
