@@ -42,7 +42,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { PageHeader, Card, Segmented, Select, PrimaryBtn } from '../../../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, BG, ROW_HOVER,
   FONT_BODY, FONT_HEAD, FONT_MONO, SP, fmtRp, avatarToneFor,
 } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
@@ -107,6 +107,11 @@ const primaryContactOf = (acc) => (Array.isArray(acc.contacts) ? acc.contacts : 
 // ("judul kartu" saja); mockup sendiri 24px utk angka, dicatat sebagai
 // temuan terpisah di laporan, bukan diubah diam-diam di sini.
 const kpiLabel = { fontSize: 12, fontWeight: 600, color: INK_SOFT, fontFamily: FONT_BODY, marginBottom: 6 };
+// TD-318 Irisan Kit, item 3: 24px persis mockup (Lead Management.dc.html
+// :151, blok KPI tanpa data-screen-label sebelum "Qualification/Table"),
+// bukan 28px -- judul (kpiLabel di atas) sudah benar dari perbaikan
+// sebelumnya, hanya nilainya yang belum disamakan.
+const kpiValue = { fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, color: INK };
 const cell = { padding: '12px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK, minWidth: 0 };
 // TD-318 Irisan 1, 3b: TANPA whiteSpace:'nowrap' -- "ACCOUNT CODE" (96px)
 // menempel ke "COMPANY NAME" kalau dipaksa satu baris; kolom 96px ini cacat
@@ -183,15 +188,15 @@ export default function LeadQualificationPage({ onSelectLead, onCreateInquiry, s
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: SP.s4, marginBottom: SP.s4 }}>
         <Card>
           <div style={kpiLabel}>Qualified Leads</div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{leads.length}</div>
+          <div style={kpiValue}>{leads.length}</div>
         </Card>
         <Card>
           <div style={kpiLabel}>Total Estimated Value</div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{fmtRp(totalEstValue)}</div>
+          <div style={kpiValue}>{fmtRp(totalEstValue)}</div>
         </Card>
         <Card>
           <div style={kpiLabel}>Average BANT Score</div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 28, fontWeight: 700, color: INK }}>{avgBant.toFixed(1)} / {BANT_MAX_SCORE}</div>
+          <div style={kpiValue}>{avgBant.toFixed(1)} / {BANT_MAX_SCORE}</div>
         </Card>
       </div>
 
@@ -305,6 +310,10 @@ function RowSummary({ row, score, expanded, onToggle, onSelectLead, onCreateInqu
 
 // Ringkasan BACA-SAJA, persis mockup Qualification/BANTPanel -- NOL <input>,
 // NOL tombol Simpan. Edit hanya lewat Lead Detail (BantTab).
+// TD-318 Irisan Kit, item 4: latar BG (#F6F8F3) persis mockup
+// (data-screen-label="Qualification/BANTPanel", :171, background:#F6F8F3)
+// -- bukan HEAD_BG (#EFF3ED), yang jadi warna thead/track, bukan latar
+// panel ini.
 function RowSummaryPanel({ row }) {
   const summaryFields = SUMMARY_FIELD_KEYS
     .map((key) => QUALIFICATION_FIELDS.find((f) => f.key === key))
@@ -313,7 +322,7 @@ function RowSummaryPanel({ row }) {
     <div
       role="row"
       style={{
-        minWidth: QUAL_GRID_MIN_W, padding: '16px 16px 16px 56px', background: HEAD_BG, borderBottom: `1px solid ${LINE_SOFT}`,
+        minWidth: QUAL_GRID_MIN_W, padding: '16px 16px 16px 56px', background: BG, borderBottom: `1px solid ${LINE_SOFT}`,
         display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: SP.s4,
       }}
     >
