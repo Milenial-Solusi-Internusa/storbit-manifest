@@ -520,7 +520,23 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
             sudah membungkus dirinya sendiri). Sebelumnya Notebook dirender
             telanjang tanpa bingkai sama sekali. */}
         <Card>
-          <Notebook tabs={tabs} value={tab} onChange={setTab}>
+          {/* TD-318 Lead Detail, review Vir (BUG CRASH, tindak lanjut #25/#26):
+              `editSec` di-hoist ke sini supaya bertahan lintas tab, TAPI
+              companyDraft/commercialDraft/notesDraft tetap state LOKAL
+              OverviewTab, yang hilang tiap OverviewTab unmount (render
+              kondisional per tab). Tanpa baris `setEditSec(null)` di sini,
+              editSec bisa tetap 'Commercial'/'Notes' sesudah balik ke
+              Overview sementara draftnya null -- render membaca
+              draft.<field> pada null -> crash ke Boundary (Commercial/Notes;
+              Company KEBETULAN tidak crash krn lazy initializer-nya
+              membangun ulang dari `account`, tapi ketikan belum tersimpan
+              ikut hilang diam-diam). Perbaikan PERSIS mockup: tiap klik tab
+              memakai `set({ dtab: t[0], editSec: null })` -- pindah tab
+              MENUTUP mode edit, bukan cuma mendepan state yang sudah telat.
+              Quick Edit (editSec awal 'Company' dari mount LeadDetailPage)
+              tetap terbuka SEKALI sampai user pindah tab pertama kali --
+              #25 tetap tertutup. */}
+          <Notebook tabs={tabs} value={tab} onChange={(t) => { setTab(t); setEditSec(null); }}>
             {tab === 'overview' && (
               <OverviewTab
                 account={account} setAccount={setAccount} id={id} companyId={companyId} status={status}
