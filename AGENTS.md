@@ -88,7 +88,7 @@ Live modules:
 
 Ongoing tech debt:
 
-- `src/App.jsx` is large (5,530 lines) with many inline components — decompose incrementally, never in one big change.
+- `src/App.jsx` is large (4,089 lines per `wc -l`, 17 Oct 2026 — koreksi fakta, angka lama 5,530 basi sejak routing migration Batch FS Fase 2.5 memindahkan banyak blok render keluar) with many inline components — decompose incrementally, never in one big change.
 - `PASTEL` design tokens duplicated across many files — pending a single `src/lib/tokens.js`.
 
 Do not perform a big-bang rewrite.
@@ -726,9 +726,9 @@ Current phase: **MVP Storbit end-to-end — rantai SP → Picking → Surat Jala
 | — | Globalisasi `roles`/`departments`/`positions`/`branches` (company-scope pindah ke `user_roles`) | ✅ Complete |
 
 Pending / next:
-- **Tahap 4** — drop physical `profiles.role` column + `user_role_legacy` enum (needs approval; verify all super_admins exist in `user_roles` first).
+- ~~**Tahap 4** — drop physical `profiles.role` column + `user_role_legacy` enum (needs approval; verify all super_admins exist in `user_roles` first).~~ **DONE** (koreksi fakta 17 Okt 2026 — confirmed already executed, `08_TECH_DEBT.md` TD-20 RESOLVED).
 - Runtime-verify the accounts migration on staging (SP/AR + CRM); if a DBA renames any FK constraint, update the `!constraint` part of affected embeds.
-- Drop the retired `customers` table after staging verification (needs approval).
+- ~~Drop the retired `customers` table after staging verification (needs approval).~~ **DONE** (koreksi fakta 17 Okt 2026 — dropped staging + production 18 Sep 2026, `08_TECH_DEBT.md` TD-19 RESOLVED).
 
 Production migration gate: all pending Supabase migrations remain **BLOCKED** for production until explicit written approval from the technical lead and product owner.
 
