@@ -19,7 +19,7 @@ import {
   FloatingInput, FloatingSelect, MasterSelect, Textarea, IconButton,
 } from '../../../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, SEMANTIC, ACCENT, ACCENT_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, CARD, DISABLED_BG, SEMANTIC, ACCENT, ACCENT_HOVER, FONT_BODY, FONT_HEAD, FONT_MONO,
   RADIUS, SP, fmtRp, avatarToneFor,
 } from '../../../../kit/tokens';
 import { supabase } from '../../../../lib/supabase';
@@ -29,7 +29,7 @@ import { ENTITIES } from '../../../../lib/entities';
 import { readMoneyInput, formatIdNumber } from '../../../../lib/numberFormat';
 import { BANT_DIMENSIONS, BANT_MAX_SCORE, calcBantScore, QUALIFICATION_FIELDS } from '../../lib/bant';
 import { LEAD_STATUS_META, deriveLeadStatus } from '../lib/leadStatus';
-import { SOURCES, SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
+import { SOURCE_LABELS, PRIORITIES } from '../lib/leadOptions';
 import { ACTIVITY_TYPE_LABEL, listLeadActivities, addLeadNote, scheduleLeadFollowUp } from '../lib/leadActivity';
 import RequestNewOptionModal from '../../components/RequestNewOptionModal';
 import ContactModal from '../components/ContactModal';
@@ -53,9 +53,12 @@ function fmtDateTime(iso) {
   return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function ViewField({ label, value, mono, full }) {
+// `span` (TD-318 Lead Detail, Kategori D): rentang kolom EKSPLISIT (mis.
+// `span={2}` -- Address di section Company, grid3 mockup :215), berbeda
+// dari `full` yang selalu merentang SELURUH kolom (1/-1).
+function ViewField({ label, value, mono, full, span }) {
   return (
-    <div style={{ gridColumn: full ? '1 / -1' : undefined, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD, minWidth: 0 }}>
+    <div style={{ gridColumn: full ? '1 / -1' : span ? `span ${span}` : undefined, border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD, minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 4, fontFamily: FONT_BODY }}>{label}</div>
       <div style={{ fontSize: 14, color: value ? INK : INK_FAINT, fontFamily: mono ? FONT_MONO : FONT_BODY, fontWeight: 500, fontStyle: value ? 'normal' : 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {value || 'Not set'}
@@ -67,9 +70,13 @@ function ViewField({ label, value, mono, full }) {
 // Owner di kartu Commercial (OverviewTab) -- bentuk kotak sama dengan
 // ViewField, tapi isinya OwnerLine supaya link "Reassign" ikut tampil
 // (mockup: Reassign muncul di SINI juga, bukan cuma di info-row header).
-function OwnerField({ id, name, canReassign, onReassign }) {
+// `tint` (TD-318 Lead Detail, token): latar DISABLED_BG persis mockup
+// `ownerBoxBg` (:223) -- Owner TIDAK ikut diedit tapi tetap duduk di
+// dalam grid mode-edit Commercial, tint membedakannya dari field yang
+// sungguh editable di sebelahnya.
+function OwnerField({ id, name, canReassign, onReassign, tint }) {
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: CARD, minWidth: 0 }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.md, padding: '10px 14px', background: tint ? DISABLED_BG : CARD, minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: 4, fontFamily: FONT_BODY }}>Owner</div>
       <OwnerLine id={id} name={name} canReassign={canReassign} onReassign={onReassign} />
     </div>
@@ -150,6 +157,13 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   // rmNote) mendarat di sini dengan tab Activity SUDAH aktif -- lihat juga
   // ActivityTab di bawah untuk kotak catatan yang ikut terbuka.
   const [tab, setTab] = useState(() => (openNoteOnMount ? 'activity' : 'overview'));
+  // TD-318 Lead Detail (tes Den #25+#26): SATU slot edit Company/Commercial/
+  // Notes, persis mockup `s.editSec` -- DI-HOIST ke sini (bukan di
+  // OverviewTab) karena LeadDetailPage TIDAK remount saat pindah tab,
+  // sementara OverviewTab remount tiap pindah tab (render kondisional).
+  // Lazy initializer sama dgn `tab` di atas: Quick Edit (mockup rmEdit) set
+  // 'Company' SEKALI di sini, bukan di-derive ulang tiap OverviewTab mount.
+  const [editSec, setEditSec] = useState(() => (quickEditOnMount ? 'Company' : null));
   const [menuOpen, setMenuOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
@@ -474,7 +488,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
                 onRequestNewOption={(key) => setRequestOptionFor(key)}
                 onAddOption={(key, opt) => { if (key === 'industry') setIndustryOptions((o) => [...o, opt]); else setCategoryOptions((o) => [...o, opt]); }}
                 showToast={showToast}
-                autoEditCompany={quickEditOnMount}
+                editSec={editSec} setEditSec={setEditSec}
               />
             )}
             {tab === 'contacts' && (
@@ -536,26 +550,47 @@ function buildCompanyDraft(account) {
   };
 }
 
+// TD-318 Lead Detail (tes Den #25+#26, refactor): SATU slot edit dibagi
+// Company/Commercial/Notes -- persis mockup `s.editSec` (`secEdit.Company`/
+// `.Commercial`/`.Notes`, `cancelSec`/`saveSec` tunggal; destructuring
+// `vCompany/eCompany/vCommercial/eCommercial/vNotes/eNotes` SEMUA diturunkan
+// dari satu nilai). State `editSec` di-HOIST ke `LeadDetailPage` (BUKAN di
+// sini) supaya ia tidak remount saat pindah tab Overview<->tab lain --
+// `OverviewTab` sendiri unmount tiap pindah tab (render kondisional
+// `{tab==='overview' && <OverviewTab/>}`), sehingga state lokal akan
+// kembali ke initializer tiap kali balik ke Overview. Inilah SATU
+// perbaikan yang menutup #25 (Quick Edit reopen) DAN #26 (dua section
+// edit bersamaan) sekaligus -- bukan dua tambalan terpisah.
 function OverviewTab({
   account, setAccount, id, companyId, status, industryOptions, categoryOptions, lostReasonOptions,
-  canManage, onReassign, onRequestNewOption, onAddOption, showToast, autoEditCompany,
+  canManage, onReassign, onRequestNewOption, onAddOption, showToast, editSec, setEditSec,
 }) {
   const entityCode = ENTITIES.find((e) => e.id === companyId)?.code || '—';
   const isLost = status === 'lost';
+  // TD-318 Lead Detail, #24: persis mockup `showQR = st==='Qualified'||
+  // st==='Converted'` (:686) -- status 'raw' TIDAK pernah menampilkan
+  // Qualified Reason sama sekali (dulu selalu tampil "Not set").
+  const showQR = status === 'qualified' || status === 'converted';
   const reasonLabel = isLost ? 'Lost Reason' : 'Qualified Reason';
   const reasonValue = isLost
     ? (lostReasonOptions.find((o) => o.value === account.lost_reason)?.label || account.lost_reason)
     : account.qualified_reason;
 
+  const companyEdit = editSec === 'Company';
+  const commercialEdit = editSec === 'Commercial';
+  const notesEdit = editSec === 'Notes';
+  const cancelSec = () => setEditSec(null);
+
   // "Quick Edit" (menu baris Capture, mockup rmEdit) -- lead dibuka dengan
   // Company SUDAH dalam mode edit, lewat lazy initializer (bukan effect:
   // `account` sudah pasti terisi saat OverviewTab mount, LeadDetailPage baru
-  // merender tab ini sesudah `if (!account) return ...`).
-  const [companyEdit, setCompanyEdit] = useState(() => !!autoEditCompany);
-  const [companyDraft, setCompanyDraft] = useState(() => (autoEditCompany ? buildCompanyDraft(account) : null));
+  // merender tab ini sesudah `if (!account) return ...`). `editSec` sendiri
+  // (bukan `companyDraft`) yang menentukan apakah ini aktif saat mount --
+  // LeadDetailPage sudah menginisialisasinya 'Company' lewat prop ini.
+  const [companyDraft, setCompanyDraft] = useState(() => (editSec === 'Company' ? buildCompanyDraft(account) : null));
   function startCompanyEdit() {
     setCompanyDraft(buildCompanyDraft(account));
-    setCompanyEdit(true);
+    setEditSec('Company');
   }
   async function saveCompany() {
     if (!companyDraft.name.trim()) return { error: new Error('Company Name wajib diisi') };
@@ -563,7 +598,7 @@ function OverviewTab({
     const { error } = await supabase.from('accounts').update(payload).eq('id', id);
     if (error) return { error };
     setAccount((a) => ({ ...a, ...payload }));
-    setCompanyEdit(false);
+    setEditSec(null);
     return undefined;
   }
 
@@ -584,34 +619,36 @@ function OverviewTab({
     showToast?.(`${trimmed} added to ${key === 'industry' ? 'Industry' : 'Lead Category'}`);
   }
 
-  const [commercialEdit, setCommercialEdit] = useState(false);
+  // TD-318 Lead Detail, #23: `commercialDraft` TIDAK lagi punya `source` --
+  // field itu terkunci persis mockup (kotak abu-abu, nol input), jadi nol
+  // draft untuknya mencegah payload simpan diam-diam ikut membawa nilai
+  // yang tak pernah bisa diubah user dari form ini.
   const [commercialDraft, setCommercialDraft] = useState(null);
   function startCommercialEdit() {
     setCommercialDraft({
-      source: account.source || '', estimated_value: formatIdNumber(account.estimated_value) || '',
+      estimated_value: formatIdNumber(account.estimated_value) || '',
       estimated_closing_date: account.estimated_closing_date || '',
     });
-    setCommercialEdit(true);
+    setEditSec('Commercial');
   }
   async function saveCommercial() {
     const { value: estVal, unrecognized } = readMoneyInput(commercialDraft.estimated_value);
     if (unrecognized) return { error: new Error('Estimated Value tidak dikenali') };
     const payload = {
-      source: commercialDraft.source || null, estimated_value: estVal,
+      estimated_value: estVal,
       estimated_closing_date: commercialDraft.estimated_closing_date || null,
     };
     const { error } = await supabase.from('accounts').update(payload).eq('id', id);
     if (error) return { error };
     setAccount((a) => ({ ...a, ...payload }));
-    setCommercialEdit(false);
+    setEditSec(null);
     return undefined;
   }
 
-  const [notesEdit, setNotesEdit] = useState(false);
   const [notesDraft, setNotesDraft] = useState(null);
   function startNotesEdit() {
     setNotesDraft({ description: account.description || '', notes: account.notes || '', qualified_reason: account.qualified_reason || '' });
-    setNotesEdit(true);
+    setEditSec('Notes');
   }
   async function saveNotes() {
     const payload = {
@@ -621,7 +658,7 @@ function OverviewTab({
     const { error } = await supabase.from('accounts').update(payload).eq('id', id);
     if (error) return { error };
     setAccount((a) => ({ ...a, ...payload }));
-    setNotesEdit(false);
+    setEditSec(null);
     return undefined;
   }
 
@@ -657,16 +694,19 @@ function OverviewTab({
               <FloatingSelect label="Priority" value={companyDraft.priority} onChange={(v) => setCompanyDraft((d) => ({ ...d, priority: v }))}
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </div>
-            <div style={grid2}>
+            {/* TD-318 Lead Detail, Kategori D: grid3 dgn Address span 2 kolom
+                persis mockup (:214-215) -- Website 1/3 lebar, Address 2/3,
+                bukan 50/50 lewat grid2 terpisah. */}
+            <div style={grid3}>
               <FloatingInput label="Website" value={companyDraft.website} onChange={(v) => setCompanyDraft((d) => ({ ...d, website: v }))} />
-              <FloatingInput label="Address" value={companyDraft.address} onChange={(v) => setCompanyDraft((d) => ({ ...d, address: v }))} />
+              <FloatingInput label="Address" value={companyDraft.address} onChange={(v) => setCompanyDraft((d) => ({ ...d, address: v }))} style={{ gridColumn: 'span 2' }} />
             </div>
             <div style={grid2}>
               <FloatingInput label="City" value={companyDraft.city} onChange={(v) => setCompanyDraft((d) => ({ ...d, city: v }))} />
               <FloatingInput label="Country" value={companyDraft.country} onChange={(v) => setCompanyDraft((d) => ({ ...d, country: v }))} />
             </div>
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
-              <OutlineBtn size="sm" onClick={() => setCompanyEdit(false)}>Cancel</OutlineBtn>
+              <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
               <SaveButton size="sm" onSave={saveCompany} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
@@ -682,9 +722,9 @@ function OverviewTab({
               <ViewField label="Lead Category" value={categoryOptions.find((o) => o.value === account.lead_category)?.label || account.lead_category} />
               <ViewField label="Priority" value={account.priority} />
             </div>
-            <div style={grid2}>
+            <div style={grid3}>
               <ViewField label="Website" value={account.website} />
-              <ViewField label="Address" value={account.address} />
+              <ViewField label="Address" value={account.address} span={2} />
             </div>
             <div style={grid2}>
               <ViewField label="City" value={account.city} />
@@ -698,14 +738,17 @@ function OverviewTab({
         {commercialEdit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <div style={grid3}>
-              <FloatingSelect label="Source" value={commercialDraft.source} onChange={(v) => setCommercialDraft((d) => ({ ...d, source: v }))}
-                options={SOURCES.map((s) => ({ value: s, label: SOURCE_LABELS[s] }))} />
-              <OwnerField id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={onReassign} />
+              {/* TD-318 Lead Detail, #23: Source TERKUNCI saat edit Commercial,
+                  persis mockup (kotak abu-abu, :222) -- sebelumnya
+                  FloatingSelect yang bisa diubah bebas. Pola locked-field
+                  yang SAMA dipakai "Entity" di section Company di atas. */}
+              <ViewField label="Source" value={SOURCE_LABELS[account.source] || account.source} />
+              <OwnerField tint id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={onReassign} />
               <FloatingInput label="Estimated Value" value={commercialDraft.estimated_value} onChange={(v) => setCommercialDraft((d) => ({ ...d, estimated_value: v }))} mono />
             </div>
             <FloatingInput label="Expected Closing Date" type="date" half value={commercialDraft.estimated_closing_date} onChange={(v) => setCommercialDraft((d) => ({ ...d, estimated_closing_date: v }))} />
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
-              <OutlineBtn size="sm" onClick={() => setCommercialEdit(false)}>Cancel</OutlineBtn>
+              <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
               <SaveButton size="sm" onSave={saveCommercial} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
@@ -730,9 +773,12 @@ function OverviewTab({
               // di sini (akan menimpa value dropdown dengan teks mentah). Ubah lewat
               // "Mark as Lost" (menu titik tiga), bukan lewat form Notes ini.
               ? <ViewField label={reasonLabel} value={reasonValue} full />
-              : <Textarea label="Qualified Reason" value={notesDraft.qualified_reason} onChange={(v) => setNotesDraft((d) => ({ ...d, qualified_reason: v }))} rows={3} />}
+              // TD-318 Lead Detail, #24: Qualified Reason HANYA saat showQR
+              // (status qualified/converted) -- status raw tidak menampilkan
+              // apa pun di slot ini (dulu selalu Textarea kosong).
+              : showQR && <Textarea label="Qualified Reason" value={notesDraft.qualified_reason} onChange={(v) => setNotesDraft((d) => ({ ...d, qualified_reason: v }))} rows={3} />}
             <div style={{ display: 'flex', gap: SP.s2, justifyContent: 'flex-end' }}>
-              <OutlineBtn size="sm" onClick={() => setNotesEdit(false)}>Cancel</OutlineBtn>
+              <OutlineBtn size="sm" onClick={cancelSec}>Cancel</OutlineBtn>
               <SaveButton size="sm" onSave={saveNotes} onError={(err) => showToast?.('Failed to save: ' + err.message, 'error')} />
             </div>
           </div>
@@ -740,7 +786,8 @@ function OverviewTab({
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             <ViewField label="Lead Description" value={account.description} full />
             <ViewField label="Internal Notes" value={account.notes} full />
-            <ViewField label={reasonLabel} value={reasonValue} full />
+            {/* TD-318 Lead Detail, #24: persis mockup showQR||isLost (:232-233). */}
+            {(isLost || showQR) && <ViewField label={reasonLabel} value={reasonValue} full />}
             {isLost && account.competitor_name && <ViewField label="Competitor" value={account.competitor_name} full />}
           </div>
         )}
@@ -958,8 +1005,15 @@ function poolHistoryNotes(h, actorMap) {
 
 function ActivityTab({ activities, poolHistory = [], actorMap, accountId, companyId, profile, showToast, onChanged, autoOpenNote }) {
   // TD-318 Irisan 1, N3 (rmNote): kotak catatan sudah TERBUKA saat tab ini
-  // mendarat dari "Add Note" Lead Capture -- persis satu kondisi dgn
-  // autoEditCompany/CompanyTab di atas (lazy initializer, bukan effect).
+  // mendarat dari "Add Note" Lead Capture -- lazy initializer lokal, pola
+  // yang SAMA dengan `companyDraft` OverviewTab SEBELUM diperbaiki (lihat
+  // #25 di atas). ⚠️ BELUM diaudit apakah bug kelas yang SAMA (kotak
+  // catatan terbuka lagi tiap balik ke tab Activity) juga terjadi di sini
+  // -- `autoOpenNote` adalah PROP murni (`openNoteOnMount` LeadDetailPage),
+  // bukan state yang di-hoist, dan `ActivityTab` ikut unmount/remount tiap
+  // pindah tab PERSIS seperti OverviewTab dulu. Ditemukan saat menutup
+  // #25/#26, SENGAJA TIDAK diperbaiki di irisan ini (di luar lingkup yang
+  // disetujui Den) -- dicatat sebagai temuan baru di laporan akhir.
   const [composer, setComposer] = useState(() => (autoOpenNote ? 'note' : null)); // null | 'note' | 'followup'
   const [text, setText] = useState('');
   const [followDate, setFollowDate] = useState('');
