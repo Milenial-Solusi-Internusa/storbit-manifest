@@ -131,19 +131,20 @@ export default function ReassignModal({ open, onClose, accounts = [], showToast,
     if (open && companyIds.length) {
       setNewOwner(''); setReason(''); setEffectiveDate(getTodayWIB()); setNotify(true);
       if (allUnassigned) {
-        // TD-318 Irisan 4, item G (tes Den + review Vir): RLS
-        // user_roles_read hanya mengizinkan baris sendiri, atau
-        // company_id=home + is_manager_or_above(), atau super admin --
-        // approver Lead Pool LINTAS entitas (mis. staging: peran ceo di
-        // SOA punya crm_lead_pool_approval) akan mendapat daftar kandidat
-        // KOSONG lewat query user_roles+profiles langsung di atas (kelas
-        // bug yang sama dgn gotcha #26/#35). Diganti RPC SECURITY DEFINER
-        // `lead_pool_assign_candidates` (migrasi
-        // 20261017000001_lead_pool_assign_candidates.sql, BELUM
-        // DIJALANKAN) yang digerbang syarat PERSIS SAMA dgn
-        // lead_pool_assign sendiri -- dipanggil SATU KALI per entitas di
-        // `companyIds`, diambil IRISAN kalau target lebih dari satu
-        // entitas. RPC error -> tampilkan pesannya, daftar dibiarkan
+        // TD-318 Irisan 4, item G (tes Den + review Vir, LIVE STAGING 17
+        // Okt 2026): RLS user_roles_read hanya mengizinkan baris sendiri,
+        // atau company_id=home + is_manager_or_above(), atau super admin.
+        // Dua kasus NYATA yang gagal tembus RLS lewat query langsung: (1)
+        // approver yang izinnya (crm_lead_pool_approval) ada di entitas
+        // BERBEDA dari entitas HOME profilnya; (2) approver DI BAWAH level
+        // manager (izin diberikan lewat grant per-user, bukan level org) --
+        // kelas bug yang sama dgn gotcha #26/#35. Diganti RPC SECURITY
+        // DEFINER `lead_pool_assign_candidates` (migrasi
+        // 20261017000001_lead_pool_assign_candidates.sql, LIVE STAGING,
+        // PRODUCTION BELUM -- rilis November) yang digerbang syarat PERSIS
+        // SAMA dgn lead_pool_assign sendiri -- dipanggil SATU KALI per
+        // entitas di `companyIds`, diambil IRISAN kalau target lebih dari
+        // satu entitas. RPC error -> tampilkan pesannya, daftar dibiarkan
         // kosong (bukan diam-diam jatuh balik ke query lama).
         Promise.all(companyIds.map((cid) => supabase.rpc('lead_pool_assign_candidates', { p_company_id: cid })))
           .then((results) => {

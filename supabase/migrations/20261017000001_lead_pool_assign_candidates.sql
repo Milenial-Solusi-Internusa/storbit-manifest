@@ -1,16 +1,26 @@
 -- Migration: 20261017000001_lead_pool_assign_candidates
 -- TD-318 Irisan 4 (tes Den + review Vir), item G.
--- Status: BELUM DIJALANKAN -- rilis November 2026, SESUDAH 20261016000004.
--- ReassignModal.jsx (cabang allUnassigned) bergantung pada fungsi ini --
--- WAJIB jalan SEBELUM atau BERSAMAAN dengan kode Irisan 4 naik ke main.
+-- Status: ✅ LIVE STAGING (dijalankan Vir, 17 Okt 2026) -- PRODUCTION BELUM,
+-- rilis November 2026, SESUDAH 20261016000004. ReassignModal.jsx (cabang
+-- allUnassigned) bergantung pada fungsi ini -- WAJIB jalan SEBELUM atau
+-- BERSAMAAN dengan kode Irisan 4 naik ke main.
 --
--- Alasan: RLS user_roles_read hanya mengizinkan baris sendiri, atau
--- company_id = get_user_company_id() AND is_manager_or_above(), atau super
--- admin. Approver Lead Pool lintas entitas (contoh staging: peran ceo di
--- SOA punya crm_lead_pool_approval) akan mendapat daftar kandidat kosong
--- saat ReassignModal query user_roles+profiles langsung. SECURITY DEFINER
--- di bawah menembus RLS itu, digerbang SYARAT PERSIS SAMA dengan
--- lead_pool_assign sendiri (has_menu_permission_in crm_lead_pool_approval).
+-- Alasan: RLS user_roles_read mengizinkan baris sendiri, ATAU
+-- (company_id = get_user_company_id() [HOME profil] AND
+-- is_manager_or_above()), ATAU super admin. Dua kasus NYATA yang gagal
+-- tembus RLS itu lewat query langsung: (1) approver yang IZINNYA
+-- (crm_lead_pool_approval) ada di entitas BERBEDA dari entitas HOME
+-- profilnya -- company_id=get_user_company_id() gagal karena entitas
+-- target bukan HOME-nya; (2) approver DI BAWAH level manager (izin
+-- crm_lead_pool_approval diberikan lewat grant per-user, bukan lewat
+-- level org) -- is_manager_or_above() gagal walau entitasnya cocok.
+-- [Koreksi Vir, 17 Okt 2026: contoh awal "ceo di SOA" di draf ini KELIRU
+-- -- ceo yang HOME-nya SOA dan mengajukan izin di SOA sendiri LOLOS kedua
+-- klausa RLS itu; ditolak RPC pada kasus itu BENAR dan berasal dari guard
+-- has_menu_permission_in milik RPC ini sendiri, bukan dari bug yang
+-- diperbaiki migrasi ini.] SECURITY DEFINER di bawah menembus RLS itu,
+-- digerbang SYARAT PERSIS SAMA dengan lead_pool_assign sendiri
+-- (has_menu_permission_in crm_lead_pool_approval).
 
 BEGIN;
 
