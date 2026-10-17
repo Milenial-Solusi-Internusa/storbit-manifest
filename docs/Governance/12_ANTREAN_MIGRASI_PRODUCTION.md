@@ -20,6 +20,8 @@
 > ⛔ **Koreksi 13 Okt 2026: kedua tanggal di atas (14 dan 15 Oktober) MUNDUR ke awal November 2026, tanggal pasti menyusul** — keputusan Den, lihat §Naskah Eksekusi Malam Rilis dan §Persiapan H-1 di bawah untuk detail lengkap. Pola "jendela eksekusi malam vs efektif pagi besoknya" TETAP berlaku, hanya tanggalnya yang berubah.
 >
 > 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice — ~~per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production~~ **[✅ TERPENUHI 9 Okt 2026, lihat H-1.0 & §Koreksi Data dan Akses Manual]**), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
+>
+> 👉 **Naskah terpisah untuk rilis Lead Management (TD-318 Paket 1+2): §Runbook Rilis Lead Management (TD-318 Paket 1+2) — awal November 2026**, ditulis 17 Okt 2026 (sesudah §Paket 2 Lead Pool, sebelum §Cara merawat dokumen ini) — cakupan butir 47-64, malam EKSEKUSI terpisah dari naskah AR di atas (rekomendasi Den: AR dulu, Lead Management beberapa hari sesudahnya).
 
 ---
 
@@ -86,6 +88,12 @@
 | 56 | `20261012000007_crm_quotation_lock_on_closed_inquiry` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB** — didahului langkah manual backup, lihat §56 ("9a") |
 | 57 | `20261012000008_crm_lead_pool_sweep_notify` | ✔ 12 Okt | ⛔ belum | ⛔ **WAJIB, TERAKHIR** dari rangkaian 11 berkas |
 | 58 | Perubahan manual khusus STAGING (seed CRM dummy + reaktivasi akun uji) | ✔ 12 Okt (manual) | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja |
+| 59 | `20261016000001_accounts_contacts_updated_at_trigger` | ✔ **16 Okt** (via connector Vir) | ✔ **16 Okt** (via connector Vir) | — **selesai** — SUDAH LIVE produksi; lewati saat checklist migrasi hari-H, HANYA refresh `schema_snapshot.sql` yang perlu |
+| 60 | `20261016000002_bd_digital_marketing_manager_role` | ✔ **16 Okt** (via connector Vir) | ✔ **16 Okt** (via connector Vir) | — **selesai** — SUDAH LIVE produksi; lewati saat checklist migrasi hari-H, HANYA refresh `schema_snapshot.sql` yang perlu |
+| 61 | `20261016000003_crm_lead_capture_computed_sort_columns` | ✔ 16 Okt | ⛔ belum | ⛔ **WAJIB** — rilis November, SEBELUM ATAU BERSAMAAN kode naik ke `main` (TD-318 Irisan Sorting bergantung penuh) |
+| 62 | `20261016000004_lead_pool_assign_reason` | ✔ 16 Okt (via SQL Editor Den) | ⛔ belum | ⛔ **WAJIB** — rilis November, SEBELUM ATAU BERSAMAAN kode `ReassignModal.jsx` (TD-318 Irisan 2) naik ke `main`. Memuat `DROP FUNCTION` — **wajib dijalankan Den via SQL Editor, bukan connector** |
+| 63 | `20261017000001_lead_pool_assign_candidates` | ✔ 17 Okt | ⛔ belum | ⛔ **WAJIB** — rilis November, SEBELUM ATAU BERSAMAAN kode `ReassignModal.jsx` cabang `allUnassigned` (TD-318 Irisan 4) naik ke `main` |
+| 64 | Data uji staging TD-318 Irisan 1-4 (16-17 Okt 2026) | ✔ 16-17 Okt (manual) | — **tidak boleh** | ⛔ **JANGAN dijalankan** — arah terbalik, staging saja, lihat §64 |
 
 **Butir 47-58 = Paket 2 Lead Pool (Batch DS 3, Lead Management) — MUNDUR ke target awal November 2026 (keputusan Den 13 Okt 2026, syarat Fase 1+2 TD-318 selesai & lolos tes staging — lihat §Paket 2 Lead Pool), jalur TERPISAH dari rantai AR Storbit (butir 1-46) di atas.** Urutan mengikat, kedua Edge Function yang menyusul, dan konfigurasi aging pasca-rilis: **§Paket 2 Lead Pool (butir 47-57)** di bagian akhir dokumen ini, sesudah §Naskah Eksekusi Malam Rilis.
 
@@ -2100,7 +2108,7 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 
 | | |
 |---|---|
-| Isi | `CREATE OR REPLACE TRIGGER trg_accounts_updated_at`/`trg_contacts_updated_at` BEFORE UPDATE, memakai fungsi yang SUDAH ADA `set_updated_at()` (46 tabel lain sudah memakainya). TD-318 Irisan 1 temuan 4c: `accounts`/`contacts.updated_at` tidak pernah berubah. Nol backfill, nol tabel lain disentuh (31 tabel lain yang punya gap sama dicatat di `08_TECH_DEBT.md` sebagai TD terpisah, bukan bagian migrasi ini). ⚠️ Draf awal memakai `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` — connector Vir memblokir `DROP TRIGGER` dengan prompt konfirmasi, jadi yang benar-benar dijalankan (dan kini isi file-nya) adalah `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, kedua environment PG 17.6) — hasil akhir identik, tetap idempoten. |
+| Isi | `CREATE OR REPLACE TRIGGER trg_accounts_updated_at`/`trg_contacts_updated_at` BEFORE UPDATE, memakai fungsi yang SUDAH ADA `set_updated_at()` (46 tabel lain sudah memakainya). TD-318 Irisan 1 temuan 4c: `accounts`/`contacts.updated_at` tidak pernah berubah. Nol backfill, nol tabel lain disentuh (31 tabel lain yang punya gap sama → **TD-322** di `08_TECH_DEBT.md`, OPEN menunggu keputusan Den — daftar ke-31 tabelnya sendiri belum diverifikasi ke `information_schema`/`pg_trigger`, baris ini ditutup 17 Okt 2026 saat audit kesiapan launching menemukan bahwa rujukan "TD terpisah" ini sempat dangling selama sebelas hari, nol baris TD pernah dibuat untuknya). ⚠️ Draf awal memakai `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` — connector Vir memblokir `DROP TRIGGER` dengan prompt konfirmasi, jadi yang benar-benar dijalankan (dan kini isi file-nya) adalah `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, kedua environment PG 17.6) — hasil akhir identik, tetap idempoten. |
 | Staging | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector. Verifikasi: `UPDATE` PT Prima Tekstil Pekalongan, `updated_at` langsung jadi `2026-10-16 08:10 UTC`. |
 | Production | ✔ **DIJALANKAN 16 Okt 2026** oleh Vir via connector, SQL identik dengan staging. |
 | Sifat | Berdiri sendiri, aditif murni. Nol kode FE yang wajib menyertainya (4 titik tulis manual `updated_at` di `CustomerDetailPage.jsx` jadi redundan-tapi-tidak-konflik, bisa dirapikan belakangan). Nol pembaca `accounts.updated_at` di seluruh `src/`/`supabase/functions/` hari ini — nol risiko regresi. |
@@ -2166,6 +2174,218 @@ Keduanya `verify_jwt: true`. *(Nomor versi v1/v2 di atas adalah informasi yang d
 **Untuk apa.** RLS `user_roles_read` mengizinkan baris sendiri, ATAU (`company_id = get_user_company_id()` [HOME profil] `AND is_manager_or_above()`), ATAU super admin. Dua kasus NYATA yang gagal tembus RLS itu lewat query `user_roles`+`profiles` langsung dari client: **(1)** approver yang izinnya (`crm_lead_pool_approval`) ada di entitas **berbeda** dari entitas HOME profilnya — klausa `company_id=get_user_company_id()` gagal karena entitas target bukan HOME-nya; **(2)** approver **di bawah level manager** (izin `crm_lead_pool_approval` diberikan lewat grant per-user, bukan lewat level org) — klausa `is_manager_or_above()` gagal walau entitasnya cocok. Kelas bug yang sama dengan gotcha #26/#35 — perbaikan policy tidak otomatis memperbaiki jalur yang menembus RLS dari sisi lain. RPC `SECURITY DEFINER` ini menembus RLS itu dengan guard yang sama persis dengan `lead_pool_assign`, supaya kandidat yang ditampilkan selalu kandidat yang akan DITERIMA RPC assign-nya. **[Koreksi Vir, 17 Okt 2026]** Contoh awal draf ini ("`ceo` di SOA") KELIRU — `ceo` yang HOME-nya SOA dan mengajukan izin di SOA sendiri LOLOS kedua klausa RLS di atas; kalau ditolak, itu guard `has_menu_permission_in` RPC ini sendiri yang bekerja BENAR (ceo memang tidak punya `crm_lead_pool_approval` di entitas itu), bukan bug RLS yang diperbaiki migrasi ini.
 
 **Rollback.** `DROP FUNCTION IF EXISTS public.lead_pool_assign_candidates(uuid);` — `ReassignModal.jsx` cabang `allUnassigned` akan kembali gagal (daftar kandidat kosong untuk approver lintas entitas) sampai fungsi ini dipasang ulang; cabang `!allUnassigned` (reassign biasa) tidak terpengaruh.
+
+---
+
+### 64. Data uji staging TD-318 Irisan 1–4 (16-17 Okt 2026) — ARAH TERBALIK, **JANGAN NAIK KE PRODUKSI**
+
+| | |
+|---|---|
+| Isi | Konsolidasi mutasi data uji staging yang terjadi SELAMA eksekusi Irisan 1-4 TD-318 (16-17 Okt 2026) — di luar seed 12 Okt yang sudah dicatat butir 58. Lima mutasi: **(a)** opsi `lead_industry` baru `value='test_industry'`/label "test industry" (Irisan 3, dibuat lewat `add_dropdown_option_direct`) — **dinonaktifkan** 17 Okt (bukan dihapus fisik — `DELETE` diblokir connector Vir, pola sama `DROP`). **(b)** satu baris `dropdown_option_requests` status pending ("new option", `list_key='lead_industry'`, diajukan ZZZTEST Sales) — **SENGAJA DIBIARKAN HIDUP**, disiapkan untuk menguji halaman "Option Requests" (TD-318 #18) begitu halamannya dibangun. **(c)** akun "ZZZTEST Free Agent Irisan 4" (FAC tanpa pemilik, dibuat untuk Temuan A Irisan 4) — **di-soft-delete** 17 Okt. **(d)** pull request pending pada "PT Tekstil Mandiri Bandung" (dibuat untuk tes Irisan 4) — **di-approve** sebagai bagian tes commit `0950761`, kini dimiliki pengaju (ZZZTEST Sales), bukan dibersihkan. **(e)** `accounts.competitor_price` terisi nilai uji 150.000.000 pada akun yang dipakai menguji `MarkAsLostModal` (Irisan 3) — status Lost + nilai uji **dibiarkan apa adanya**, bukan dibersihkan (lihat `08_TECH_DEBT.md` §Irisan 3 "Data diverifikasi Vir..."). ⚠️ **(d) dan (e) TIDAK dikonfirmasi dibersihkan di dokumen governance mana pun** — kalau belum dibersihkan saat rilis, baris ini tetap data uji yang ikut staging, bukan ikut production (staging tidak pernah naik mentah ke production). |
+| Staging | ✔ terjadi 16-17 Okt 2026, manual (Vir, via connector + SQL Editor Den untuk `DROP`) — nol jejak git untuk kelima mutasi data ini (migrasinya sendiri, kalau ada, tercatat terpisah di butir 61-63) |
+| Production | — **tidak pernah, dan tidak boleh** |
+| Tindakan saat rilis November | ⛔ **lewati** — bukan bagian antrean production. Kalau staging di-refresh/disamakan dari production sebelum rilis November, (a)-(e) hilang dan TIDAK perlu diulang kecuali Den ingin menguji ulang Irisan 1-4/Option Requests. |
+
+**Kenapa dicatat terpisah dari butir 58.** Pola yang sama ("ARAH TERBALIK, staging saja") tapi mutasi BERBEDA periode (16-17 Okt, bukan 12 Okt) dan asalnya BERBEDA (hasil menjalankan/menguji fitur TD-318 Irisan 1-4, bukan seed awal Paket 2) — digabung ke butir 58 akan mengaburkan kapan tepatnya staging menyimpang dari "baseline seed 12 Okt".
+
+---
+
+## Runbook Rilis Lead Management (TD-318 Paket 1+2) — awal November 2026
+
+> Runbook ini **TERPISAH** dari §Naskah Eksekusi Malam Rilis (butir 6-46, rantai AR Storbit) — keduanya dirilis di **malam berbeda** (rekomendasi Den, lihat §Naskah Eksekusi Malam Rilis), AR lebih dulu. Cakupan runbook ini: butir 47-64 (Paket 2 Lead Pool + TD-318 Irisan Sorting/2/4). **Ditulis 17 Okt 2026 sebagai bagian audit kesiapan launching — BELUM pernah dijalankan, tanggal pasti menyusul.**
+
+### a. Pra-rilis
+
+1. **Backup/snapshot production** sebelum migrasi apa pun dijalankan — `pg_dump --schema-only --schema=public` (pola yang sudah berlaku, `CLAUDE.md` §Sumber kebenaran DB) ditambah backup data penuh untuk tabel yang disentuh migrasi 47-63 (`accounts`, `contacts`, `account_pool_history`, `roles`, `role_menu_permissions`, `role_permissions`, `user_roles`, `dropdown_option_requests`).
+2. **Freeze** input Lead Management (Lead Capture/Qualification/Assignment) selama jendela eksekusi — pola yang sama dengan pembekuan input Finance/Gudang di Langkah 0.6 §Naskah Eksekusi Malam Rilis.
+3. **Akun uji PER PERAN** (bukan `super_admin` — aturan smoke test yang berlaku di repo ini, lihat §Naskah Eksekusi Malam Rilis Langkah 4): sales biasa (`ZZZTEST Sales` atau akun MSI nyata non-manajerial), supervisor/manager (akun ber-`is_manager_or_above()` TRUE — mis. pemegang `bd_sales_spv_*` atau `manager`), DAN **`bd_digital_marketing_manager`** (Faris, `faris.el@exportimportdept.com`@MSI — SATU-SATUNYA pemegang role ini, dibuat migrasi butir 60; dipakai khusus smoke test approval Lead Pool karena role ini satu-satunya yang eksplisit diberi `crm_lead_pool_approval`/`view` di luar role `manager`/`ceo`/`super_admin` generik). ⚠️ **Faris WAJIB logout+login ulang sebelum smoke test** — lihat Tugas 4e/tabel kekurangan launching, cache role di client tidak otomatis menyegarkan menu Manager yang baru.
+
+### b. Urutan migrasi hari-H — dengan query verifikasi konkret
+
+**Urutan MENGIKAT:** `47 → 48 → 49 → 50 → 51 → 52 → 53 → 54 → 55 → [langkah manual "9a", §56] → 56 → 57` (Paket 2 inti, SUDAH tertulis di atas), lalu **59 dan 60 boleh kapan pun** (berdiri sendiri, aditif — lihat §59/§60; **SUDAH LIVE production sejak 16 Okt 2026, jangan dijalankan ulang**, cukup diverifikasi query di bawah), lalu **61 → 62 → 63** (bergantung pada skema Paket 2 di atas DAN pada kode TD-318 Irisan Sorting/2/4 yang naik bersamaan). Butir 58 dan 64 **tidak pernah dijalankan di production** (arah terbalik, staging saja).
+
+⚠️ **Teknik verifikasi fungsi WAJIB `oidvectortypes(p.proargtypes)`, BUKAN `pg_get_function_identity_arguments(p.oid)`** — yang kedua ikut mencetak NAMA parameter sehingga perbandingan string ke daftar tipe polos tidak pernah cocok (gotcha #44, `CLAUDE.md` §Aturan Wajib). Seluruh query di bawah mengikuti aturan ini.
+
+**Verifikasi butir 47 — kolom `accounts.competitor_price`/`description`:**
+```sql
+-- READ-ONLY. Aman kapan pun.
+SELECT column_name, data_type, is_nullable
+  FROM information_schema.columns
+ WHERE table_schema = 'public' AND table_name = 'accounts'
+   AND column_name IN ('competitor_price', 'description', 'industry', 'lead_category',
+                        'priority', 'qualified_at', 'qualified_reason', 'estimated_value')
+ ORDER BY column_name;
+-- Harus mengembalikan 8 baris sesudah butir 47 jalan (sebagian kolom lahir di migrasi lain
+-- dalam rentang yang sama -- lihat §47/§48 untuk daftar per-berkas).
+```
+
+**Verifikasi butir 49-54 — skema + RPC + trigger Lead Pool:**
+```sql
+-- READ-ONLY. Tabel baru.
+SELECT table_name FROM information_schema.tables
+ WHERE table_schema = 'public'
+   AND table_name IN ('account_pool_history', 'dropdown_option_requests')
+ ORDER BY table_name;
+-- Harus 2 baris sesudah butir 49 (account_pool_history) + 48 (dropdown_option_requests, cek terpisah).
+
+-- READ-ONLY. RPC inti Lead Pool -- signature via oidvectortypes, BUKAN
+-- pg_get_function_identity_arguments.
+SELECT p.proname, oidvectortypes(p.proargtypes) AS args, p.prosecdef AS security_definer
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public'
+   AND p.proname IN ('lead_pool_assign', 'lead_pool_release', 'lead_pool_request_pull',
+                      'lead_pool_approve_pull', 'lead_pool_reject_pull',
+                      'add_dropdown_option_direct', 'approve_dropdown_option_request',
+                      'reject_dropdown_option_request')
+ ORDER BY p.proname;
+-- lead_pool_assign HARUS tampil args 'uuid, uuid, text' (SATU baris, bukan dua -- versi
+-- 2-argumen lama harus sudah di-DROP oleh butir 62; kalau masih ada DUA baris
+-- "lead_pool_assign", urutan butir 62 terlewat atau gagal).
+
+-- READ-ONLY. Trigger Lead Pool.
+SELECT tgname, tgrelid::regclass AS tabel, tgenabled
+  FROM pg_trigger
+ WHERE tgname LIKE '%pool%' OR tgname LIKE '%lead%'
+ ORDER BY tgname;
+```
+
+**Verifikasi butir 61 — 4 computed sort column:**
+```sql
+-- READ-ONLY. oidvectortypes, bukan pg_get_function_identity_arguments.
+SELECT p.proname, oidvectortypes(p.proargtypes) AS args, p.provolatile, p.prosecdef
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public'
+   AND p.proname IN ('bant_score', 'lead_status_rank', 'owner_name', 'primary_contact_name')
+ ORDER BY p.proname;
+-- Keempat harus ada, args 'accounts' (tipe baris), provolatile = 's' (STABLE), prosecdef = false
+-- (SECURITY INVOKER).
+
+-- WAJIB sesudah CREATE/REPLACE: NOTIFY pgrst, 'reload schema';
+-- Verifikasi grant EXECUTE (ACL), BUKAN pg_get_function_identity_arguments:
+SELECT has_function_privilege('authenticated', 'public.bant_score(public.accounts)', 'EXECUTE') AS bisa_authenticated,
+       has_function_privilege('anon', 'public.bant_score(public.accounts)', 'EXECUTE') AS bisa_anon;
+-- Harus true / false.
+```
+
+**Verifikasi butir 62 — signature `lead_pool_assign` 3-argumen, DROP versi lama:**
+```sql
+-- READ-ONLY. Pastikan HANYA satu signature yang hidup.
+SELECT oidvectortypes(p.proargtypes) AS args, count(*) OVER () AS total_signature
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.proname = 'lead_pool_assign';
+-- total_signature HARUS 1, args HARUS 'uuid, uuid, text'. Kalau 2 baris muncul (uuid,uuid
+-- DAN uuid,uuid,text), DROP versi lama belum jalan -- PostgREST akan ambigu untuk panggilan
+-- ber-argumen bernama (gotcha #44/#39, lihat 08_TECH_DEBT.md TD-318 §Irisan 2).
+
+SELECT has_function_privilege('authenticated', 'public.lead_pool_assign(uuid,uuid,text)', 'EXECUTE') AS bisa_authenticated,
+       has_function_privilege('public', 'public.lead_pool_assign(uuid,uuid,text)', 'EXECUTE') AS bisa_public;
+-- Harus true / false (REVOKE ALL FROM PUBLIC, GRANT EXECUTE TO authenticated saja).
+```
+
+**Verifikasi butir 63 — `lead_pool_assign_candidates`:**
+```sql
+-- READ-ONLY.
+SELECT oidvectortypes(p.proargtypes) AS args, p.prosecdef AS security_definer
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.proname = 'lead_pool_assign_candidates';
+-- args HARUS 'uuid', security_definer HARUS true.
+
+-- Policy RLS yang relevan (bukan diubah migrasi ini, sekadar konteks guard):
+SELECT polname, polcmd, pg_get_expr(polqual, polrelid) AS using_expr
+  FROM pg_policy
+ WHERE polrelid = 'public.user_roles'::regclass;
+```
+
+**Verifikasi butir 59/60 (sudah LIVE — checkpoint saja, BUKAN dijalankan ulang):**
+```sql
+-- READ-ONLY. Trigger updated_at.
+SELECT tgname, tgenabled FROM pg_trigger
+ WHERE tgname IN ('trg_accounts_updated_at', 'trg_contacts_updated_at');
+-- Harus 2 baris, tgenabled = 'O' (enabled).
+
+-- READ-ONLY. Role bd_digital_marketing_manager + Faris.
+SELECT r.code, r.level, count(*) FILTER (WHERE rmp.id IS NOT NULL) AS jumlah_izin_menu
+  FROM roles r LEFT JOIN role_menu_permissions rmp ON rmp.role_id = r.id
+ WHERE r.code = 'bd_digital_marketing_manager'
+ GROUP BY r.code, r.level;
+-- level harus 4, jumlah_izin_menu harus 8 (7 salinan SPV + crm_lead_pool_approval eksplisit).
+```
+
+### c. Merge `develop` → `main` dan cek deploy Production READY
+
+**Perintah (ditulis sebagai instruksi runbook — JANGAN dieksekusi sebelum hari-H):**
+```bash
+git fetch origin
+git checkout main
+git pull origin main
+git merge --no-ff origin/develop   # merge commit biasa, BUKAN squash, BUKAN fast-forward-only
+                                     # (pola yang sama dengan §Tata kelola branch release/2026-10-14
+                                     # Langkah 2, kalau release branch TD-318 sendiri dibuat nanti)
+git push origin main
+```
+**Cek deploy Vercel Production READY** (pola G1 Batch FS 2.5, `08_TECH_DEBT.md`/`CLAUDE.md`):
+```bash
+# Lewat Vercel CLI atau API -- cek deployment yang memegang alias produksi
+vercel ls nexus --prod
+# ATAU, API: deployment yang readyState=READY dan alias mencakup nexus.msigroup.co.id
+```
+Verifikasi tambahan: buka `nexus.msigroup.co.id` di browser incognito, cek `index.html` ter-update (hash chunk baru), dan buka `/crm/lead/capture` (deep-link) untuk konfirmasi rute Lead Management ter-deploy (bukan 404).
+
+### d. Smoke test production
+
+**Lead Management (akun sales biasa, kecuali disebutkan lain):**
+- **Lead Capture:** buka `/crm/lead/capture` — filter Source/Industry/Created Date/Last Touched berfungsi; klik 9 header kolom `Capture/Table` satu-satu, cek arah panah naik/turun berubah dan baris Unassigned tetap di akhir; klik "+ Capture Lead", isi section Opportunity (Estimated Value + Description), simpan; klik "Import Leads", upload file, cek kolom Phone/Email tampil di preview step 3.
+- **Lead Detail:** buka satu lead, klik Edit di section Company — isi berubah, Save, cek `updated_at` berubah (badge "Updated X ago" kalau ada); cek breadcrumb 4 level, klik level ke-3 untuk kembali ke daftar; klik kartu kontak — nomor telepon/WhatsApp/Email harus bisa diklik; buka tab Activity, klik "Schedule Follow Up", cek kolom **Time** ada dan terisi default.
+- **Lead Assignment (akun supervisor/manager):** buka `/crm/lead/assignment`, tab Pool — klik "Assign to Sales" pada baris pending SEKALIGUS baris non-pending (keduanya harus menampilkan tombol); isi Reason, simpan, cek toast dinamis muncul dengan nama lead yang benar.
+- **Lead Pool Approval (akun `bd_digital_marketing_manager` — Faris, WAJIB logout+login ulang dulu):** login sebagai Faris, cek menu Manager/approval muncul di sidebar (kalau tidak muncul, logout+login lagi — cache role client); buka tab Pull Approvals, klik Approve pada satu pull request pending, cek toast menyebut nama PENGAJU (bukan nama Faris sendiri) sebagai pemilik baru.
+- **Lead Qualification:** buka `/crm/lead/qualification`, cek hanya lead ber-status Qualified yang tampil; expand satu baris, cek panel BANT baca-saja (nol tombol Simpan) dengan nilai KPI 24px; klik "Create Inquiry".
+- **Modal aksi sekunder:** Reassign (judul berubah sesuai `allUnassigned` — "Assign to Sales" vs "Reassign Lead"), Mark as Lost (field Competitor Price muncul kalau alasan "Price"/"Lost to Competitor"), Archive, Request New Option (dari dropdown Industry/Lead Category — buka popover, klik "+ Request new option", isi, kirim; untuk manajer, cek "+ Add new option" langsung menambah tanpa modal).
+- **Toast:** trigger satu toast sukses dan satu toast error (mis. simpan form dengan field wajib kosong) — kotak gelap + teks putih, posisi tengah-bawah, tidak bertumpuk dengan toast `useToast` kit (kalau keduanya kebetulan tampil bersamaan dari dua aksi berurutan).
+
+**42 migrasi NON-TD-318 (AR/invoice/TD-281/TD-300 security, butir 1-46) — smoke test MINIMUM per kelompok, bukan sedetail Lead Management (detail penuh: §Naskah Eksekusi Malam Rilis Langkah 4):**
+- **AR Tahap 1 (butir 6-10):** buka satu SP ber-SJ `delivered`, buka Detail SP tab Shipment — cek tombol "Lengkapi Tanggal Ditandatangani" tidak error.
+- **AR Tahap 2 + Invoice lengkap (butir 11-26):** buka Invoice Management, Daftar Invoice — cek kolom UOM terisi, klik satu invoice, cek panel Payment & lampiran tidak error.
+- **TD-281 Paket Keamanan (butir 27-31, 45-46) — SUDAH LIVE, checkpoint saja:** login sebagai 2-3 role berbeda, cek tak ada halaman yang mendadak Akses Ditolak (regresi hak akses dari pengerasan RLS).
+- **AR Tahap 3 + 3b (butir 32-44, 44a):** buka Finance Inbox, tab "Menunggu Persetujuan" (akun `finance_controller` — Bagus Putra Kurnia), cek daftar invoice `pending_approval` tampil, JANGAN tekan Setujui/Tolak pada invoice asli (pola smoke test yang sudah berlaku, Langkah 4.9 §Naskah Eksekusi Malam Rilis).
+
+### e. Rollback
+
+**Per migrasi** — ambil langsung dari blok rollback di tiap file migrasi (dikonfirmasi ADA, dibaca dari file, bukan dikarang):
+- Butir 59: `DROP TRIGGER IF EXISTS trg_accounts_updated_at ON public.accounts; DROP TRIGGER IF EXISTS trg_contacts_updated_at ON public.contacts;`
+- Butir 60: `DELETE FROM public.roles WHERE code = 'bd_digital_marketing_manager';` (CASCADE mencabut `user_roles`/`role_permissions`/`role_menu_permissions` turunannya) + reaktivasi manual baris `bd_digital_marketing_spv` Faris kalau perlu.
+- Butir 61: `DROP FUNCTION IF EXISTS public.bant_score(public.accounts); DROP FUNCTION IF EXISTS public.lead_status_rank(public.accounts); DROP FUNCTION IF EXISTS public.owner_name(public.accounts); DROP FUNCTION IF EXISTS public.primary_contact_name(public.accounts); NOTIFY pgrst, 'reload schema';`
+- Butir 62: `DROP FUNCTION IF EXISTS public.lead_pool_assign(uuid, uuid, text);` lalu `CREATE FUNCTION public.lead_pool_assign(uuid, uuid)` badan identik versi lama (`20261012000006`) + `REVOKE`/`GRANT` lama.
+- Butir 63: `DROP FUNCTION IF EXISTS public.lead_pool_assign_candidates(uuid);`
+- Butir 47-57: lihat blok rollback di masing-masing file — **DROP berurutan TERBALIK dari urutan jalannya** (57→56→...→47), karena dependensi FK/fungsi yang sama berlaku dua arah.
+
+**Rollback kode:** `git revert -m 1 <hash-merge-commit>` pada `main` (merge commit dari langkah c) — **BUKAN** `git reset --hard`, yang menghapus jejak dan memaksa force-push ke `main`. `git revert` menghasilkan commit baru yang membalikkan perubahan, aman untuk branch yang sudah di-deploy.
+
+⚠️ **Urutan rollback DB vs kode kalau keduanya perlu dibalik:** balikkan KODE dulu (revert merge commit, deploy), BARU DB — pola yang sama dengan "deploy code yang berhenti baca kolom dulu, baru drop kolom" (`CLAUDE.md` §Aturan Wajib). Membalik DB dulu sementara kode baru masih berjalan akan memutus fungsi yang kode itu panggil (persis skenario gotcha #44 yang dihindari urutan maju).
+
+---
+
+## Tabel Kekurangan Launching (ringkasan status, 17 Okt 2026)
+
+> Ditulis sebagai bagian audit kesiapan launching 17 Okt 2026 — ditaruh di sini (bukan `08_TECH_DEBT.md`) karena isinya campuran item TD murni dan item operasional non-TD (mockup/akses/infrastruktur) yang semuanya relevan khusus untuk KEPUTUSAN "boleh launching atau belum", bukan utang teknis jangka panjang. Baris yang MEMANG tech debt tetap merujuk nomor TD-nya (sumber tunggal di `08_TECH_DEBT.md`), tidak disalin isinya di sini.
+
+| Item | Status | Pemilik | Menghalangi launching? | Langkah berikutnya |
+|---|---|---|---|---|
+| **#18 — halaman "Option Requests"** | Menunggu mockup Claude Design; bentuk halaman SUDAH dikunci Den 17 Okt 2026 (pola inbox Manager-ke-atas, badge pending, notifikasi dua arah, modul CRM netral-sumber) | Claude Design (mockup) → lalu Den/implementasi | **YA** — satu-satunya sisa TD-318, lihat `08_TECH_DEBT.md` §"TD-318 — sisa sebelum launching" | Tunggu mockup; begitu ada, implementasi ikut pola Finance Inbox yang sudah ada |
+| **3 pembaruan mockup belum dikirim ke Claude Design** (opsi "All" filter Created Date · menu "Release to Pool" di Lead Detail · judul kolom "ACCOUNT CODE" menempel dua baris) | **Status beda-beda per item** (diverifikasi 17 Okt 2026): "ACCOUNT CODE" sudah ada catatan "tercatat utk Claude Design" di `08_TECH_DEBT.md` §Irisan 4 Temuan E (ditutup di KODE dgn `whiteSpace` dicabut, tapi mockup-nya sendiri belum dikoreksi/dikirimi feedback); opsi "All" Created Date tercatat sebagai Fase 3 (kosmetik, boleh sesudah launching), BUKAN sebagai "kirim ke mockup"; "Release to Pool" tercatat sebagai Kategori E (app SENGAJA lebih kaya dari mockup, bukan gap mockup) | Den (mengirim feedback ke Claude Design tool) | **TIDAK** — ketiganya Fase 3/Kategori E, boleh sesudah launching | Kirim ketiga catatan ke Claude Design kalau Den ingin mockup-nya diperbarui; tidak ada aksi kode yang menunggu ini |
+| **Tanggal cut-off migrasi Finance/AR mundur ke November** (impor TTF, butir 44a, rilis AR) | Sudah tercatat lengkap — lihat §Naskah Eksekusi Malam Rilis (tanggal pasti menyusul) dan §Persiapan H-1 | Den | **TIDAK** — jalur TERPISAH dari Lead Management, direkomendasikan Den dirilis di malam BERBEDA (AR dulu) | Tunggu tanggal pasti; H-1 WAJIB diulang sehari sebelumnya |
+| **TD-322 — 31 tabel lain tanpa trigger `updated_at`** | OPEN, baru dibuat 17 Okt 2026 (sebelumnya rujukan dangling di `12_ANTREAN` butir 59, nol baris TD pernah dibuat) | Den (keputusan per tabel) + Vir (query enumerasi — doc-keeper tidak bisa query DB) | **TIDAK** | Jalankan query `information_schema`/`pg_trigger` di baris TD-322 untuk dapat daftar 31 tabel sebenarnya, lalu Den memutuskan per tabel |
+| **Faris perlu logout+login ulang** supaya menu Manager (`bd_digital_marketing_manager`) muncul | Bukan bug — cache role di client (`AuthContext.jsx`) tidak otomatis menyegarkan sesi yang sedang login saat role di DB berubah | — (syarat prosedur, bukan item kerja) | **TIDAK** — syarat SMOKE TEST, bukan pemblokir | Sudah dicatat di §Runbook Rilis Lead Management bagian a.3/d sebagai prasyarat sebelum smoke test approval |
+| **TD-319** — modal bertumpuk Admin (`AdminFormModal`+`ConfirmModal`) di luar `kit/Overlay.jsx` | OPEN — belum diinvestigasi apakah bug urutan Escape yang sama (TD-318 Irisan 3 #15) terjadi di sini | — belum ditugaskan | **TIDAK** — modul Admin, bukan Lead Management | Lihat baris TD-319 `08_TECH_DEBT.md` untuk langkah investigasi |
+| **TD-320** — `EmptyState` 6 implementasi lain di luar kit | OPEN — belum diinvestigasi/dikerjakan, di luar lingkup Irisan Kit by design | — belum ditugaskan | **TIDAK** | Kandidat konsolidasi masa depan, lihat baris TD-320 |
+| **TD-321** — dua sistem toast sengaja tetap terpisah + 2 leftover (`MyProfilePage.jsx`, `AdminHub.jsx`) tidak ikut direstyle | DITUNDA — keputusan sadar Den, bukan bug | Den (kapan unifikasi penuh diputuskan) | **TIDAK** | Lihat baris TD-321; keempat permukaan disatukan SEKALIGUS kalau diputuskan, bukan ditambal satu-satu |
+| **Keputusan Terbuka #69 (baru) — breadcrumb dobel 6 halaman HRGA** | OPEN — gejala DIKONFIRMASI via kode 17 Okt 2026 (`ContextHeader` + breadcrumb lokal hardcode di `PendingApprovalPage.jsx` dkk), belum diputuskan disengaja atau bug | Den | **TIDAK** — modul HRGA, nol irisan TD-318 menyentuhnya | Lihat #69 `09_ROADMAP.md`; opsi (a) cabut sekarang (murah) vs (b) biarkan sampai giliran Batch FS G4-G6 HCGA |
+| **Keputusan Terbuka #55 — roster notifikasi/approval Lead Pool `['manager','supervisor']`** | OPEN sejak 14 Sep 2026; **untuk Faris spesifik SUDAH TERTUTUP** oleh migrasi butir 60 (`crm_lead_pool_approval`/`view` eksplisit) — tapi SPV sales role lain (`bd_sales_spv_*`, level 6) di LUAR Faris **masih tidak dinotifikasi dan kemungkinan tidak bisa approve** (roster `.in('code',['manager','supervisor'])`, `supervisor` tak ada di `roles`) | Den / BD | **TIDAK untuk smoke test Faris** (role spesifiknya sudah benar); **YA untuk kelengkapan roster SPV sales lain** kalau Den berharap SEMUA SPV bisa approve, bukan cuma Faris | Lihat #55 `09_ROADMAP.md`; perbaikan (ganti roster ke `.in('level',[4,6])`) belum dikerjakan, di luar cakupan migrasi butir 47-64 |
+| **Usulan Pak Adam (CEO) — SLA kontak 1 hari kerja + timestamp assign** | MENUNGGU PERSETUJUAN CEO, nol rencana implementasi | Pak Adam (CEO) → Den | **TIDAK** — murni usulan, belum disetujui | Tidak ada aksi sampai persetujuan datang |
+| **Supabase organisasi Free Plan, kuota Log Ingestion terlampaui** | **Terverifikasi SEBAGIAN**: komentar kode `scripts/qa/env-drift-check.mjs:424-430` mengonfirmasi "Organisasi Supabase ini Free Plan dengan kuota Log Ingestion yang sudah terlampaui; tiap koneksi ada harganya" — dipakai sebagai alasan desain "satu koneksi per DB" di skrip itu. ⚠️ **TIDAK ditemukan dokumentasi/jejak bahwa "QA sweep pernah dihentikan karenanya" secara spesifik** — klaim itu tidak bisa diverifikasi doc-keeper dari repo, dicatat sebagai laporan belum terverifikasi | Den (keputusan upgrade plan) | **PERLU DIPERTIMBANGKAN** — malam rilis melibatkan banyak migrasi+smoke test+kemungkinan sweep QA berurutan; kalau kuota log terlampaui SELAMA jendela eksekusi, kegagalan diam-diam (silent failure) lebih sulit terlihat lewat Supabase Logs dashboard — risikonya ke **observability saat insiden**, bukan ke migrasi itu sendiri gagal | Pertimbangkan upgrade plan SEBELUM malam rilis (biaya observability saat insiden > biaya upgrade), atau pastikan verifikasi hari-H memakai query SQL langsung (seperti query di §b di atas) yang tidak bergantung pada Supabase Logs |
 
 ---
 
