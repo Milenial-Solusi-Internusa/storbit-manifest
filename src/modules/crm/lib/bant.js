@@ -10,11 +10,18 @@
 // (modules/crm/lib/), bukan tetap di lead/ atau di root crm/. Isi file
 // byte-identik, nol perubahan perilaku.
 
+// TD-318 Lead Detail, item 3 (tes Den): keempat `description` disamakan
+// PERSIS teks mockup `bantRows[].h` (Lead Management.dc.html :706) --
+// sebelumnya Budget/Authority/Need Indonesia, Timeline Inggris TAPI beda
+// kalimat dari mockup. Dipakai bersama LeadDetailPage.jsx (BantTab) DAN
+// BantCard.jsx (CustomerDetailPage.jsx, Customer Master) -- lihat laporan
+// akhir utk daftar pemakai lengkap. `options[].label` TIDAK disentuh --
+// di luar lingkup disetujui (hanya `description`), dicatat terpisah.
 export const BANT_DIMENSIONS = [
   {
     key: 'bant_budget',
     label: 'Budget',
-    description: 'Seberapa jelas budget customer?',
+    description: 'Is there an approved budget for logistics?',
     options: [
       { value: 0, label: 'No budget indication' },
       { value: 1, label: 'Budget exists but value not confirmed' },
@@ -25,7 +32,7 @@ export const BANT_DIMENSIONS = [
   {
     key: 'bant_authority',
     label: 'Authority',
-    description: 'Siapa decision maker?',
+    description: 'Are we talking to the decision maker?',
     options: [
       { value: 0, label: 'No PIC' },
       { value: 1, label: 'Engaged 1 stakeholder operational' },
@@ -36,7 +43,7 @@ export const BANT_DIMENSIONS = [
   {
     key: 'bant_need',
     label: 'Need',
-    description: 'Seberapa jelas kebutuhan customer?',
+    description: 'Is the shipping need clear and recurring?',
     options: [
       { value: 0, label: 'Pain is unclear' },
       { value: 1, label: 'Pain general (cost/transit)' },
@@ -47,7 +54,7 @@ export const BANT_DIMENSIONS = [
   {
     key: 'bant_timeline',
     label: 'Timeline',
-    description: 'When is the customer ready to start?',
+    description: 'Is there a confirmed start date?',
     options: [
       { value: 0, label: 'Exploratory only' },
       { value: 1, label: '6+ months' },
