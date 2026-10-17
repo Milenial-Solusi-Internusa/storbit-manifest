@@ -256,7 +256,12 @@ export function SearchInput({ value, onChange, placeholder = 'Cari…', width, s
         id={id} className="nk-input" type="search" value={value || ''} placeholder={placeholder} aria-label={ariaLabel} autoFocus={autoFocus}
         onChange={(e) => onChange?.(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
         style={{
-          width: '100%', boxSizing: 'border-box', height: 36, padding: '0 12px 0 32px', borderRadius: RADIUS.md,
+          // TD-318 Irisan Kit, N2: 44px persis mockup (Lead Management.dc.html
+          // :60, kotak field 44px) -- bukan 36px. Baris filter yang
+          // menyandingkan SearchInput dgn Select/<input type="date"> (kedua
+          // SUDAH 44px, SIZE.input) sebelumnya punya label tidak sejajar
+          // karena kotak Search lebih pendek 8px.
+          width: '100%', boxSizing: 'border-box', height: SIZE.input, padding: '0 12px 0 32px', borderRadius: RADIUS.md,
           border: borderOf(focus, false, false), background: INPUT_BG,
           fontFamily: FONT_BODY, fontSize: 13.5, color: INK,
           boxShadow: focus ? FOCUS_RING : 'none', transition: `border-color ${MOTION.base}, box-shadow ${MOTION.base}`,
