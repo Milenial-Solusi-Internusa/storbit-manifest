@@ -175,7 +175,10 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   const [actorMap, setActorMap] = useState({});
   const [inquiries, setInquiries] = useState([]);
   const [latestInquiry, setLatestInquiry] = useState(null);
-  const [latestQuotation, setLatestQuotation] = useState(null);
+  // TD-318 Lead Detail, #31: SEMUA quotation lintas SEMUA inquiry akun ini
+  // (bukan hanya quotation terbaru dari inquiry terbaru) -- lihat
+  // fetchHistory/RelatedDocuments di bawah.
+  const [quotations, setQuotations] = useState([]);
   const [industryOptions, setIndustryOptions] = useState([]);
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [lostReasonOptions, setLostReasonOptions] = useState([]);
@@ -256,22 +259,32 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
   useEffect(() => { Promise.resolve().then(fetchPoolHistory); }, [fetchPoolHistory]);
 
   // Tab History (koreksi Den atas mockup 20): SELURUH inquiry akun ini,
-  // bukan cuma yang terbaru -- `inquiries` dipakai HistoryTab, `latestInquiry`
-  // (= inquiries[0]) tetap dipakai Related Documents (satu baris terbaru,
-  // anatomi panel itu tak berubah).
+  // bukan cuma yang terbaru -- `inquiries` dipakai HistoryTab DAN
+  // RelatedDocuments (TD-318 #31, lihat di bawah); `latestInquiry` (=
+  // inquiries[0]) tetap dipakai header "Converted to <inquiry_no>" (#21,
+  // persis mockup D.inq -- SATU nilai, bukan daftar).
+  //
+  // #31: RelatedDocuments SEBELUMNYA hanya menerima quotation TERBARU dari
+  // inquiry TERBARU (maksimum 1+1) -- jawaban berbeda dari tab History yang
+  // sudah menampilkan semua inquiry, padahal mockup `relG` (Related
+  // Documents) juga mendukung banyak baris per grup. Diperbaiki: SEMUA
+  // quotation lintas SEMUA inquiry akun ini di-fetch sekali di sini,
+  // RelatedDocuments merender baris Downstream sebanyak inquiries+quotations
+  // yang ada.
   const fetchHistory = useCallback(async () => {
     if (!id) return;
     const { data: inqs } = await supabase.from('inquiries').select('id, inquiry_no, status, created_at')
       .eq('prospect_id', id).is('deleted_at', null).order('created_at', { ascending: false }).limit(200);
-    setInquiries(inqs || []);
-    const inq = inqs?.[0] || null;
-    setLatestInquiry(inq);
-    if (inq) {
-      const { data: quos } = await supabase.from('quotations').select('id, quotation_no, status, revision')
-        .eq('inquiry_id', inq.id).is('deleted_at', null).order('revision', { ascending: false }).limit(1);
-      setLatestQuotation(quos?.[0] || null);
+    const list = inqs || [];
+    setInquiries(list);
+    setLatestInquiry(list[0] || null);
+    const inquiryIds = list.map((i) => i.id);
+    if (inquiryIds.length) {
+      const { data: quos } = await supabase.from('quotations').select('id, quotation_no, status, revision, inquiry_id')
+        .in('inquiry_id', inquiryIds).is('deleted_at', null).order('revision', { ascending: false }).limit(200);
+      setQuotations(quos || []);
     } else {
-      setLatestQuotation(null);
+      setQuotations([]);
     }
   }, [id]);
   useEffect(() => { Promise.resolve().then(fetchHistory); }, [fetchHistory]);
@@ -536,7 +549,7 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
         </Card>
 
         <RelatedDocuments account={account} statusMeta={statusMeta}
-          inquiry={latestInquiry} quotation={latestQuotation}
+          inquiries={inquiries} quotations={quotations}
           onOpenInquiry={onOpenInquiry} onOpenQuotation={onOpenQuotation} />
       </div>
 
@@ -1355,7 +1368,16 @@ function HistoryTab({ inquiries, onOpenInquiry }) {
    RELATED DOCUMENTS -- DI LUAR Notebook, SATU panel dirender untuk keenam
    tab (dipanggil sekali di body FormSheet, bukan di dalam tiap tab).
    ========================================================================= */
-function RelatedDocuments({ account, statusMeta, inquiry, quotation, onOpenInquiry, onOpenQuotation }) {
+// TD-318 Lead Detail, #31: Downstream kini SEMUA inquiry + SEMUA quotation
+// akun ini (dulu maksimum 1+1, "jawaban berbeda" dari tab History yang
+// sudah menampilkan semua inquiry) -- dibungkus satu kotak bergaris
+// persis mockup `relG` (baris banyak per grup, :302), Upstream TIDAK
+// disentuh (tetap satu baris polos, di luar lingkup #31).
+function RelatedDocuments({ account, statusMeta, inquiries, quotations, onOpenInquiry, onOpenQuotation }) {
+  const rows = [
+    ...inquiries.map((inq) => ({ key: `inq-${inq.id}`, kind: 'Inquiry', no: inq.inquiry_no, status: inq.status, onClick: onOpenInquiry ? () => onOpenInquiry(inq.id) : undefined })),
+    ...quotations.map((q) => ({ key: `quo-${q.id}`, kind: 'Quotation', no: `${q.quotation_no} v${q.revision}`, status: q.status, onClick: onOpenQuotation ? () => onOpenQuotation(q.id) : undefined })),
+  ];
   return (
     <div style={{ marginTop: SP.s5, border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: SP.s4, background: CARD }}>
       <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: INK, marginBottom: SP.s3 }}>Related Documents</div>
@@ -1372,17 +1394,21 @@ function RelatedDocuments({ account, statusMeta, inquiry, quotation, onOpenInqui
         </div>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT, marginBottom: SP.s2, fontFamily: FONT_BODY }}>Downstream</div>
-          {!inquiry && !quotation && <div style={{ fontSize: 13, color: INK_FAINT, fontFamily: FONT_BODY, fontStyle: 'italic' }}>None yet</div>}
-          {inquiry && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', cursor: onOpenInquiry ? 'pointer' : 'default' }} onClick={() => onOpenInquiry?.(inquiry.id)}>
-              <div><span style={{ fontSize: 12, color: INK_SOFT, fontFamily: FONT_BODY, marginRight: 8 }}>Inquiry</span><span style={{ fontSize: 13.5, color: INK, fontFamily: FONT_MONO, fontWeight: 600 }}>{inquiry.inquiry_no}</span></div>
-              <Badge tone="neutral">{inquiry.status}</Badge>
-            </div>
-          )}
-          {quotation && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', cursor: onOpenQuotation ? 'pointer' : 'default' }} onClick={() => onOpenQuotation?.(quotation.id)}>
-              <div><span style={{ fontSize: 12, color: INK_SOFT, fontFamily: FONT_BODY, marginRight: 8 }}>Quotation</span><span style={{ fontSize: 13.5, color: INK, fontFamily: FONT_MONO, fontWeight: 600 }}>{quotation.quotation_no} v{quotation.revision}</span></div>
-              <Badge tone="neutral">{quotation.status}</Badge>
+          {!rows.length ? (
+            <div style={{ fontSize: 13, color: INK_FAINT, fontFamily: FONT_BODY, fontStyle: 'italic' }}>None yet</div>
+          ) : (
+            <div style={{ border: `1px solid ${LINE_SOFT}`, borderRadius: RADIUS.md, overflow: 'hidden' }}>
+              {rows.map((r, i) => (
+                <div key={r.key} onClick={r.onClick}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px',
+                    cursor: r.onClick ? 'pointer' : 'default',
+                    borderBottom: i < rows.length - 1 ? `1px solid ${LINE_SOFT}` : 'none',
+                  }}>
+                  <div><span style={{ fontSize: 12, color: INK_SOFT, fontFamily: FONT_BODY, marginRight: 8 }}>{r.kind}</span><span style={{ fontSize: 13.5, color: INK, fontFamily: FONT_MONO, fontWeight: 600 }}>{r.no}</span></div>
+                  <Badge tone="neutral">{r.status}</Badge>
+                </div>
+              ))}
             </div>
           )}
         </div>
