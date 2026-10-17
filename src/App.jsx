@@ -45,6 +45,10 @@ import LegacyMenuRedirect from './routes/LegacyMenuRedirect';
 import nexusLogo from './assets/nexus-logo.png';
 import { calcItem } from './lib/spCalc';
 import { getTodayWIB } from './lib/dateUtils';
+// TD-318 Irisan Kit, item 5: satu-satunya impor `./kit/tokens` di file ini --
+// dipakai KHUSUS merestyle kotak toast di bawah ke kotak mockup (tanpa
+// mengubah `PASTEL`, dipakai luas di tempat lain file ini).
+import { INK, WHITE, ACCENT, SEMANTIC, RADIUS } from './kit/tokens';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
 // AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
@@ -2703,9 +2707,11 @@ export default function StorbitManifest() {
         @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes toastIn { from { transform: translate(-50%, 12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .animate-fade-in { animation: fadeIn 0.2s ease-out; }
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-toast-in { animation: toastIn 0.2s ease-out forwards; }
         .nexus-main-surface .rounded-3xl {
           box-shadow: 0 14px 34px rgba(15, 42, 35, 0.045);
         }
@@ -3075,18 +3081,27 @@ export default function StorbitManifest() {
       )}
       {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
 
-      {/* TOAST */}
+      {/* TOAST — TD-318 Irisan Kit, item 5 (restyle, keputusan Den): kotak
+          disamakan ke mockup toastIn (Lead Management.dc.html :425), posisi
+          `bottom:24` horizontal-tengah PERSIS mockup (sistem kit `useToast`
+          sengaja digeser ke `bottom:88` supaya tidak bertumpuk kalau kedua
+          sistem tampil bersamaan — lihat komentarnya). Binary error/sukses
+          yang sudah ada TIDAK diperluas (mis. 'info' tetap jatuh ke gaya
+          sukses, sama seperti sebelum restyle ini) -- hanya warnanya yang
+          diganti dari PASTEL ke token kit; `showToast(msg, type)` dan
+          seluruh pemanggilnya tidak disentuh. */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[70] px-5 py-3 rounded-2xl shadow-xl text-sm font-medium animate-slide-up"
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-4 py-3 text-sm font-medium animate-toast-in flex items-center gap-2.5"
           style={{
-            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
-            color: PASTEL.ink,
-            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`
+            background: INK,
+            color: WHITE,
+            borderRadius: RADIUS.md,
+            boxShadow: '0 12px 32px rgba(51,66,43,.25)',
           }}>
-          <div className="flex items-center gap-2">
-            {toast.type === 'error' ? <AlertTriangle size={16}/> : <CheckCircle2 size={16}/>}
-            {toast.msg}
-          </div>
+          {toast.type === 'error'
+            ? <AlertTriangle size={18} color={SEMANTIC.danger.fg} />
+            : <CheckCircle2 size={18} color={ACCENT} />}
+          {toast.msg}
         </div>
       )}
     </div>
