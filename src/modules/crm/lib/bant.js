@@ -25,7 +25,7 @@ export const BANT_DIMENSIONS = [
     options: [
       { value: 0, label: 'No budget indication' },
       { value: 1, label: 'Budget exists but value not confirmed' },
-      { value: 2, label: 'Value range diketahui' },
+      { value: 2, label: 'Value range known' },
       { value: 3, label: 'Value & approval channel confirmed' },
     ],
   },
