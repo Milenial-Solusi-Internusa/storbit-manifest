@@ -38,6 +38,7 @@ import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
 import ReleaseToPoolModal from '../components/ReleaseToPoolModal';
 import LeadStageBar from '../components/LeadStageBar';
+import { useDetailCrumb } from '../../../../routes/useDetailCrumb';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -239,6 +240,11 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
     supabase.from('dropdown_options').select('id, label, value').eq('list_key', 'lost_reason').eq('is_active', true).is('deleted_at', null)
       .order('sort_order', { ascending: true }).limit(1000).then(({ data }) => setLostReasonOptions(data || []));
   }, []);
+
+  // TD-318 Lead Detail, #19: crumb ke-4 breadcrumb (ADITIF, lihat
+  // ContextHeader.jsx/useDetailCrumb.js) -- persis mockup `crumbs` (lead.code),
+  // dengan fallback nama akun kalau code kosong (keputusan Den).
+  useDetailCrumb(account?.code || account?.name || null);
 
   const companyId = account?.company_id;
   const canManage = account ? isManagerOrAbove(erpRoles, { companyId }) : false;

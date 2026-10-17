@@ -29,9 +29,20 @@
 // dengan LEGACY_OUTLET sejak G1. Dirender DI LUAR `.nexus-main-surface`, jadi
 // bingkai maupun gate konten tetap milik ModuleShell/LegacyMenuOutlet
 // (TD-273 tetap dua salinan, bukan tiga).
+//
+// Crumb ke-4 ADITIF (TD-318 Lead Detail, #19) -- lewat DetailCrumbContext/
+// useDetailCrumb.js. State `detailCrumb` default null: crumb ke-3 (`active.
+// label`) dan seluruh render breadcrumb di bawah BYTE-IDENTIK dengan sebelum
+// perubahan ini untuk HALAMAN APA PUN yang tidak memanggil `useDetailCrumb()`
+// -- satu-satunya pemanggil saat ini adalah LeadDetailPage.jsx. Begitu
+// terisi: crumb ke-3 jadi link (navigate ke `active.path`, halaman daftar
+// Level 3 itu sendiri -- persis `tabForPath` match-by-prefix yang sudah
+// dipakai `active` di bawah) dan crumb ke-4 baru dirender sebagai leaf.
+import { useState } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router';
 import { useAppShell } from '@/contexts/useAppShell';
 import { l2ForPath, tabForPath, tabHasLivePage, isLegacyComingSoon } from './menu-skeleton.js';
+import { DetailCrumbContext } from './detailCrumbCtx';
 
 /** Level 3 boleh dibuka kalau minimal SATU halaman di dalamnya boleh dibuka.
  *  Level 3 tanpa halaman hidup (Soon) dinilai lewat id-nya sendiri: menu key
@@ -66,13 +77,16 @@ function firstUsefulMount(tab, canRenderPage) {
       ?? null;
 }
 
-function Crumb({ children, current = false }) {
+function Crumb({ children, current = false, onClick }) {
   return (
     <span
+      onClick={onClick}
       style={{
         color: current ? 'var(--mute, #7E8899)' : 'var(--faint, #A6AEBD)',
         fontWeight: current ? 600 : 500,
         whiteSpace: 'normal',
+        cursor: onClick ? 'pointer' : undefined,
+        textDecoration: onClick ? 'underline' : undefined,
       }}
     >
       {children}
@@ -114,9 +128,16 @@ export default function ContextHeader() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { canRenderPage, activeMenu } = useAppShell();
+  const [detailCrumb, setDetailCrumb] = useState(null);
 
   const found = l2ForPath(pathname);
-  if (!found) return <Outlet />;
+  if (!found) {
+    return (
+      <DetailCrumbContext.Provider value={{ setDetailCrumb }}>
+        <Outlet />
+      </DetailCrumbContext.Provider>
+    );
+  }
 
   const { module, l2 } = found;
   const active = tabForPath(pathname);
@@ -130,7 +151,11 @@ export default function ContextHeader() {
       const mount = first.mounts.length ? firstUsefulMount(first, canRenderPage) : null;
       return <Navigate to={mount ? mount.path : first.path} replace />;
     }
-    return <Outlet />;
+    return (
+      <DetailCrumbContext.Provider value={{ setDetailCrumb }}>
+        <Outlet />
+      </DetailCrumbContext.Provider>
+    );
   }
 
   const visibleMounts = active.mounts.filter((m) => canRenderPage(m.menuId));
@@ -138,42 +163,55 @@ export default function ContextHeader() {
   // `soleTab` = Level 2 tanpa Level 3 (6.6 Payment Terms Master): label Level 3
   // -nya sama dengan Level 2, jadi menuliskannya dua kali cuma mengulang.
   const showLeaf = !active.soleTab && active.label !== l2.label;
+  // Crumb ke-4 ADITIF (TD-318 Lead Detail, #19) -- lihat komentar header
+  // file. `hasDetailCrumb` false untuk SETIAP halaman yang tidak memanggil
+  // `useDetailCrumb()` (default `detailCrumb` null), sehingga crumb ke-3 di
+  // bawah render BYTE-IDENTIK dengan sebelum perubahan ini untuk halaman itu.
+  const hasDetailCrumb = showLeaf && !!detailCrumb;
 
   // Padding horizontal HANYA di blok kepala. Anak rutenya membawa
   // `.nexus-main-surface` dengan kelas padding yang sama persis, jadi kalau
   // pembungkus ini ikut ber-padding, isinya menjorok dua kali.
   return (
-    <div className="w-full min-w-0">
-      <div className="px-5 sm:px-7 xl:px-9 pt-4 lg:pt-5">
-        <nav
-          aria-label="Lokasi"
-          style={{
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            fontSize: 11.5, lineHeight: 1.45, letterSpacing: '0.1px',
-          }}
-        >
-          <Crumb>{module.label}</Crumb>
-          <Sep />
-          <Crumb current={!showLeaf}>{l2.label}</Crumb>
-          {showLeaf && (
-            <>
-              <Sep />
-              <Crumb current>{active.label}</Crumb>
-            </>
+    <DetailCrumbContext.Provider value={{ setDetailCrumb }}>
+      <div className="w-full min-w-0">
+        <div className="px-5 sm:px-7 xl:px-9 pt-4 lg:pt-5">
+          <nav
+            aria-label="Lokasi"
+            style={{
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7,
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: 11.5, lineHeight: 1.45, letterSpacing: '0.1px',
+            }}
+          >
+            <Crumb>{module.label}</Crumb>
+            <Sep />
+            <Crumb current={!showLeaf}>{l2.label}</Crumb>
+            {showLeaf && (
+              <>
+                <Sep />
+                <Crumb current={!hasDetailCrumb} onClick={hasDetailCrumb ? () => navigate(active.path) : undefined}>{active.label}</Crumb>
+              </>
+            )}
+            {hasDetailCrumb && (
+              <>
+                <Sep />
+                <Crumb current>{detailCrumb}</Crumb>
+              </>
+            )}
+          </nav>
+
+          {showPicker && (
+            <SecondaryPicker
+              mounts={visibleMounts}
+              activeMenuId={activeMenu}
+              onGo={(m) => navigate(m.path)}
+            />
           )}
-        </nav>
+        </div>
 
-        {showPicker && (
-          <SecondaryPicker
-            mounts={visibleMounts}
-            activeMenuId={activeMenu}
-            onGo={(m) => navigate(m.path)}
-          />
-        )}
+        <Outlet />
       </div>
-
-      <Outlet />
-    </div>
+    </DetailCrumbContext.Provider>
   );
 }
