@@ -39,6 +39,10 @@ import ArchiveModal from '../components/ArchiveModal';
 import ReleaseToPoolModal from '../components/ReleaseToPoolModal';
 import LeadStageBar from '../components/LeadStageBar';
 import { useDetailCrumb } from '../../../../routes/useDetailCrumb';
+// TD-318 Lead Detail, #29: label "di atas kotak" persis komposer Date/Time
+// mockup (:263) -- impor langsung dari Form.jsx (pola sama MasterSelect.jsx),
+// kit/index.js belum mengekspornya lewat barrel.
+import { FieldLabel } from '../../../../kit/Form';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -924,11 +928,21 @@ const ACTIVITY_ICON = {
   pool_enter_pool: Inbox, pool_release: Inbox, pool_auto_release: Inbox,
   pool_approve_pull: Users, pool_assign: Users, pool_owner_cleared: Users,
   pool_request_pull: RefreshCw, pool_reject_pull: RefreshCw,
+  // TD-318 Lead Detail, #30: `legacy_pool_exit` (migrasi
+  // 20261012000009/20261012000006 -- backfill satu-kali, ±1.079 baris:
+  // "akun punya pemilik aktif, dikeluarkan dari pool lama, assigned_to
+  // tetap") -- akun TETAP berpemilik, jadi ikut pemetaan Users yang sama
+  // dgn approve_pull/assign, bukan Inbox (yang berarti MASUK pool).
+  pool_legacy_pool_exit: Users,
 };
 const POOL_EVENT_LABEL = {
   enter_pool: 'Pooled', release: 'Pooled', auto_release: 'Removed from Pool',
   approve_pull: 'Unpooled', assign: 'Unpooled',
   request_pull: 'Pull Requested', reject_pull: 'Pull Rejected', owner_cleared: 'Owner Cleared',
+  // TD-318 Lead Detail, #30 -- sebelumnya jatuh ke fallback generik "Pool
+  // Activity". Teks detailnya (h.reason) sudah lengkap dari backfill, nol
+  // case baru diperlukan di poolHistoryNotes().
+  legacy_pool_exit: 'Legacy Pool Cleanup',
 };
 // Label timeline -- mockup (18-detail-activity.png) memakai judul dua-kata
 // ("Scheduled Follow Up", "Status Change", "Owner Change") yang beda dari
@@ -1045,6 +1059,8 @@ function ActivityTab({ activities, poolHistory = [], actorMap, accountId, compan
   const [composer, setComposer] = useState(() => (autoOpenNote ? 'note' : null)); // null | 'note' | 'followup'
   const [text, setText] = useState('');
   const [followDate, setFollowDate] = useState('');
+  // TD-318 Lead Detail, #29: default '10:00' persis mockup `fuTime`.
+  const [followTime, setFollowTime] = useState('10:00');
   const [saving, setSaving] = useState(false);
 
   // Timeline gabungan activities + account_pool_history, terbaru dulu --
@@ -1069,10 +1085,13 @@ function ActivityTab({ activities, poolHistory = [], actorMap, accountId, compan
   async function submitFollowUp() {
     if (!followDate) return;
     setSaving(true);
-    const { error } = await scheduleLeadFollowUp({ accountId, companyId, userId: profile.id, assignedTo: profile.id, date: followDate, notes: text.trim() || null });
+    const { error } = await scheduleLeadFollowUp({
+      accountId, companyId, userId: profile.id, assignedTo: profile.id,
+      date: followDate, time: followTime, notes: text.trim() || null,
+    });
     setSaving(false);
     if (error) { showToast?.('Failed to schedule follow up: ' + error.message, 'error'); return; }
-    setText(''); setFollowDate(''); setComposer(null); onChanged?.();
+    setText(''); setFollowDate(''); setFollowTime('10:00'); setComposer(null); onChanged?.();
   }
 
   return (
@@ -1093,17 +1112,33 @@ function ActivityTab({ activities, poolHistory = [], actorMap, accountId, compan
       )}
       {composer === 'followup' && (
         <div style={{ border: `1px solid ${LINE}`, borderRadius: RADIUS.lg, padding: SP.s4, marginBottom: SP.s4, background: CARD, display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
-          <FloatingInput label="Follow-up Date" type="date" value={followDate} onChange={setFollowDate} />
-          {/* TD-318 Irisan 3, tes Den #3 (sisir): prop kit `optional`
-              menggantikan hint di bawah kotak -- CATATAN: field "Notes" di
-              composer Schedule Follow Up ini sendiri TIDAK ADA di mockup
-              (Modal mockup hanya Date + Time, :263), jadi ini bukan
-              perbaikan mengikuti pola mockup yang hilang -- murni konsisten
-              dgn satu pola "Optional" yang sama dipakai di tempat lain. */}
+          {/* TD-318 Lead Detail, #29: Date 180px + Time 140px (BARU), latar
+              CARD (putih) persis mockup input (`background:#F6F8F3;...;
+              background:#FFFFFF`, dua deklarasi, yang KEDUA menang -- :263)
+              -- FloatingInput kit tidak punya hook override background input
+              (hanya wrapper), jadi dibangun manual di sini, label lewat
+              FieldLabel kit yang sama. */}
+          <div style={{ display: 'flex', gap: SP.s3, flexWrap: 'wrap' }}>
+            <div style={{ width: 180 }}>
+              <FieldLabel label="Date" />
+              <input type="date" value={followDate} onChange={(e) => setFollowDate(e.target.value)} className="nk-input"
+                style={{ height: 44, width: '100%', border: `1px solid ${LINE}`, borderRadius: RADIUS.md, background: CARD, padding: '0 12px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ width: 140 }}>
+              <FieldLabel label="Time" />
+              <input type="time" value={followTime} onChange={(e) => setFollowTime(e.target.value)} className="nk-input"
+                style={{ height: 44, width: '100%', border: `1px solid ${LINE}`, borderRadius: RADIUS.md, background: CARD, padding: '0 12px', fontFamily: FONT_BODY, fontSize: 13.5, color: INK, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          {/* Kategori D (TD-318, keputusan Den): field "Notes" TIDAK ADA di
+              mockup komposer ini (hanya Date + Time, :263) -- DIPERTAHANKAN
+              (bukan ditutup sebagai gap mockup) karena follow-up tanpa
+              catatan tidak memberi konteks apa yang perlu di-follow-up.
+              Keputusan bisa dibalik Den kapan pun menyusul. */}
           <Textarea label="Notes" optional value={text} onChange={setText} rows={2} />
           <div style={{ display: 'flex', gap: SP.s2 }}>
             <Button variant="primary" size="sm" disabled={!followDate || saving} loading={saving} onClick={submitFollowUp}>Schedule</Button>
-            <OutlineBtn size="sm" onClick={() => { setComposer(null); setText(''); setFollowDate(''); }}>Cancel</OutlineBtn>
+            <OutlineBtn size="sm" onClick={() => { setComposer(null); setText(''); setFollowDate(''); setFollowTime('10:00'); }}>Cancel</OutlineBtn>
           </div>
         </div>
       )}
