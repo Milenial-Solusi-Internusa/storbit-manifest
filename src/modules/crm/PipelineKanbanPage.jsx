@@ -43,6 +43,7 @@ import {
   NAVY, INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
   SP, RADIUS, STATUS_LABEL,
 } from './v3/tokens';
+import { DEAL_STATUS } from '../../kit/tokens';
 
 /* ─── Lajur ────────────────────────────────────────────────────────────────
    id = nilai inquiries.status apa adanya. Tone lajur — badge di kartu dan rel
@@ -153,16 +154,17 @@ function DealCard({ inq, onOpen }) {
         </span>
       )}
       {/* Badge dibaca LANGSUNG dari inquiries.status milik kartu ini sendiri —
-          bukan diwariskan dari akun (prinsip P4). Teks label memakai STATUS_LABEL
-          (sumber tunggal, sudah diimpor file ini untuk header lajur) -- KOREKSI,
-          sebelumnya raw inquiries.status ('OPEN' dkk) tampil mentah di kartu.
-          Warna (`tone`) SENGAJA BELUM diubah dari `inq.status` -- lihat laporan:
-          SB kartu di Pipeline & Inquiry Tracking.dc.html (NEU/BLUE/BLUE/PEND/OK/
-          RED/GREY) berbeda dari DEAL_STATUS yang dipakai Detail Inquiry untuk 6
-          dari 7 status; menyamakan warna di sini butuh konfirmasi dulu palet mana
-          yang dipakai, bukan ditebak. */}
+          bukan diwariskan dari akun (prinsip P4). Teks label memakai STATUS_LABEL,
+          warna memakai DEAL_STATUS (src/kit/tokens.js) -- KEPUTUSAN Mas: palet
+          SAMA dengan Daftar Inquiry/Detail Inquiry (DEAL_STATUS byte-identik
+          dengan STATUS_META InquiryListPage). Peta SB di Pipeline & Inquiry
+          Tracking.dc.html:209-210/224 (NEU/BLUE/BLUE/PEND/OK/RED/GREY) adalah
+          drift mockup, diselaraskan ke Claude Design terpisah -- SENGAJA TIDAK
+          ditiru di sini. `tone` dikirim sebagai OBJEK trio (bukan string status)
+          supaya Badge (v3/kit.jsx:19) memakainya langsung, tidak lewat toneOf()
+          v3/tokens.js yang mengelompokkan keempat status Open ke satu warna. */}
       <span style={{ marginTop: SP.s1 }}>
-        <Badge tone={inq.status}>{STATUS_LABEL[inq.status] || inq.status}</Badge>
+        <Badge tone={DEAL_STATUS[inq.status]}>{STATUS_LABEL[inq.status] || inq.status}</Badge>
       </span>
     </button>
   );
