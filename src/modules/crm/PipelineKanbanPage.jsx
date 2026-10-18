@@ -241,7 +241,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
     }}>
       {/* 1 — Pemilik Deal */}
       <div>
-        <div style={secTitle}>Deal Owner</div>
+        <div style={secTitle}>Inquiry Owner</div>
         <select
           value={flt.ownerId} onChange={(e) => set({ ownerId: e.target.value })}
           style={field}
@@ -271,7 +271,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
 
       {/* 3 — Rentang Nilai Deal */}
       <div>
-        <div style={secTitle}>Deal Value Range</div>
+        <div style={secTitle}>Inquiry Value Range</div>
         <div style={{ ...row, marginBottom: SP.s2 }}>
           {VALUE_PRESETS.map((p) => (
             <button
@@ -424,7 +424,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       setOpenRows(openRes.data || []);
     }
     if (closedRes.error) {
-      showToast?.('Failed to load closed deals: ' + closedRes.error.message, 'error');
+      showToast?.('Failed to load closed inquiries: ' + closedRes.error.message, 'error');
       setClosedRows([]);
     } else {
       setClosedRows(closedRes.data || []);
@@ -456,7 +456,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
         .limit(1000);
 
       if (profErr) {
-        showToast?.('Failed to load deal owner names: ' + profErr.message, 'error');
+        showToast?.('Failed to load inquiry owner names: ' + profErr.message, 'error');
         setOwnerNames({});
       } else {
         const map = {};
@@ -647,7 +647,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
           </div>
         }
         savedViews={[
-          { id: 'aktif',    label: 'Deal Berjalan', count: totalOpen },
+          { id: 'aktif',    label: 'Inquiry Berjalan', count: totalOpen },
           { id: 'tertutup', label: `Ditutup ${monthLabel(month)}`, count: totalClosed },
         ]}
         activeView="aktif"

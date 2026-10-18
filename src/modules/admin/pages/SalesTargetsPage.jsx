@@ -192,7 +192,7 @@ export default function SalesTargetsPage({ onHome }) {
     // Cermin CHECK sales_targets_metric_required di DB — divalidasi di sini juga
     // supaya user dapat pesan yang bisa dimengerti, bukan error constraint mentah.
     if (draft.target_value === '' && draft.target_deals === '') {
-      setSaveError('Isi minimal salah satu target: nilai (Rp) atau jumlah deal.');
+      setSaveError('Isi minimal salah satu target: nilai (Rp) atau jumlah inquiry.');
       return;
     }
 
@@ -314,7 +314,7 @@ export default function SalesTargetsPage({ onHome }) {
           <div>Salesperson</div>
           <div>Periode</div>
           <div className="text-right">Target Nilai</div>
-          <div className="text-right">Target Deal</div>
+          <div className="text-right">Target Inquiry</div>
           <div className="text-right">Status</div>
           <div />
         </div>
@@ -457,10 +457,10 @@ export default function SalesTargetsPage({ onHome }) {
                 onChange={(v) => setDraft((d) => ({ ...d, target_value: v.replace(/[^\d]/g, '') }))}
                 disabled={saving} placeholder="0"
                 hint={draft.target_value !== '' ? fmtRp(Number(draft.target_value)) : 'Kosongkan bila belum ditetapkan'} />
-              <FloatingInput half mono label="Target Jumlah Deal" value={draft.target_deals}
+              <FloatingInput half mono label="Target Jumlah Inquiry" value={draft.target_deals}
                 onChange={(v) => setDraft((d) => ({ ...d, target_deals: v.replace(/[^\d]/g, '') }))}
                 disabled={saving} placeholder="0"
-                hint="Jumlah deal WON. Tidak bergantung nilai deal." />
+                hint="Jumlah inquiry WON. Tidak bergantung nilai inquiry." />
             </div>
             <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 8, lineHeight: 1.6 }}>
               Isi minimal salah satu. Dikosongkan berarti <b>belum ditetapkan</b> — bukan target nol,

@@ -16,7 +16,7 @@
 
 export { Button, SaveButton, IconButton } from './Button';
 export {
-  FloatingInput, FloatingSelect, Select, Textarea, SearchInput,
+  FieldLabel, FloatingInput, FloatingSelect, Select, Textarea, SearchInput,
   Toggle, NumberStepper, Slider, Segmented, PillToggle, EntitySwitcher,
 } from './Form';
 export { PageHeader, SectionLabel, Card, EmptyState, Skeleton, DocNo, FormSheet, Notebook } from './Layout';
@@ -24,6 +24,10 @@ export { Badge, StatusBar, ListView } from './Data';
 export { Modal, SlideOver, Tooltip } from './Overlay';
 export { MasterSelect } from './MasterSelect';
 export { DropZone, UploadBox } from './Upload';
+export { Banner } from './Banner';
+export { DropdownMenu } from './DropdownMenu';
+export { LaneTable } from './LaneTable';
+export { FileChip } from './FileChip';
 export { default as Icon } from './Icon';
 export { default as useToast } from './useToast';
 

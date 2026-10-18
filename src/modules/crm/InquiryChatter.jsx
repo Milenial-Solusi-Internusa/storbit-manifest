@@ -436,7 +436,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             >
               {mentionMatches.priority.length > 0 && (
                 <>
-                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Related to this deal</div>
+                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Related to this inquiry</div>
                   {mentionMatches.priority.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
