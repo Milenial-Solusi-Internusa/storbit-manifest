@@ -153,9 +153,16 @@ function DealCard({ inq, onOpen }) {
         </span>
       )}
       {/* Badge dibaca LANGSUNG dari inquiries.status milik kartu ini sendiri —
-          bukan diwariskan dari akun (prinsip P4). */}
+          bukan diwariskan dari akun (prinsip P4). Teks label memakai STATUS_LABEL
+          (sumber tunggal, sudah diimpor file ini untuk header lajur) -- KOREKSI,
+          sebelumnya raw inquiries.status ('OPEN' dkk) tampil mentah di kartu.
+          Warna (`tone`) SENGAJA BELUM diubah dari `inq.status` -- lihat laporan:
+          SB kartu di Pipeline & Inquiry Tracking.dc.html (NEU/BLUE/BLUE/PEND/OK/
+          RED/GREY) berbeda dari DEAL_STATUS yang dipakai Detail Inquiry untuk 6
+          dari 7 status; menyamakan warna di sini butuh konfirmasi dulu palet mana
+          yang dipakai, bukan ditebak. */}
       <span style={{ marginTop: SP.s1 }}>
-        <Badge tone={inq.status}>{inq.status}</Badge>
+        <Badge tone={inq.status}>{STATUS_LABEL[inq.status] || inq.status}</Badge>
       </span>
     </button>
   );

@@ -36,7 +36,8 @@ import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2 } from './v3/tokens';
+import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
+import { DEAL_STATUS } from '../../kit/tokens';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -73,10 +74,10 @@ const ACT_ICON = {
 // di sini: ketiganya penanda penutupan di ujung kanan StatusBar, bukan segmen.
 // DEAL_STATUS_ORDER di v3/tokens.js TIDAK dipakai — isinya lima, termasuk WON.
 const DEAL_STAGE_SEGMENTS = [
-  { id: 'OPEN',        label: 'OPEN' },
-  { id: 'IN_REVIEW',   label: 'IN REVIEW' },
-  { id: 'QUOTED',      label: 'QUOTED' },
-  { id: 'NEGOTIATION', label: 'NEGOTIATION' },
+  { id: 'OPEN',        label: STATUS_LABEL.OPEN },
+  { id: 'IN_REVIEW',   label: STATUS_LABEL.IN_REVIEW },
+  { id: 'QUOTED',      label: STATUS_LABEL.QUOTED },
+  { id: 'NEGOTIATION', label: STATUS_LABEL.NEGOTIATION },
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 
@@ -268,7 +269,7 @@ const FIELD_GROUPS = [
     title: 'Service & Status',
     fields: (i) => [
       { label: 'Service Type', value: SERVICE_LABEL[i.service_type] || i.service_type },
-      { label: 'Status', value: i.status || 'OPEN' },
+      { label: 'Status', value: String(i.status || 'OPEN').toUpperCase(), statusBadge: true },
       { label: 'Route', value: i.route },
     ],
   },
@@ -767,12 +768,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
   // Aksi "Mark as Won" — gate UI murni UX (RPC mark_inquiry_won yang menegakkan
-  // izin sebenarnya): cuma pembuat inquiry atau super_admin, dan cuma kalau belum
-  // WON. Sengaja TIDAK ikut LOSABLE_INQUIRY_STATUS — inquiry yang sudah
-  // LOST/CANCELLED tetap boleh ditandai WON manual (mis. customer berubah pikiran).
+  // izin sebenarnya): cuma pembuat inquiry atau super_admin. KOREKSI (keputusan
+  // Mas, ikut mockup rule "isTerminal = !isOpen" — Pipeline & Inquiry Tracking
+  // .dc.html:895): status terminal (WON/LOST/CANCELLED) TIDAK lagi diizinkan —
+  // sebelumnya hanya WON yang dikecualikan, sehingga tombol ini masih tampil
+  // untuk LOST/CANCELLED. Gate OWNER/MANAGER (bukan isInquiryCreator) menyusul
+  // Irisan 3, TIDAK disentuh di sini.
   const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
   const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
-    && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
+    && LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -1072,9 +1076,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
+        toolbar={((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {onEditInquiry && (
+          {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
+              status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
+              literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
+              !isTerminal, jadi arahnya konsisten: nol aksi edit pada status terminal. */}
+          {onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus) && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
               <Pencil size={14} />Edit Inquiry
             </button>
@@ -1134,7 +1142,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <StatusBar
               stages={DEAL_STAGE_SEGMENTS}
               current={dealStatus}
-              closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+              closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: STATUS_LABEL[dealStatus] || dealStatus } : null}
             />
             <NextStepHint status={dealStatus} />
           </>
@@ -1222,7 +1230,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {g.fields(inquiry, { createdByName, ownerName }).map((f) => (
                 <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
                   <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
-                  {f.pills ? (
+                  {f.statusBadge ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', flex: 1 }}>
+                      <TintBadge meta={{
+                        label: STATUS_LABEL[f.value] || f.value,
+                        bg: DEAL_STATUS[f.value]?.bg, color: DEAL_STATUS[f.value]?.fg, bd: DEAL_STATUS[f.value]?.bd,
+                      }} />
+                    </div>
+                  ) : f.pills ? (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
                       {(f.value || []).length === 0
                         ? <span style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint }}>—</span>
