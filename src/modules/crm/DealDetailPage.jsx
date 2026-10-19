@@ -303,15 +303,12 @@ const GRP_TITLE = {
    Catatan: `Route` masuk SERVICE & STATUS (bukan TIMELINE) karena ia atribut
    layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
    dihapus: kedelapan belas tetap tampil. */
-const FIELD_GROUPS = [
-  {
-    title: 'Value',
-    fields: (i) => [
-      // Kosong tampil "—", bukan Rp 0 — deal tanpa taksiran beda dari yang bernilai nol.
-      { label: 'Estimated Value', value: i.estimated_value == null ? '' : fmtRp(Number(i.estimated_value)), mono: true },
-    ],
-  },
-];
+// FIELD_GROUPS (grid 2-kolom generik lama, enam grup) dicabut Irisan 2
+// lanjutan audit mockup -- seluruh enam grup sudah diganti section
+// inline-edit satu demi satu (Service & Status/Route & Terms/Cargo/
+// Additional Services/Timeline & Ownership/Value), masing-masing dengan
+// field dan tata letak 3-kolom yang cocok ke mockup per section, bukan
+// generik dua kolom.
 
 const ACT_BTN = {
   height: 36, padding: '0 13px', borderRadius: 9,
@@ -1701,42 +1698,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
-        {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
-            LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
-            bukan field yang mengalir) baru punya satu pemakai — konsolidasi ke
-            v3/kit menunggu Quotation/PRF Detail ikut dimigrasi. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 40px' }}>
-          {FIELD_GROUPS.map((g) => (
-            <div key={g.title} style={{ marginBottom: 22 }}>
-              <div style={GRP_TITLE}>{g.title}</div>
-              {g.fields(inquiry, { createdByName, ownerName, closeDate: account?.estimated_closing_date }).map((f) => (
-                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
-                  <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
-                  {f.statusBadge ? (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', flex: 1 }}>
-                      <TintBadge meta={{
-                        label: STATUS_LABEL[f.value] || f.value,
-                        bg: DEAL_STATUS[f.value]?.bg, color: DEAL_STATUS[f.value]?.fg, bd: DEAL_STATUS[f.value]?.bd,
-                      }} />
-                    </div>
-                  ) : f.pills ? (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
-                      {(f.value || []).length === 0
-                        ? <span style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint }}>—</span>
-                        : f.value.map((v) => (
-                          <span key={v} style={{ fontFamily: BODY, fontSize: 11.5, background: C.navySoft, color: C.navy, borderRadius: 999, padding: '2px 10px', fontWeight: 500 }}>{v}</span>
-                        ))}
-                    </div>
-                  ) : (
-                    <span style={{ fontFamily: f.mono ? FONT_MONO : BODY, fontSize: 13, fontWeight: 600, color: C.text, textAlign: 'right', flex: 1 }}>
-                      {f.value == null || f.value === '' ? '—' : f.value}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
+        {/* ===== Section "Value" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 10) -- mockup SECS[5], TETAP READ-ONLY
+            seluruhnya (keputusan Mas #2, final): mockup mewajibkan alasan +
+            riwayat (`estHist`) untuk setiap perubahan manual nilai, dan
+            tabel `inquiries` hanya punya kolom `estimated_value` polos,
+            tanpa tempat menyimpan alasan/riwayat itu. SectionHeader
+            dipanggil dengan `canEdit={false}` -- tombol Edit TIDAK PERNAH
+            dirender utk section ini, apa pun status inquiry-nya (bukan
+            cuma status terminal yang menyembunyikannya seperti section
+            lain). Kebutuhan kolom DB (alasan+riwayat) BELUM diajukan --
+            di luar scope perbaikan FE ini. */}
+        <SectionHeader title="Value" editing={false} canEdit={false} saving={false} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Estimated Value" editing={false} mono
+            value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))} />
         </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
         <div style={{ marginTop: 4, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
           <div style={{ ...GRP_TITLE, marginBottom: 8 }}>Notes</div>
