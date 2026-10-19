@@ -22,13 +22,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock,
+  FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, canCreatePrf } from '../../lib/roles';
+import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import {
   C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
 } from './DealPanels';
@@ -331,14 +332,22 @@ function Avatar({ name, size = 28 }) {
    StageBadge (badge sumbu stage lama di `accounts`) DIHAPUS 4 Sep 2026 — sumbu itu
    digantikan StatusBar yang membaca `inquiries.status`. Jalur tulisnya menyusul
    dicabut 8 Sep 2026; halaman ini kini nol menyentuh sumbu lama itu. */
+/* Irisan 2 Inquiry, putaran penutup (Task 2 -- audit tree menu Inquiry
+   Management vs mockup, butir 4: teks breadcrumb). SEBELUMNYA ini sendiri
+   adalah breadcrumb dua-segmen ad hoc ("Inquiry List > Inquiry Detail") --
+   DUPLIKAT dengan breadcrumb SUNGGUHAN yang sudah dirender ContextHeader.jsx
+   di luar komponen ini (layout tunggal route-table.jsx, lihat
+   `useDetailCrumb` di bawah). Disederhanakan jadi "← Back to list" polos,
+   pola PERSIS Lead Detail (TD-318, `LeadDetailPage.jsx:412`, komentarnya
+   eksplisit: "Breadcrumb sendiri dirender ContextHeader.jsx di luar
+   komponen ini") -- mockup sendiri juga punya DUA elemen terpisah (nav
+   `crumbs` + link "Back to list" tersendiri di bawahnya), bukan satu
+   breadcrumb ganda. */
 function Breadcrumb({ onBack }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
-      <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Inquiry List</button>
-      <ChevronRight size={14} color={C.textFaint} />
-      <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Inquiry Detail</span>
-    </div>
+    <button type="button" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: HEAD, fontSize: 13, fontWeight: 600, color: C.textMute }}>
+      <ChevronLeft size={15} />Back to list
+    </button>
   );
 }
 
@@ -1113,6 +1122,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       doSelectOffer(prf, offer);
     }
   }
+
+  // Irisan 2 Inquiry, putaran penutup (Task 2, butir 4): crumb ke-4 breadcrumb
+  // (ADITIF, lihat ContextHeader.jsx/useDetailCrumb.js) -- pola PERSIS Lead
+  // Detail (TD-318, #19). Membuat crumb ke-3 "Inquiry Status & History" jadi
+  // link kembali ke daftar, dan menambah inquiry_no sebagai crumb ke-4 --
+  // persis mockup: `crumbs` detail = [CRM (Business Development), Inquiry
+  // Management, PAGES[s.from] (link), cur.no]. Dipanggil SEBELUM guard
+  // loading/notFound di bawah (Rules of Hooks) -- `inquiry` masih `null` di
+  // render pertama, `label` jatuh `null` sampai data termuat (byte-identik
+  // dgn pola Lead Detail).
+  useDetailCrumb(inquiry?.inquiry_no || null);
 
   // ── loading / not-found ──
   if (loading) {
