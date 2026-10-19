@@ -58,11 +58,19 @@ export default function Notebook({ tabs = [], value, onChange, children, right =
 
   return (
     <div>
+      {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: gap/padding/height
+          disamakan ke mockup Inquiry Management.dc.html -- wrapper tab
+          `display:flex;gap:24px;padding:0 16px;border-bottom:1px solid
+          #D8E0D2;overflow-x:auto`, tiap tombol `height:48px;padding:0`
+          (spasi antar-tab datang dari gap wrapper, BUKAN padding tombol).
+          Satu-satunya pemakai produksi Notebook hari ini = DealDetailPage
+          (demo CrmV3DemoPage.jsx sisanya) -- aman diubah di sini. */}
       <div
         role="tablist"
         style={{
-          display: 'flex', alignItems: 'center', gap: 2,
-          borderBottom: `1px solid ${LINE}`, marginBottom: SP.s5, flexWrap: 'wrap',
+          display: 'flex', alignItems: 'center', gap: 24,
+          padding: '0 16px', borderBottom: `1px solid ${LINE}`, marginBottom: SP.s5,
+          flexWrap: 'wrap', overflowX: 'auto',
         }}
       >
         {visible.map((t) => {
@@ -73,8 +81,8 @@ export default function Notebook({ tabs = [], value, onChange, children, right =
               onClick={() => onChange?.(t.id)}
               style={{
                 appearance: 'none', border: 'none', background: 'transparent', cursor: 'pointer',
-                padding: '10px 16px', marginBottom: -1,
-                fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: on ? 700 : 600,
+                display: 'inline-flex', alignItems: 'center', height: 48, padding: 0, marginBottom: -1,
+                fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: on ? 700 : 600, whiteSpace: 'nowrap',
                 color: on ? NAVY : INK_SOFT,
                 borderBottom: on ? `2px solid ${NAVY}` : '2px solid transparent',
               }}

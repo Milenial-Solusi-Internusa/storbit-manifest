@@ -1356,6 +1356,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               current={dealStatus}
               closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: STATUS_LABEL[dealStatus] || dealStatus } : null}
             />
+            {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: DocumentFlow
+                DIPINDAH ke sini dari dalam tab Overview -- terbukti dari
+                mockup (byte offset diverifikasi langsung di file sumber)
+                DocumentFlow HIDUP DI LUAR blok kondisional tab mana pun,
+                tepat sesudah StageBar/badge "closed" dan SEBELUM NextStep,
+                di dalam section Header yang sama -- bukan isi tab Overview.
+                Selalu tampil lintas tab, bukan hilang saat pindah tab lain. */}
+            <div style={{ marginTop: SP.s3 }}>
+              <DocumentFlow
+                nodes={documentFlowNodes}
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
+              />
+            </div>
             <NextStepHint status={dealStatus} />
           </>
         )}
@@ -1457,21 +1470,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         )}
 
-        {/* TD-318 Irisan 2 Inquiry, commit 5: DocumentFlow (mockup Detail/
-            DocumentFlow) -- rantai dokumen Lead->Inquiry->PRF->Quotation->
-            Sales Order->Purchase Order->Job Order->Carrier Booking->Invoice.
-            Posisi tepatnya di dalam tab Overview relatif terhadap RouteStrip
-            tidak bisa dipastikan presisi dari file mockup (markup bercampur
-            dengan blok sc-if lain) -- diletakkan di sini (sesudah RouteStrip,
-            sebelum rincian field) sebagai urutan yang wajar, dilaporkan
-            sebagai keputusan, bukan kepastian posisi mockup. */}
-        <div style={{ marginBottom: 20 }}>
-          <DocumentFlow
-            nodes={documentFlowNodes}
-            tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
-          />
-        </div>
-
         {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
             LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
             bukan field yang mengalir) baru punya satu pemakai — konsolidasi ke
@@ -1514,23 +1512,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
         </div>
               </Card>
-              {/* TD-318 Irisan 2 Inquiry, commit 6: RelatedDocuments (mockup
-                  Detail/RelatedDocuments) -- Upstream (Lead/Customer asal)
-                  dan Downstream (PRF + seluruh versi Quotation, data yang
-                  SUDAH di-fetch -- `quotations` lengkap, bukan hanya yang
-                  aktif). LeadDetailPage.jsx SUDAH punya RelatedDocuments
-                  serupa (dicek dulu) -- komponen ini TIDAK menyalinnya,
-                  melainkan versi bersama yang diparameterisasi `tokens`
-                  (lihat komentar src/kit/RelatedDocuments.jsx); LeadDetailPage
-                  sendiri TIDAK disentuh (di luar scope irisan ini). */}
-              <RelatedDocuments
-                upstream={relatedDocsUpstream}
-                downstream={relatedDocsDownstream}
-                tokens={{
-                  border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
-                  fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
-                }}
-              />
               </div>
             ),
           },
@@ -1712,7 +1693,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         ))}
                       </div>
                     </div>
-                    <div style={{ height: 1, background: C.border, marginBottom: 4 }} />
+                    {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: warna
+                        divider disamakan ke mockup -- `height:1px;background:
+                        #ECF0E9` (padanan C.surfaceAlt, LEBIH TERANG dari
+                        C.border/#D8E0D2 yang dipakai keliru sebelumnya). */}
+                    <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {statusHistoryEvents.map((e) => (
                         <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
@@ -1738,6 +1723,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             ),
           },
         ]}
+      />
+      {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: RelatedDocuments
+          DIPINDAH ke sini dari dalam tab Overview -- terbukti dari mockup
+          (byte offset diverifikasi langsung di file sumber) RelatedDocuments
+          adalah SECTION TERPISAH, sibling dari section Header DAN section
+          tab, dirender SESUDAH seluruh blok tab (Overview/Quotations/
+          Procurement/Activity/Status History) SELESAI, bukan isi salah
+          satu tab -- selalu tampil lintas tab, bukan hilang saat pindah tab. */}
+      <RelatedDocuments
+        upstream={relatedDocsUpstream}
+        downstream={relatedDocsDownstream}
+        tokens={{
+          border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
+        }}
       />
       </div>
       </FormSheet>
