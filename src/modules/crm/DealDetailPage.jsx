@@ -51,7 +51,8 @@ import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
+import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -181,8 +182,10 @@ function NextStepHint({ status }) {
    CANCELLED/EXPIRED tak akan pernah dijawab procurement, jadi menampilkannya
    sebagai "Awaiting procurement" adalah janji yang tak akan datang. */
 // Peta id → label, diturunkan dari konstanta yang DIIMPOR (bukan disalin), supaya
-// menambah satu kategori kargo/layanan di form otomatis ikut terbaca di sini.
-const CARGO_LABEL = Object.fromEntries(CARGO_TYPES.map((c) => [c.id, c.label]));
+// menambah satu layanan tambahan di form otomatis ikut terbaca di sini.
+// CARGO_LABEL (pasangan utk CARGO_TYPES) dicabut Irisan 2 lanjutan -- satu-
+// satunya pemakainya (grup FIELD_GROUPS "Cargo") sudah diganti section
+// inline-edit, yang membaca label langsung dari CARGO_TYPES lewat ChipToggleField.
 const SERVICE_ADDON_LABEL = Object.fromEntries(SERVICES.map((x) => [x.id, x.label]));
 // Nilai yang tak dikenal peta DIKEMBALIKAN APA ADANYA, bukan disembunyikan atau
 // diganti '—': id asing berarti data menyimpan sesuatu yang form tak lagi kenal,
@@ -307,16 +310,6 @@ const GRP_TITLE = {
    layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
    dihapus: kedelapan belas tetap tampil. */
 const FIELD_GROUPS = [
-  {
-    title: 'Cargo',
-    fields: (i) => [
-      { label: 'Goods Name', value: i.goods_name },
-      { label: 'HS Code', value: i.hs_code, mono: true },
-      { label: 'Total Weight (KG)', value: i.weight_kg != null ? String(i.weight_kg) : '', mono: true },
-      { label: 'Volume (CBM)', value: i.volume_cbm != null ? String(i.volume_cbm) : '', mono: true },
-      { label: 'Cargo Type', value: mapLabels(i.cargo_types, CARGO_LABEL), pills: true },
-    ],
-  },
   {
     title: 'Additional Services',
     fields: (i) => [
@@ -577,7 +570,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name)')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name)')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1599,6 +1592,80 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <ChipToggleField label="Container Type" editing={editingSection === 'Route'}
             values={inquiry.container_types} draft={sectionDraft.container_types}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Cargo" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 7) -- mockup SECS[2]. UN Number/IMO Class/
+            MSDS Available: TIGA kolom ini SUDAH di-select sejak awal
+            Irisan 2 tapi TIDAK PERNAH ditampilkan di mana pun di kode --
+            section ini pertama kalinya mereka terlihat, bukan dipindah dari
+            tempat lain. "Number of containers" DILEWATI -- nol kolom
+            `inquiries` (PLAN §8.5, BUKAN `estimated_volume`, field beda
+            konsep dipakai InquiryFormPage.jsx). Weight (kg)/Volume (CBM)
+            pakai `src/lib/numberFormat.js` (type="text", BUKAN
+            type="number" -- pelajaran TD-285: angka format Indonesia salah
+            dibaca type="number", nilai tersimpan sejuta kali lebih kecil
+            TANPA error). Simpan DIBLOK (bukan "simpan dgn peringatan" ala
+            modul SP) kalau teks weight/volume tak terbaca -- form baru ini
+            lebih longgar skalanya dari form SP, lebih aman menolak simpan
+            daripada menyimpan 0 diam-diam. */}
+        <SectionHeader
+          title="Cargo"
+          editing={editingSection === 'Cargo'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => {
+            setSectionDraft({
+              goods_name: inquiry.goods_name || '', hs_code: inquiry.hs_code || '',
+              weight_kg: inquiry.weight_kg != null ? formatIdNumber(inquiry.weight_kg) : '',
+              volume_cbm: inquiry.volume_cbm != null ? formatIdNumber(inquiry.volume_cbm) : '',
+              dimension: inquiry.dimension || '', cargo_types: inquiry.cargo_types || [],
+              un_number: inquiry.un_number || '', imo_class: inquiry.imo_class || '', has_msds: inquiry.has_msds || '',
+            });
+            setEditingSection('Cargo');
+          }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => {
+            const weight = readMoneyInput(sectionDraft.weight_kg);
+            const vol = readMoneyInput(sectionDraft.volume_cbm);
+            if (weight.unrecognized) { showToast?.('Total Weight (kg): angka tidak dikenali.', 'error'); return; }
+            if (vol.unrecognized) { showToast?.('Volume (CBM): angka tidak dikenali.', 'error'); return; }
+            saveInquirySection({
+              goods_name: sectionDraft.goods_name || null, hs_code: sectionDraft.hs_code || null,
+              weight_kg: String(sectionDraft.weight_kg || '').trim() === '' ? null : weight.value,
+              volume_cbm: String(sectionDraft.volume_cbm || '').trim() === '' ? null : vol.value,
+              dimension: sectionDraft.dimension || null,
+              cargo_types: (sectionDraft.cargo_types || []).length ? sectionDraft.cargo_types : null,
+              un_number: sectionDraft.un_number || null, imo_class: sectionDraft.imo_class || null,
+              has_msds: sectionDraft.has_msds || null,
+            }, 'Cargo');
+          }}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Item Name" editing={editingSection === 'Cargo'} value={inquiry.goods_name}
+            draft={sectionDraft.goods_name} onDraft={(v) => setSectionDraft((d) => ({ ...d, goods_name: v }))} />
+          <TextField label="HS Code" editing={editingSection === 'Cargo'} value={inquiry.hs_code} mono
+            draft={sectionDraft.hs_code} onDraft={(v) => setSectionDraft((d) => ({ ...d, hs_code: v }))} />
+          <TextField label="Total Weight (kg)" editing={editingSection === 'Cargo'} mono
+            value={inquiry.weight_kg != null ? formatIdNumber(inquiry.weight_kg) : ''}
+            draft={sectionDraft.weight_kg} onDraft={(v) => setSectionDraft((d) => ({ ...d, weight_kg: v }))} />
+          <TextField label="Volume (CBM)" editing={editingSection === 'Cargo'} mono
+            value={inquiry.volume_cbm != null ? formatIdNumber(inquiry.volume_cbm) : ''}
+            draft={sectionDraft.volume_cbm} onDraft={(v) => setSectionDraft((d) => ({ ...d, volume_cbm: v }))} />
+          <TextField label="Dimension" editing={editingSection === 'Cargo'} value={inquiry.dimension}
+            draft={sectionDraft.dimension} onDraft={(v) => setSectionDraft((d) => ({ ...d, dimension: v }))} />
+          <ChipToggleField label="Cargo Type" editing={editingSection === 'Cargo'}
+            values={inquiry.cargo_types} draft={sectionDraft.cargo_types}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_types: v }))} options={CARGO_TYPES} />
+          <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
+            draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
+          <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
+            draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
+            options={IMO_CLASSES} includeEmpty />
+          <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
+            draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
+            options={MSDS_OPTS} includeEmpty />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
