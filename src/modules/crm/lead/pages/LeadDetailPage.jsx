@@ -402,12 +402,18 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
 
   return (
     <div>
+      {/* TD-318 Lead Detail, follow-up (Mas, Okt 2026): "Back to list" pindah
+          KELUAR dari kartu header -- persis mockup (`back` sejajar `crumbs`,
+          DI ATAS <section data-screen-label="Detail/Header">), bukan anak
+          pertama di dalam kartu. Breadcrumb sendiri dirender ContextHeader.jsx
+          di luar komponen ini, jadi tombol ini otomatis mendarat tepat di
+          bawahnya tanpa perlu menyentuh breadcrumb. Perilaku onClick TIDAK
+          berubah. */}
+      <button type="button" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, marginBottom: SP.s3, cursor: 'pointer', color: INK_SOFT, fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY }}>
+        ← Back to list
+      </button>
       <Card>
         <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s3 }}>
-          <button type="button" onClick={onBack} style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: INK_SOFT, fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY }}>
-            ← Back to list
-          </button>
-
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s4, flexWrap: 'wrap' }}>
             <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: INK_SOFT }}>
               Lead
@@ -437,10 +443,28 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
               )}
               {/* TD-318 Lead Detail, #21: persis mockup `isConverted` (:190)
                   -- slot SAMA dengan tombol primer, karena status 'converted'
-                  TIDAK punya tombol primer sendiri (lihat komentar di atas). */}
+                  TIDAK punya tombol primer sendiri (lihat komentar di atas).
+                  Follow-up (Mas, Okt 2026): nomor inquiry kini tautan --
+                  mockup merendernya sebagai <a> (mono, bergaris bawah), bukan
+                  teks mati. `onOpenInquiry` dioper dari LeadDetailRoute dan
+                  sudah dipakai pola sama persis di HistoryTab/RelatedDocuments
+                  di file ini (`onClick={() => onOpenInquiry(id)}`). `<button>`
+                  dipakai (bukan `<a href="#">`) supaya otomatis bisa
+                  diakses lewat keyboard tanpa menulis handler Enter/Space
+                  sendiri. Tanpa izin (`onOpenInquiry` undefined) jatuh ke
+                  `<DocNo>` polos -- pola yang sudah ada di file ini sebelum
+                  perubahan ini (nol tombol, nol underline). */}
               {status === 'converted' && latestInquiry && (
                 <span style={{ fontSize: 13.5, color: INK_SOFT, fontFamily: FONT_BODY }}>
-                  Converted to <DocNo style={{ fontWeight: 600 }}>{latestInquiry.inquiry_no}</DocNo>
+                  Converted to{' '}
+                  {onOpenInquiry ? (
+                    <button type="button" onClick={() => onOpenInquiry(latestInquiry.id)}
+                      style={{ background: 'none', border: 'none', padding: 0, margin: 0, color: INK_SOFT, fontSize: 13.5, fontWeight: 600, fontFamily: FONT_MONO, letterSpacing: '.02em', textDecoration: 'underline', cursor: 'pointer' }}>
+                      {latestInquiry.inquiry_no}
+                    </button>
+                  ) : (
+                    <DocNo style={{ fontWeight: 600 }}>{latestInquiry.inquiry_no}</DocNo>
+                  )}
                 </span>
               )}
               {(canMarkLost || canArchive || canReleasePool) && (
@@ -490,7 +514,17 @@ export default function LeadDetailPage({ id, onBack, onCreateInquiry, onOpenInqu
             {account.is_in_lead_pool && <Badge tone="neutral">In Lead Pool</Badge>}
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.s5, paddingTop: SP.s3, borderTop: `1px solid ${LINE_SOFT}` }}>
+          {/* TD-318 Lead Detail, follow-up (Mas, Okt 2026): grid 4 kolom sama
+              lebar persis mockup (`display:grid;grid-template-columns:
+              repeat(4,minmax(0,1fr));gap:16px;padding-top:16px`), bukan flex
+              -- flex membiarkan kolom hanya selebar isinya dan menumpuk ke
+              kiri begitu kartu lebih lebar dari isi keempat kolom. SP.s4=16
+              dipakai untuk gap DAN padding-top (mockup memakai 16 utk
+              keduanya); SEBELUMNYA gap=SP.s5(20)/paddingTop=SP.s3(12), dua
+              token yang tidak cocok nilai mockup maupun satu sama lain.
+              Mockup tidak punya aturan @media untuk blok ini (nol hit di
+              seluruh file) -- nol breakpoint ditambahkan di sini juga. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: SP.s4, paddingTop: SP.s4, borderTop: `1px solid ${LINE_SOFT}` }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, color: INK_SOFT, marginBottom: 6, fontFamily: FONT_BODY }}>Owner</div>
               <OwnerLine id={account.assigned_to} name={account.assigned_profile?.full_name} canReassign={canManage} onReassign={() => setReassignOpen(true)} />
