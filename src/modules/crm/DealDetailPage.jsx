@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
+  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2,
 } from 'lucide-react';
@@ -38,6 +38,7 @@ import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
 import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
+import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -62,6 +63,16 @@ const SERVICE_LABEL = {
   customs: 'Customs Clearance',
   trading: 'General Trading',
 };
+// TD-318 Irisan 2 Inquiry, commit 4 — RouteStripDoorToDoor (mockup Detail/
+// RouteStripDoorToDoor) dipicu oleh service_type door-to-door. SENGAJA KOSONG:
+// SERVICE_LABEL di atas membuktikan satu-satunya tiga nilai service_type yang
+// pernah ada di sistem hari ini adalah freight_forwarding/customs/trading —
+// nol "door_to_door"/"trucking". Array ini TIDAK ditebak isinya; begitu nilai
+// service_type door-to-door lahir di masa depan, tambahkan di sini, bukan di
+// komponen RouteStrip. Sampai itu terjadi, cabang RouteStripDoorToDoor di
+// bawah adalah dead code path yang dibangun sesuai permintaan eksplisit —
+// dilaporkan, bukan disembunyikan.
+const DOOR_TO_DOOR_SERVICE_TYPES = [];
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -260,15 +271,12 @@ const QUO_STATUS = {
   SUPERSEDED: { label: 'Superseded',                 bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
 };
 
-/* Subjudul kelompok + label mikro baris rute. Diangkat jadi konstanta karena
-   dipakai berulang di kartu badan. */
+/* Subjudul kelompok. Diangkat jadi konstanta karena dipakai berulang di kartu
+   badan. GRP_MICRO (label mikro baris POL/POD polos) dicabut TD-318 Irisan 2
+   Inquiry commit 4 — baris itu sendiri sudah diganti RouteStrip. */
 const GRP_TITLE = {
   fontFamily: HEAD, fontWeight: 600, fontSize: 12, textTransform: 'uppercase',
   letterSpacing: '.04em', color: C.navy, marginBottom: 10,
-};
-const GRP_MICRO = {
-  fontFamily: BODY, fontSize: 10.5, textTransform: 'uppercase',
-  letterSpacing: '.04em', color: C.textFaint, marginBottom: 4,
 };
 
 /* Pengelompokan field kartu badan. Urutan kelompok = urutan tampil (mengalir dua
@@ -571,7 +579,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [profMap, setProfMap] = useState({});
   const [termMap, setTermMap] = useState({});
   const [reloadKey, setReloadKey] = useState(0);
-  const [tab, setTab] = useState('aktivitas');
+  // TD-318 Irisan 2 Inquiry, commit 4 (keputusan Mas #2): tab default Overview,
+  // bukan Activity -- urutan lima tab: Overview/Quotation/PRF/Activity/Status History.
+  const [tab, setTab] = useState('overview');
   // Tandai inquiry KALAH (Task 4, di-upgrade B3) — alasan kini dari MASTER
   // loss_reasons, bukan teks bebas WinLossModal.
   const [lossOpen, setLossOpen] = useState(false);
@@ -606,7 +616,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1234,6 +1244,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
             </div>
+            {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
+                (mockup showRoute, Inquiry Management.dc.html :301-304) —
+                satu baris pol->pod sebelum HeaderMeta. Token dioper manual
+                (navy/orange/cream `C`), komponennya sendiri tidak mengimpor
+                token sage — lihat komentar src/kit/RouteStrip.jsx. */}
+            <RouteStrip
+              compact
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
             <HeaderMeta
               assignedName={assignedName}
               assignedProfileId={assignedProfileId}
@@ -1277,13 +1298,25 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
-          referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
-          (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
-      <Card
-        title="Inquiry Detail"
-        icon={<FileText size={17} />}
-      >
+      {/* TD-318 Irisan 2 Inquiry, commit 4 (keputusan Mas #2): "Inquiry Detail"
+          yang dulu SELALU tampil di luar tab sekarang JADI isi tab Overview —
+          lima tab urut Overview (default)/Quotation/PRF/Activity/Status
+          History. Quotation dan PRF ISI & NAMA TIDAK diubah, hanya posisi
+          urutannya di array (Activity digeser ke akhir). Badge angka di label
+          PRF dioper sebagai NODE lewat prop `label` — Notebook merender
+          `{t.label}` apa adanya, kontraknya tak perlu disentuh sama sekali. */}
+      <Notebook
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            render: () => (
+              <Card
+                title="Inquiry Detail"
+                icon={<FileText size={17} />}
+              >
         {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
             ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
             terlalu berat untuknya. */}
@@ -1322,20 +1355,33 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         )}
 
-        {/* Rute — SATU baris penuh di paling atas kartu, dipisah garis. Bukan dua
-            field biasa: POL→POD adalah identitas shipment, bukan atribut setara
-            HS Code. Panah menggantikan ikon Anchor/MapPin yang dulu dipakai. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 20, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={GRP_MICRO}>POL — Port of Loading</div>
-            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pol || '—'}</div>
+        {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
+            panah POL→POD polos (mockup Detail/RouteStrip). Varian DoorToDoor
+            (Pickup→POL→POD→Delivery) TIDAK PERNAH bisa terpicu oleh data hari
+            ini -- DOOR_TO_DOOR_SERVICE_TYPES sengaja kosong, lihat komentarnya
+            dekat SERVICE_LABEL. Dibangun tetap sesuai penamaan eksplisit Mas,
+            dilaporkan sebagai temuan (dead code path), bukan ditebak reachable. */}
+        {DOOR_TO_DOOR_SERVICE_TYPES.includes(inquiry.service_type) ? (
+          <div style={{ marginBottom: 20 }}>
+            <RouteStripDoorToDoor
+              pickup={inquiry.pickup_address}
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              delivery={inquiry.delivery_address}
+              containerLabel={(inquiry.container_types || []).join(', ') || undefined}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
           </div>
-          <ArrowRight size={26} color={C.orange} style={{ flex: 'none' }} />
-          <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
-            <div style={GRP_MICRO}>POD — Port of Discharge</div>
-            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pod || '—'}</div>
+        ) : (
+          <div style={{ marginBottom: 20 }}>
+            <RouteStrip
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              containerLabel={(inquiry.container_types || []).join(', ') || undefined}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
           </div>
-        </div>
+        )}
 
         {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
             LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
@@ -1378,45 +1424,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <div style={{ ...GRP_TITLE, marginBottom: 8 }}>Notes</div>
           <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
         </div>
-      </Card>
-
-      {/* Tiga tab pindah ke Notebook (kit v3). Badge angka di label PRF dioper
-          sebagai NODE lewat prop `label` — Notebook merender `{t.label}` apa
-          adanya, jadi kontraknya tak perlu disentuh sama sekali. Angkanya =
-          jumlah PRF ber-kesiapan "Needs selection", yaitu yang benar-benar
-          menunggu tindakan sales; PRF "Not active" sengaja tak ikut dihitung. */}
-      <Notebook
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          {
-            id: 'aktivitas',
-            label: 'Activity',
-            render: () => (
-              <Card title="Related Activity" icon={<ListChecks size={17} />}>
-                {activities.length === 0 ? (
-                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {activities.map((a) => {
-                      const AIcon = ACT_ICON[a.type] || ListChecks;
-                      return (
-                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
-                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                              </div>
-                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                            </div>
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </Card>
             ),
           },
@@ -1539,6 +1546,37 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   </Card>
                 ))}
               </div>
+            ),
+          },
+          {
+            id: 'aktivitas',
+            label: 'Activity',
+            render: () => (
+              <Card title="Related Activity" icon={<ListChecks size={17} />}>
+                {activities.length === 0 ? (
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {activities.map((a) => {
+                      const AIcon = ACT_ICON[a.type] || ListChecks;
+                      return (
+                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
+                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
+                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
+                              </div>
+                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
+                            </div>
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
             ),
           },
         ]}
