@@ -106,6 +106,19 @@ function inquiryAgeLabel(iso) {
   return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
+// TD-318 Irisan 2 Inquiry, commit 7 -- bar segmented "Time in each status"
+// (mockup Detail/StatusHistory). Pola Date.now() modul, bukan badan render
+// (sama alasan inquiryAgeLabel di atas).
+function daysBetween(startIso, endIso) {
+  const a = new Date(startIso).getTime();
+  const b = endIso ? new Date(endIso).getTime() : Date.now();
+  if (isNaN(a) || isNaN(b)) return 0;
+  return Math.max(0, Math.floor((b - a) / 86400000));
+}
+function daysLabel(n) {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
+}
+
 /* Penunjuk langkah berikutnya — pengganti INFORMASI dari tombol arah-maju yang
    dicabut 8 Sep 2026 (blueprint §6: perpindahan status digerakkan DOKUMEN).
    Tombolnya hilang, tapi pengetahuan "apa yang harus kulakukan supaya deal ini
@@ -570,6 +583,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
+  // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
+  const [statusHistory, setStatusHistory] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
   // `activeQuotation` di bawah), bukan untuk semua quotation di daftar.
   const [activeQuotationItems, setActiveQuotationItems] = useState([]);
@@ -687,6 +703,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         p.status === 'QUOTED' ? { ...p, vendorOffers: offersByPrf[p.id] || [] } : p
       ));
 
+      // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History, bagian status
+      // SAJA (pola query activityFeed.js:129-141, di sini di-filter `inquiry_id`
+      // per inquiry ini, bukan diambil dari feed gabungan lintas-CRM).
+      const { data: historyRows } = await supabase
+        .from('inquiry_status_history')
+        .select('id, from_status, to_status, changed_by, changed_at')
+        .eq('inquiry_id', inq.id)
+        .order('changed_at', { ascending: true }).limit(200);
+
       let acts = [];
       if (inq.prospect_id) {
         const { data } = await supabase
@@ -698,7 +723,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       }
 
       // resolve profile names (assigned_to, created_by, owner_id)
-      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id].filter(Boolean))];
+      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id, ...(historyRows || []).map((h) => h.changed_by)].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -718,6 +743,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setAccount(acc);
       setQuotations(quos || []);
       setPrfs(prfsAugmented);
+      setStatusHistory(historyRows || []);
       setActivities(acts);
       setProfMap(pMap);
       setTermMap(tMap);
@@ -892,6 +918,30 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
     })),
   ];
+  // TD-318 Irisan 2 Inquiry, commit 7 -- segmen bar + daftar event Status
+  // History. Bagian "owner" TIDAK dikerjakan (keputusan Mas) -- hanya
+  // transisi inquiries.status dari inquiry_status_history. Histori baru
+  // terisi sejak 7 Sep 2026 (trigger trg_z_log_inquiry_status_change) --
+  // inquiry lama (nol baris histori) TIDAK ditebak riwayatnya: bar dan
+  // daftar kosong, bukan satu segmen "sejak dibuat" yang mengada-ada.
+  const statusHistorySegments = statusHistory.length === 0 ? [] : [
+    ...statusHistory.map((h, i) => ({
+      status: h.from_status,
+      days: daysBetween(i === 0 ? inquiry.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+    })),
+    {
+      status: statusHistory[statusHistory.length - 1].to_status,
+      days: daysBetween(statusHistory[statusHistory.length - 1].changed_at, null),
+    },
+  ];
+  const statusHistoryEvents = statusHistory.map((h, i) => ({
+    key: h.id,
+    from: h.from_status,
+    to: h.to_status,
+    changedAt: h.changed_at,
+    byName: profMap[h.changed_by] || '—',
+    fromDays: daysBetween(i === 0 ? inquiry.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+  })).reverse();
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
@@ -1672,6 +1722,57 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       );
                     })}
                   </div>
+                )}
+              </Card>
+            ),
+          },
+          {
+            id: 'statusHistory',
+            label: 'Status History',
+            render: () => (
+              <Card title="Status History" icon={<ListChecks size={17} />}>
+                {statusHistorySegments.length === 0 ? (
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No recorded status transitions yet.</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                      <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
+                      <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
+                        {statusHistorySegments.map((s, i) => (
+                          <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
+                            style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {statusHistorySegments.map((s, i) => (
+                          <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
+                            <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
+                            {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ height: 1, background: C.border, marginBottom: 4 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {statusHistoryEvents.map((e) => (
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                            <CalendarClock size={16} />
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <TintBadge meta={{ label: STATUS_LABEL[e.from] || e.from, bg: DEAL_STATUS[e.from]?.bg, color: DEAL_STATUS[e.from]?.fg, bd: DEAL_STATUS[e.from]?.bd }} />
+                              <span style={{ color: C.textMute }}>to</span>
+                              <TintBadge meta={{ label: STATUS_LABEL[e.to] || e.to, bg: DEAL_STATUS[e.to]?.bg, color: DEAL_STATUS[e.to]?.fg, bd: DEAL_STATUS[e.to]?.bd }} />
+                            </div>
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
+                              {fmtDate(e.changedAt)}, {e.byName}, after {daysLabel(e.fromDays)} in {STATUS_LABEL[e.from] || e.from}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </Card>
             ),
