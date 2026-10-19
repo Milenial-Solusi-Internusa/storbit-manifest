@@ -1162,6 +1162,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           saat tab di body berganti. */}
       <FormSheet
         breadcrumb={<Breadcrumb onBack={onBack} />}
+        // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): mockup
+        // menaruh metric-row SEBELUM StageBar -- lihat komentar prop ini
+        // di FormSheet.jsx untuk pembuktian nol dampak ke pemakai lain.
+        toolbarFirst
         /* TD-318 Irisan 2 Inquiry, commit 2 (keputusan Mas #1): H1 = nomor
            inquiry (mono), BUKAN nama akun seperti sebelumnya -- kebalikan
            total dari susunan lama. Mockup Inquiry Management.dc.html:279
