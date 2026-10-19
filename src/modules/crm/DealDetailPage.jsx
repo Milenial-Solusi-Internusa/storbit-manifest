@@ -181,16 +181,10 @@ function NextStepHint({ status }) {
    ⚠️ URUTAN PENGECEKAN MENGIKAT. Keadaan tertutup dicek PALING DULU: PRF
    CANCELLED/EXPIRED tak akan pernah dijawab procurement, jadi menampilkannya
    sebagai "Awaiting procurement" adalah janji yang tak akan datang. */
-// Peta id → label, diturunkan dari konstanta yang DIIMPOR (bukan disalin), supaya
-// menambah satu layanan tambahan di form otomatis ikut terbaca di sini.
-// CARGO_LABEL (pasangan utk CARGO_TYPES) dicabut Irisan 2 lanjutan -- satu-
-// satunya pemakainya (grup FIELD_GROUPS "Cargo") sudah diganti section
-// inline-edit, yang membaca label langsung dari CARGO_TYPES lewat ChipToggleField.
-const SERVICE_ADDON_LABEL = Object.fromEntries(SERVICES.map((x) => [x.id, x.label]));
-// Nilai yang tak dikenal peta DIKEMBALIKAN APA ADANYA, bukan disembunyikan atau
-// diganti '—': id asing berarti data menyimpan sesuatu yang form tak lagi kenal,
-// dan itu harus terlihat, bukan ditelan.
-const mapLabels = (arr, dict) => (Array.isArray(arr) ? arr.map((v) => dict[v] || v) : arr);
+// CARGO_LABEL/SERVICE_ADDON_LABEL/mapLabels (peta id->label utk grup
+// FIELD_GROUPS "Cargo"/"Additional Services" lama) dicabut Irisan 2
+// lanjutan -- kedua grup sudah diganti section inline-edit, yang membaca
+// label langsung dari CARGO_TYPES/SERVICES lewat ChipToggleField.
 
 // PRF service_type = MODA transport, taksonomi BEDA dari inquiry SERVICE_LABEL
 // (TD-108). Dicermin di sini karena PRF_SERVICE_LABEL tidak diekspor DealPanels
@@ -310,12 +304,6 @@ const GRP_TITLE = {
    layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
    dihapus: kedelapan belas tetap tampil. */
 const FIELD_GROUPS = [
-  {
-    title: 'Additional Services',
-    fields: (i) => [
-      { label: 'Additional Services', value: mapLabels(i.additional_services, SERVICE_ADDON_LABEL), pills: true },
-    ],
-  },
   {
     title: 'Timeline & Ownership',
     fields: (i, x) => [
@@ -1666,6 +1654,32 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
             draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
             options={MSDS_OPTS} includeEmpty />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Additional Services" (Irisan 2 Inquiry, lanjutan
+            audit mockup, Pekerjaan B commit 8) -- mockup SECS[3]. SATU-
+            SATUNYA field ber-kolom DB di section ini -- Order Category/
+            Requested Delivery Date/Estimated Shipping Cost/Customer
+            Reference/Delivery Destinations SELURUHNYA DILEWATI (PLAN
+            §8.6-10): nol kolom `inquiries` utk empat yang pertama, dan
+            Delivery Destinations bahkan READ-ONLY di mockup sendiri (bukan
+            bagian whitelist saveSec). */}
+        <SectionHeader
+          title="Additional Services"
+          editing={editingSection === 'Addl'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ additional_services: inquiry.additional_services || [] }); setEditingSection('Addl'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({
+            additional_services: (sectionDraft.additional_services || []).length ? sectionDraft.additional_services : null,
+          }, 'Additional Services')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <ChipToggleField label="Additional Services" editing={editingSection === 'Addl'}
+            values={inquiry.additional_services} draft={sectionDraft.additional_services}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
