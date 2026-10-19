@@ -36,7 +36,7 @@ import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
+import { RADIUS, SP, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { DocumentFlow } from '../../kit/DocumentFlow';
@@ -342,11 +342,16 @@ const FIELD_GROUPS = [
     fields: (i, x) => [
       { label: 'Deadline Quote', value: i.deadline_quote ? fmtDate(i.deadline_quote) : '' },
       { label: 'Created By', value: x.createdByName },
-      // "Deal Owner" di sini = `inquiries.owner_id`, BEDA dari "Assigned To" di
-      // meta header yang membaca `accounts.assigned_to`. Jangan disamakan:
-      // yang satu pemilik DEAL, yang satu pemegang AKUN.
+      // "Deal Owner" di sini = `inquiries.owner_id`. Dulu dibedakan dari baris
+      // "Assigned To" (`accounts.assigned_to`) di meta header -- baris itu
+      // DICABUT TD-318 Irisan 2 Inquiry (bug fix round): mockup tak punya baris
+      // itu dan tampilannya dobel dengan Owner di metric row header.
       { label: 'Inquiry Owner', value: x.ownerName },
       { label: 'Created Date', value: fmtDate(i.created_at) },
+      // Dipindah dari baris "Assigned To / Created / Est. Closing" header
+      // (dicabut) -- sumbernya tetap `accounts.estimated_closing_date`, SAMA
+      // seperti sebelumnya, cuma pindah lokasi tampil.
+      { label: 'Est. Closing', value: x.closeDate ? fmtDate(x.closeDate) : '' },
     ],
   },
   {
@@ -419,68 +424,6 @@ function DealTitle({ name, accountId, onViewCustomer }) {
     </span>
   );
 }
-
-/* Baris meta di bawah judul: siapa yang memegang akun, kapan deal dibuat, dan
-   perkiraan closing-nya.
-   ⚠️ Label "Assigned To" SENGAJA bukan "Deal Owner": nilai di sini
-   `accounts.assigned_to` (pemegang AKUN), sedangkan "Deal Owner" di kartu badan
-   adalah `inquiries.owner_id` (pemilik DEAL) — dua kolom berbeda yang kebetulan
-   sering berisi orang yang sama. Memakai label yang sama untuk keduanya akan
-   menyembunyikan perpindahan kepemilikan deal. */
-/* Pemisah hairline antar potongan meta. Di scope MODUL, bukan di dalam HeaderMeta:
-   komponen yang lahir saat render kehilangan state tiap render (react-hooks/static-components). */
-const MetaSep = () => <span aria-hidden="true" style={{ width: 1, height: 14, background: LINE, flexShrink: 0 }} />;
-
-function HeaderMeta({ assignedName, assignedProfileId, onViewProfile, createdAt, closeDate }) {
-  const canViewProfile = !!(assignedProfileId && onViewProfile);
-  /* Tiga potongan info yang dulu berdempetan: jarak ANTAR-potong (16) hampir sama
-     dengan jarak label→nilai DI DALAM potongan (6), jadi ketiganya terbaca sebagai
-     satu rentetan. Tiga perubahan, NOL informasi ditambah/dikurangi:
-       (1) pemisah hairline vertikal antar potongan — pola yang sudah dipakai
-           StatusBar, jadi bukan bentuk baru;
-       (2) jarak antar-potong naik ke SP.s5 sementara label→nilai turun ke SP.s1,
-           sehingga jarak antar jadi 5x jarak dalam (dulu 2,7x);
-       (3) label jadi kecil-uppercase-renggang — bahasa visual yang persis dipakai
-           "DEAL VALUE" di DealHeaderControls yang baru dicabut, dipakai ulang di
-           tempat yang lebih pas. */
-  const item = { display: 'inline-flex', alignItems: 'center', gap: SP.s1, fontFamily: BODY, fontSize: 13, color: C.textMute };
-  const lbl = { fontFamily: BODY, fontSize: 11.5, fontWeight: 600, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em' };
-  const val = { fontWeight: 600, color: C.text };
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: SP.s5, flexWrap: 'wrap' }}>
-      {canViewProfile ? (
-        <button
-          type="button"
-          onClick={() => onViewProfile(assignedProfileId)}
-          title="View profile"
-          style={{ ...item, gap: SP.s2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-        >
-          <Avatar name={assignedName} size={26} />
-          <span style={lbl}>Assigned To</span>
-          <span style={{ ...val, textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
-        </button>
-      ) : (
-        <span style={{ ...item, gap: SP.s2 }}>
-          <Avatar name={assignedName} size={26} />
-          <span style={lbl}>Assigned To</span>
-          <span style={val}>{assignedName || 'Unassigned'}</span>
-        </span>
-      )}
-      <MetaSep />
-      <span style={item}>
-        <span style={lbl}>Created</span>
-        <span style={val}>{fmtDate(createdAt)}</span>
-      </span>
-      <MetaSep />
-      <span style={{ ...item, gap: SP.s2 }}>
-        <CalendarClock size={15} color={C.textFaint} />
-        <span style={lbl}>Est. Closing</span>
-        <span style={val}>{fmtDate(closeDate)}</span>
-      </span>
-    </div>
-  );
-}
-
 
 // ---------- QuotationItemsCard (lokal — bukan shared DealPanels) ----------
 // Rincian harga itemized untuk SATU quotation (yang terbaru dibuat/diedit dari
@@ -582,7 +525,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewProfile, onViewCustomer, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -808,14 +751,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert
   // (daftar role = PRF_CREATOR_ROLES, helper canCreatePrf di src/lib/roles.js).
   const canCreatePRF = canCreatePrf(erpRoles);
-  // Kolom penugasan KEDUA di `accounts` (kembaran `assigned_to`) DIPENSIUNKAN
-  // 8 Sep 2026. Diukur di produksi: dari 1.211 akun hidup, NOL yang hanya punya
-  // kolom kembar itu dan NOL yang isinya berbeda dari `assigned_to` — jadi
-  // mencabut fallback-nya nol mengubah tampilan. Sumbu penugasan akun kini
-  // `assigned_to` saja. DROP COLUMN menyusul batch terpisah.
-  const assignedName = profMap[account?.assigned_to] || null;
-  // Id di balik assignedName — dipakai utk buka mini profil (klik nama sales di Header).
-  const assignedProfileId = account?.assigned_to || null;
   const createdByName = profMap[inquiry?.created_by] || null;
   // Orang yang diprioritaskan di dropdown @mention Chatter — SAMA PERSIS logic
   // `pIds` di effect fetch utama (:393), tapi diturunkan ulang di scope render dari
@@ -1345,15 +1280,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           )}
         </div>
         )}
-        /* `meta` kini membawa TIGA baris (keputusan Mas #1): nama akun
-           (link kecil, DealTitle -- dulu jadi h1), baris chip (keputusan
-           Mas #5 -- HANYA Status/Service Type/Undername, tiga-tiganya
-           datanya sudah ada di `inquiry` yang sudah di-fetch; chip mockup
-           lain [migTag/Rate Sheet/Entity/Direction/Won-awaiting-SO/
-           Quotation-expired/Manual-win/Revert/Free-Trade-Zone/Credit-Hold/
-           Onboarding/feasibility] DILEWATI -- daftar lengkap + alasan di
-           laporan akhir, bukan ditebak di sini), lalu `HeaderMeta` existing
-           (Assigned To/Created/Est. Closing -- TIDAK disentuh). */
+        /* `meta` membawa DUA baris (keputusan Mas #1): nama akun (link kecil,
+           DealTitle -- dulu jadi h1), lalu baris chip (keputusan Mas #5 --
+           Status/Service Type/Undername, tiga-tiganya datanya sudah ada di
+           `inquiry` yang sudah di-fetch; chip mockup lain [migTag/Rate Sheet/
+           Direction/Won-awaiting-SO/Quotation-expired/Manual-win/Revert/
+           Free-Trade-Zone/Credit-Hold/Onboarding/feasibility] DILEWATI --
+           daftar lengkap + alasan di laporan akhir, bukan ditebak di sini).
+           Baris `HeaderMeta` (Assigned To/Created/Est. Closing) DICABUT
+           (TD-318 Irisan 2 Inquiry, bug fix round): mockup tak punya baris
+           itu, dan Assigned To tampak dobel dengan Owner di metric row
+           header. Created & Est. Closing TETAP tampil -- dipindah ke kartu
+           "Inquiry Detail" (grup "Timeline & Ownership"), bukan dihilangkan. */
         meta={(
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
             <DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />
@@ -1379,13 +1317,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol={inquiry.pol}
               pod={inquiry.pod}
               tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
-            />
-            <HeaderMeta
-              assignedName={assignedName}
-              assignedProfileId={assignedProfileId}
-              onViewProfile={onViewProfile}
-              createdAt={inquiry.created_at}
-              closeDate={account?.estimated_closing_date}
             />
           </div>
         )}
@@ -1532,7 +1463,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           {FIELD_GROUPS.map((g) => (
             <div key={g.title} style={{ marginBottom: 22 }}>
               <div style={GRP_TITLE}>{g.title}</div>
-              {g.fields(inquiry, { createdByName, ownerName }).map((f) => (
+              {g.fields(inquiry, { createdByName, ownerName, closeDate: account?.estimated_closing_date }).map((f) => (
                 <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
                   <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
                   {f.statusBadge ? (
