@@ -41,6 +41,7 @@ import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { DocumentFlow } from '../../kit/DocumentFlow';
 import { RelatedDocuments } from '../../kit/RelatedDocuments';
+import { SectionHeader, SelectField, LockedField, TextField } from './dealOverviewFieldInputs';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -307,14 +308,6 @@ const GRP_TITLE = {
    dihapus: kedelapan belas tetap tampil. */
 const FIELD_GROUPS = [
   {
-    title: 'Service & Status',
-    fields: (i) => [
-      { label: 'Service Type', value: SERVICE_LABEL[i.service_type] || i.service_type },
-      { label: 'Status', value: String(i.status || 'OPEN').toUpperCase(), statusBadge: true },
-      { label: 'Route', value: i.route },
-    ],
-  },
-  {
     title: 'Terms & Container',
     fields: (i) => [
       { label: 'Incoterm', value: i.incoterms, pills: true },
@@ -572,6 +565,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // langsung jalan tanpa dialog.
   const [offerSwitchConfirm, setOfferSwitchConfirm] = useState({ open: false, prf: null, offer: null });
   const [offerActionBusy, setOfferActionBusy] = useState(false);
+  // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan B) -- inline edit per
+  // section tab Overview. SATU section aktif sekaligus (string|null, cermin
+  // `editSec` mockup) -- mencegah dua section terbuka bersamaan yang bisa
+  // saling timpa saat Save. `sectionDraft` = isi draft section yang sedang
+  // diedit (cermin `dr` mockup, direset kosong tiap buka/tutup section).
+  const [editingSection, setEditingSection] = useState(null);
+  const [sectionDraft, setSectionDraft] = useState({});
+  const [savingSection, setSavingSection] = useState(false);
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -1088,6 +1089,46 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
+  // ── Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan B) -- SATU jalur
+  // simpan dipakai keenam section inline-edit (Service/Route/Cargo/Addl/
+  // Timeline/Notes), supaya cek RLS-silent-fail (pola saveDealUpdate,
+  // DealPanels.jsx:158-186 -- RLS bisa menyaring baris jadi 0 TANPA Postgres
+  // mengembalikan error) tidak bisa lupa ditulis di salah satu dari enam
+  // titik. BUKAN RPC baru -- UPDATE langsung ke `inquiries`, pola yang SAMA
+  // dengan markInquiryLost/reassignOwner di atas. Kunci in-flight cukup
+  // state `savingSection` (semua enam section hidup di komponen yang sama,
+  // berbeda dari saveDealUpdate yang butuh Set modul karena dipanggil dari
+  // DUA file berbeda).
+  // `sectionLabel` masuk ke notes audit (pola sama reassignOwner di atas),
+  // BUKAN dipakai utk logic apa pun -- aman dioper teks bebas.
+  async function saveInquirySection(patch, sectionLabel) {
+    if (!inquiry?.id) return false;
+    setSavingSection(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update(patch)
+      .eq('id', inquiry.id)
+      .select('id');
+    setSavingSection(false);
+    if (error) { showToast?.('Failed to save: ' + error.message, 'error'); return false; }
+    if (!data || data.length === 0) {
+      showToast?.('Failed to save: you do not have permission to modify this inquiry, or the inquiry was not found.', 'error');
+      return false;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `Section: ${sectionLabel}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    showToast?.('Changes saved', 'success');
+    setEditingSection(null);
+    setSectionDraft({});
+    refetch();
+    return true;
+  }
+
   // ── Batch 3C — pilih/ganti penawaran vendor terpilih (prf.selected_offer_id).
   // RPC prf_select_offer boleh dipanggil berulang untuk MENGGANTI pilihan (tidak
   // ada guard yang melarangnya) — konfirmasi di sini murni UX, bukan penegak izin. ──
@@ -1454,12 +1495,50 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         )}
 
+        {/* ===== Section "Service & Status" (Irisan 2 Inquiry, lanjutan audit
+            mockup, Pekerjaan B commit 4) -- mockup SECS[0], judul "Service &
+            Status". HANYA Service Type yang benar-benar tersimpan (saveSec
+            whitelist mockup: `svc`) -- Status terkunci di mockup sendiri
+            (kotak abu + ikon gembok, TIDAK ada di whitelist saveSec, sumbu
+            deal yang sah ditulis RPC/trigger lain). Direction/Customer Role/
+            Source DILEWATI SELURUHNYA -- nol kolom `inquiries` utk ketiganya
+            (Source ada tapi di `accounts.source`, tabel lain) -- lihat PLAN
+            §8.1-3. "Route" (field lama, ada di kode tak ada di mockup --
+            keputusan Mas: DIBIARKAN) dipindah ke sini dari grup FIELD_GROUPS
+            lama, tetap read-only, bukan jadi field saveSec. */}
+        <SectionHeader
+          title="Service & Status"
+          editing={editingSection === 'Service'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ service_type: inquiry.service_type || '' }); setEditingSection('Service'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ service_type: sectionDraft.service_type || null }, 'Service & Status')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <SelectField
+            label="Service Type"
+            editing={editingSection === 'Service'}
+            value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type}
+            draft={sectionDraft.service_type}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, service_type: v }))}
+            options={Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label }))}
+          />
+          <LockedField label="Status" value={STATUS_LABEL[dealStatus] || dealStatus} />
+          <TextField label="Route" editing={false} value={inquiry.route} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
         {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
             panah POL→POD polos (mockup Detail/RouteStrip). Varian DoorToDoor
             (Pickup→POL→POD→Delivery) TIDAK PERNAH bisa terpicu oleh data hari
             ini -- DOOR_TO_DOOR_SERVICE_TYPES sengaja kosong, lihat komentarnya
             dekat SERVICE_LABEL. Dibangun tetap sesuai penamaan eksplisit Mas,
-            dilaporkan sebagai temuan (dead code path), bukan ditebak reachable. */}
+            dilaporkan sebagai temuan (dead code path), bukan ditebak reachable.
+            DIPINDAH ke sini (Irisan 2 lanjutan audit mockup) -- RouteStrip di
+            mockup adalah pratinjau visual DI DALAM section "Route & Terms"
+            (byte-offset diverifikasi langsung di file sumber), bukan sebelum
+            section pertama seperti posisi lama. */}
         {DOOR_TO_DOOR_SERVICE_TYPES.includes(inquiry.service_type) ? (
           <div style={{ marginBottom: 20 }}>
             <RouteStripDoorToDoor
