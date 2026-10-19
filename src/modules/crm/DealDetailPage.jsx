@@ -880,7 +880,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     },
     {
       type: 'inquiry', active: true, label: 'Inquiry', state: 'doc',
-      value: inquiry.inquiry_no, onClick: () => {},
+      // Fix: `?.` -- `documentFlowNodes` dihitung TANPA SYARAT di setiap
+      // render (termasuk render pertama saat `inquiry` masih null, sebelum
+      // guard `if (loading)`/`if (!inquiry)` di bawah) -- akses langsung
+      // `inquiry.inquiry_no` di sini crash "Cannot read properties of null"
+      // pada SETIAP pembukaan Detail Inquiry. Node 'lead' persis di atas
+      // sudah benar pakai `account?.`; node ini kelupaan.
+      value: inquiry?.inquiry_no, onClick: () => {},
     },
     prfs.length > 1 ? {
       type: 'prf', active: false, label: 'PRF', state: 'multi',
