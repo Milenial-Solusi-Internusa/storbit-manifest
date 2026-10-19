@@ -34,6 +34,19 @@
 
    Brand: navy/orange/cream (instruksi eksekusi task ini) -- token dioper
    dari pemanggil, komponen ini tidak mengimpor kit sage.
+
+   FIX (bug fix round, Task 3): node Lead (state 'name') tampil beda dari
+   node lain -- ikon terdorong ke atas teks, bukan sebaris -- untuk nilai
+   panjang (nama akun, bisa jauh lebih panjang dari kode/nomor dokumen node
+   lain). Mockup pakai `<a>` untuk link doc/name/multi (bukan `<button>`);
+   `<button>` (dipakai di sini, demi semantik interaktif yang benar --
+   bukan `<a href="#">` dummy ala mockup) TIDAK otomatis mewarisi
+   `min-width:0` dari parent flex-nya sendiri sebagai elemen pengganti
+   (replaced-like) -- tanpa `display:'block'` + `minWidth:0` eksplisit PADA
+   BUTTON ITU SENDIRI, teks panjang menolak menyusut, memaksa flex-wrap
+   outer node membungkus ikon ke baris sendiri. Ditambahkan ke button
+   doc/name/multi SELURUHNYA (bukan hanya Lead) -- struktur sama untuk
+   semua node, bukan tambalan khusus satu node.
    ========================================================================= */
 import { useState } from 'react';
 import {
@@ -81,18 +94,18 @@ export function DocumentFlow({ nodes, tokens }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, opacity: dim }}>
                 <span style={{ font: '600 11px Inter, sans-serif', color: t.textMute }}>{n.label}</span>
                 {n.state === 'doc' && (
-                  <button type="button" onClick={n.onClick} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'left', font: "400 12px 'IBM Plex Mono', monospace", color: t.linkColor, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                  <button type="button" onClick={n.onClick} style={{ display: 'block', minWidth: 0, maxWidth: '100%', border: 0, background: 'transparent', padding: 0, textAlign: 'left', font: "400 12px 'IBM Plex Mono', monospace", color: t.linkColor, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline', textUnderlineOffset: 3 }}>
                     {n.value}
                   </button>
                 )}
                 {n.state === 'name' && (
-                  <button type="button" onClick={n.onClick} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'left', font: '500 12.5px Inter, sans-serif', color: t.linkColor, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                  <button type="button" onClick={n.onClick} style={{ display: 'block', minWidth: 0, maxWidth: '100%', border: 0, background: 'transparent', padding: 0, textAlign: 'left', font: '500 12.5px Inter, sans-serif', color: t.linkColor, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline', textUnderlineOffset: 3 }}>
                     {n.value}
                   </button>
                 )}
                 {n.state === 'multi' && (
-                  <button type="button" onClick={() => setOpenIdx((v) => (v === i ? null : i))} style={{ border: 0, background: 'transparent', padding: 0, font: '600 12.5px Inter, sans-serif', color: t.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'underline', textUnderlineOffset: 3 }}>
-                    {n.value}<ChevronDown size={14} />
+                  <button type="button" onClick={() => setOpenIdx((v) => (v === i ? null : i))} style={{ minWidth: 0, maxWidth: '100%', border: 0, background: 'transparent', padding: 0, font: '600 12.5px Inter, sans-serif', color: t.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{n.value}</span><ChevronDown size={14} style={{ flex: 'none' }} />
                   </button>
                 )}
                 {n.state === 'none' && (
