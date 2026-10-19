@@ -871,10 +871,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // terisi sejak 7 Sep 2026 (trigger trg_z_log_inquiry_status_change) --
   // inquiry lama (nol baris histori) TIDAK ditebak riwayatnya: bar dan
   // daftar kosong, bukan satu segmen "sejak dibuat" yang mengada-ada.
+  // `inquiry?.created_at` (bukan `inquiry.`) -- TD-318 Irisan 2 Inquiry, bug
+  // fix round, Task 5: const ini dihitung TANPA SYARAT di setiap render,
+  // termasuk sebelum guard `if (!inquiry)`. Baris ini sendiri hanya
+  // tereksekusi saat `statusHistory.length > 0`, dan `statusHistory` SELALU
+  // `[]` persis saat `inquiry` bisa null (mount pertama) -- jadi TIDAK
+  // terbukti bisa crash hari ini -- tapi `?.` ditambahkan untuk KONSISTEN
+  // dengan seluruh const turunan lain di sekitarnya (permintaan eksplisit
+  // Mas), bukan karena ditemukan crash baru.
   const statusHistorySegments = statusHistory.length === 0 ? [] : [
     ...statusHistory.map((h, i) => ({
       status: h.from_status,
-      days: daysBetween(i === 0 ? inquiry.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+      days: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
     })),
     {
       status: statusHistory[statusHistory.length - 1].to_status,
@@ -887,7 +895,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     to: h.to_status,
     changedAt: h.changed_at,
     byName: profMap[h.changed_by] || '—',
-    fromDays: daysBetween(i === 0 ? inquiry.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+    fromDays: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
   })).reverse();
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
