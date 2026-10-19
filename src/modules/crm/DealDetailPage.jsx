@@ -305,23 +305,6 @@ const GRP_TITLE = {
    dihapus: kedelapan belas tetap tampil. */
 const FIELD_GROUPS = [
   {
-    title: 'Timeline & Ownership',
-    fields: (i, x) => [
-      { label: 'Deadline Quote', value: i.deadline_quote ? fmtDate(i.deadline_quote) : '' },
-      { label: 'Created By', value: x.createdByName },
-      // "Deal Owner" di sini = `inquiries.owner_id`. Dulu dibedakan dari baris
-      // "Assigned To" (`accounts.assigned_to`) di meta header -- baris itu
-      // DICABUT TD-318 Irisan 2 Inquiry (bug fix round): mockup tak punya baris
-      // itu dan tampilannya dobel dengan Owner di metric row header.
-      { label: 'Inquiry Owner', value: x.ownerName },
-      { label: 'Created Date', value: fmtDate(i.created_at) },
-      // Dipindah dari baris "Assigned To / Created / Est. Closing" header
-      // (dicabut) -- sumbernya tetap `accounts.estimated_closing_date`, SAMA
-      // seperti sebelumnya, cuma pindah lokasi tampil.
-      { label: 'Est. Closing', value: x.closeDate ? fmtDate(x.closeDate) : '' },
-    ],
-  },
-  {
     title: 'Value',
     fields: (i) => [
       // Kosong tampil "—", bukan Rp 0 — deal tanpa taksiran beda dari yang bernilai nol.
@@ -558,7 +541,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name)')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name)')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1680,6 +1663,41 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <ChipToggleField label="Additional Services" editing={editingSection === 'Addl'}
             values={inquiry.additional_services} draft={sectionDraft.additional_services}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Timeline & Ownership" (Irisan 2 Inquiry, lanjutan
+            audit mockup, Pekerjaan B commit 9) -- mockup SECS[4]. Deadline
+            Quote SATU-SATUNYA field tersimpan (saveSec whitelist: `dl`).
+            Owner/Created By/Created On TETAP read-only (bukan bagian
+            saveSec mockup -- Owner sudah punya mekanisme Reassign
+            tersendiri di metric row header, keputusan Mas #4 tidak
+            membuat jalur kedua). Contact (`contact_id`, uuid FK) DITAMPILKAN
+            read-only saja (PLAN §8.11) -- mockup mengeditnya sebagai teks
+            nama bebas yang tak cocok tipe data uuid, dan nol komponen
+            contact-picker ada di codebase; nama di-resolve lewat embed FK
+            yang sudah ditambahkan ke select query (pola sama chip Entity).
+            "Est. Closing" (field lama, ada di kode tak ada di mockup --
+            dipindah dari header TD-318 Irisan 2 bug-fix round) DIBIARKAN
+            tampil di sini, tetap read-only. */}
+        <SectionHeader
+          title="Timeline & Ownership"
+          editing={editingSection === 'Timeline'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ deadline_quote: inquiry.deadline_quote || '' }); setEditingSection('Timeline'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ deadline_quote: sectionDraft.deadline_quote || null }, 'Timeline & Ownership')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Deadline Quote" type="date" editing={editingSection === 'Timeline'}
+            value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''}
+            draft={sectionDraft.deadline_quote} onDraft={(v) => setSectionDraft((d) => ({ ...d, deadline_quote: v }))} />
+          <TextField label="Owner" editing={false} value={ownerName} />
+          <TextField label="Created By" editing={false} value={createdByName} />
+          <TextField label="Created On" editing={false} value={fmtDate(inquiry.created_at)} />
+          <TextField label="Contact" editing={false} value={inquiry.contact?.name} />
+          <TextField label="Est. Closing" editing={false} value={account?.estimated_closing_date ? fmtDate(account.estimated_closing_date) : ''} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
