@@ -41,7 +41,7 @@ import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { DocumentFlow } from '../../kit/DocumentFlow';
 import { RelatedDocuments } from '../../kit/RelatedDocuments';
-import { SectionHeader, SelectField, LockedField, TextField } from './dealOverviewFieldInputs';
+import { SectionHeader, SelectField, LockedField, TextField, ChipToggleField } from './dealOverviewFieldInputs';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -51,7 +51,7 @@ import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES } from './inquiryOptions';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -307,13 +307,6 @@ const GRP_TITLE = {
    layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
    dihapus: kedelapan belas tetap tampil. */
 const FIELD_GROUPS = [
-  {
-    title: 'Terms & Container',
-    fields: (i) => [
-      { label: 'Incoterm', value: i.incoterms, pills: true },
-      { label: 'Container Type', value: i.container_types, pills: true },
-    ],
-  },
   {
     title: 'Cargo',
     fields: (i) => [
@@ -1560,6 +1553,54 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             />
           </div>
         )}
+
+        {/* ===== Section "Route & Terms" (Irisan 2 Inquiry, lanjutan audit
+            mockup, Pekerjaan B commit 6) -- mockup SECS[1], judul "Route &
+            Terms". RouteStrip di atas adalah pratinjau visual section ini
+            (mockup menaruhnya DI DALAM section yang sama) -- pol/pod jadi
+            TAMPIL DUA KALI (pratinjau + field edit di sini), sesuai mockup
+            sendiri yang juga melakukan ini (dua render berbeda dari data
+            yang sama). Cargo ready date DILEWATI -- nol kolom `inquiries`
+            (PLAN §8.4). Lanes multi-rute/pre-shipment checklist TETAP di
+            luar scope (keputusan lama, tidak disentuh lagi di sini). */}
+        <SectionHeader
+          title="Route & Terms"
+          editing={editingSection === 'Route'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => {
+            setSectionDraft({
+              pol: inquiry.pol || '', pod: inquiry.pod || '',
+              pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
+              incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
+            });
+            setEditingSection('Route');
+          }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({
+            pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
+            pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
+            incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
+            container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
+          }, 'Route & Terms')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Port of Loading" editing={editingSection === 'Route'} value={inquiry.pol}
+            draft={sectionDraft.pol} onDraft={(v) => setSectionDraft((d) => ({ ...d, pol: v }))} />
+          <TextField label="Port of Discharge" editing={editingSection === 'Route'} value={inquiry.pod}
+            draft={sectionDraft.pod} onDraft={(v) => setSectionDraft((d) => ({ ...d, pod: v }))} />
+          <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}
+            draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
+          <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
+            draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
+          <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
+            values={inquiry.incoterms} draft={sectionDraft.incoterms}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
+          <ChipToggleField label="Container Type" editing={editingSection === 'Route'}
+            values={inquiry.container_types} draft={sectionDraft.container_types}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
         {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
             LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
