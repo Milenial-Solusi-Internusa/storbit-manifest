@@ -44,3 +44,34 @@ export const SERVICES = [
   { id: 'insurance', Icon: Umbrella, label: 'Cargo Insurance' },
   { id: 'trucking', Icon: Truck, label: 'Trucking' },
 ];
+
+/* Irisan 2 Inquiry, lanjutan audit mockup -- EMPAT daftar di bawah dipindah
+   dari const lokal InquiryFormPage.jsx (persis alasan header file ini: SATU
+   sumber kebenaran, bukan cermin) supaya DealDetailPage.jsx (tab Overview
+   inline-edit, section Route/Cargo) bisa memakai array PERSIS SAMA dengan
+   yang menuliskannya, tanpa menyalin array string kedua yang bisa melenceng.
+   Ketiganya array string polos (string itu sendiri = nilai tersimpan, bukan
+   `{id,label}` seperti CARGO_TYPES/SERVICES di atas) -- bentuk lama
+   dipertahankan apa adanya, cuma pindah lokasi. */
+
+/* Incoterms — multi-pilih, tersimpan di `inquiries.incoterms[]`. */
+export const INCOTERMS = ['EXW', 'FOB', 'CFR/CNF', 'CIF', 'DDU/DAP', 'DDP'];
+
+/* Tipe kontainer — multi-pilih, tersimpan di `inquiries.container_types[]`. */
+export const CONTAINER_TYPES = ["FCL 20'", "FCL 40'", "FCL 40'HC", 'LCL'];
+
+/* Kelas IMO — single-select, tersimpan di `inquiries.imo_class`. Label
+   mockup Inquiry Management.dc.html hanya "Class 1".."Class 9" polos (tanpa
+   keterangan) -- SENGAJA TETAP dipertahankan dengan keterangan di sini
+   (bukan disederhanakan ikut mockup): nilai yang sudah tersimpan di data
+   lama memakai format ber-keterangan ini, menyamakan ke mockup akan
+   memutus kecocokan pilihan <select> terhadap data yang sudah ada. */
+export const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
+
+/* MSDS Available — single-select, tersimpan di `inquiries.has_msds` (text,
+   bukan boolean). Label mockup berbahasa Inggris ("Yes"/"No"/"Not sure
+   yet") -- SENGAJA TETAP Bahasa Indonesia di sini ("Ya"/"Tidak") karena
+   itu yang sudah tersimpan di data lama lewat InquiryFormPage.jsx; memakai
+   label Inggris akan membuat <select> edit tak punya opsi yang cocok untuk
+   baris lama (muncul kosong/tak terpilih padahal datanya ada). */
+export const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
