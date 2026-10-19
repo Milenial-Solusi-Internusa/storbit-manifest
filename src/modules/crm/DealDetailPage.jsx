@@ -41,7 +41,7 @@ import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { DocumentFlow } from '../../kit/DocumentFlow';
 import { RelatedDocuments } from '../../kit/RelatedDocuments';
-import { SectionHeader, SelectField, LockedField, TextField, ChipToggleField } from './dealOverviewFieldInputs';
+import { SectionHeader, SelectField, LockedField, TextField, ChipToggleField, TextareaField } from './dealOverviewFieldInputs';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -290,19 +290,12 @@ const QUO_STATUS = {
   SUPERSEDED: { label: 'Superseded',                 bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
 };
 
-/* Subjudul kelompok. Diangkat jadi konstanta karena dipakai berulang di kartu
-   badan. GRP_MICRO (label mikro baris POL/POD polos) dicabut TD-318 Irisan 2
-   Inquiry commit 4 — baris itu sendiri sudah diganti RouteStrip. */
-const GRP_TITLE = {
-  fontFamily: HEAD, fontWeight: 600, fontSize: 12, textTransform: 'uppercase',
-  letterSpacing: '.04em', color: C.navy, marginBottom: 10,
-};
+/* GRP_TITLE/GRP_MICRO (subjudul kelompok & label mikro kartu badan lama)
+   keduanya sudah dicabut -- GRP_MICRO di TD-318 Irisan 2 Inquiry commit 4
+   (RouteStrip menggantikan baris POL/POD polos), GRP_TITLE di Irisan 2
+   lanjutan audit mockup (section inline-edit, lewat SectionHeader, sudah
+   menggantikan seluruh grup FIELD_GROUPS yang dulu memakainya). */
 
-/* Pengelompokan field kartu badan. Urutan kelompok = urutan tampil (mengalir dua
-   kolom). `fields` sengaja fungsi, bukan array statis: nilainya turunan inquiry.
-   Catatan: `Route` masuk SERVICE & STATUS (bukan TIMELINE) karena ia atribut
-   layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
-   dihapus: kedelapan belas tetap tampil. */
 // FIELD_GROUPS (grid 2-kolom generik lama, enam grup) dicabut Irisan 2
 // lanjutan audit mockup -- seluruh enam grup sudah diganti section
 // inline-edit satu demi satu (Service & Status/Route & Terms/Cargo/
@@ -1716,9 +1709,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
-        <div style={{ marginTop: 4, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ ...GRP_TITLE, marginBottom: 8 }}>Notes</div>
-          <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
+        {/* ===== Section "Notes" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 11, TERAKHIR) -- mockup SECS[6]. Satu-satunya
+            field (`notes`), textarea bebas, nol validasi wajib. */}
+        <SectionHeader
+          title="Notes"
+          editing={editingSection === 'Notes'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ notes: inquiry.notes || '' }); setEditingSection('Notes'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ notes: sectionDraft.notes || null }, 'Notes')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16 }}>
+          <TextareaField label="Notes" editing={editingSection === 'Notes'} value={inquiry.notes}
+            draft={sectionDraft.notes} onDraft={(v) => setSectionDraft((d) => ({ ...d, notes: v }))} />
         </div>
               </Card>
               </div>
