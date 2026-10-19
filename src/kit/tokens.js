@@ -51,9 +51,11 @@ export const INPUT_BG     = BG;        // = BG: sejak CARD putih, input = bidang
 export const DISABLED_BG  = '#E8ECE4'; // mix(CARD, LINE, .60) (dihitung ulang utk CARD putih)
 export const DISABLED_INK = INK_FAINT; // kontrol nonaktif dikecualikan WCAG; nilai = INK_FAINT
 export const FOCUS_RING   = '0 0 0 3px rgba(92,107,82,.35)';   // INK_SOFT rgb(92,107,82) α .35
-export const BACKDROP     = 'rgba(51,66,43,.45)';              // INK rgb(51,66,43) α .45
+export const BACKDROP     = 'rgba(51,66,43,.35)';              // INK rgb(51,66,43) α .35 — disamakan ke overlay modal mockup Inquiry Management (audit Tugas 2, semula .45)
 export const SHADOW_1     = '0 1px 2px rgba(51,66,43,.06), 0 2px 8px rgba(51,66,43,.07)'; // lift tipis (dropdown/popover)
-export const SHADOW_2     = '0 24px 64px rgba(51,66,43,.28)';  // elemen melayang (modal, slide-over, toast)
+export const SHADOW_2     = '0 24px 64px rgba(51,66,43,.28)';  // elemen melayang (slide-over, tooltip) — SHADOW_MODAL dipisah di bawah utk Modal, nilainya tak sama dgn ini
+export const SHADOW_MODAL = '0 24px 48px rgba(51,66,43,.22)';  // dikutip persis box-shadow Modal/MarkWon dkk, mockup Inquiry Management — dipakai Modal, BUKAN SlideOver/Tooltip (belum ada acuan mockup utk dua itu)
+export const SHADOW_TOAST = '0 12px 32px rgba(51,66,43,.25)';  // dikutip persis toast mockup — nilai literal yang sudah dipakai useToast.jsx sejak TD-318 Irisan Kit, kini jadi token
 export const SHADOW_DROP  = 'drop-shadow(0 3px 6px rgba(51,66,43,.22))'; // segmen aktif StatusBar (clip-path butuh filter)
 
 /* Putih hanya untuk teks di atas warna STATUS solid (mis. penanda WON navy
@@ -81,6 +83,11 @@ export const MOTION = {
 /* Tinggi kontrol tunggal (keputusan #7): tombol md 40 / sm 32 / xs 28 ·
    input ringkas 44 · input mengambang 56. Dipakai Button.jsx & Form.jsx. */
 export const SIZE = { btnMd: 40, btnSm: 32, btnXs: 28, input: 44, inputFloating: 56 };
+/* Skala ukuran huruf (px), dari frekuensi pakai mockup Inquiry Management
+   (audit Tugas 2) — kit sebelumnya tak punya scale ini sama sekali (SIZE di
+   atas = tinggi kontrol, bukan ukuran huruf). Nilai yang jarang berulang
+   (10/10.5/16px dkk) SENGAJA tak dimasukkan — tetap inline di komponen. */
+export const FONT_SIZE = { badge: 11.5, body: 13.5, label: 12, button: 13.5, hint: 12, tableHead: 11, modalTitle: 18 };
 
 /* =========================================================================
    4. PALET STATUS/DATA — kelas terpisah dari identitas (#60 b).
@@ -104,6 +111,10 @@ export const SEMANTIC = {
   danger:  { fg: '#B23227', bg: '#F6E0DB', bd: '#E6BBB2' },
   info:    { fg: '#2A5B8C', bg: '#E1ECF5', bd: '#BAD2E6' },
   neutral: { fg: INK_SOFT,  bg: HEAD_BG,   bd: LINE },
+  /* muted — tag "Migrated, legacy number" + teks estimate sekunder (mockup
+     Inquiry Management, audit Tugas 2). Kelas sendiri, bukan warn: ini label
+     informasi netral ("nomor lama"), bukan peringatan yang perlu tindakan. */
+  muted:   { fg: '#7A5A12', bg: '#FBF3DC', bd: '#E6CE94' },
 };
 
 /* TONE — satu sumbu warna untuk StatusBar/lajur papan, EMPAT saja (dari v3):

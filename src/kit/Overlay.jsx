@@ -12,7 +12,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from './Button';
-import { CARD, INK, INK_SOFT, LINE, BG, BACKDROP, SHADOW_2, FONT_HEAD, FONT_BODY, RADIUS, Z, MOTION } from './tokens';
+import { CARD, INK, INK_SOFT, LINE, BG, BACKDROP, SHADOW_2, SHADOW_MODAL, FONT_HEAD, FONT_BODY, RADIUS, Z, MOTION } from './tokens';
 
 // Tumpukan overlay terbuka (TD-318 Irisan 3, temuan tes Den) -- modul-level,
 // dipakai BERSAMA Modal & SlideOver. Modal/SlideOver yang menumpuk modal lain
@@ -135,7 +135,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, width 
         role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className="nk-scroll"
         style={{
           position: 'relative', width, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', background: CARD, borderRadius: RADIUS.xl,
-          boxShadow: SHADOW_2, opacity: shown ? 1 : 0, transform: shown ? 'scale(1)' : 'scale(.95)',
+          boxShadow: SHADOW_MODAL, opacity: shown ? 1 : 0, transform: shown ? 'scale(1)' : 'scale(.95)',
           transition: `opacity .24s ease, transform .24s ${MOTION.ease}`, fontFamily: FONT_BODY, color: INK,
         }}
       >

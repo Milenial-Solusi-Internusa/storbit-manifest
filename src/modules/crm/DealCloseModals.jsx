@@ -210,10 +210,10 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
   return (
     <Shell
       icon={<Ban size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
-      title="Cancel Deal"
+      title="Cancel Inquiry"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
       err={err} onCancel={onCancel} onSubmit={submit} saving={saving}
-      submitLabel="Cancel Deal"
+      submitLabel="Cancel Inquiry"
     >
       <div>
         <label style={label} htmlFor="cancel-reason">Cancellation reason</label>

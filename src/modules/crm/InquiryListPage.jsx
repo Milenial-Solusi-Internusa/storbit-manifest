@@ -489,7 +489,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             <FileText size={20} color={C.accent} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Deal List</h1>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Inquiry List</h1>
             <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>{total} inquiry terdaftar</p>
           </div>
         </div>

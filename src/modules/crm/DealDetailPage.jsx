@@ -36,7 +36,8 @@ import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2 } from './v3/tokens';
+import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
+import { DEAL_STATUS } from '../../kit/tokens';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -73,10 +74,10 @@ const ACT_ICON = {
 // di sini: ketiganya penanda penutupan di ujung kanan StatusBar, bukan segmen.
 // DEAL_STATUS_ORDER di v3/tokens.js TIDAK dipakai — isinya lima, termasuk WON.
 const DEAL_STAGE_SEGMENTS = [
-  { id: 'OPEN',        label: 'OPEN' },
-  { id: 'IN_REVIEW',   label: 'IN REVIEW' },
-  { id: 'QUOTED',      label: 'QUOTED' },
-  { id: 'NEGOTIATION', label: 'NEGOTIATION' },
+  { id: 'OPEN',        label: STATUS_LABEL.OPEN },
+  { id: 'IN_REVIEW',   label: STATUS_LABEL.IN_REVIEW },
+  { id: 'QUOTED',      label: STATUS_LABEL.QUOTED },
+  { id: 'NEGOTIATION', label: STATUS_LABEL.NEGOTIATION },
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 
@@ -95,7 +96,7 @@ const NEXT_STEP_HINT = {
      membiarkannya DRAFT tidak memindahkan apa pun. "Issue" bisa dibaca
      "buat", dan itu janji yang tidak ditepati sistem. */
   QUOTED:      'Send the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
-  NEGOTIATION: 'Send a Sales Order to close the deal as WON.',
+  NEGOTIATION: 'Send a Sales Order to close the inquiry as WON.',
 };
 
 function NextStepHint({ status }) {
@@ -268,7 +269,7 @@ const FIELD_GROUPS = [
     title: 'Service & Status',
     fields: (i) => [
       { label: 'Service Type', value: SERVICE_LABEL[i.service_type] || i.service_type },
-      { label: 'Status', value: i.status || 'OPEN' },
+      { label: 'Status', value: String(i.status || 'OPEN').toUpperCase(), statusBadge: true },
       { label: 'Route', value: i.route },
     ],
   },
@@ -303,7 +304,7 @@ const FIELD_GROUPS = [
       // "Deal Owner" di sini = `inquiries.owner_id`, BEDA dari "Assigned To" di
       // meta header yang membaca `accounts.assigned_to`. Jangan disamakan:
       // yang satu pemilik DEAL, yang satu pemegang AKUN.
-      { label: 'Deal Owner', value: x.ownerName },
+      { label: 'Inquiry Owner', value: x.ownerName },
       { label: 'Created Date', value: fmtDate(i.created_at) },
     ],
   },
@@ -348,9 +349,9 @@ function Breadcrumb({ onBack }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
-      <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Deal List</button>
+      <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Inquiry List</button>
       <ChevronRight size={14} color={C.textFaint} />
-      <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Deal Detail</span>
+      <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Inquiry Detail</span>
     </div>
   );
 }
@@ -767,12 +768,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
   // Aksi "Mark as Won" — gate UI murni UX (RPC mark_inquiry_won yang menegakkan
-  // izin sebenarnya): cuma pembuat inquiry atau super_admin, dan cuma kalau belum
-  // WON. Sengaja TIDAK ikut LOSABLE_INQUIRY_STATUS — inquiry yang sudah
-  // LOST/CANCELLED tetap boleh ditandai WON manual (mis. customer berubah pikiran).
+  // izin sebenarnya): cuma pembuat inquiry atau super_admin. KOREKSI (keputusan
+  // Mas, ikut mockup rule "isTerminal = !isOpen" — Pipeline & Inquiry Tracking
+  // .dc.html:895): status terminal (WON/LOST/CANCELLED) TIDAK lagi diizinkan —
+  // sebelumnya hanya WON yang dikecualikan, sehingga tombol ini masih tampil
+  // untuk LOST/CANCELLED. Gate OWNER/MANAGER (bukan isInquiryCreator) menyusul
+  // Irisan 3, TIDAK disentuh di sini.
   const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
   const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
-    && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
+    && LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -813,7 +817,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     // closed_at/closed_by TIDAK dikirim dari sini: trigger
     // trg_z_stamp_inquiry_closure yang menstempelnya, dan COALESCE di sana
     // membuat nilai kiriman FE menang bila suatu saat memang perlu dikirim.
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('inquiries')
       .update({
         status: 'LOST',
@@ -821,10 +825,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         competitor_name:  values.competitor_name,
         competitor_price: values.competitor_price,
       })
-      .eq('id', inquiry.id);
+      .eq('id', inquiry.id)
+      .select('id');
     setLossSaving(false);
     if (error) { showToast?.('Failed to mark as Lost: ' + error.message, 'error'); return; }
-    // Berjejak: ini SATU-SATUNYA jalur menandai deal kalah, dan alasannya ikut
+    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161,
+    // pola sama reassignOwner).
+    if (!data || data.length === 0) {
+      showToast?.('Failed to mark as Lost: inquiry may have changed — reload and try again.', 'error');
+      return;
+    }
+    // Berjejak: ini SATU-SATUNYA jalur menandai inquiry kalah, dan alasannya ikut
     // menghitung win rate. Pola sama saveDealUpdate — fire-and-forget, tak memblokir.
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_INQUIRY,
@@ -834,7 +845,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       notes: `${prevStatus} → LOST · reason: ${lossReasons.find(r => r.id === values.loss_reason_id)?.name || values.loss_reason_id}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setLossOpen(false);
-    showToast?.('Deal marked as Lost.', 'success');
+    showToast?.('Inquiry marked as Lost.', 'success');
     refetch();
   }
 
@@ -877,12 +888,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     if (!inquiry?.id) return;
     const prevStatus = inquiry.status || 'OPEN';
     setCancelSaving(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('inquiries')
       .update({ status: 'CANCELLED', cancel_reason: values.cancel_reason })
-      .eq('id', inquiry.id);
+      .eq('id', inquiry.id)
+      .select('id');
     setCancelSaving(false);
-    if (error) { showToast?.('Failed to cancel deal: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to cancel inquiry: ' + error.message, 'error'); return; }
+    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161,
+    // pola sama reassignOwner).
+    if (!data || data.length === 0) {
+      showToast?.('Failed to cancel inquiry: inquiry may have changed — reload and try again.', 'error');
+      return;
+    }
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_INQUIRY,
       entityType: ENTITY_TYPES.INQUIRY,
@@ -891,7 +909,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       notes: `${prevStatus} → CANCELLED · reason: ${values.cancel_reason}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setCancelOpen(false);
-    showToast?.('Deal cancelled.', 'success');
+    showToast?.('Inquiry cancelled.', 'success');
     refetch();
   }
 
@@ -907,7 +925,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
     setWonSaving(false);
     if (error) { showToast?.(error.message, 'error'); return; }
-    showToast?.('Deal marked as Won. The linked account is now a customer.', 'success');
+    showToast?.('Inquiry marked as Won. The linked account is now a customer.', 'success');
     refetch();
   }
 
@@ -931,7 +949,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.QUOTATION,
       entityId: activeQuotation.id,
       entityLabel: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
-      notes: 'Revisi quotation dibuat dari Detail Deal',
+      notes: 'Revisi quotation dibuat dari Detail Inquiry',
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     showToast?.('Revision created as a new draft.', 'success');
     refetch();
@@ -955,7 +973,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     if (error) { showToast?.('Failed to change owner: ' + error.message, 'error'); return; }
     // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
     if (!data || data.length === 0) {
-      showToast?.('Failed to change owner: you do not have permission to modify this deal.', 'error');
+      showToast?.('Failed to change owner: you do not have permission to modify this inquiry.', 'error');
       return;
     }
     logAudit(supabase, {
@@ -963,10 +981,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `Deal owner: ${prevName} → ${nextName}`,
+      notes: `Inquiry owner: ${prevName} → ${nextName}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setOwnerOpen(false);
-    showToast?.('Deal owner updated.', 'success');
+    showToast?.('Inquiry owner updated.', 'success');
     refetch();
   }
 
@@ -1013,7 +1031,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return (
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textFaint, fontFamily: BODY }}>
         <Loader2 size={30} className="dd-spin" />
-        <div style={{ fontSize: 13.5 }}>Loading deal details…</div>
+        <div style={{ fontSize: 13.5 }}>Loading inquiry details…</div>
         <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}`}</style>
       </div>
     );
@@ -1022,7 +1040,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return (
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
         <AlertCircle size={30} color={C.red} />
-        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Deal not found</div>
+        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Inquiry not found</div>
         <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Back</button>
       </div>
     );
@@ -1058,9 +1076,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
+        toolbar={((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {onEditInquiry && (
+          {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
+              status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
+              literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
+              !isTerminal, jadi arahnya konsisten: nol aksi edit pada status terminal. */}
+          {onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus) && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
               <Pencil size={14} />Edit Inquiry
             </button>
@@ -1087,7 +1109,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               )}
               {canCancel && (
                 <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
-                  <Ban size={14} />Cancel Deal
+                  <Ban size={14} />Cancel Inquiry
                 </button>
               )}
             </div>
@@ -1120,7 +1142,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <StatusBar
               stages={DEAL_STAGE_SEGMENTS}
               current={dealStatus}
-              closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+              closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: STATUS_LABEL[dealStatus] || dealStatus } : null}
             />
             <NextStepHint status={dealStatus} />
           </>
@@ -1141,7 +1163,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
           (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
       <Card
-        title="Deal Detail"
+        title="Inquiry Detail"
         icon={<FileText size={17} />}
       >
         {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
@@ -1150,7 +1172,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         {canReassignOwner && ownerOpen && (
           <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
             <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-              Change Deal Owner
+              Change Inquiry Owner
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <select
@@ -1176,7 +1198,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               </button>
             </div>
             <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
-              Ownership is permanently locked once the deal reaches WON, LOST, or CANCELLED —
+              Ownership is permanently locked once the inquiry reaches WON, LOST, or CANCELLED —
               so historical Sales Performance and Win Rate figures stay intact.
             </div>
           </div>
@@ -1208,7 +1230,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {g.fields(inquiry, { createdByName, ownerName }).map((f) => (
                 <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
                   <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
-                  {f.pills ? (
+                  {f.statusBadge ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', flex: 1 }}>
+                      <TintBadge meta={{
+                        label: STATUS_LABEL[f.value] || f.value,
+                        bg: DEAL_STATUS[f.value]?.bg, color: DEAL_STATUS[f.value]?.fg, bd: DEAL_STATUS[f.value]?.bd,
+                      }} />
+                    </div>
+                  ) : f.pills ? (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
                       {(f.value || []).length === 0
                         ? <span style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint }}>—</span>
@@ -1248,7 +1277,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             render: () => (
               <Card title="Related Activity" icon={<ListChecks size={17} />}>
                 {activities.length === 0 ? (
-                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this deal yet.</div>
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {activities.map((a) => {
@@ -1293,7 +1322,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   rows={quotations}
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
-                  emptySub="Quotations created from this deal will appear here."
+                  emptySub="Quotations created from this inquiry will appear here."
                   right={activeQuotation ? (
                     <button onClick={() => setReviseOpen(true)} disabled={revising}
                       style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff', cursor: revising ? 'not-allowed' : 'pointer', opacity: revising ? 0.6 : 1 }}>
@@ -1332,7 +1361,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   rows={prfs}
                   onRowClick={onViewPRF}
                   emptyTitle="No PRFs yet"
-                  emptySub="PRFs raised for this deal will appear here."
+                  emptySub="PRFs raised for this inquiry will appear here."
                   right={canCreatePRF ? (
                     <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
                       <FileText size={14} />Create PRF
@@ -1462,7 +1491,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         open={wonOpen}
         variant="info"
         title="Mark as Won"
-        message="Mark this deal as Won? The linked account will automatically become a customer."
+        message="Mark this inquiry as Won? The linked account will automatically become a customer."
         confirmLabel="Yes, Mark as Won"
         cancelLabel="Cancel"
         onConfirm={() => { setWonOpen(false); markInquiryWon(); }}

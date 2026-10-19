@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import Icon from './Icon';
-import { INK, WHITE, ACCENT, SEMANTIC, FONT_BODY, RADIUS, Z } from './tokens';
+import { INK, WHITE, ACCENT, SEMANTIC, FONT_BODY, RADIUS, Z, SHADOW_TOAST } from './tokens';
 
 const TYPE_ICON = { success: CheckCircle2, error: AlertTriangle, info: Info };
 const TYPE_COLOR = { success: ACCENT, error: SEMANTIC.danger.fg, info: SEMANTIC.info.fg };
@@ -53,7 +53,7 @@ export default function useToast(duration = 2400) {
         position: 'fixed', left: '50%', bottom: 88, display: 'flex', alignItems: 'center', gap: 10,
         background: INK, color: WHITE, padding: '12px 16px', borderRadius: RADIUS.md,
         fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
-        boxShadow: '0 12px 32px rgba(51,66,43,.25)', zIndex: Z.toast,
+        boxShadow: SHADOW_TOAST, zIndex: Z.toast,
         transition: 'opacity .2s ease-out, transform .2s ease-out',
         opacity: toast.show ? 1 : 0,
         transform: toast.show ? 'translate(-50%, 0)' : 'translate(-50%, 12px)',

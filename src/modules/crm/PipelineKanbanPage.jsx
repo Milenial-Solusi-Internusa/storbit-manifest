@@ -43,6 +43,7 @@ import {
   NAVY, INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
   SP, RADIUS, STATUS_LABEL,
 } from './v3/tokens';
+import { DEAL_STATUS } from '../../kit/tokens';
 
 /* ─── Lajur ────────────────────────────────────────────────────────────────
    id = nilai inquiries.status apa adanya. Tone lajur — badge di kartu dan rel
@@ -153,9 +154,17 @@ function DealCard({ inq, onOpen }) {
         </span>
       )}
       {/* Badge dibaca LANGSUNG dari inquiries.status milik kartu ini sendiri —
-          bukan diwariskan dari akun (prinsip P4). */}
+          bukan diwariskan dari akun (prinsip P4). Teks label memakai STATUS_LABEL,
+          warna memakai DEAL_STATUS (src/kit/tokens.js) -- KEPUTUSAN Mas: palet
+          SAMA dengan Daftar Inquiry/Detail Inquiry (DEAL_STATUS byte-identik
+          dengan STATUS_META InquiryListPage). Peta SB di Pipeline & Inquiry
+          Tracking.dc.html:209-210/224 (NEU/BLUE/BLUE/PEND/OK/RED/GREY) adalah
+          drift mockup, diselaraskan ke Claude Design terpisah -- SENGAJA TIDAK
+          ditiru di sini. `tone` dikirim sebagai OBJEK trio (bukan string status)
+          supaya Badge (v3/kit.jsx:19) memakainya langsung, tidak lewat toneOf()
+          v3/tokens.js yang mengelompokkan keempat status Open ke satu warna. */}
       <span style={{ marginTop: SP.s1 }}>
-        <Badge tone={inq.status}>{inq.status}</Badge>
+        <Badge tone={DEAL_STATUS[inq.status]}>{STATUS_LABEL[inq.status] || inq.status}</Badge>
       </span>
     </button>
   );
@@ -241,7 +250,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
     }}>
       {/* 1 — Pemilik Deal */}
       <div>
-        <div style={secTitle}>Deal Owner</div>
+        <div style={secTitle}>Inquiry Owner</div>
         <select
           value={flt.ownerId} onChange={(e) => set({ ownerId: e.target.value })}
           style={field}
@@ -271,7 +280,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
 
       {/* 3 — Rentang Nilai Deal */}
       <div>
-        <div style={secTitle}>Deal Value Range</div>
+        <div style={secTitle}>Inquiry Value Range</div>
         <div style={{ ...row, marginBottom: SP.s2 }}>
           {VALUE_PRESETS.map((p) => (
             <button
@@ -424,7 +433,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       setOpenRows(openRes.data || []);
     }
     if (closedRes.error) {
-      showToast?.('Failed to load closed deals: ' + closedRes.error.message, 'error');
+      showToast?.('Failed to load closed inquiries: ' + closedRes.error.message, 'error');
       setClosedRows([]);
     } else {
       setClosedRows(closedRes.data || []);
@@ -456,7 +465,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
         .limit(1000);
 
       if (profErr) {
-        showToast?.('Failed to load deal owner names: ' + profErr.message, 'error');
+        showToast?.('Failed to load inquiry owner names: ' + profErr.message, 'error');
         setOwnerNames({});
       } else {
         const map = {};
@@ -647,7 +656,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
           </div>
         }
         savedViews={[
-          { id: 'aktif',    label: 'Deal Berjalan', count: totalOpen },
+          { id: 'aktif',    label: 'Inquiry Berjalan', count: totalOpen },
           { id: 'tertutup', label: `Ditutup ${monthLabel(month)}`, count: totalClosed },
         ]}
         activeView="aktif"
