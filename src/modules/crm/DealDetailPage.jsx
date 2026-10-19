@@ -39,6 +39,7 @@ import ListView from './v3/ListView';
 import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
+import { DocumentFlow } from '../../kit/DocumentFlow';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -625,7 +626,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, assigned_to, pic_name, estimated_closing_date')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -829,6 +830,44 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // komponen), pola PERSIS `ageDays()` InquiryListPage.jsx:96 -- react-hooks/
   // purity hanya menandai pemanggilan Date.now() LANGSUNG di badan render.
   const inquiryAge = inquiryAgeLabel(inquiry?.created_at);
+  // TD-318 Irisan 2 Inquiry, commit 5: node rantai dokumen (mockup Detail/
+  // DocumentFlow). "Rate Request" mockup = PRF Nexus (nama tab TIDAK diubah --
+  // lihat komentar src/kit/DocumentFlow.jsx). Sales Order/Purchase Order/Job
+  // Order/Carrier Booking/Invoice SELALU "none" -- empat terakhir karena
+  // mockup SENDIRI hardcode begitu (modul itu belum ada di CRM fiktif
+  // mockup juga), Sales Order karena halaman ini tidak mem-fetch tabel
+  // sales_orders (menambahnya = query baru yang tidak diminta task ini).
+  const documentFlowNodes = [
+    {
+      type: 'lead', active: false,
+      label: account?.lifecycle_stage === 'customer' ? 'Customer' : 'Lead',
+      state: account?.name ? 'name' : 'none',
+      value: account?.name,
+      onClick: () => account?.id && onViewCustomer?.(account.id),
+    },
+    {
+      type: 'inquiry', active: true, label: 'Inquiry', state: 'doc',
+      value: inquiry.inquiry_no, onClick: () => {},
+    },
+    prfs.length > 1 ? {
+      type: 'prf', active: false, label: 'PRF', state: 'multi',
+      value: `${prfs.length} PRFs`,
+      items: prfs.map((p) => ({ label: p.prf_no, onClick: () => onViewPRF?.(p) })),
+    } : prfs.length === 1 ? {
+      type: 'prf', active: false, label: 'PRF', state: 'doc',
+      value: prfs[0].prf_no, onClick: () => onViewPRF?.(prfs[0]),
+    } : { type: 'prf', active: false, label: 'PRF', state: 'none' },
+    activeQuotation ? {
+      type: 'quotation', active: false, label: 'Quotation', state: 'doc',
+      value: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
+      onClick: () => onViewQuotation?.(activeQuotation),
+    } : { type: 'quotation', active: false, label: 'Quotation', state: 'none' },
+    { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
+    { type: 'purchaseOrder', active: false, label: 'Purchase Order', state: 'none' },
+    { type: 'jobOrder', active: false, label: 'Job Order', state: 'none' },
+    { type: 'carrierBooking', active: false, label: 'Carrier Booking', state: 'none' },
+    { type: 'invoice', active: false, label: 'Invoice', state: 'none' },
+  ];
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
@@ -1382,6 +1421,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             />
           </div>
         )}
+
+        {/* TD-318 Irisan 2 Inquiry, commit 5: DocumentFlow (mockup Detail/
+            DocumentFlow) -- rantai dokumen Lead->Inquiry->PRF->Quotation->
+            Sales Order->Purchase Order->Job Order->Carrier Booking->Invoice.
+            Posisi tepatnya di dalam tab Overview relatif terhadap RouteStrip
+            tidak bisa dipastikan presisi dari file mockup (markup bercampur
+            dengan blok sc-if lain) -- diletakkan di sini (sesudah RouteStrip,
+            sebelum rincian field) sebagai urutan yang wajar, dilaporkan
+            sebagai keputusan, bukan kepastian posisi mockup. */}
+        <div style={{ marginBottom: 20 }}>
+          <DocumentFlow
+            nodes={documentFlowNodes}
+            tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
+          />
+        </div>
 
         {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
             LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
