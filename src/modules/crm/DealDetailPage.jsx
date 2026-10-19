@@ -81,6 +81,18 @@ const DEAL_STAGE_SEGMENTS = [
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 
+// TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row. Fungsi MODUL
+// (bukan di badan komponen) -- pola persis `ageDays()` InquiryListPage.jsx:96,
+// supaya pemanggilan `Date.now()` tidak ditandai react-hooks/purity. Singular/
+// plural persis mockup Inquiry Management.dc.html:708 (`n===1?' day':' days'`).
+function inquiryAgeLabel(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const n = Math.floor((Date.now() - d.getTime()) / 86400000);
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
+}
+
 /* Penunjuk langkah berikutnya — pengganti INFORMASI dari tombol arah-maju yang
    dicabut 8 Sep 2026 (blueprint §6: perpindahan status digerakkan DOKUMEN).
    Tombolnya hilang, tapi pengetahuan "apa yang harus kulakukan supaya deal ini
@@ -360,6 +372,11 @@ function Breadcrumb({ onBack }) {
    `{title}` menerima node apa pun — jadi nama akun tetap bisa diklik tanpa
    menambah prop baru ke kit. Cabang non-klik dipertahankan persis: akun kosong
    atau handler tak dikirim → teks polos, tanpa cursor pointer. */
+/* TD-318 Irisan 2 Inquiry, commit 2 (keputusan Mas #1): nama akun sekarang
+   link KECIL di bawah h1 (bukan h1 itu sendiri -- h1 = nomor inquiry, lihat
+   FormSheet title di bawah). font:600 15px Inter persis Inquiry Management.dc.html
+   :280 (`{{ D.cust }}`) -- 15px sudah ambient dari FormSheet, hanya weight 600
+   yang perlu ditambah di sini. */
 function DealTitle({ name, accountId, onViewCustomer }) {
   if (!(accountId && onViewCustomer)) return name || '—';
   return (
@@ -367,7 +384,7 @@ function DealTitle({ name, accountId, onViewCustomer }) {
       className="dd-account-name"
       onClick={() => onViewCustomer(accountId)}
       title="View account details"
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', fontWeight: 600 }}
     >
       {name || '—'}
     </span>
@@ -797,6 +814,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
     && isManagerOrAbove(erpRoles);
   const ownerName = profMap[inquiry?.owner_id] || null;
+  // TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row -- `Date.now()`
+  // ditaruh di fungsi modul `inquiryAgeLabel()` (bukan langsung di badan
+  // komponen), pola PERSIS `ageDays()` InquiryListPage.jsx:96 -- react-hooks/
+  // purity hanya menandai pemanggilan Date.now() LANGSUNG di badan render.
+  const inquiryAge = inquiryAgeLabel(inquiry?.created_at);
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
@@ -1062,8 +1084,25 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           saat tab di body berganti. */}
       <FormSheet
         breadcrumb={<Breadcrumb onBack={onBack} />}
-        title={<DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />}
-        docNo={inquiry.inquiry_no}
+        /* TD-318 Irisan 2 Inquiry, commit 2 (keputusan Mas #1): H1 = nomor
+           inquiry (mono), BUKAN nama akun seperti sebelumnya -- kebalikan
+           total dari susunan lama. Mockup Inquiry Management.dc.html:279
+           -- h1 `font:600 24px 'IBM Plex Mono',monospace` (bukan h1 bawaan
+           FormSheet 30px/700/sans) -- dioverride lewat span sendiri di
+           dalam h1 kit, nol perubahan ke FormSheet.jsx (satu-satunya
+           pemakai produksi hari ini, tapi kontraknya tetap dijaga generik).
+           Warna navy (brand task ini), BUKAN sage mockup -- CRM belum
+           migrasi kit (CLAUDE.md), dan instruksi eksekusi ini eksplisit
+           minta navy/orange/cream. `kicker` = label "INQUIRY" di atas h1
+           (mockup :278, data-rule="7") -- slot FormSheet yang sudah ada,
+           sebelumnya tidak dipakai. `docNo` dicabut -- nomornya sudah
+           pindah ke title, menampilkannya dua kali akan duplikasi. */
+        kicker="INQUIRY"
+        title={(
+          <span style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 24, color: C.navy }}>
+            {inquiry.inquiry_no}
+          </span>
+        )}
         /* Slot `actions` SENGAJA KOSONG sejak 8 Sep 2026. Isinya dulu
            DealHeaderControls (angka DEAL VALUE + Edit Deal + Move Stage) — ketiganya
            menulis ke `accounts`, dan ketiganya dicabut: perpindahan status kini
@@ -1076,8 +1115,61 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        /* TD-318 Irisan 2 Inquiry, commit 2: metric row 4-kolom (keputusan Mas,
+           urutan commit) ditaruh di `toolbar` -- slot INI yang membentang
+           selebar dokumen (lihat komentar FormSheet.jsx), `meta` di atas
+           cuma selebar kolom judul. Grid persis mockup Inquiry Management.dc.html
+           :300 (`grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;
+           padding-top:16px;border-top:1px solid #ECF0E9`) -- border pakai
+           `C.border` (token navy/orange/cream file ini), bukan hex sage
+           mockup. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
+           Reassign memanggil panel inline YANG SAMA dengan tombol toolbar
+           di bawah (keputusan Mas #4 -- nol modal baru). Overdue & Inquiry
+           Age diturunkan dari `deadline_quote`/`created_at` yang SUDAH
+           di-select, nol query baru. Estimated Value TANPA badge "from
+           quotation"/"Estimated" mockup (:296) -- keduanya butuh data
+           provenance yang tidak ada (dilaporkan sebagai dilewati). Grid ini
+           SELALU tampil (toolbar sekarang selalu truthy); baris tombol aksi
+           lama (Edit/Change Owner/Mark Won/Lost/Cancel) tetap muncul di
+           bawahnya dengan gate yang SAMA PERSIS seperti sebelumnya. */
+        toolbar={(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Avatar name={ownerName} size={24} />
+                  <span style={{ fontFamily: BODY, fontSize: 13, color: C.text, fontWeight: 600 }}>{ownerName || 'Unassigned'}</span>
+                </span>
+                {canReassignOwner && (
+                  <button type="button" onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
+                    style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Montserrat, sans-serif', color: C.navy, cursor: 'pointer' }}>
+                    Reassign
+                  </button>
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Deadline Quote</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : '—'}</span>
+                {inquiry.deadline_quote && inquiry.deadline_quote < new Date().toISOString().slice(0, 10) && !DEAL_CLOSED_STATUS.includes(dealStatus) && (
+                  <TintBadge meta={{ label: 'Overdue', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Estimated Value</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiry.estimated_value == null ? '—' : fmtRp(Number(inquiry.estimated_value))}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Inquiry Age</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiryAge}</span>
+            </div>
+          </div>
+          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
               status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
               literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
@@ -1115,15 +1207,41 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             </div>
           )}
           </div>
+          )}
+        </div>
         )}
+        /* `meta` kini membawa TIGA baris (keputusan Mas #1): nama akun
+           (link kecil, DealTitle -- dulu jadi h1), baris chip (keputusan
+           Mas #5 -- HANYA Status/Service Type/Undername, tiga-tiganya
+           datanya sudah ada di `inquiry` yang sudah di-fetch; chip mockup
+           lain [migTag/Rate Sheet/Entity/Direction/Won-awaiting-SO/
+           Quotation-expired/Manual-win/Revert/Free-Trade-Zone/Credit-Hold/
+           Onboarding/feasibility] DILEWATI -- daftar lengkap + alasan di
+           laporan akhir, bukan ditebak di sini), lalu `HeaderMeta` existing
+           (Assigned To/Created/Est. Closing -- TIDAK disentuh). */
         meta={(
-          <HeaderMeta
-            assignedName={assignedName}
-            assignedProfileId={assignedProfileId}
-            onViewProfile={onViewProfile}
-            createdAt={inquiry.created_at}
-            closeDate={account?.estimated_closing_date}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+            <DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />
+            <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
+              <TintBadge meta={{
+                label: STATUS_LABEL[dealStatus] || dealStatus,
+                bg: DEAL_STATUS[dealStatus]?.bg, color: DEAL_STATUS[dealStatus]?.fg, bd: DEAL_STATUS[dealStatus]?.bd,
+              }} />
+              {inquiry.service_type && (
+                <TintBadge meta={{ label: SERVICE_LABEL[inquiry.service_type] || inquiry.service_type, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+              )}
+              {(inquiry.additional_services || []).includes('undername') && (
+                <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+            </div>
+            <HeaderMeta
+              assignedName={assignedName}
+              assignedProfileId={assignedProfileId}
+              onViewProfile={onViewProfile}
+              createdAt={inquiry.created_at}
+              closeDate={account?.estimated_closing_date}
+            />
+          </div>
         )}
         /* Sumbu deal yang SAH = `inquiries.status`, bukan sumbu stage lama di
            `accounts` (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
