@@ -583,7 +583,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name)')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1300,6 +1300,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 label: STATUS_LABEL[dealStatus] || dealStatus,
                 bg: DEAL_STATUS[dealStatus]?.bg, color: DEAL_STATUS[dealStatus]?.fg, bd: DEAL_STATUS[dealStatus]?.bd,
               }} />
+              {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 2: chip Entity --
+                  mockup :185 `{{ D.ent }}` persis sesudah chip Status, SEBELUM
+                  Service -- style IDENTIK dgn chip Service (border #D8E0D2/
+                  bg #EFF3ED/color #5C6B52 = C.border/C.surfaceAlt/C.textMute,
+                  sudah dipakai di bawah). `D.ent` = kode entitas mentah (mis.
+                  'MSI'), bukan nama panjang -- relasi `companies` via FK yang
+                  SUDAH ADA di select query (pola `companies!<table>_company_id_
+                  fkey(code,name)`, dipakai InquiryFormPage.jsx/db.js dkk),
+                  nol query tambahan. `inquiries.company_id` NOT NULL di DB
+                  (schema_snapshot.sql:8371) -- cabang "company_id null, chip
+                  tidak dirender" secara teori tak akan terpicu hari ini, tapi
+                  guard tetap dipasang pada hasil embed (`inquiry.company`),
+                  bukan `company_id` mentah -- melindungi dari RLS/relasi
+                  gagal, bukan cuma dari company_id kosong. */}
+              {inquiry.company?.code && (
+                <TintBadge meta={{ label: inquiry.company.code, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+              )}
               {inquiry.service_type && (
                 <TintBadge meta={{ label: SERVICE_LABEL[inquiry.service_type] || inquiry.service_type, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
               )}
