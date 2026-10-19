@@ -40,6 +40,7 @@ import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_L
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import { DocumentFlow } from '../../kit/DocumentFlow';
+import { RelatedDocuments } from '../../kit/RelatedDocuments';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -626,7 +627,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -867,6 +868,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     { type: 'jobOrder', active: false, label: 'Job Order', state: 'none' },
     { type: 'carrierBooking', active: false, label: 'Carrier Booking', state: 'none' },
     { type: 'invoice', active: false, label: 'Invoice', state: 'none' },
+  ];
+  // TD-318 Irisan 2 Inquiry, commit 6: baris RelatedDocuments. Upstream =
+  // akun asal (SATU baris, data yang sudah di-fetch + `created_at` baru
+  // ditambah ke select accounts). Downstream = PRF + SELURUH versi quotation
+  // (bukan hanya yang aktif) -- keduanya data existing, nol query baru.
+  const relatedDocsUpstream = account ? [{
+    key: `account-${account.id}`,
+    type: account.lifecycle_stage === 'customer' ? 'Customer' : 'Lead',
+    no: account.name,
+    status: account.lifecycle_stage === 'customer' ? 'Active' : 'Converted',
+    date: account.created_at ? fmtDate(account.created_at) : '',
+    onClick: account.id ? () => onViewCustomer?.(account.id) : undefined,
+  }] : [];
+  const relatedDocsDownstream = [
+    ...prfs.map((p) => ({
+      key: `prf-${p.id}`, type: 'PRF', no: p.prf_no, status: String(p.status || '').toUpperCase(),
+      date: fmtDate(p.created_at), onClick: () => onViewPRF?.(p),
+    })),
+    ...quotations.map((q) => ({
+      key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
+      status: QUO_STATUS[String(q.status || '').toUpperCase()]?.label || q.status,
+      date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
+    })),
   ];
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
@@ -1352,6 +1376,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             id: 'overview',
             label: 'Overview',
             render: () => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <Card
                 title="Inquiry Detail"
                 icon={<FileText size={17} />}
@@ -1479,6 +1504,24 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
         </div>
               </Card>
+              {/* TD-318 Irisan 2 Inquiry, commit 6: RelatedDocuments (mockup
+                  Detail/RelatedDocuments) -- Upstream (Lead/Customer asal)
+                  dan Downstream (PRF + seluruh versi Quotation, data yang
+                  SUDAH di-fetch -- `quotations` lengkap, bukan hanya yang
+                  aktif). LeadDetailPage.jsx SUDAH punya RelatedDocuments
+                  serupa (dicek dulu) -- komponen ini TIDAK menyalinnya,
+                  melainkan versi bersama yang diparameterisasi `tokens`
+                  (lihat komentar src/kit/RelatedDocuments.jsx); LeadDetailPage
+                  sendiri TIDAK disentuh (di luar scope irisan ini). */}
+              <RelatedDocuments
+                upstream={relatedDocsUpstream}
+                downstream={relatedDocsDownstream}
+                tokens={{
+                  border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+                  fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
+                }}
+              />
+              </div>
             ),
           },
           {
