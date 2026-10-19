@@ -126,15 +126,21 @@ function daysLabel(n) {
    Nada NAVY_SOFT + INK, bukan warna peringatan: ini informasi, bukan error.
    Status tertutup (WON/LOST/CANCELLED) sengaja NOL render — tak ada langkah
    berikutnya untuk deal yang sudah selesai. */
+// TD-318 Irisan 2 Inquiry, commit 8: teks disamakan KATA PER KATA ke mockup
+// (Detail/NextStep, objek `NS` non-Rate-Sheet di renderVals()) atas
+// instruksi eksplisit Mas. ⚠️ Teks QUOTED/NEGOTIATION mockup menyebut
+// "sends a Shipment Instruction, or sends a PO" sebagai jalur WON otomatis
+// -- hari ini Nexus TIDAK punya trigger yang menyala dari dua peristiwa
+// itu (satu-satunya jalur WON LIVE: RPC manual mark_inquiry_won, atau
+// trigger set_inquiry_won_on_so yang BELUM PERNAH menyala produksi, lihat
+// komentar markInquiryLost di atas). Diikuti verbatim sesuai instruksi
+// ("ubah hanya yang beda"), bukan ditebak/dikoreksi sendiri -- dilaporkan
+// sebagai pertanyaan untuk Mas, bukan diselesaikan diam-diam di sini.
 const NEXT_STEP_HINT = {
-  OPEN:        'Issue a PRF and submit it to pricing to advance to IN REVIEW.',
-  IN_REVIEW:   'Send the quotation to the customer to advance to QUOTED.',
-  /* "Send", bukan "Issue". Trigger trg_z_inquiry_negotiation_on_revision
-     menyala saat revisi ke-2+ BERPINDAH ke SENT — membuat revisi lalu
-     membiarkannya DRAFT tidak memindahkan apa pun. "Issue" bisa dibaca
-     "buat", dan itu janji yang tidak ditepati sistem. */
-  QUOTED:      'Send the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
-  NEGOTIATION: 'Send a Sales Order to close the inquiry as WON.',
+  OPEN:        'Start pricing: request rates, use a rate from the library, or create a quotation draft. Any of these moves the inquiry to In Review.',
+  IN_REVIEW:   'Send the quotation to the customer and record the channel to advance to Quoted.',
+  QUOTED:      'The inquiry is won as soon as the customer accepts the quotation, sends a Shipment Instruction, or sends a PO.',
+  NEGOTIATION: 'The inquiry is won as soon as the customer accepts the quotation, sends a Shipment Instruction, or sends a PO.',
 };
 
 function NextStepHint({ status }) {
