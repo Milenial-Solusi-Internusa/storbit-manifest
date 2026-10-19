@@ -3091,7 +3091,12 @@ export default function StorbitManifest() {
           diganti dari PASTEL ke token kit; `showToast(msg, type)` dan
           seluruh pemanggilnya tidak disentuh. */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-4 py-3 text-sm font-medium animate-toast-in flex items-center gap-2.5"
+        // TD-318 Irisan 2 Inquiry, commit 1: z-index naik 70 -> 200 (token
+        // kit Z.toast, Overlay.jsx), persis mockup Inquiry Management.dc.html
+        // (toast z-index:200) -- sebelumnya LEBIH RENDAH dari Modal (Z.modal
+        // =90), jadi toast ini akan tersembunyi di belakang modal mana pun
+        // yang masih terbuka. Durasi/posisi TIDAK disentuh (keputusan Den).
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-3 text-sm font-medium animate-toast-in flex items-center gap-2.5"
           style={{
             background: INK,
             color: WHITE,
