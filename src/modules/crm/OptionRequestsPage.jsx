@@ -12,16 +12,16 @@
 // di atas token sage, bukan navy/orange/cream crm/v3. Halaman dibangun
 // dengan kit sage, konsisten dengan seluruh keluarga fiturnya.
 //
-// Commit 1 (plan §8): list + filter + NoAccess saja -- panel Detail masih
-// placeholder "Pick a request to review it." untuk SEMUA baris (dibangun
-// penuh di Commit 2, lalu Approve/Reject di Commit 3).
+// Commit 2 (plan §8): panel Detail read-only PENUH (header/field/existing-
+// options anti-duplikat/reason/history) -- Approve/Reject (blok aksi)
+// menyusul Commit 3, dengan signature RPC LAMA (20261011000002).
 import { useState, useEffect, useMemo } from 'react';
 import {
   PageHeader, Card, EmptyState, Segmented, SearchInput, Badge,
 } from '../../kit';
 import {
-  INK, INK_SOFT, INK_FAINT, LINE_SOFT, HEAD_BG, ROW_HOVER, BG,
-  FONT_BODY, FONT_HEAD, FONT_MONO, SP, TONE,
+  INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER, BG,
+  FONT_BODY, FONT_HEAD, FONT_MONO, SP, SEMANTIC, TONE,
 } from '../../kit/tokens';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -31,6 +31,12 @@ import { isManagerOrAbove } from '../../lib/roles';
 // tiga list yang hidup hari ini; list_key lain tampil apa adanya (fallback).
 const LIST_KEY_LABELS = { lead_industry: 'Industry', lead_category: 'Lead Category', lost_reason: 'Lost Reason' };
 function listLabel(key) { return LIST_KEY_LABELS[key] || key; }
+
+// Location Master (rule 108) BELUM ada sebagai master data Nexus -- array
+// SENGAJA kosong, bukan tebakan nama key. Cabang isLoc tak tereksekusi
+// dengan data produksi/staging apa pun hari ini.
+const LOCATION_LIST_KEYS = [];
+const isLocationList = (key) => LOCATION_LIST_KEYS.includes(key);
 
 const STATUS_TONE = { pending: 'warn', approved: 'ok', rejected: 'danger' };
 const STATUS_LABEL = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' };
@@ -65,6 +71,7 @@ export default function OptionRequestsPage({ showToast }) {
   const [peopleMap, setPeopleMap] = useState({}); // id -> { name, role }
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
+  const [existingOptions, setExistingOptions] = useState([]);
   const [reloadKey] = useState(0);
 
   // Daftar permintaan -- hanya dimuat untuk manager ke atas. Non-manager
@@ -119,6 +126,40 @@ export default function OptionRequestsPage({ showToast }) {
       });
     return () => { cancelled = true; };
   }, [canManage, showToast, reloadKey]);
+
+  const selected = useMemo(() => rows.find((r) => r.id === selectedId) || null, [rows, selectedId]);
+
+  // "Existing options" anti-duplikat (plan §1e/§4) -- dimuat ulang tiap kali
+  // list_key yang dipilih berubah (bukan setiap kali `selected` berubah
+  // identitasnya -- dua request di list_key yang sama tak perlu fetch dua
+  // kali berturut-turut kalau user klik cepat). Kedua cabang awal `return
+  // undefined` TANPA setState (sama alasan efek di atas): `!selected` dan
+  // Location Master (LOCATION_LIST_KEYS, tak tereksekusi hari ini) berarti
+  // DetailPanel tak membaca `existingOptions` sama sekali untuk kasus itu
+  // (lihat render DetailPanel: `!selected` pulang lebih dulu; cabang `loc`
+  // merender teks Location Master-nya sendiri, bukan daftar existingOptions).
+  useEffect(() => {
+    if (!selected) return undefined;
+    if (isLocationList(selected.list_key)) return undefined; // lihat LOCATION_LIST_KEYS
+    let cancelled = false;
+    supabase
+      .from('dropdown_options')
+      .select('label')
+      .eq('list_key', selected.list_key)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('sort_order')
+      .limit(500)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setExistingOptions([]); return; }
+        setExistingOptions((data || []).map((o) => o.label));
+      });
+    return () => { cancelled = true; };
+    // Dep sengaja hanya list_key, bukan seluruh `selected` (lihat komentar
+    // di atas efek ini): dua request di list yang sama tak perlu fetch ulang.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.list_key]);
 
   const filteredRows = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -239,11 +280,98 @@ export default function OptionRequestsPage({ showToast }) {
 
         <aside style={{ flex: '2 1 380px', minWidth: 320, position: 'sticky', top: 76 }}>
           <Card>
-            {/* Panel Detail penuh (header/field/existing-options/reason/history)
-                dibangun Commit 2; Approve/Reject Commit 3 -- lihat plan §8. */}
-            <span style={{ color: INK_SOFT, fontFamily: FONT_BODY }}>Pick a request to review it.</span>
+            {/* Blok aksi Approve/Reject menyusul Commit 3 -- lihat plan §8. */}
+            <DetailPanel selected={selected} existingOptions={existingOptions} peopleMap={peopleMap} />
           </Card>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function DetailPanel({ selected, existingOptions, peopleMap }) {
+  if (!selected) {
+    return <span style={{ color: INK_SOFT, fontFamily: FONT_BODY }}>Pick a request to review it.</span>;
+  }
+  const loc = isLocationList(selected.list_key);
+  const label = selected.label;
+  const trimmedLabel = label.trim().toLowerCase();
+  const dup = selected.status === 'pending' && existingOptions.some((o) => o.toLowerCase() === trimmedLabel);
+  const byName = peopleMap[selected.requested_by]?.name || '—';
+  const byRole = peopleMap[selected.requested_by]?.role || '—';
+  const reviewerName = peopleMap[selected.reviewed_by]?.name || '—';
+  const exTitle = loc ? 'Active locations in Location Master' : `Existing options in ${listLabel(selected.list_key)}`;
+
+  const fields = [
+    { l: 'List', v: listLabel(selected.list_key), w: 600 },
+    { l: 'Proposed label', v: label, w: 600 },
+    { l: 'Requested by', v: `${byName}, ${byRole}`, w: 400 },
+    { l: 'Date', v: fmtDate(selected.requested_at), w: 400 },
+  ];
+
+  const decisionNote = selected.status === 'approved' ? selected.approval_note : selected.status === 'rejected' ? selected.rejection_reason : null;
+  const history = [
+    { txt: `Requested by ${byName}, ${byRole}. ${selected.reason || 'No reason given'}`, when: fmtDate(selected.requested_at) },
+    ...(selected.status !== 'pending'
+      ? [{ txt: `${STATUS_LABEL[selected.status]} by ${reviewerName}${decisionNote ? '. ' + decisionNote : ''}`, when: fmtDate(selected.reviewed_at) }]
+      : []),
+  ].reverse();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
+          <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: INK_SOFT }}>Request new option</span>
+          <b style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>{label}</b>
+        </div>
+        <Badge tone={STATUS_TONE[selected.status] || 'neutral'}>{STATUS_LABEL[selected.status] || selected.status}</Badge>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {fields.map((f) => (
+          <div key={f.l} style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+            <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: INK_SOFT }}>{f.l}</span>
+            <span style={{ fontWeight: f.w }}>{f.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, background: BG }}>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: INK_SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>{exTitle}</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {existingOptions.map((o) => {
+            const match = o.toLowerCase() === trimmedLabel;
+            return <Badge key={o} tone={match ? SEMANTIC.warn : SEMANTIC.neutral}>{o}</Badge>;
+          })}
+        </div>
+        {existingOptions.length === 0 && <span style={{ color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 12.5 }}>No options recorded for this list.</span>}
+        {loc && <a href="#" onClick={(e) => e.preventDefault()} style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600 }}>Open Location Master</a>}
+      </div>
+
+      {dup && (
+        <div style={{ padding: '10px 14px', background: SEMANTIC.warn.bg, border: `1px solid ${SEMANTIC.warn.bd}`, borderRadius: 10, color: SEMANTIC.warn.fg, fontFamily: FONT_BODY, fontSize: 12.5 }}>
+          This option already exists in {listLabel(selected.list_key)}. Reject the request and ask the requester to pick the existing option.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: INK_SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>Reason from {byName}</span>
+        <div style={{ padding: '10px 14px', background: BG, border: `1px solid ${LINE_SOFT}`, borderRadius: 10, color: selected.reason ? INK : INK_FAINT }}>
+          {selected.reason || 'No reason given'}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: INK_SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>History</span>
+        {history.map((h, i) => (
+          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 4, background: '#AFC9A0', marginTop: 6, flex: 'none' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK }}>{h.txt}</span>
+              <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: INK_FAINT }}>{h.when}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
