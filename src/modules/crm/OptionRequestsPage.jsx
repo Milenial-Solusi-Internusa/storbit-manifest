@@ -12,12 +12,18 @@
 // di atas token sage, bukan navy/orange/cream crm/v3. Halaman dibangun
 // dengan kit sage, konsisten dengan seluruh keluarga fiturnya.
 //
-// Commit 2 (plan §8): panel Detail read-only PENUH (header/field/existing-
-// options anti-duplikat/reason/history) -- Approve/Reject (blok aksi)
-// menyusul Commit 3, dengan signature RPC LAMA (20261011000002).
-import { useState, useEffect, useMemo } from 'react';
+// Commit 3 (plan §8): blok aksi Approve/Reject -- RPC signature LAMA
+// (20261011000002: approve_dropdown_option_request 1 argumen,
+// reject_dropdown_option_request 2 argumen, TANPA catatan/notifikasi).
+// Kolom approval_note + signature baru + RPC submit_dropdown_option_request
+// MENUNGGU migrasi 20261020000001 dijalankan Den di staging (Commit 5) --
+// textarea Note SELALU terlihat (mockup) tapi nilainya BELUM dikirim ke
+// approve, hanya dipakai utk validasi Reject (wajib alasan, ditegakkan
+// server RAISE EXCEPTION + direplikasi di sini supaya pesan error tak
+// menunggu round-trip).
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  PageHeader, Card, EmptyState, Segmented, SearchInput, Badge,
+  PageHeader, Card, EmptyState, Segmented, SearchInput, Badge, Textarea, PrimaryBtn, OutlineBtn,
 } from '../../kit';
 import {
   INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, ROW_HOVER, BG,
@@ -72,7 +78,10 @@ export default function OptionRequestsPage({ showToast }) {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [existingOptions, setExistingOptions] = useState([]);
-  const [reloadKey] = useState(0);
+  const [note, setNote] = useState('');
+  const [noteErr, setNoteErr] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
   // Daftar permintaan -- hanya dimuat untuk manager ke atas. Non-manager
   // SELALU merender cabang NoAccess (lihat akhir fungsi ini) sebelum sempat
@@ -173,7 +182,30 @@ export default function OptionRequestsPage({ showToast }) {
 
   const pendingCount = useMemo(() => rows.filter((r) => r.status === 'pending').length, [rows]);
 
-  function selectRow(id) { setSelectedId(id); }
+  function selectRow(id) { setSelectedId(id); setNote(''); setNoteErr(''); }
+
+  async function handleApprove() {
+    if (!selected) return;
+    const { error } = await supabase.rpc('approve_dropdown_option_request', { p_request_id: selected.id });
+    if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
+    window.dispatchEvent(new CustomEvent('nexus:option-requests-changed'));
+    showToast?.(`Approved. ${selected.label} is now available in the ${listLabel(selected.list_key)} dropdown`, 'success');
+    setNote(''); setNoteErr('');
+    refetch();
+  }
+
+  async function handleReject() {
+    if (!selected) return;
+    const trimmed = note.trim();
+    if (!trimmed) { setNoteErr('A reason is required to reject.'); return; } // replika syarat server (RAISE EXCEPTION), pesan tanpa round-trip
+    const { error } = await supabase.rpc('reject_dropdown_option_request', { p_request_id: selected.id, p_reason: trimmed });
+    if (error) { showToast?.('Failed to reject: ' + error.message, 'error'); return; }
+    window.dispatchEvent(new CustomEvent('nexus:option-requests-changed'));
+    const byName = peopleMap[selected.requested_by]?.name || 'the requester';
+    showToast?.(`Request rejected. ${byName} is notified`);
+    setNote(''); setNoteErr('');
+    refetch();
+  }
 
   if (!canManage) {
     return (
@@ -281,7 +313,11 @@ export default function OptionRequestsPage({ showToast }) {
         <aside style={{ flex: '2 1 380px', minWidth: 320, position: 'sticky', top: 76 }}>
           <Card>
             {/* Blok aksi Approve/Reject menyusul Commit 3 -- lihat plan §8. */}
-            <DetailPanel selected={selected} existingOptions={existingOptions} peopleMap={peopleMap} />
+            <DetailPanel
+              selected={selected} existingOptions={existingOptions} peopleMap={peopleMap}
+              note={note} setNote={setNote} noteErr={noteErr} setNoteErr={setNoteErr}
+              onApprove={handleApprove} onReject={handleReject}
+            />
           </Card>
         </aside>
       </div>
@@ -289,14 +325,15 @@ export default function OptionRequestsPage({ showToast }) {
   );
 }
 
-function DetailPanel({ selected, existingOptions, peopleMap }) {
+function DetailPanel({ selected, existingOptions, peopleMap, note, setNote, noteErr, setNoteErr, onApprove, onReject }) {
   if (!selected) {
     return <span style={{ color: INK_SOFT, fontFamily: FONT_BODY }}>Pick a request to review it.</span>;
   }
   const loc = isLocationList(selected.list_key);
   const label = selected.label;
+  const pending = selected.status === 'pending';
   const trimmedLabel = label.trim().toLowerCase();
-  const dup = selected.status === 'pending' && existingOptions.some((o) => o.toLowerCase() === trimmedLabel);
+  const dup = pending && existingOptions.some((o) => o.toLowerCase() === trimmedLabel);
   const byName = peopleMap[selected.requested_by]?.name || '—';
   const byRole = peopleMap[selected.requested_by]?.role || '—';
   const reviewerName = peopleMap[selected.reviewed_by]?.name || '—';
@@ -360,6 +397,25 @@ function DetailPanel({ selected, existingOptions, peopleMap }) {
           {selected.reason || 'No reason given'}
         </div>
       </div>
+
+      {pending && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: `1px solid ${LINE_SOFT}` }}>
+          <Textarea
+            value={note} onChange={(v) => { setNote(v); setNoteErr(''); }}
+            rows={3} placeholder="Note. Optional to approve, required to reject."
+            error={noteErr || undefined}
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <PrimaryBtn disabled={dup} onClick={onApprove}>Approve</PrimaryBtn>
+            <OutlineBtn onClick={onReject}>Reject</OutlineBtn>
+          </div>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: INK_FAINT }}>
+            {loc
+              ? 'Approve confirms the place is valid. It becomes selectable once the admin adds it in Location Master.'
+              : `Approve adds ${label} to the ${listLabel(selected.list_key)} dropdown.`}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: INK_SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>History</span>
