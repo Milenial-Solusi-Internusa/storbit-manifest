@@ -4,11 +4,15 @@
 -- Irisan 5 (TD-318 item #18) -- menambah catatan Approve + notifikasi
 -- submit/approve/reject ke RPC Option Requests dari 20261011000002 (butir
 -- #48 rantai Lead Pool Paket 2, 12_ANTREAN_MIGRASI_PRODUCTION.md). File ini
--- diusulkan sebagai butir BARU #58 di EKOR rantai 47-57 (bukan disisipkan
--- di antara #48/#49) -- ketergantungannya HANYA pada #48 (tabel
--- dropdown_option_requests + ketiga RPC dasarnya), INDEPENDEN dari #49-#57
--- (infrastruktur Lead Pool, berbagi tabel generik `notifications` tapi nol
--- RPC/kolom yang tumpang tindih).
+-- tercatat sebagai butir #65 di 12_ANTREAN_MIGRASI_PRODUCTION.md (KOREKSI
+-- 20 Okt 2026, doc-keeper -- "#58" yang sempat ditulis di sini SALAH:
+-- nomor itu sudah terpakai oleh Paket 2 Lead Pool sejak 12 Okt 2026,
+-- "Perubahan manual khusus STAGING... ARAH TERBALIK"; #65 = nomor
+-- berikutnya yang benar-benar kosong saat dicek). Posisi tetap di EKOR
+-- rantai 47-57 (bukan disisipkan di antara #48/#49) -- ketergantungannya
+-- HANYA pada #48 (tabel dropdown_option_requests + ketiga RPC dasarnya),
+-- INDEPENDEN dari #49-#57 (infrastruktur Lead Pool, berbagi tabel
+-- generik `notifications` tapi nol RPC/kolom yang tumpang tindih).
 --
 -- Status: DITULIS UNTUK REVIEW, BELUM DIJALANKAN di staging maupun
 --         production. Ditulis oleh Claude Code (Irisan 5, 20 Okt 2026) atas
