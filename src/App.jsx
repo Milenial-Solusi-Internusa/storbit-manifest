@@ -2448,6 +2448,9 @@ export default function StorbitManifest() {
                // berdasarkan ada/tiadanya akun lifecycle_stage='customer'.
                : n.reference_type === 'unowned_customers' ? 'crm-customers'
                : n.reference_type === 'unowned_leads'     ? 'crm-prospects'
+               // Notifikasi submit/approve/reject Option Requests (Irisan 5,
+               // migrasi 20261020000001) -- satu menu untuk ketiga event_type.
+               : n.reference_type === 'dropdown_option_request' ? 'crm-option-requests'
                : null;
     if (dest) navigateTo(dest);
   }, [navigate, navigateTo, showToast]);
