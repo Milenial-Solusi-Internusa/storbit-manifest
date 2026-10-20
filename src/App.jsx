@@ -27,7 +27,7 @@ import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
-import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin } from './lib/roles';
+import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin, isManagerOrAbove } from './lib/roles';
 // Batch FS Fase 2.5 G1 — routing berbasis path: activeMenu diturunkan dari rute
 // (handle.menuId, src/routes/legacy.routes.jsx); setActiveMenu = navigate(pathFor(id)).
 import { pathFor, ADMIN_SECTION_IDS } from './routes/menu-paths';
@@ -429,6 +429,15 @@ const CRM_MENU_ITEMS = [
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
+  // Option Requests (Irisan 5, TD-318 item #18) — gate BUKAN hasMenuPermission
+  // key (keputusan Den, plan Irisan 5 §10.9: role-level langsung, supaya
+  // SEMUA manager ke atas otomatis bisa membuka tanpa seeding izin per-user
+  // ke role_menu_permissions). `public: true` di sini TIDAK membuat halaman
+  // ini publik — ia hanya membuat navHasGate() mengenali id ini sebagai
+  // "gated" sehingga diserahkan ke canSeeMenuItem, yang lalu meng-override-nya
+  // dengan isManagerOrAboveUser SEBELUM mencapai cabang public:true generik.
+  // Pola persis BNF/Meeting Mingguan (lihat komentar id:'bnf' di atas).
+  { id: 'crm-option-requests', label: 'Option Requests', icon: ClipboardCheck, public: true },
   // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —
   // sekarang grup top-level tersendiri 'Shared Reference' di ERP_MENU_GROUPS,
   // dirender sbg leaf 'nav-rate-list' di NEXUS_NAV 'Shared Services'.
@@ -1214,7 +1223,7 @@ const DETAIL_OVERLAY_IDS = ['assets-detail', 'product-detail'];
 // 20260911000003). Jangan tambahkan properti `role` pada item menu lagi;
 // ia tidak akan dievaluasi.
 // Item tanpa gate apa pun (tanpa public/menuKey) disembunyikan.
-const canSeeMenuItem = (item, hasMenuPermission, isBnfAuthorized) => {
+const canSeeMenuItem = (item, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser) => {
   if (item.section) return true;
   // BNF (2026-08-11) + Meeting Mingguan (2026-08-12): public:true alone is
   // not enough for these two items — checked before the generic public:true
@@ -1222,6 +1231,10 @@ const canSeeMenuItem = (item, hasMenuPermission, isBnfAuthorized) => {
   // purely so navHasGate() still recognizes them as gated; see their
   // comments in ERP_MENU_GROUPS.
   if (item.id === 'bnf' || item.id === 'meeting-mingguan') return !!isBnfAuthorized;
+  // Option Requests (Irisan 5) — pola PERSIS BNF di atas: `public:true`
+  // hanya supaya navHasGate() mengenalinya sbg gated, keputusan sebenarnya
+  // role-level langsung (isManagerOrAbove di lib/roles.js), bukan menu key.
+  if (item.id === 'crm-option-requests') return !!isManagerOrAboveUser;
   // Item ber-flag public terlihat untuk semua authenticated user.
   if (item.public === true) return true;
   // Sistema baru: per-user menu permission check
@@ -1325,7 +1338,7 @@ function navHasGate(item) {
   return !!(item && (item.public === true || MENU_KEY_MAP[item.id]));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
-function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
+function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser) {
   // Item Soon (Level 3 Bagian 1 yang belum punya halaman) kini HANYA tampil
   // untuk super_admin (revisi Den, rilis 14 Okt 2026) — sebelumnya tampil
   // untuk semua user. Konten-nya tetap tidak bisa diklik untuk siapa pun
@@ -1337,7 +1350,7 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
   // — tanpa logika kedua yang harus diingat bergerak bersama.
   if (c.soon) return !!isSuperAdminUser;
   if (c.children) {
-    const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized, isSuperAdminUser));
+    const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser));
     if (subs.some(s => s === true)) return true;
     if (subs.every(s => s === null)) return null;
     return false;
@@ -1345,7 +1358,7 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
   const real = findMenuItemById(c.id);
   if (!real) return null;              // not in ERP_MENU_GROUPS (e.g. 'users')
   if (!navHasGate(real)) return null;  // gateless → inherit parent module
-  return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+  return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
 }
 // Apakah modul Level 1 memuat minimal satu halaman HIDUP yang boleh dibuka user.
 // Sengaja TIDAK memakai navChildGate: fungsi ini hanya pernah dipanggil untuk
@@ -1353,10 +1366,10 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
 // mem-bypass super_admin lebih dulu), dan untuk merekalah Soon harus TIDAK
 // PERNAH dihitung "hidup" — kalau tidak, modul yang isinya murni Soon akan
 // tetap tampil terbuka (bisa diklik) untuk siapa pun.
-function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
+function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser) {
   return (nodes || []).some((n) => {
     if (n.soon) return false;                       // Soon tidak menghidupkan modul
-    if (n.children) return navModuleHasLivePage(n.children, hasMenuPermission, isBnfAuthorized);
+    if (n.children) return navModuleHasLivePage(n.children, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
     const real = findMenuItemById(n.id);
     if (!real) return false;
     // Halaman `public: true` juga TIDAK menghidupkan modulnya (keputusan Den).
@@ -1371,10 +1384,10 @@ function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
     // digerbang isBnfAuthorized; keduanya tidak dipasang di tab mana pun, jadi
     // tidak pernah sampai ke sini.)
     if (real.public === true) return false;
-    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
   });
 }
-function navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
+function navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser) {
   // Modul Level 1 ber-`soon:true` tidak pernah lahir dari SKELETON hari ini
   // (kode mati), tapi ikut aturan "Soon hanya untuk super_admin" demi
   // konsistensi dengan `navChildGate` kalau kelak ada yang menambahkannya.
@@ -1382,9 +1395,9 @@ function navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUse
   if (m.target) {                      // direct-navigate leaf (Beranda)
     const real = findMenuItemById(m.target);
     if (!real || !navHasGate(real)) return true;
-    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
   }
-  const gates = (m.children || []).map(c => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser));
+  const gates = (m.children || []).map(c => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser));
   if (gates.some(g => g === true)) return true;                   // a visible gated child
   if (gates.length && gates.every(g => g === null)) return true;  // fully gateless → show
   return false;                                                   // gated children, none visible → hide
@@ -1396,20 +1409,21 @@ function navModuleContaining(id) {
 // Content-level gate (F4): mirror the sidebar so a page can't be rendered by a
 // role that can't see its menu. Gateless child → inherit its NEXUS_NAV module's
 // visibility (NOT default-deny → Asset sub-pages stay reachable when the module is).
-function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) {
+function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser) {
   if (!id) return true;
   const item = findMenuItemById(id);
-  if (item && navHasGate(item)) return canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized);
+  if (item && navHasGate(item)) return canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
   const mod = navModuleContaining(id);
-  if (mod) return navModuleVisible(mod, hasMenuPermission, isBnfAuthorized, isSuperAdminUser);
+  if (mod) return navModuleVisible(mod, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser);
   return true; // unknown/synthetic → allow (caller keeps its SYNTHETIC/prefix allow-list)
 }
 
 function NexusSidebar({
   activeMenu, onNavigate, hasMenuPermission, isBnfAuthorized,
-  profile, currentRoleLabel, isSuperAdminUser = false,
+  profile, currentRoleLabel, isSuperAdminUser = false, isManagerOrAboveUser = false,
   asDrawer = false, isOpen = false, onClose,
   leadPoolPendingCount = 0,
+  optionRequestsPendingCount = 0,
 }) {
   // An item is "gated" only if it carries an explicit access rule (public flag
   // or a MENU_KEY_MAP entry — sejak 11 Sep 2026 tidak ada rezim lain). The OLD sidebar
@@ -1419,7 +1433,7 @@ function NexusSidebar({
   // Asset sub-page: they carry no gate, only the module `assets` does).
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
-  const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser) !== false;
+  const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser) !== false;
   // Level 1: tampil HANYA kalau user boleh membuka minimal satu Level 3 hidup di
   // dalamnya (keputusan Den). super_admin dikecualikan — ia tetap melihat
   // sembilan modul, termasuk Console & PPJK yang hari ini NOL halaman hidup dan
@@ -1427,10 +1441,10 @@ function NexusSidebar({
   // Modul ber-`target` (Beranda, Admin Settings) tidak punya anak → tetap
   // dinilai navModuleVisible seperti sebelumnya.
   const moduleVisible = (m) => {
-    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser)) return false;
+    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized, isSuperAdminUser, isManagerOrAboveUser)) return false;
     if (!m.children) return true;
     if (isSuperAdminUser) return true;
-    return navModuleHasLivePage(m.children, hasMenuPermission, isBnfAuthorized);
+    return navModuleHasLivePage(m.children, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
   };
 
   const activeModId = (() => {
@@ -1501,7 +1515,7 @@ function NexusSidebar({
       const leafIds = (c.children || []).map(gc => gc.id);
       const permitted = (id) => {
         const it = findMenuItemById(id);
-        return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
+        return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
       };
       const firstTab = leafIds.find(permitted);
       const tabbedActive = leafIds.includes(activeMenu);
@@ -1549,6 +1563,15 @@ function NexusSidebar({
                 {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
               </span>
             )}
+            {/* Badge Level 2 "Option Requests" (Irisan 5, pola PERSIS Lead
+                Pool di atas) -- id Level 2 = l2-1-11 (code "1.11"). Cross-
+                entity (plan §5b/§6b): TANPA scoping company, beda dari Lead
+                Pool yang di-scope per entitas pemegang izin. */}
+            {c.id === 'l2-1-11' && optionRequestsPendingCount > 0 && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
+                {optionRequestsPendingCount > 99 ? '99+' : optionRequestsPendingCount}
+              </span>
+            )}
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
@@ -1581,6 +1604,13 @@ function NexusSidebar({
         {c.id === 'crm-lead-pool' && leadPoolPendingCount > 0 && (
           <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
             {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
+          </span>
+        )}
+        {/* Badge Level 3 "Option Requests" (Irisan 5) -- cross-entity, lihat
+            komentar badge Level 2 di atas. */}
+        {c.id === 'crm-option-requests' && optionRequestsPendingCount > 0 && (
+          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
+            {optionRequestsPendingCount > 99 ? '99+' : optionRequestsPendingCount}
           </span>
         )}
       </button>
@@ -1842,6 +1872,10 @@ export default function StorbitManifest() {
     });
   }, [navigate]);
   const { role: authRole, erpRoles: authErpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
+  // isManagerOrAboveUser — gate role-level untuk Option Requests (Irisan 5,
+  // plan §10.9), dihitung SEKALI di sini dan dialirkan ke seluruh fungsi
+  // nav*/canSeeMenuItem persis pola isBnfAuthorized di baris yang sama.
+  const isManagerOrAboveUser = isManagerOrAbove(authErpRoles);
   // `role` = role UTAMA di entitas aktif, atau NULL kalau user tak punya role
   // di sana — state eksplisit (11 Sep 2026), menggantikan fallback lama
   // `|| 'management'` yang berpura-pura jadi role bernama 'management'. Semua
@@ -1874,8 +1908,8 @@ export default function StorbitManifest() {
       console.warn(`[RBAC] canRenderPage: menu id "${menuId}" tidak ditemukan di ERP_MENU_GROUPS — akses DITOLAK (fail-closed). Cek apakah id ini terhapus/berganti nama saat restrukturisasi menu.`);
       return false;
     }
-    return canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized);
-  }, [hasMenuPermission, isBnfAuthorized]);
+    return canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser);
+  }, [hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser]);
 
   // Defense-in-depth for Admin Settings (hub + all admin-settings-* sub-pages):
   // explicit role gate — super_admin OR admin only.
@@ -2023,6 +2057,54 @@ export default function StorbitManifest() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [profile?.id, authErpRoles, hasMenuPermission]);
+
+  // ── Sidebar badge: Option Requests pending count (Irisan 5) ────────────────
+  // Gate = isManagerOrAboveUser (role-level langsung, plan §10.9) -- BUKAN
+  // hasMenuPermission key seperti Lead Pool di atas, jadi nol RPC per-entitas
+  // diperlukan: hitung LANGSUNG dari dropdown_option_requests TANPA filter
+  // company (cross-entity, plan §5b/§6b -- daftar request itu sendiri tak
+  // dibatasi per entitas, RLS SELECT-nya pun begitu). Pola polling/event/
+  // visibilitychange PERSIS Lead Pool di atas.
+  const [optionRequestsPendingCount, setOptionRequestsPendingCount] = useState(0);
+  const optionRequestsCountRef = useRef(null);
+  useEffect(() => {
+    if (!profile?.id || !isManagerOrAboveUser) {
+      if (optionRequestsCountRef.current !== 0) { optionRequestsCountRef.current = 0; setOptionRequestsPendingCount(0); }
+      return undefined;
+    }
+    let cancelled = false;
+    const applyCount = (n) => {
+      if (cancelled) return;
+      if (n !== optionRequestsCountRef.current) { optionRequestsCountRef.current = n; setOptionRequestsPendingCount(n); }
+    };
+    const fetchCount = async () => {
+      try {
+        const { count, error } = await supabase.from('dropdown_option_requests')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        if (error) throw error;
+        applyCount(count || 0);
+      } catch (e) {
+        console.debug('[optionRequestsBadge] count failed:', e?.message || e);
+        applyCount(0);
+      }
+    };
+    fetchCount();
+    const iv = setInterval(fetchCount, 60000);
+    // Hitung ulang SEGERA sesudah submit/approve/reject -- pola sama
+    // 'nexus:lead-pool-changed' di atas (lihat handleApprove/handleReject,
+    // OptionRequestsPage.jsx).
+    const onChanged = () => fetchCount();
+    window.addEventListener('nexus:option-requests-changed', onChanged);
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchCount(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      window.removeEventListener('nexus:option-requests-changed', onChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [profile?.id, isManagerOrAboveUser]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
@@ -2254,18 +2336,18 @@ export default function StorbitManifest() {
     // and this guard bounced the user to the first visible menu (the public
     // Command Center dashboard). Reusing isMenuAccessible keeps the sidebar, the
     // content gate, and this redirect perfectly in sync (opsi A).
-    if (isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, isSuperAdmin(authErpRoles))) return;
+    if (isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, isSuperAdmin(authErpRoles), isManagerOrAboveUser)) return;
 
     // Not accessible → land on the first visible top-level menu (or home).
     const visFlat = ERP_MENU_GROUPS
       .flatMap(g => g.items)
-      .filter(it => !it.section && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized));
+      .filter(it => !it.section && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser));
     if (visFlat.length === 0) return;
     // Intentional, self-terminating redirect: after switching to a valid menu the
     // guard passes on the next run, so this does not loop. `replace`: alamat yang
     // ditolak tidak tertinggal sebagai entri riwayat.
     navigate(pathFor(visFlat[0]?.id || 'home') ?? '/home', { replace: true });
-  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading, navigate, authErpRoles]);
+  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading, navigate, authErpRoles, isManagerOrAboveUser]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
@@ -2366,6 +2448,9 @@ export default function StorbitManifest() {
                // berdasarkan ada/tiadanya akun lifecycle_stage='customer'.
                : n.reference_type === 'unowned_customers' ? 'crm-customers'
                : n.reference_type === 'unowned_leads'     ? 'crm-prospects'
+               // Notifikasi submit/approve/reject Option Requests (Irisan 5,
+               // migrasi 20261020000001) -- satu menu untuk ketiga event_type.
+               : n.reference_type === 'dropdown_option_request' ? 'crm-option-requests'
                : null;
     if (dest) navigateTo(dest);
   }, [navigate, navigateTo, showToast]);
@@ -2629,7 +2714,7 @@ export default function StorbitManifest() {
   }
 
   const visibleMenuGroups = ERP_MENU_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
@@ -2654,7 +2739,7 @@ export default function StorbitManifest() {
     // isSuperAdminUser sudah dipastikan false di titik ini (early-return baris
     // pertama fungsi ini) — diteruskan apa adanya demi konsistensi signature
     // dengan pemanggil navModuleVisible lainnya.
-    return isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, false);
+    return isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized, false, isManagerOrAboveUser);
   })();
 
   // AppShellContext (Batch FS Fase 2.5 G1) — seluruh state/setter/handler yang
@@ -2755,7 +2840,9 @@ export default function StorbitManifest() {
           profile={profile}
           currentRoleLabel={currentRoleLabel}
           isSuperAdminUser={isSuperAdmin(authErpRoles)}
+          isManagerOrAboveUser={isManagerOrAboveUser}
           leadPoolPendingCount={leadPoolPendingCount}
+          optionRequestsPendingCount={optionRequestsPendingCount}
         />
 
         {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
@@ -2781,7 +2868,9 @@ export default function StorbitManifest() {
             profile={profile}
             currentRoleLabel={currentRoleLabel}
             isSuperAdminUser={isSuperAdmin(authErpRoles)}
+            isManagerOrAboveUser={isManagerOrAboveUser}
             leadPoolPendingCount={leadPoolPendingCount}
+            optionRequestsPendingCount={optionRequestsPendingCount}
           />
         </>
 
