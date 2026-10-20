@@ -12,15 +12,16 @@
 // di atas token sage, bukan navy/orange/cream crm/v3. Halaman dibangun
 // dengan kit sage, konsisten dengan seluruh keluarga fiturnya.
 //
-// Commit 3 (plan §8): blok aksi Approve/Reject -- RPC signature LAMA
-// (20261011000002: approve_dropdown_option_request 1 argumen,
-// reject_dropdown_option_request 2 argumen, TANPA catatan/notifikasi).
-// Kolom approval_note + signature baru + RPC submit_dropdown_option_request
-// MENUNGGU migrasi 20261020000001 dijalankan Den di staging (Commit 5) --
-// textarea Note SELALU terlihat (mockup) tapi nilainya BELUM dikirim ke
-// approve, hanya dipakai utk validasi Reject (wajib alasan, ditegakkan
-// server RAISE EXCEPTION + direplikasi di sini supaya pesan error tak
-// menunggu round-trip).
+// Ronde FE kedua (20 Okt 2026): migrasi 20261020000001 sudah LIVE di staging
+// (4 uji lolos: submit->notifikasi manager, approve->approval_note
+// tersimpan, reject tanpa alasan ditolak, approve kedua kali ditolak) --
+// approve_dropdown_option_request kini 2 argumen (p_request_id, p_note).
+// Textarea Note dikirim ke approve HANYA kalau isinya bukan kosong/spasi
+// (null kalau kosong, pola sama validasi Reject di bawah); untuk Reject
+// tetap wajib diisi, ditegakkan server RAISE EXCEPTION + direplikasi di FE
+// supaya pesan error tak menunggu round-trip. History panel (DetailPanel)
+// sudah membaca approval_note/rejection_reason sejak Commit 2 (lihat
+// `decisionNote`) -- nol perubahan di situ.
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PageHeader, Card, EmptyState, Segmented, SearchInput, Badge, Textarea, PrimaryBtn, OutlineBtn,
@@ -186,7 +187,11 @@ export default function OptionRequestsPage({ showToast }) {
 
   async function handleApprove() {
     if (!selected) return;
-    const { error } = await supabase.rpc('approve_dropdown_option_request', { p_request_id: selected.id });
+    const trimmedNote = note.trim();
+    const { error } = await supabase.rpc('approve_dropdown_option_request', {
+      p_request_id: selected.id,
+      p_note: trimmedNote || null, // kosong/spasi -> null, bukan string kosong
+    });
     if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
     window.dispatchEvent(new CustomEvent('nexus:option-requests-changed'));
     showToast?.(`Approved. ${selected.label} is now available in the ${listLabel(selected.list_key)} dropdown`, 'success');
