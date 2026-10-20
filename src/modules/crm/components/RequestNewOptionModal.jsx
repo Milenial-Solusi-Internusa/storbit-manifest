@@ -32,11 +32,21 @@
 // diputuskan Den 16 Okt 2026 (REVISI 2: "DITOLAK, semuanya ikut mockup"),
 // bukan kelupaan. Placeholder Option Name DICABUT (REVISI 2 §5, mockup
 // tak punya placeholder di field itu -- :420).
+//
+// Ronde FE kedua Irisan 5 (20 Okt 2026): handleSave dipindah dari INSERT
+// langsung ke RPC `submit_dropdown_option_request` (migrasi 20261020000001,
+// LIVE staging -- notifikasi ke manager kini terkirim saat submit, bukan
+// hanya saat approve/reject). RPC mengembalikan uuid polos (bukan baris
+// {id,label} seperti `.select().single()` lama) -- `onSubmitted` dibangun
+// ulang dari uuid + `trimmedLabel` yang sudah ada di closure, supaya bentuk
+// propnya tetap {id,label} untuk pemanggil mana pun (hari ini nol pemanggil
+// yang memakai prop ini -- diverifikasi grep `onSubmitted=` di
+// CaptureLeadModal/LeadDetailPage/MarkAsLostModal, nol hasil -- tapi
+// kontraknya dipertahankan, bukan diam-diam disederhanakan jadi string).
 import { useState } from 'react';
 import { Modal, FloatingInput, Textarea, SaveButton, OutlineBtn, useToast } from '../../../kit';
 import { INK_SOFT, FONT_BODY } from '../../../kit/tokens';
 import { supabase } from '../../../lib/supabase';
-import { useAuth } from '../../../contexts/useAuth';
 
 /**
  * @param {Object}   props
@@ -48,7 +58,6 @@ import { useAuth } from '../../../contexts/useAuth';
  * @param {(result: Object) => void} [props.onSubmitted] - dipanggil dengan { mode:'request', request:{id,label} }
  */
 export default function RequestNewOptionModal({ open, onClose, listKey, listLabel, companyId = null, onSubmitted }) {
-  const { profile } = useAuth();
   const [toast, toastNode] = useToast();
   const [label, setLabel] = useState('');
   const [reason, setReason] = useState('');
@@ -65,15 +74,19 @@ export default function RequestNewOptionModal({ open, onClose, listKey, listLabe
     const trimmedLabel = label.trim();
     if (!trimmedLabel) { setNameTouched(true); return false; } // persis sendReq: set({reqT:true}), TIDAK menyentuh network
 
-    const { data, error } = await supabase
-      .from('dropdown_option_requests')
-      .insert({ list_key: listKey, label: trimmedLabel, reason: reason.trim() || null, company_id: companyId, requested_by: profile.id })
-      .select('id, label')
-      .single();
+    // requested_by diisi RPC lewat auth.uid() -- `profile.id` yang dulu
+    // dikirim manual (INSERT langsung) sudah tidak dibutuhkan, import
+    // useAuth dicabut.
+    const { data: newId, error } = await supabase.rpc('submit_dropdown_option_request', {
+      p_list_key: listKey,
+      p_label: trimmedLabel,
+      p_reason: reason.trim() || null,
+      p_company_id: companyId,
+    });
     if (error) return { error };
 
     toast(`Request for ${trimmedLabel} sent to the data owner`);
-    onSubmitted?.({ mode: 'request', request: data });
+    onSubmitted?.({ mode: 'request', request: { id: newId, label: trimmedLabel } });
     reset();
     onClose?.();
     return undefined;
