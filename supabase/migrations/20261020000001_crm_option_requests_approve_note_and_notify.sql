@@ -36,23 +36,48 @@
 --     (lihat catatan company_id di bawah).
 --
 -- -- Query penerima notifikasi SUBMIT -- replika is_manager_or_above() -----
--- is_manager_or_above() (schema_snapshot.sql:3151-3161) TIDAK bisa dipanggil
--- per-kandidat-penerima karena ia selalu membaca auth.uid() milik PEMANGGIL,
--- bukan parameter. Badan fungsinya:
+-- is_manager_or_above() TIDAK bisa dipanggil per-kandidat-penerima karena ia
+-- selalu membaca auth.uid() milik PEMANGGIL, bukan parameter -- query submit
+-- di bawah mereplikasi badan fungsinya, dengan ur.user_id dibiarkan terbuka
+-- (bukan di-pin ke auth.uid()).
+--
+-- KOREKSI 20 Okt 2026 (Vir): sumber replika di bawah BUKAN schema_snapshot.sql
+-- (dump produksi lama) -- badan is_manager_or_above() dibaca LANGSUNG dari DB
+-- STAGING dan PRODUCTION pada tanggal yang sama, 20 Okt 2026, dan IDENTIK di
+-- kedua environment:
 --   SELECT EXISTS (
 --     SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+--     JOIN profiles pa ON pa.id = ur.user_id AND pa.active = true
 --     WHERE ur.user_id = auth.uid()
 --       AND r.level <= 6
 --       AND ur.is_active = true
 --       AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE));
--- Query submit_dropdown_option_request di bawah mereplikasi KONDISI WHERE
--- itu persis, dengan ur.user_id dibiarkan terbuka (bukan di-pin ke
--- auth.uid()). `rl.code = 'super_admin'` TIDAK diikutkan sebagai OR
--- tambahan -- super_admin level = 0 (20260911000004_roles_level_column.sql:102),
--- sudah tercakup r.level <= 6, dan is_manager_or_above() sendiri tak punya
--- cabang khusus super_admin. `profiles.active = true` DITAMBAHKAN sebagai
--- filter EKSTRA di luar yang is_manager_or_above() cek (sengaja: jangan
--- kirim notifikasi ke akun yang sudah dinonaktifkan).
+-- Versi ini (dengan `JOIN profiles pa ... pa.active = true`) berasal dari
+-- migrasi `20261001000001_td301_lapis_b_inactive_user_db_guard.sql:392-403`
+-- (hotfix TD-301 lapis B -- user `profiles.active=false` ditolak di server
+-- pada setiap request). Migrasi itu dijalankan lewat branch
+-- `hotfix/td301-user-nonaktif` BERCABANG DARI `main` LANGSUNG, bukan lewat
+-- antrean `develop`→`main` biasa -- karena itu NOL nomor antrean di
+-- `12_ANTREAN_MIGRASI_PRODUCTION.md` untuk migrasi ini (bukan "tidak
+-- ditemukan", memang tidak pernah masuk daftar itu). Status migrasi itu
+-- sendiri, menurut headernya sendiri DAN `12_ANTREAN_MIGRASI_PRODUCTION.md:110`:
+-- LIVE staging DAN production sejak 1-2 Okt 2026 -- jauh sebelum sesi ini,
+-- dan sudah lewat sebelum gerbang launching mana pun relevan.
+--
+-- `schema_snapshot.sql:3151-3161` MASIH menunjukkan versi LAMA (nol `JOIN
+-- profiles`) -- itu snapshot BASI (pg_dump belum di-refresh sejak migrasi di
+-- atas jalan), BUKAN cerminan DB sekarang, dan BUKAN bukti fungsinya belum
+-- berubah. Jangan pakai baris snapshot itu untuk memutuskan status objek apa
+-- pun -- pola "snapshot basi padahal sudah LIVE di produksi" ini sudah
+-- berulang kali tercatat sebagai gotcha di CLAUDE.md.
+--
+-- `rl.code = 'super_admin'` TIDAK diikutkan sebagai OR tambahan di query
+-- submit -- super_admin level = 0 (20260911000004_roles_level_column.sql:102),
+-- sudah tercakup `r.level <= 6`, dan is_manager_or_above() sendiri tak punya
+-- cabang khusus super_admin. `p.active = true` pada query submit BUKAN
+-- tambahan di luar is_manager_or_above() -- itu BAGIAN dari replika badan
+-- fungsi aslinya (lihat kutipan di atas), disalin apa adanya, bukan filter
+-- ekstra yang disengaja ditambahkan di luar fungsi.
 --
 -- -- company_id notifikasi -- PER PENERIMA, bukan satu nilai pengaju -------
 -- Setiap baris `notifications` memakai profiles.company_id milik PENERIMA
@@ -62,6 +87,20 @@
 -- hanya filter user_id+is_read, NOL filter company -- kolom ini murni tag
 -- deskriptif di satu-satunya konsumen yang ada, jadi pilihan ini soal
 -- kebenaran semantik, bukan fungsi.
+--
+-- -- Konkurensi approve/reject -- FOR UPDATE + re-cek status (Vir) ---------
+-- SELECT request di approve DAN reject memakai `FOR UPDATE` (mengunci baris
+-- sampai transaksi RPC selesai), dan UPDATE di KEDUANYA mengulang
+-- `AND status = 'pending'` di WHERE-nya (bukan hanya di SELECT). Tanpa
+-- keduanya, dua panggilan approve/reject yang BERSAMAAN pada request yang
+-- sama bisa lolos SELECT secara bersamaan (race) sebelum salah satu UPDATE
+-- selesai mengubah status -- approve bisa memanggil add_dropdown_option_direct
+-- DUA KALI (dua baris dropdown_options untuk satu request) dan/atau UPDATE
+-- kedua menimpa hasil UPDATE pertama tanpa pernah diblok. Uji skrip (d) di
+-- scripts/qa/sql/verify-option-requests-rpc.sql menguji kasus SEKUENSIAL
+-- (dalam satu sesi) -- itu sudah tertangkap oleh filter `status='pending'`
+-- di SELECT bahkan tanpa FOR UPDATE; FOR UPDATE + re-cek UPDATE menutup
+-- kasus KONKUREN yang tidak diuji skrip itu.
 -- =============================================================================
 
 ALTER TABLE public.dropdown_option_requests ADD COLUMN approval_note text;
@@ -79,7 +118,7 @@ BEGIN
   IF NOT (public.is_super_admin() OR public.is_manager_or_above()) THEN
     RAISE EXCEPTION 'Hanya manager ke atas yang boleh menyetujui permintaan opsi';
   END IF;
-  SELECT * INTO r FROM public.dropdown_option_requests WHERE id = p_request_id AND status = 'pending';
+  SELECT * INTO r FROM public.dropdown_option_requests WHERE id = p_request_id AND status = 'pending' FOR UPDATE;
   IF r.id IS NULL THEN
     RAISE EXCEPTION 'Permintaan tidak ditemukan atau sudah diproses';
   END IF;
@@ -87,7 +126,7 @@ BEGIN
   UPDATE public.dropdown_option_requests
      SET status = 'approved', reviewed_by = auth.uid(), reviewed_at = now(),
          created_dropdown_option_id = v_opt_id, approval_note = p_note
-   WHERE id = p_request_id;
+   WHERE id = p_request_id AND status = 'pending';
   -- company_id baris ini = company HOME requester (satu-satunya penerima).
   SELECT company_id INTO v_requester_company FROM public.profiles WHERE id = r.requested_by;
   BEGIN
@@ -116,7 +155,7 @@ BEGIN
   IF p_reason IS NULL OR length(trim(p_reason)) = 0 THEN
     RAISE EXCEPTION 'Alasan penolakan wajib diisi';
   END IF;
-  SELECT * INTO r FROM public.dropdown_option_requests WHERE id = p_request_id AND status = 'pending';
+  SELECT * INTO r FROM public.dropdown_option_requests WHERE id = p_request_id AND status = 'pending' FOR UPDATE;
   IF r.id IS NULL THEN
     RAISE EXCEPTION 'Permintaan tidak ditemukan atau sudah diproses';
   END IF;
