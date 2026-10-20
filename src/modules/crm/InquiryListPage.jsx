@@ -489,7 +489,16 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             <FileText size={20} color={C.accent} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Inquiry List</h1>
+            {/* Irisan 2 Inquiry, putaran penutup (Task 2, butir 5): judul
+                halaman -- mockup Inquiry Management.dc.html h1 = "Inquiry
+                Status & History", font:700 24px Montserrat (bukan "Inquiry
+                List" 20px/800 lama). Aturan CLAUDE.md §Aturan Wajib "Cek
+                mockup dulu": halaman DAFTAR cocokkan h1 ke mockup HALAMAN
+                ITU, bukan nilai global. Subjudul "{total} inquiry
+                terdaftar" TETAP -- mockup tak punya subjudul di sini, tapi
+                mencabutnya menghapus info yang berfungsi, di luar cakupan
+                "selisih kecil dan jelas" -- dilaporkan, tidak diubah. */}
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, fontFamily: "Montserrat, sans-serif" }}>Inquiry Status &amp; History</h1>
             <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>{total} inquiry terdaftar</p>
           </div>
         </div>

@@ -12,7 +12,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from './Button';
-import { CARD, INK, INK_SOFT, LINE, BG, BACKDROP, SHADOW_2, SHADOW_MODAL, FONT_HEAD, FONT_BODY, RADIUS, Z, MOTION } from './tokens';
+import { CARD, INK, INK_SOFT, LINE, LINE_SOFT, BG, BACKDROP, SHADOW_2, SHADOW_MODAL, FONT_HEAD, FONT_BODY, RADIUS, Z, MOTION } from './tokens';
 
 // Tumpukan overlay terbuka (TD-318 Irisan 3, temuan tes Den) -- modul-level,
 // dipakai BERSAMA Modal & SlideOver. Modal/SlideOver yang menumpuk modal lain
@@ -76,17 +76,27 @@ function useEscape(open, onClose, enabled) {
   }, [open, enabled, onClose, id]);
 }
 
+/* TD-318 Irisan 2 Inquiry, commit 1: padding/border disamakan ke mockup
+   Inquiry Management.dc.html (11 instance Modal/* header, mis. :463/:477/:488)
+   -- padding:20px 24px (BUKAN 22px), border-bottom:1px solid #ECF0E9 (=LINE_SOFT,
+   BUKAN LINE #D8E0D2). Tombol X mockup: 32x32, radius 10, bg transparent,
+   hover #ECF0E9, ikon 18px. `variant="ghost" size="sm"` kit paling dekat
+   (box 32 cocok) -- SISA DEVIASI YANG DITERIMA, dilaporkan apa adanya, BUKAN
+   diam-diam dianggap cocok: `ICON_SIZES.sm.icon=16` (bukan 18, kit menguncinya
+   ke `size`, nol prop untuk override independen) dan hover IconButton selalu
+   ROW_HOVER #E4EDDE (bukan LINE_SOFT #ECF0E9) -- keduanya konstanta bersama
+   dipakai banyak pemanggil lain, TIDAK diubah di sini (scope creep). */
 function Head({ title, subtitle, onClose, sticky }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 12, padding: '22px 24px', borderBottom: `1px solid ${LINE}`,
+      display: 'flex', alignItems: 'flex-start', gap: 12, padding: '20px 24px', borderBottom: `1px solid ${LINE_SOFT}`,
       ...(sticky ? { position: 'sticky', top: 0, background: CARD, zIndex: 2 } : null),
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: INK, letterSpacing: -0.3 }}>{title}</div>
         {subtitle && <div style={{ fontSize: 12.5, color: INK_SOFT, marginTop: 4, fontFamily: FONT_BODY }}>{subtitle}</div>}
       </div>
-      <IconButton icon={<X size={18} />} label="Tutup" onClick={onClose} />
+      <IconButton icon={<X size={18} />} label="Tutup" onClick={onClose} variant="ghost" size="sm" />
     </div>
   );
 }
@@ -142,7 +152,10 @@ export function Modal({ open, onClose, title, subtitle, children, footer, width 
         <Head title={title} subtitle={subtitle} onClose={onClose} />
         <div style={{ padding: 24 }}>{children}</div>
         {footer && (
-          <div style={{ padding: '16px 24px', borderTop: `1px solid ${LINE}`, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          // Footer Modal disamakan ke mockup (border-top:1px solid #ECF0E9,
+          // mis. Inquiry Management.dc.html:468/:485) -- SlideOver footer
+          // (di atas, komponen terpisah) TIDAK disentuh, di luar scope commit ini.
+          <div style={{ padding: '16px 24px', borderTop: `1px solid ${LINE_SOFT}`, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             {footer}
           </div>
         )}

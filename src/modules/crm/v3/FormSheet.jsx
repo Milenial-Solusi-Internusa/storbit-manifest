@@ -59,6 +59,16 @@ import { DocNo } from './kit';
 export default function FormSheet({
   docNo, title, kicker, status, actions, meta,
   children, aside = null, breadcrumb = null, toolbar = null,
+  // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): urutan status/
+  // toolbar di bawah ini selalu status-dulu -- cocok utk pemakai lama, tapi
+  // mockup Inquiry Management.dc.html menaruh metric-row (slot `toolbar`
+  // DealDetailPage) SEBELUM StageBar (slot `status`). `toolbarFirst=true`
+  // membalik urutan DUA blok ini SAJA; default `false` mempertahankan
+  // perilaku lama byte-identik untuk pemakai yang tak mengoper prop ini
+  // (CrmV3DemoPage.jsx -- satu-satunya pemakai lain, dan ia tak pernah
+  // mengoper `toolbar` sama sekali, jadi nilai prop ini tak berpengaruh
+  // padanya apa pun isinya).
+  toolbarFirst = false,
 }) {
   return (
     <div
@@ -107,8 +117,6 @@ export default function FormSheet({
           )}
         </div>
 
-        {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
-
         {/* ── `toolbar` — SLOT BARU, 4 September 2026 ───────────────────────
             Baris aksi dokumen. Ditaruh di dalam <header> (yang membentang DUA
             kolom) dan BUKAN di `children`, karena `children` hanya menempati
@@ -121,8 +129,13 @@ export default function FormSheet({
             `actions` TIDAK bisa dipakai untuk ini — slot itu duduk sebaris dengan
             judul dan berbagi lebar dengannya. Dua slot ini memang beda peran:
             `actions` untuk beberapa aksi pendek di sebelah judul, `toolbar` untuk
-            baris aksi selebar dokumen. ── */}
-        {toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+            baris aksi selebar dokumen. ──
+            Urutan terhadap `status` di bawah ini DUA ARAH, lihat `toolbarFirst`
+            di signature komponen -- defaultnya status dulu (perilaku lama),
+            dibalik hanya kalau pemanggil eksplisit minta. ── */}
+        {toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+        {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
+        {!toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
       </header>
 
       {/* ── Body ── */}

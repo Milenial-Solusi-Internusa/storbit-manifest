@@ -22,13 +22,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
+  FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, canCreatePrf } from '../../lib/roles';
+import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import {
   C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
 } from './DealPanels';
@@ -36,8 +37,12 @@ import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
+import { RADIUS, SP, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
+import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
+import { DocumentFlow } from '../../kit/DocumentFlow';
+import { RelatedDocuments } from '../../kit/RelatedDocuments';
+import { SectionHeader, SelectField, LockedField, TextField, ChipToggleField, TextareaField } from './dealOverviewFieldInputs';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -47,7 +52,8 @@ import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
+import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -62,6 +68,16 @@ const SERVICE_LABEL = {
   customs: 'Customs Clearance',
   trading: 'General Trading',
 };
+// TD-318 Irisan 2 Inquiry, commit 4 — RouteStripDoorToDoor (mockup Detail/
+// RouteStripDoorToDoor) dipicu oleh service_type door-to-door. SENGAJA KOSONG:
+// SERVICE_LABEL di atas membuktikan satu-satunya tiga nilai service_type yang
+// pernah ada di sistem hari ini adalah freight_forwarding/customs/trading —
+// nol "door_to_door"/"trucking". Array ini TIDAK ditebak isinya; begitu nilai
+// service_type door-to-door lahir di masa depan, tambahkan di sini, bukan di
+// komponen RouteStrip. Sampai itu terjadi, cabang RouteStripDoorToDoor di
+// bawah adalah dead code path yang dibangun sesuai permintaan eksplisit —
+// dilaporkan, bukan disembunyikan.
+const DOOR_TO_DOOR_SERVICE_TYPES = [];
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -81,6 +97,31 @@ const DEAL_STAGE_SEGMENTS = [
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 
+// TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row. Fungsi MODUL
+// (bukan di badan komponen) -- pola persis `ageDays()` InquiryListPage.jsx:96,
+// supaya pemanggilan `Date.now()` tidak ditandai react-hooks/purity. Singular/
+// plural persis mockup Inquiry Management.dc.html:708 (`n===1?' day':' days'`).
+function inquiryAgeLabel(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const n = Math.floor((Date.now() - d.getTime()) / 86400000);
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
+}
+
+// TD-318 Irisan 2 Inquiry, commit 7 -- bar segmented "Time in each status"
+// (mockup Detail/StatusHistory). Pola Date.now() modul, bukan badan render
+// (sama alasan inquiryAgeLabel di atas).
+function daysBetween(startIso, endIso) {
+  const a = new Date(startIso).getTime();
+  const b = endIso ? new Date(endIso).getTime() : Date.now();
+  if (isNaN(a) || isNaN(b)) return 0;
+  return Math.max(0, Math.floor((b - a) / 86400000));
+}
+function daysLabel(n) {
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
+}
+
 /* Penunjuk langkah berikutnya — pengganti INFORMASI dari tombol arah-maju yang
    dicabut 8 Sep 2026 (blueprint §6: perpindahan status digerakkan DOKUMEN).
    Tombolnya hilang, tapi pengetahuan "apa yang harus kulakukan supaya deal ini
@@ -88,15 +129,21 @@ const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
    Nada NAVY_SOFT + INK, bukan warna peringatan: ini informasi, bukan error.
    Status tertutup (WON/LOST/CANCELLED) sengaja NOL render — tak ada langkah
    berikutnya untuk deal yang sudah selesai. */
+// TD-318 Irisan 2 Inquiry, commit 8: teks disamakan KATA PER KATA ke mockup
+// (Detail/NextStep, objek `NS` non-Rate-Sheet di renderVals()) atas
+// instruksi eksplisit Mas. ⚠️ Teks QUOTED/NEGOTIATION mockup menyebut
+// "sends a Shipment Instruction, or sends a PO" sebagai jalur WON otomatis
+// -- hari ini Nexus TIDAK punya trigger yang menyala dari dua peristiwa
+// itu (satu-satunya jalur WON LIVE: RPC manual mark_inquiry_won, atau
+// trigger set_inquiry_won_on_so yang BELUM PERNAH menyala produksi, lihat
+// komentar markInquiryLost di atas). Diikuti verbatim sesuai instruksi
+// ("ubah hanya yang beda"), bukan ditebak/dikoreksi sendiri -- dilaporkan
+// sebagai pertanyaan untuk Mas, bukan diselesaikan diam-diam di sini.
 const NEXT_STEP_HINT = {
-  OPEN:        'Issue a PRF and submit it to pricing to advance to IN REVIEW.',
-  IN_REVIEW:   'Send the quotation to the customer to advance to QUOTED.',
-  /* "Send", bukan "Issue". Trigger trg_z_inquiry_negotiation_on_revision
-     menyala saat revisi ke-2+ BERPINDAH ke SENT — membuat revisi lalu
-     membiarkannya DRAFT tidak memindahkan apa pun. "Issue" bisa dibaca
-     "buat", dan itu janji yang tidak ditepati sistem. */
-  QUOTED:      'Send the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
-  NEGOTIATION: 'Send a Sales Order to close the inquiry as WON.',
+  OPEN:        'Start pricing: request rates, use a rate from the library, or create a quotation draft. Any of these moves the inquiry to In Review.',
+  IN_REVIEW:   'Send the quotation to the customer and record the channel to advance to Quoted.',
+  QUOTED:      'The inquiry is won as soon as the customer accepts the quotation, sends a Shipment Instruction, or sends a PO.',
+  NEGOTIATION: 'The inquiry is won as soon as the customer accepts the quotation, sends a Shipment Instruction, or sends a PO.',
 };
 
 function NextStepHint({ status }) {
@@ -135,14 +182,10 @@ function NextStepHint({ status }) {
    ⚠️ URUTAN PENGECEKAN MENGIKAT. Keadaan tertutup dicek PALING DULU: PRF
    CANCELLED/EXPIRED tak akan pernah dijawab procurement, jadi menampilkannya
    sebagai "Awaiting procurement" adalah janji yang tak akan datang. */
-// Peta id → label, diturunkan dari konstanta yang DIIMPOR (bukan disalin), supaya
-// menambah satu kategori kargo/layanan di form otomatis ikut terbaca di sini.
-const CARGO_LABEL = Object.fromEntries(CARGO_TYPES.map((c) => [c.id, c.label]));
-const SERVICE_ADDON_LABEL = Object.fromEntries(SERVICES.map((x) => [x.id, x.label]));
-// Nilai yang tak dikenal peta DIKEMBALIKAN APA ADANYA, bukan disembunyikan atau
-// diganti '—': id asing berarti data menyimpan sesuatu yang form tak lagi kenal,
-// dan itu harus terlihat, bukan ditelan.
-const mapLabels = (arr, dict) => (Array.isArray(arr) ? arr.map((v) => dict[v] || v) : arr);
+// CARGO_LABEL/SERVICE_ADDON_LABEL/mapLabels (peta id->label utk grup
+// FIELD_GROUPS "Cargo"/"Additional Services" lama) dicabut Irisan 2
+// lanjutan -- kedua grup sudah diganti section inline-edit, yang membaca
+// label langsung dari CARGO_TYPES/SERVICES lewat ChipToggleField.
 
 // PRF service_type = MODA transport, taksonomi BEDA dari inquiry SERVICE_LABEL
 // (TD-108). Dicermin di sini karena PRF_SERVICE_LABEL tidak diekspor DealPanels
@@ -248,74 +291,18 @@ const QUO_STATUS = {
   SUPERSEDED: { label: 'Superseded',                 bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
 };
 
-/* Subjudul kelompok + label mikro baris rute. Diangkat jadi konstanta karena
-   dipakai berulang di kartu badan. */
-const GRP_TITLE = {
-  fontFamily: HEAD, fontWeight: 600, fontSize: 12, textTransform: 'uppercase',
-  letterSpacing: '.04em', color: C.navy, marginBottom: 10,
-};
-const GRP_MICRO = {
-  fontFamily: BODY, fontSize: 10.5, textTransform: 'uppercase',
-  letterSpacing: '.04em', color: C.textFaint, marginBottom: 4,
-};
+/* GRP_TITLE/GRP_MICRO (subjudul kelompok & label mikro kartu badan lama)
+   keduanya sudah dicabut -- GRP_MICRO di TD-318 Irisan 2 Inquiry commit 4
+   (RouteStrip menggantikan baris POL/POD polos), GRP_TITLE di Irisan 2
+   lanjutan audit mockup (section inline-edit, lewat SectionHeader, sudah
+   menggantikan seluruh grup FIELD_GROUPS yang dulu memakainya). */
 
-/* Pengelompokan field kartu badan. Urutan kelompok = urutan tampil (mengalir dua
-   kolom). `fields` sengaja fungsi, bukan array statis: nilainya turunan inquiry.
-   Catatan: `Route` masuk SERVICE & STATUS (bukan TIMELINE) karena ia atribut
-   layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
-   dihapus: kedelapan belas tetap tampil. */
-const FIELD_GROUPS = [
-  {
-    title: 'Service & Status',
-    fields: (i) => [
-      { label: 'Service Type', value: SERVICE_LABEL[i.service_type] || i.service_type },
-      { label: 'Status', value: String(i.status || 'OPEN').toUpperCase(), statusBadge: true },
-      { label: 'Route', value: i.route },
-    ],
-  },
-  {
-    title: 'Terms & Container',
-    fields: (i) => [
-      { label: 'Incoterm', value: i.incoterms, pills: true },
-      { label: 'Container Type', value: i.container_types, pills: true },
-    ],
-  },
-  {
-    title: 'Cargo',
-    fields: (i) => [
-      { label: 'Goods Name', value: i.goods_name },
-      { label: 'HS Code', value: i.hs_code, mono: true },
-      { label: 'Total Weight (KG)', value: i.weight_kg != null ? String(i.weight_kg) : '', mono: true },
-      { label: 'Volume (CBM)', value: i.volume_cbm != null ? String(i.volume_cbm) : '', mono: true },
-      { label: 'Cargo Type', value: mapLabels(i.cargo_types, CARGO_LABEL), pills: true },
-    ],
-  },
-  {
-    title: 'Additional Services',
-    fields: (i) => [
-      { label: 'Additional Services', value: mapLabels(i.additional_services, SERVICE_ADDON_LABEL), pills: true },
-    ],
-  },
-  {
-    title: 'Timeline & Ownership',
-    fields: (i, x) => [
-      { label: 'Deadline Quote', value: i.deadline_quote ? fmtDate(i.deadline_quote) : '' },
-      { label: 'Created By', value: x.createdByName },
-      // "Deal Owner" di sini = `inquiries.owner_id`, BEDA dari "Assigned To" di
-      // meta header yang membaca `accounts.assigned_to`. Jangan disamakan:
-      // yang satu pemilik DEAL, yang satu pemegang AKUN.
-      { label: 'Inquiry Owner', value: x.ownerName },
-      { label: 'Created Date', value: fmtDate(i.created_at) },
-    ],
-  },
-  {
-    title: 'Value',
-    fields: (i) => [
-      // Kosong tampil "—", bukan Rp 0 — deal tanpa taksiran beda dari yang bernilai nol.
-      { label: 'Estimated Value', value: i.estimated_value == null ? '' : fmtRp(Number(i.estimated_value)), mono: true },
-    ],
-  },
-];
+// FIELD_GROUPS (grid 2-kolom generik lama, enam grup) dicabut Irisan 2
+// lanjutan audit mockup -- seluruh enam grup sudah diganti section
+// inline-edit satu demi satu (Service & Status/Route & Terms/Cargo/
+// Additional Services/Timeline & Ownership/Value), masing-masing dengan
+// field dan tata letak 3-kolom yang cocok ke mockup per section, bukan
+// generik dua kolom.
 
 const ACT_BTN = {
   height: 36, padding: '0 13px', borderRadius: 9,
@@ -345,14 +332,22 @@ function Avatar({ name, size = 28 }) {
    StageBadge (badge sumbu stage lama di `accounts`) DIHAPUS 4 Sep 2026 — sumbu itu
    digantikan StatusBar yang membaca `inquiries.status`. Jalur tulisnya menyusul
    dicabut 8 Sep 2026; halaman ini kini nol menyentuh sumbu lama itu. */
+/* Irisan 2 Inquiry, putaran penutup (Task 2 -- audit tree menu Inquiry
+   Management vs mockup, butir 4: teks breadcrumb). SEBELUMNYA ini sendiri
+   adalah breadcrumb dua-segmen ad hoc ("Inquiry List > Inquiry Detail") --
+   DUPLIKAT dengan breadcrumb SUNGGUHAN yang sudah dirender ContextHeader.jsx
+   di luar komponen ini (layout tunggal route-table.jsx, lihat
+   `useDetailCrumb` di bawah). Disederhanakan jadi "← Back to list" polos,
+   pola PERSIS Lead Detail (TD-318, `LeadDetailPage.jsx:412`, komentarnya
+   eksplisit: "Breadcrumb sendiri dirender ContextHeader.jsx di luar
+   komponen ini") -- mockup sendiri juga punya DUA elemen terpisah (nav
+   `crumbs` + link "Back to list" tersendiri di bawahnya), bukan satu
+   breadcrumb ganda. */
 function Breadcrumb({ onBack }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
-      <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Inquiry List</button>
-      <ChevronRight size={14} color={C.textFaint} />
-      <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Inquiry Detail</span>
-    </div>
+    <button type="button" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: HEAD, fontSize: 13, fontWeight: 600, color: C.textMute }}>
+      <ChevronLeft size={15} />Back to list
+    </button>
   );
 }
 
@@ -360,6 +355,11 @@ function Breadcrumb({ onBack }) {
    `{title}` menerima node apa pun — jadi nama akun tetap bisa diklik tanpa
    menambah prop baru ke kit. Cabang non-klik dipertahankan persis: akun kosong
    atau handler tak dikirim → teks polos, tanpa cursor pointer. */
+/* TD-318 Irisan 2 Inquiry, commit 2 (keputusan Mas #1): nama akun sekarang
+   link KECIL di bawah h1 (bukan h1 itu sendiri -- h1 = nomor inquiry, lihat
+   FormSheet title di bawah). font:600 15px Inter persis Inquiry Management.dc.html
+   :280 (`{{ D.cust }}`) -- 15px sudah ambient dari FormSheet, hanya weight 600
+   yang perlu ditambah di sini. */
 function DealTitle({ name, accountId, onViewCustomer }) {
   if (!(accountId && onViewCustomer)) return name || '—';
   return (
@@ -367,74 +367,12 @@ function DealTitle({ name, accountId, onViewCustomer }) {
       className="dd-account-name"
       onClick={() => onViewCustomer(accountId)}
       title="View account details"
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', fontWeight: 600 }}
     >
       {name || '—'}
     </span>
   );
 }
-
-/* Baris meta di bawah judul: siapa yang memegang akun, kapan deal dibuat, dan
-   perkiraan closing-nya.
-   ⚠️ Label "Assigned To" SENGAJA bukan "Deal Owner": nilai di sini
-   `accounts.assigned_to` (pemegang AKUN), sedangkan "Deal Owner" di kartu badan
-   adalah `inquiries.owner_id` (pemilik DEAL) — dua kolom berbeda yang kebetulan
-   sering berisi orang yang sama. Memakai label yang sama untuk keduanya akan
-   menyembunyikan perpindahan kepemilikan deal. */
-/* Pemisah hairline antar potongan meta. Di scope MODUL, bukan di dalam HeaderMeta:
-   komponen yang lahir saat render kehilangan state tiap render (react-hooks/static-components). */
-const MetaSep = () => <span aria-hidden="true" style={{ width: 1, height: 14, background: LINE, flexShrink: 0 }} />;
-
-function HeaderMeta({ assignedName, assignedProfileId, onViewProfile, createdAt, closeDate }) {
-  const canViewProfile = !!(assignedProfileId && onViewProfile);
-  /* Tiga potongan info yang dulu berdempetan: jarak ANTAR-potong (16) hampir sama
-     dengan jarak label→nilai DI DALAM potongan (6), jadi ketiganya terbaca sebagai
-     satu rentetan. Tiga perubahan, NOL informasi ditambah/dikurangi:
-       (1) pemisah hairline vertikal antar potongan — pola yang sudah dipakai
-           StatusBar, jadi bukan bentuk baru;
-       (2) jarak antar-potong naik ke SP.s5 sementara label→nilai turun ke SP.s1,
-           sehingga jarak antar jadi 5x jarak dalam (dulu 2,7x);
-       (3) label jadi kecil-uppercase-renggang — bahasa visual yang persis dipakai
-           "DEAL VALUE" di DealHeaderControls yang baru dicabut, dipakai ulang di
-           tempat yang lebih pas. */
-  const item = { display: 'inline-flex', alignItems: 'center', gap: SP.s1, fontFamily: BODY, fontSize: 13, color: C.textMute };
-  const lbl = { fontFamily: BODY, fontSize: 11.5, fontWeight: 600, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em' };
-  const val = { fontWeight: 600, color: C.text };
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: SP.s5, flexWrap: 'wrap' }}>
-      {canViewProfile ? (
-        <button
-          type="button"
-          onClick={() => onViewProfile(assignedProfileId)}
-          title="View profile"
-          style={{ ...item, gap: SP.s2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-        >
-          <Avatar name={assignedName} size={26} />
-          <span style={lbl}>Assigned To</span>
-          <span style={{ ...val, textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
-        </button>
-      ) : (
-        <span style={{ ...item, gap: SP.s2 }}>
-          <Avatar name={assignedName} size={26} />
-          <span style={lbl}>Assigned To</span>
-          <span style={val}>{assignedName || 'Unassigned'}</span>
-        </span>
-      )}
-      <MetaSep />
-      <span style={item}>
-        <span style={lbl}>Created</span>
-        <span style={val}>{fmtDate(createdAt)}</span>
-      </span>
-      <MetaSep />
-      <span style={{ ...item, gap: SP.s2 }}>
-        <CalendarClock size={15} color={C.textFaint} />
-        <span style={lbl}>Est. Closing</span>
-        <span style={val}>{fmtDate(closeDate)}</span>
-      </span>
-    </div>
-  );
-}
-
 
 // ---------- QuotationItemsCard (lokal — bukan shared DealPanels) ----------
 // Rincian harga itemized untuk SATU quotation (yang terbaru dibuat/diedit dari
@@ -536,13 +474,16 @@ function QuotationItemsCard({ quotation, items, loading }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewProfile, onViewCustomer, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
+  // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
+  const [statusHistory, setStatusHistory] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
   // `activeQuotation` di bawah), bukan untuk semua quotation di daftar.
   const [activeQuotationItems, setActiveQuotationItems] = useState([]);
@@ -554,7 +495,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [profMap, setProfMap] = useState({});
   const [termMap, setTermMap] = useState({});
   const [reloadKey, setReloadKey] = useState(0);
-  const [tab, setTab] = useState('aktivitas');
+  // TD-318 Irisan 2 Inquiry, commit 4 (keputusan Mas #2): tab default Overview,
+  // bukan Activity -- urutan lima tab: Overview/Quotation/PRF/Activity/Status History.
+  const [tab, setTab] = useState('overview');
   // Tandai inquiry KALAH (Task 4, di-upgrade B3) — alasan kini dari MASTER
   // loss_reasons, bukan teks bebas WinLossModal.
   const [lossOpen, setLossOpen] = useState(false);
@@ -578,6 +521,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // langsung jalan tanpa dialog.
   const [offerSwitchConfirm, setOfferSwitchConfirm] = useState({ open: false, prf: null, offer: null });
   const [offerActionBusy, setOfferActionBusy] = useState(false);
+  // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan B) -- inline edit per
+  // section tab Overview. SATU section aktif sekaligus (string|null, cermin
+  // `editSec` mockup) -- mencegah dua section terbuka bersamaan yang bisa
+  // saling timpa saat Save. `sectionDraft` = isi draft section yang sedang
+  // diedit (cermin `dr` mockup, direset kosong tiap buka/tutup section).
+  const [editingSection, setEditingSection] = useState(null);
+  const [sectionDraft, setSectionDraft] = useState({});
+  const [savingSection, setSavingSection] = useState(false);
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -589,7 +540,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name)')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -598,7 +549,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, assigned_to, pic_name, estimated_closing_date')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -658,6 +609,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         p.status === 'QUOTED' ? { ...p, vendorOffers: offersByPrf[p.id] || [] } : p
       ));
 
+      // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History, bagian status
+      // SAJA (pola query activityFeed.js:129-141, di sini di-filter `inquiry_id`
+      // per inquiry ini, bukan diambil dari feed gabungan lintas-CRM).
+      const { data: historyRows } = await supabase
+        .from('inquiry_status_history')
+        .select('id, from_status, to_status, changed_by, changed_at')
+        .eq('inquiry_id', inq.id)
+        .order('changed_at', { ascending: true }).limit(200);
+
       let acts = [];
       if (inq.prospect_id) {
         const { data } = await supabase
@@ -669,7 +629,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       }
 
       // resolve profile names (assigned_to, created_by, owner_id)
-      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id].filter(Boolean))];
+      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id, ...(historyRows || []).map((h) => h.changed_by)].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -689,6 +649,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setAccount(acc);
       setQuotations(quos || []);
       setPrfs(prfsAugmented);
+      setStatusHistory(historyRows || []);
       setActivities(acts);
       setProfMap(pMap);
       setTermMap(tMap);
@@ -747,14 +708,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert
   // (daftar role = PRF_CREATOR_ROLES, helper canCreatePrf di src/lib/roles.js).
   const canCreatePRF = canCreatePrf(erpRoles);
-  // Kolom penugasan KEDUA di `accounts` (kembaran `assigned_to`) DIPENSIUNKAN
-  // 8 Sep 2026. Diukur di produksi: dari 1.211 akun hidup, NOL yang hanya punya
-  // kolom kembar itu dan NOL yang isinya berbeda dari `assigned_to` — jadi
-  // mencabut fallback-nya nol mengubah tampilan. Sumbu penugasan akun kini
-  // `assigned_to` saja. DROP COLUMN menyusul batch terpisah.
-  const assignedName = profMap[account?.assigned_to] || null;
-  // Id di balik assignedName — dipakai utk buka mini profil (klik nama sales di Header).
-  const assignedProfileId = account?.assigned_to || null;
   const createdByName = profMap[inquiry?.created_by] || null;
   // Orang yang diprioritaskan di dropdown @mention Chatter — SAMA PERSIS logic
   // `pIds` di effect fetch utama (:393), tapi diturunkan ulang di scope render dari
@@ -797,6 +750,110 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
     && isManagerOrAbove(erpRoles);
   const ownerName = profMap[inquiry?.owner_id] || null;
+  // TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row -- `Date.now()`
+  // ditaruh di fungsi modul `inquiryAgeLabel()` (bukan langsung di badan
+  // komponen), pola PERSIS `ageDays()` InquiryListPage.jsx:96 -- react-hooks/
+  // purity hanya menandai pemanggilan Date.now() LANGSUNG di badan render.
+  const inquiryAge = inquiryAgeLabel(inquiry?.created_at);
+  // TD-318 Irisan 2 Inquiry, commit 5: node rantai dokumen (mockup Detail/
+  // DocumentFlow). "Rate Request" mockup = PRF Nexus (nama tab TIDAK diubah --
+  // lihat komentar src/kit/DocumentFlow.jsx). Sales Order/Purchase Order/Job
+  // Order/Carrier Booking/Invoice SELALU "none" -- empat terakhir karena
+  // mockup SENDIRI hardcode begitu (modul itu belum ada di CRM fiktif
+  // mockup juga), Sales Order karena halaman ini tidak mem-fetch tabel
+  // sales_orders (menambahnya = query baru yang tidak diminta task ini).
+  const documentFlowNodes = [
+    {
+      type: 'lead', active: false,
+      label: account?.lifecycle_stage === 'customer' ? 'Customer' : 'Lead',
+      state: account?.name ? 'name' : 'none',
+      value: account?.name,
+      onClick: () => account?.id && onViewCustomer?.(account.id),
+    },
+    {
+      type: 'inquiry', active: true, label: 'Inquiry', state: 'doc',
+      // Fix: `?.` -- `documentFlowNodes` dihitung TANPA SYARAT di setiap
+      // render (termasuk render pertama saat `inquiry` masih null, sebelum
+      // guard `if (loading)`/`if (!inquiry)` di bawah) -- akses langsung
+      // `inquiry.inquiry_no` di sini crash "Cannot read properties of null"
+      // pada SETIAP pembukaan Detail Inquiry. Node 'lead' persis di atas
+      // sudah benar pakai `account?.`; node ini kelupaan.
+      value: inquiry?.inquiry_no, onClick: () => {},
+    },
+    prfs.length > 1 ? {
+      type: 'prf', active: false, label: 'PRF', state: 'multi',
+      value: `${prfs.length} PRFs`,
+      items: prfs.map((p) => ({ label: p.prf_no, onClick: () => onViewPRF?.(p) })),
+    } : prfs.length === 1 ? {
+      type: 'prf', active: false, label: 'PRF', state: 'doc',
+      value: prfs[0].prf_no, onClick: () => onViewPRF?.(prfs[0]),
+    } : { type: 'prf', active: false, label: 'PRF', state: 'none' },
+    activeQuotation ? {
+      type: 'quotation', active: false, label: 'Quotation', state: 'doc',
+      value: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
+      onClick: () => onViewQuotation?.(activeQuotation),
+    } : { type: 'quotation', active: false, label: 'Quotation', state: 'none' },
+    { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
+    { type: 'purchaseOrder', active: false, label: 'Purchase Order', state: 'none' },
+    { type: 'jobOrder', active: false, label: 'Job Order', state: 'none' },
+    { type: 'carrierBooking', active: false, label: 'Carrier Booking', state: 'none' },
+    { type: 'invoice', active: false, label: 'Invoice', state: 'none' },
+  ];
+  // TD-318 Irisan 2 Inquiry, commit 6: baris RelatedDocuments. Upstream =
+  // akun asal (SATU baris, data yang sudah di-fetch + `created_at` baru
+  // ditambah ke select accounts). Downstream = PRF + SELURUH versi quotation
+  // (bukan hanya yang aktif) -- keduanya data existing, nol query baru.
+  const relatedDocsUpstream = account ? [{
+    key: `account-${account.id}`,
+    type: account.lifecycle_stage === 'customer' ? 'Customer' : 'Lead',
+    no: account.name,
+    status: account.lifecycle_stage === 'customer' ? 'Active' : 'Converted',
+    date: account.created_at ? fmtDate(account.created_at) : '',
+    onClick: account.id ? () => onViewCustomer?.(account.id) : undefined,
+  }] : [];
+  const relatedDocsDownstream = [
+    ...prfs.map((p) => ({
+      key: `prf-${p.id}`, type: 'PRF', no: p.prf_no, status: String(p.status || '').toUpperCase(),
+      date: fmtDate(p.created_at), onClick: () => onViewPRF?.(p),
+    })),
+    ...quotations.map((q) => ({
+      key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
+      status: QUO_STATUS[String(q.status || '').toUpperCase()]?.label || q.status,
+      date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
+    })),
+  ];
+  // TD-318 Irisan 2 Inquiry, commit 7 -- segmen bar + daftar event Status
+  // History. Bagian "owner" TIDAK dikerjakan (keputusan Mas) -- hanya
+  // transisi inquiries.status dari inquiry_status_history. Histori baru
+  // terisi sejak 7 Sep 2026 (trigger trg_z_log_inquiry_status_change) --
+  // inquiry lama (nol baris histori) TIDAK ditebak riwayatnya: bar dan
+  // daftar kosong, bukan satu segmen "sejak dibuat" yang mengada-ada.
+  // `inquiry?.created_at` (bukan `inquiry.`) -- TD-318 Irisan 2 Inquiry, bug
+  // fix round, Task 5: const ini dihitung TANPA SYARAT di setiap render,
+  // termasuk sebelum guard `if (!inquiry)`. Baris ini sendiri hanya
+  // tereksekusi saat `statusHistory.length > 0`, dan `statusHistory` SELALU
+  // `[]` persis saat `inquiry` bisa null (mount pertama) -- jadi TIDAK
+  // terbukti bisa crash hari ini -- tapi `?.` ditambahkan untuk KONSISTEN
+  // dengan seluruh const turunan lain di sekitarnya (permintaan eksplisit
+  // Mas), bukan karena ditemukan crash baru.
+  const statusHistorySegments = statusHistory.length === 0 ? [] : [
+    ...statusHistory.map((h, i) => ({
+      status: h.from_status,
+      days: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+    })),
+    {
+      status: statusHistory[statusHistory.length - 1].to_status,
+      days: daysBetween(statusHistory[statusHistory.length - 1].changed_at, null),
+    },
+  ];
+  const statusHistoryEvents = statusHistory.map((h, i) => ({
+    key: h.id,
+    from: h.from_status,
+    to: h.to_status,
+    changedAt: h.changed_at,
+    byName: profMap[h.changed_by] || '—',
+    fromDays: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
+  })).reverse();
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
@@ -988,6 +1045,46 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
+  // ── Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan B) -- SATU jalur
+  // simpan dipakai keenam section inline-edit (Service/Route/Cargo/Addl/
+  // Timeline/Notes), supaya cek RLS-silent-fail (pola saveDealUpdate,
+  // DealPanels.jsx:158-186 -- RLS bisa menyaring baris jadi 0 TANPA Postgres
+  // mengembalikan error) tidak bisa lupa ditulis di salah satu dari enam
+  // titik. BUKAN RPC baru -- UPDATE langsung ke `inquiries`, pola yang SAMA
+  // dengan markInquiryLost/reassignOwner di atas. Kunci in-flight cukup
+  // state `savingSection` (semua enam section hidup di komponen yang sama,
+  // berbeda dari saveDealUpdate yang butuh Set modul karena dipanggil dari
+  // DUA file berbeda).
+  // `sectionLabel` masuk ke notes audit (pola sama reassignOwner di atas),
+  // BUKAN dipakai utk logic apa pun -- aman dioper teks bebas.
+  async function saveInquirySection(patch, sectionLabel) {
+    if (!inquiry?.id) return false;
+    setSavingSection(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update(patch)
+      .eq('id', inquiry.id)
+      .select('id');
+    setSavingSection(false);
+    if (error) { showToast?.('Failed to save: ' + error.message, 'error'); return false; }
+    if (!data || data.length === 0) {
+      showToast?.('Failed to save: you do not have permission to modify this inquiry, or the inquiry was not found.', 'error');
+      return false;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `Section: ${sectionLabel}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    showToast?.('Changes saved', 'success');
+    setEditingSection(null);
+    setSectionDraft({});
+    refetch();
+    return true;
+  }
+
   // ── Batch 3C — pilih/ganti penawaran vendor terpilih (prf.selected_offer_id).
   // RPC prf_select_offer boleh dipanggil berulang untuk MENGGANTI pilihan (tidak
   // ada guard yang melarangnya) — konfirmasi di sini murni UX, bukan penegak izin. ──
@@ -1026,6 +1123,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }
   }
 
+  // Irisan 2 Inquiry, putaran penutup (Task 2, butir 4): crumb ke-4 breadcrumb
+  // (ADITIF, lihat ContextHeader.jsx/useDetailCrumb.js) -- pola PERSIS Lead
+  // Detail (TD-318, #19). Membuat crumb ke-3 "Inquiry Status & History" jadi
+  // link kembali ke daftar, dan menambah inquiry_no sebagai crumb ke-4 --
+  // persis mockup: `crumbs` detail = [CRM (Business Development), Inquiry
+  // Management, PAGES[s.from] (link), cur.no]. Dipanggil SEBELUM guard
+  // loading/notFound di bawah (Rules of Hooks) -- `inquiry` masih `null` di
+  // render pertama, `label` jatuh `null` sampai data termuat (byte-identik
+  // dgn pola Lead Detail).
+  useDetailCrumb(inquiry?.inquiry_no || null);
+
   // ── loading / not-found ──
   if (loading) {
     return (
@@ -1062,8 +1170,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           saat tab di body berganti. */}
       <FormSheet
         breadcrumb={<Breadcrumb onBack={onBack} />}
-        title={<DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />}
-        docNo={inquiry.inquiry_no}
+        // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): mockup
+        // menaruh metric-row SEBELUM StageBar -- lihat komentar prop ini
+        // di FormSheet.jsx untuk pembuktian nol dampak ke pemakai lain.
+        toolbarFirst
+        /* TD-318 Irisan 2 Inquiry, commit 2 (keputusan Mas #1): H1 = nomor
+           inquiry (mono), BUKAN nama akun seperti sebelumnya -- kebalikan
+           total dari susunan lama. Mockup Inquiry Management.dc.html:279
+           -- h1 `font:600 24px 'IBM Plex Mono',monospace` (bukan h1 bawaan
+           FormSheet 30px/700/sans) -- dioverride lewat span sendiri di
+           dalam h1 kit, nol perubahan ke FormSheet.jsx (satu-satunya
+           pemakai produksi hari ini, tapi kontraknya tetap dijaga generik).
+           Warna navy (brand task ini), BUKAN sage mockup -- CRM belum
+           migrasi kit (CLAUDE.md), dan instruksi eksekusi ini eksplisit
+           minta navy/orange/cream. `kicker` = label "INQUIRY" di atas h1
+           (mockup :278, data-rule="7") -- slot FormSheet yang sudah ada,
+           sebelumnya tidak dipakai. `docNo` dicabut -- nomornya sudah
+           pindah ke title, menampilkannya dua kali akan duplikasi. */
+        kicker="INQUIRY"
+        title={(
+          <span style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 24, color: C.navy }}>
+            {inquiry.inquiry_no}
+          </span>
+        )}
         /* Slot `actions` SENGAJA KOSONG sejak 8 Sep 2026. Isinya dulu
            DealHeaderControls (angka DEAL VALUE + Edit Deal + Move Stage) — ketiganya
            menulis ke `accounts`, dan ketiganya dicabut: perpindahan status kini
@@ -1076,8 +1205,61 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        /* TD-318 Irisan 2 Inquiry, commit 2: metric row 4-kolom (keputusan Mas,
+           urutan commit) ditaruh di `toolbar` -- slot INI yang membentang
+           selebar dokumen (lihat komentar FormSheet.jsx), `meta` di atas
+           cuma selebar kolom judul. Grid persis mockup Inquiry Management.dc.html
+           :300 (`grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;
+           padding-top:16px;border-top:1px solid #ECF0E9`) -- border pakai
+           `C.border` (token navy/orange/cream file ini), bukan hex sage
+           mockup. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
+           Reassign memanggil panel inline YANG SAMA dengan tombol toolbar
+           di bawah (keputusan Mas #4 -- nol modal baru). Overdue & Inquiry
+           Age diturunkan dari `deadline_quote`/`created_at` yang SUDAH
+           di-select, nol query baru. Estimated Value TANPA badge "from
+           quotation"/"Estimated" mockup (:296) -- keduanya butuh data
+           provenance yang tidak ada (dilaporkan sebagai dilewati). Grid ini
+           SELALU tampil (toolbar sekarang selalu truthy); baris tombol aksi
+           lama (Edit/Change Owner/Mark Won/Lost/Cancel) tetap muncul di
+           bawahnya dengan gate yang SAMA PERSIS seperti sebelumnya. */
+        toolbar={(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Avatar name={ownerName} size={24} />
+                  <span style={{ fontFamily: BODY, fontSize: 13, color: C.text, fontWeight: 600 }}>{ownerName || 'Unassigned'}</span>
+                </span>
+                {canReassignOwner && (
+                  <button type="button" onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
+                    style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Montserrat, sans-serif', color: C.navy, cursor: 'pointer' }}>
+                    Reassign
+                  </button>
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Deadline Quote</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : '—'}</span>
+                {inquiry.deadline_quote && inquiry.deadline_quote < new Date().toISOString().slice(0, 10) && !DEAL_CLOSED_STATUS.includes(dealStatus) && (
+                  <TintBadge meta={{ label: 'Overdue', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Estimated Value</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiry.estimated_value == null ? '—' : fmtRp(Number(inquiry.estimated_value))}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Inquiry Age</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiryAge}</span>
+            </div>
+          </div>
+          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
               status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
               literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
@@ -1115,15 +1297,65 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             </div>
           )}
           </div>
+          )}
+        </div>
         )}
+        /* `meta` membawa DUA baris (keputusan Mas #1): nama akun (link kecil,
+           DealTitle -- dulu jadi h1), lalu baris chip (keputusan Mas #5 --
+           Status/Service Type/Undername, tiga-tiganya datanya sudah ada di
+           `inquiry` yang sudah di-fetch; chip mockup lain [migTag/Rate Sheet/
+           Direction/Won-awaiting-SO/Quotation-expired/Manual-win/Revert/
+           Free-Trade-Zone/Credit-Hold/Onboarding/feasibility] DILEWATI --
+           daftar lengkap + alasan di laporan akhir, bukan ditebak di sini).
+           Baris `HeaderMeta` (Assigned To/Created/Est. Closing) DICABUT
+           (TD-318 Irisan 2 Inquiry, bug fix round): mockup tak punya baris
+           itu, dan Assigned To tampak dobel dengan Owner di metric row
+           header. Created & Est. Closing TETAP tampil -- dipindah ke kartu
+           "Inquiry Detail" (grup "Timeline & Ownership"), bukan dihilangkan. */
         meta={(
-          <HeaderMeta
-            assignedName={assignedName}
-            assignedProfileId={assignedProfileId}
-            onViewProfile={onViewProfile}
-            createdAt={inquiry.created_at}
-            closeDate={account?.estimated_closing_date}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+            <DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />
+            <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
+              <TintBadge meta={{
+                label: STATUS_LABEL[dealStatus] || dealStatus,
+                bg: DEAL_STATUS[dealStatus]?.bg, color: DEAL_STATUS[dealStatus]?.fg, bd: DEAL_STATUS[dealStatus]?.bd,
+              }} />
+              {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 2: chip Entity --
+                  mockup :185 `{{ D.ent }}` persis sesudah chip Status, SEBELUM
+                  Service -- style IDENTIK dgn chip Service (border #D8E0D2/
+                  bg #EFF3ED/color #5C6B52 = C.border/C.surfaceAlt/C.textMute,
+                  sudah dipakai di bawah). `D.ent` = kode entitas mentah (mis.
+                  'MSI'), bukan nama panjang -- relasi `companies` via FK yang
+                  SUDAH ADA di select query (pola `companies!<table>_company_id_
+                  fkey(code,name)`, dipakai InquiryFormPage.jsx/db.js dkk),
+                  nol query tambahan. `inquiries.company_id` NOT NULL di DB
+                  (schema_snapshot.sql:8371) -- cabang "company_id null, chip
+                  tidak dirender" secara teori tak akan terpicu hari ini, tapi
+                  guard tetap dipasang pada hasil embed (`inquiry.company`),
+                  bukan `company_id` mentah -- melindungi dari RLS/relasi
+                  gagal, bukan cuma dari company_id kosong. */}
+              {inquiry.company?.code && (
+                <TintBadge meta={{ label: inquiry.company.code, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+              )}
+              {inquiry.service_type && (
+                <TintBadge meta={{ label: SERVICE_LABEL[inquiry.service_type] || inquiry.service_type, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+              )}
+              {(inquiry.additional_services || []).includes('undername') && (
+                <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+            </div>
+            {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
+                (mockup showRoute, Inquiry Management.dc.html :301-304) —
+                satu baris pol->pod sebelum HeaderMeta. Token dioper manual
+                (navy/orange/cream `C`), komponennya sendiri tidak mengimpor
+                token sage — lihat komentar src/kit/RouteStrip.jsx. */}
+            <RouteStrip
+              compact
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
+          </div>
         )}
         /* Sumbu deal yang SAH = `inquiries.status`, bukan sumbu stage lama di
            `accounts` (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
@@ -1144,6 +1376,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               current={dealStatus}
               closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: STATUS_LABEL[dealStatus] || dealStatus } : null}
             />
+            {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: DocumentFlow
+                DIPINDAH ke sini dari dalam tab Overview -- terbukti dari
+                mockup (byte offset diverifikasi langsung di file sumber)
+                DocumentFlow HIDUP DI LUAR blok kondisional tab mana pun,
+                tepat sesudah StageBar/badge "closed" dan SEBELUM NextStep,
+                di dalam section Header yang sama -- bukan isi tab Overview.
+                Selalu tampil lintas tab, bukan hilang saat pindah tab lain. */}
+            <div style={{ marginTop: SP.s3 }}>
+              <DocumentFlow
+                nodes={documentFlowNodes}
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
+              />
+            </div>
             <NextStepHint status={dealStatus} />
           </>
         )}
@@ -1159,13 +1404,26 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
-          referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
-          (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
-      <Card
-        title="Inquiry Detail"
-        icon={<FileText size={17} />}
-      >
+      {/* TD-318 Irisan 2 Inquiry, commit 4 (keputusan Mas #2): "Inquiry Detail"
+          yang dulu SELALU tampil di luar tab sekarang JADI isi tab Overview —
+          lima tab urut Overview (default)/Quotation/PRF/Activity/Status
+          History. Quotation dan PRF ISI & NAMA TIDAK diubah, hanya posisi
+          urutannya di array (Activity digeser ke akhir). Badge angka di label
+          PRF dioper sebagai NODE lewat prop `label` — Notebook merender
+          `{t.label}` apa adanya, kontraknya tak perlu disentuh sama sekali. */}
+      <Notebook
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            render: () => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Card
+                title="Inquiry Detail"
+                icon={<FileText size={17} />}
+              >
         {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
             ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
             terlalu berat untuknya. */}
@@ -1204,102 +1462,291 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         )}
 
-        {/* Rute — SATU baris penuh di paling atas kartu, dipisah garis. Bukan dua
-            field biasa: POL→POD adalah identitas shipment, bukan atribut setara
-            HS Code. Panah menggantikan ikon Anchor/MapPin yang dulu dipakai. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 20, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={GRP_MICRO}>POL — Port of Loading</div>
-            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pol || '—'}</div>
+        {/* ===== Section "Service & Status" (Irisan 2 Inquiry, lanjutan audit
+            mockup, Pekerjaan B commit 4) -- mockup SECS[0], judul "Service &
+            Status". HANYA Service Type yang benar-benar tersimpan (saveSec
+            whitelist mockup: `svc`) -- Status terkunci di mockup sendiri
+            (kotak abu + ikon gembok, TIDAK ada di whitelist saveSec, sumbu
+            deal yang sah ditulis RPC/trigger lain). Direction/Customer Role/
+            Source DILEWATI SELURUHNYA -- nol kolom `inquiries` utk ketiganya
+            (Source ada tapi di `accounts.source`, tabel lain) -- lihat PLAN
+            §8.1-3. "Route" (field lama, ada di kode tak ada di mockup --
+            keputusan Mas: DIBIARKAN) dipindah ke sini dari grup FIELD_GROUPS
+            lama, tetap read-only, bukan jadi field saveSec. */}
+        <SectionHeader
+          title="Service & Status"
+          editing={editingSection === 'Service'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ service_type: inquiry.service_type || '' }); setEditingSection('Service'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ service_type: sectionDraft.service_type || null }, 'Service & Status')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <SelectField
+            label="Service Type"
+            editing={editingSection === 'Service'}
+            value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type}
+            draft={sectionDraft.service_type}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, service_type: v }))}
+            options={Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label }))}
+          />
+          <LockedField label="Status" value={STATUS_LABEL[dealStatus] || dealStatus} />
+          <TextField label="Route" editing={false} value={inquiry.route} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
+            panah POL→POD polos (mockup Detail/RouteStrip). Varian DoorToDoor
+            (Pickup→POL→POD→Delivery) TIDAK PERNAH bisa terpicu oleh data hari
+            ini -- DOOR_TO_DOOR_SERVICE_TYPES sengaja kosong, lihat komentarnya
+            dekat SERVICE_LABEL. Dibangun tetap sesuai penamaan eksplisit Mas,
+            dilaporkan sebagai temuan (dead code path), bukan ditebak reachable.
+            DIPINDAH ke sini (Irisan 2 lanjutan audit mockup) -- RouteStrip di
+            mockup adalah pratinjau visual DI DALAM section "Route & Terms"
+            (byte-offset diverifikasi langsung di file sumber), bukan sebelum
+            section pertama seperti posisi lama. */}
+        {DOOR_TO_DOOR_SERVICE_TYPES.includes(inquiry.service_type) ? (
+          <div style={{ marginBottom: 20 }}>
+            <RouteStripDoorToDoor
+              pickup={inquiry.pickup_address}
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              delivery={inquiry.delivery_address}
+              containerLabel={(inquiry.container_types || []).join(', ') || undefined}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
           </div>
-          <ArrowRight size={26} color={C.orange} style={{ flex: 'none' }} />
-          <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
-            <div style={GRP_MICRO}>POD — Port of Discharge</div>
-            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pod || '—'}</div>
+        ) : (
+          <div style={{ marginBottom: 20 }}>
+            <RouteStrip
+              pol={inquiry.pol}
+              pod={inquiry.pod}
+              containerLabel={(inquiry.container_types || []).join(', ') || undefined}
+              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+            />
           </div>
-        </div>
+        )}
 
-        {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
-            LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
-            bukan field yang mengalir) baru punya satu pemakai — konsolidasi ke
-            v3/kit menunggu Quotation/PRF Detail ikut dimigrasi. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 40px' }}>
-          {FIELD_GROUPS.map((g) => (
-            <div key={g.title} style={{ marginBottom: 22 }}>
-              <div style={GRP_TITLE}>{g.title}</div>
-              {g.fields(inquiry, { createdByName, ownerName }).map((f) => (
-                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
-                  <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
-                  {f.statusBadge ? (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', flex: 1 }}>
-                      <TintBadge meta={{
-                        label: STATUS_LABEL[f.value] || f.value,
-                        bg: DEAL_STATUS[f.value]?.bg, color: DEAL_STATUS[f.value]?.fg, bd: DEAL_STATUS[f.value]?.bd,
-                      }} />
-                    </div>
-                  ) : f.pills ? (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
-                      {(f.value || []).length === 0
-                        ? <span style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint }}>—</span>
-                        : f.value.map((v) => (
-                          <span key={v} style={{ fontFamily: BODY, fontSize: 11.5, background: C.navySoft, color: C.navy, borderRadius: 999, padding: '2px 10px', fontWeight: 500 }}>{v}</span>
-                        ))}
-                    </div>
-                  ) : (
-                    <span style={{ fontFamily: f.mono ? FONT_MONO : BODY, fontSize: 13, fontWeight: 600, color: C.text, textAlign: 'right', flex: 1 }}>
-                      {f.value == null || f.value === '' ? '—' : f.value}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
+        {/* ===== Section "Route & Terms" (Irisan 2 Inquiry, lanjutan audit
+            mockup, Pekerjaan B commit 6) -- mockup SECS[1], judul "Route &
+            Terms". RouteStrip di atas adalah pratinjau visual section ini
+            (mockup menaruhnya DI DALAM section yang sama) -- pol/pod jadi
+            TAMPIL DUA KALI (pratinjau + field edit di sini), sesuai mockup
+            sendiri yang juga melakukan ini (dua render berbeda dari data
+            yang sama). Cargo ready date DILEWATI -- nol kolom `inquiries`
+            (PLAN §8.4). Lanes multi-rute/pre-shipment checklist TETAP di
+            luar scope (keputusan lama, tidak disentuh lagi di sini). */}
+        <SectionHeader
+          title="Route & Terms"
+          editing={editingSection === 'Route'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => {
+            setSectionDraft({
+              pol: inquiry.pol || '', pod: inquiry.pod || '',
+              pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
+              incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
+            });
+            setEditingSection('Route');
+          }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({
+            pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
+            pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
+            incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
+            container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
+          }, 'Route & Terms')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Port of Loading" editing={editingSection === 'Route'} value={inquiry.pol}
+            draft={sectionDraft.pol} onDraft={(v) => setSectionDraft((d) => ({ ...d, pol: v }))} />
+          <TextField label="Port of Discharge" editing={editingSection === 'Route'} value={inquiry.pod}
+            draft={sectionDraft.pod} onDraft={(v) => setSectionDraft((d) => ({ ...d, pod: v }))} />
+          <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}
+            draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
+          <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
+            draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
+          <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
+            values={inquiry.incoterms} draft={sectionDraft.incoterms}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
+          <ChipToggleField label="Container Type" editing={editingSection === 'Route'}
+            values={inquiry.container_types} draft={sectionDraft.container_types}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
         </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
-        <div style={{ marginTop: 4, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ ...GRP_TITLE, marginBottom: 8 }}>Notes</div>
-          <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
+        {/* ===== Section "Cargo" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 7) -- mockup SECS[2]. UN Number/IMO Class/
+            MSDS Available: TIGA kolom ini SUDAH di-select sejak awal
+            Irisan 2 tapi TIDAK PERNAH ditampilkan di mana pun di kode --
+            section ini pertama kalinya mereka terlihat, bukan dipindah dari
+            tempat lain. "Number of containers" DILEWATI -- nol kolom
+            `inquiries` (PLAN §8.5, BUKAN `estimated_volume`, field beda
+            konsep dipakai InquiryFormPage.jsx). Weight (kg)/Volume (CBM)
+            pakai `src/lib/numberFormat.js` (type="text", BUKAN
+            type="number" -- pelajaran TD-285: angka format Indonesia salah
+            dibaca type="number", nilai tersimpan sejuta kali lebih kecil
+            TANPA error). Simpan DIBLOK (bukan "simpan dgn peringatan" ala
+            modul SP) kalau teks weight/volume tak terbaca -- form baru ini
+            lebih longgar skalanya dari form SP, lebih aman menolak simpan
+            daripada menyimpan 0 diam-diam. */}
+        <SectionHeader
+          title="Cargo"
+          editing={editingSection === 'Cargo'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => {
+            setSectionDraft({
+              goods_name: inquiry.goods_name || '', hs_code: inquiry.hs_code || '',
+              weight_kg: inquiry.weight_kg != null ? formatIdNumber(inquiry.weight_kg) : '',
+              volume_cbm: inquiry.volume_cbm != null ? formatIdNumber(inquiry.volume_cbm) : '',
+              dimension: inquiry.dimension || '', cargo_types: inquiry.cargo_types || [],
+              un_number: inquiry.un_number || '', imo_class: inquiry.imo_class || '', has_msds: inquiry.has_msds || '',
+            });
+            setEditingSection('Cargo');
+          }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => {
+            const weight = readMoneyInput(sectionDraft.weight_kg);
+            const vol = readMoneyInput(sectionDraft.volume_cbm);
+            if (weight.unrecognized) { showToast?.('Total Weight (kg): angka tidak dikenali.', 'error'); return; }
+            if (vol.unrecognized) { showToast?.('Volume (CBM): angka tidak dikenali.', 'error'); return; }
+            saveInquirySection({
+              goods_name: sectionDraft.goods_name || null, hs_code: sectionDraft.hs_code || null,
+              weight_kg: String(sectionDraft.weight_kg || '').trim() === '' ? null : weight.value,
+              volume_cbm: String(sectionDraft.volume_cbm || '').trim() === '' ? null : vol.value,
+              dimension: sectionDraft.dimension || null,
+              cargo_types: (sectionDraft.cargo_types || []).length ? sectionDraft.cargo_types : null,
+              un_number: sectionDraft.un_number || null, imo_class: sectionDraft.imo_class || null,
+              has_msds: sectionDraft.has_msds || null,
+            }, 'Cargo');
+          }}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Item Name" editing={editingSection === 'Cargo'} value={inquiry.goods_name}
+            draft={sectionDraft.goods_name} onDraft={(v) => setSectionDraft((d) => ({ ...d, goods_name: v }))} />
+          <TextField label="HS Code" editing={editingSection === 'Cargo'} value={inquiry.hs_code} mono
+            draft={sectionDraft.hs_code} onDraft={(v) => setSectionDraft((d) => ({ ...d, hs_code: v }))} />
+          <TextField label="Total Weight (kg)" editing={editingSection === 'Cargo'} mono
+            value={inquiry.weight_kg != null ? formatIdNumber(inquiry.weight_kg) : ''}
+            draft={sectionDraft.weight_kg} onDraft={(v) => setSectionDraft((d) => ({ ...d, weight_kg: v }))} />
+          <TextField label="Volume (CBM)" editing={editingSection === 'Cargo'} mono
+            value={inquiry.volume_cbm != null ? formatIdNumber(inquiry.volume_cbm) : ''}
+            draft={sectionDraft.volume_cbm} onDraft={(v) => setSectionDraft((d) => ({ ...d, volume_cbm: v }))} />
+          <TextField label="Dimension" editing={editingSection === 'Cargo'} value={inquiry.dimension}
+            draft={sectionDraft.dimension} onDraft={(v) => setSectionDraft((d) => ({ ...d, dimension: v }))} />
+          <ChipToggleField label="Cargo Type" editing={editingSection === 'Cargo'}
+            values={inquiry.cargo_types} draft={sectionDraft.cargo_types}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_types: v }))} options={CARGO_TYPES} />
+          <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
+            draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
+          <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
+            draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
+            options={IMO_CLASSES} includeEmpty />
+          <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
+            draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
+            options={MSDS_OPTS} includeEmpty />
         </div>
-      </Card>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
-      {/* Tiga tab pindah ke Notebook (kit v3). Badge angka di label PRF dioper
-          sebagai NODE lewat prop `label` — Notebook merender `{t.label}` apa
-          adanya, jadi kontraknya tak perlu disentuh sama sekali. Angkanya =
-          jumlah PRF ber-kesiapan "Needs selection", yaitu yang benar-benar
-          menunggu tindakan sales; PRF "Not active" sengaja tak ikut dihitung. */}
-      <Notebook
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          {
-            id: 'aktivitas',
-            label: 'Activity',
-            render: () => (
-              <Card title="Related Activity" icon={<ListChecks size={17} />}>
-                {activities.length === 0 ? (
-                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {activities.map((a) => {
-                      const AIcon = ACT_ICON[a.type] || ListChecks;
-                      return (
-                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
-                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                              </div>
-                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                            </div>
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+        {/* ===== Section "Additional Services" (Irisan 2 Inquiry, lanjutan
+            audit mockup, Pekerjaan B commit 8) -- mockup SECS[3]. SATU-
+            SATUNYA field ber-kolom DB di section ini -- Order Category/
+            Requested Delivery Date/Estimated Shipping Cost/Customer
+            Reference/Delivery Destinations SELURUHNYA DILEWATI (PLAN
+            §8.6-10): nol kolom `inquiries` utk empat yang pertama, dan
+            Delivery Destinations bahkan READ-ONLY di mockup sendiri (bukan
+            bagian whitelist saveSec). */}
+        <SectionHeader
+          title="Additional Services"
+          editing={editingSection === 'Addl'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ additional_services: inquiry.additional_services || [] }); setEditingSection('Addl'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({
+            additional_services: (sectionDraft.additional_services || []).length ? sectionDraft.additional_services : null,
+          }, 'Additional Services')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <ChipToggleField label="Additional Services" editing={editingSection === 'Addl'}
+            values={inquiry.additional_services} draft={sectionDraft.additional_services}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Timeline & Ownership" (Irisan 2 Inquiry, lanjutan
+            audit mockup, Pekerjaan B commit 9) -- mockup SECS[4]. Deadline
+            Quote SATU-SATUNYA field tersimpan (saveSec whitelist: `dl`).
+            Owner/Created By/Created On TETAP read-only (bukan bagian
+            saveSec mockup -- Owner sudah punya mekanisme Reassign
+            tersendiri di metric row header, keputusan Mas #4 tidak
+            membuat jalur kedua). Contact (`contact_id`, uuid FK) DITAMPILKAN
+            read-only saja (PLAN §8.11) -- mockup mengeditnya sebagai teks
+            nama bebas yang tak cocok tipe data uuid, dan nol komponen
+            contact-picker ada di codebase; nama di-resolve lewat embed FK
+            yang sudah ditambahkan ke select query (pola sama chip Entity).
+            "Est. Closing" (field lama, ada di kode tak ada di mockup --
+            dipindah dari header TD-318 Irisan 2 bug-fix round) DIBIARKAN
+            tampil di sini, tetap read-only. */}
+        <SectionHeader
+          title="Timeline & Ownership"
+          editing={editingSection === 'Timeline'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ deadline_quote: inquiry.deadline_quote || '' }); setEditingSection('Timeline'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ deadline_quote: sectionDraft.deadline_quote || null }, 'Timeline & Ownership')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Deadline Quote" type="date" editing={editingSection === 'Timeline'}
+            value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''}
+            draft={sectionDraft.deadline_quote} onDraft={(v) => setSectionDraft((d) => ({ ...d, deadline_quote: v }))} />
+          <TextField label="Owner" editing={false} value={ownerName} />
+          <TextField label="Created By" editing={false} value={createdByName} />
+          <TextField label="Created On" editing={false} value={fmtDate(inquiry.created_at)} />
+          <TextField label="Contact" editing={false} value={inquiry.contact?.name} />
+          <TextField label="Est. Closing" editing={false} value={account?.estimated_closing_date ? fmtDate(account.estimated_closing_date) : ''} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Value" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 10) -- mockup SECS[5], TETAP READ-ONLY
+            seluruhnya (keputusan Mas #2, final): mockup mewajibkan alasan +
+            riwayat (`estHist`) untuk setiap perubahan manual nilai, dan
+            tabel `inquiries` hanya punya kolom `estimated_value` polos,
+            tanpa tempat menyimpan alasan/riwayat itu. SectionHeader
+            dipanggil dengan `canEdit={false}` -- tombol Edit TIDAK PERNAH
+            dirender utk section ini, apa pun status inquiry-nya (bukan
+            cuma status terminal yang menyembunyikannya seperti section
+            lain). Kebutuhan kolom DB (alasan+riwayat) BELUM diajukan --
+            di luar scope perbaikan FE ini. */}
+        <SectionHeader title="Value" editing={false} canEdit={false} saving={false} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
+          <TextField label="Estimated Value" editing={false} mono
+            value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))} />
+        </div>
+        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Section "Notes" (Irisan 2 Inquiry, lanjutan audit mockup,
+            Pekerjaan B commit 11, TERAKHIR) -- mockup SECS[6]. Satu-satunya
+            field (`notes`), textarea bebas, nol validasi wajib. */}
+        <SectionHeader
+          title="Notes"
+          editing={editingSection === 'Notes'}
+          canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+          saving={savingSection}
+          onEdit={() => { setSectionDraft({ notes: inquiry.notes || '' }); setEditingSection('Notes'); }}
+          onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+          onSave={() => saveInquirySection({ notes: sectionDraft.notes || null }, 'Notes')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16 }}>
+          <TextareaField label="Notes" editing={editingSection === 'Notes'} value={inquiry.notes}
+            draft={sectionDraft.notes} onDraft={(v) => setSectionDraft((d) => ({ ...d, notes: v }))} />
+        </div>
               </Card>
+              </div>
             ),
           },
           {
@@ -1423,7 +1870,108 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               </div>
             ),
           },
+          {
+            id: 'aktivitas',
+            label: 'Activity',
+            render: () => (
+              <Card title="Related Activity" icon={<ListChecks size={17} />}>
+                {activities.length === 0 ? (
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {activities.map((a) => {
+                      const AIcon = ACT_ICON[a.type] || ListChecks;
+                      return (
+                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
+                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
+                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
+                              </div>
+                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
+                            </div>
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            ),
+          },
+          {
+            id: 'statusHistory',
+            label: 'Status History',
+            render: () => (
+              <Card title="Status History" icon={<ListChecks size={17} />}>
+                {statusHistorySegments.length === 0 ? (
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No recorded status transitions yet.</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                      <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
+                      <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
+                        {statusHistorySegments.map((s, i) => (
+                          <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
+                            style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {statusHistorySegments.map((s, i) => (
+                          <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
+                            <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
+                            {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: warna
+                        divider disamakan ke mockup -- `height:1px;background:
+                        #ECF0E9` (padanan C.surfaceAlt, LEBIH TERANG dari
+                        C.border/#D8E0D2 yang dipakai keliru sebelumnya). */}
+                    <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {statusHistoryEvents.map((e) => (
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                            <CalendarClock size={16} />
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <TintBadge meta={{ label: STATUS_LABEL[e.from] || e.from, bg: DEAL_STATUS[e.from]?.bg, color: DEAL_STATUS[e.from]?.fg, bd: DEAL_STATUS[e.from]?.bd }} />
+                              <span style={{ color: C.textMute }}>to</span>
+                              <TintBadge meta={{ label: STATUS_LABEL[e.to] || e.to, bg: DEAL_STATUS[e.to]?.bg, color: DEAL_STATUS[e.to]?.fg, bd: DEAL_STATUS[e.to]?.bd }} />
+                            </div>
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
+                              {fmtDate(e.changedAt)}, {e.byName}, after {daysLabel(e.fromDays)} in {STATUS_LABEL[e.from] || e.from}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </Card>
+            ),
+          },
         ]}
+      />
+      {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: RelatedDocuments
+          DIPINDAH ke sini dari dalam tab Overview -- terbukti dari mockup
+          (byte offset diverifikasi langsung di file sumber) RelatedDocuments
+          adalah SECTION TERPISAH, sibling dari section Header DAN section
+          tab, dirender SESUDAH seluruh blok tab (Overview/Quotations/
+          Procurement/Activity/Status History) SELESAI, bukan isi salah
+          satu tab -- selalu tampil lintas tab, bukan hilang saat pindah tab. */}
+      <RelatedDocuments
+        upstream={relatedDocsUpstream}
+        downstream={relatedDocsDownstream}
+        tokens={{
+          border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
+        }}
       />
       </div>
       </FormSheet>

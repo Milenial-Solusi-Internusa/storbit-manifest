@@ -15,9 +15,10 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import AccountPicker from '../../components/AccountPicker';
-// Sumber TUNGGAL kosakata kargo & layanan tambahan — dipakai bersama
+// Sumber TUNGGAL kosakata kargo & layanan tambahan (+ incoterms/container/
+// imo/msds, dipindah ke sini Irisan 2 Inquiry lanjutan) — dipakai bersama
 // DealDetailPage. Tidak boleh dideklarasikan ulang di sini.
-import { CARGO_TYPES, SERVICES } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
 
 const C = {
   navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -33,10 +34,6 @@ const SERVICE_TYPES_FALLBACK = [
   { value: 'customs', label: 'Customs Clearance' },
   { value: 'trading', label: 'General Trading' },
 ];
-const INCOTERMS = ['EXW', 'FOB', 'CFR/CNF', 'CIF', 'DDU/DAP', 'DDP'];
-const CONTAINERS = ["FCL 20'", "FCL 40'", "FCL 40'HC", 'LCL'];
-const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
-const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
 
 // Kelompok lifecycle lifecycle_stage. Dropdown inquiry harus bisa memilih akun
 // pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
@@ -600,7 +597,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <div>
                 <div style={S.label}>Container Type</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-                  {CONTAINERS.map(t => <Pill key={t} active={form.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}
+                  {CONTAINER_TYPES.map(t => <Pill key={t} active={form.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}
                 </div>
               </div>
 
