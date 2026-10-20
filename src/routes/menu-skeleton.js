@@ -248,6 +248,25 @@ export const SKELETON = [
             id: "ph-1-10-3", menuKey: "skel_1_10_3", mounts: [] },
         ],
       },
+      {
+        // Irisan 5 (TD-318 item #18, satu-satunya sisa sebelum launching Lead
+        // Management) -- design-handoff/mockup/Option Requests.dc.html + nexus-notes.js
+        // rule 107. Nol kode di Bagian A acuan (dokumen Grand Design) untuk kode "1.11" --
+        // slot ini DITAMBAHKAN di luar daftar Bagian A yang berhenti di 1.10, bukan
+        // disalin dari sana; dipilih 1.11 karena mockup sendiri memakai kode "1.12" di
+        // sidebarnya HANYA sesudah mengandaikan ada "1.11 Sales Activity" yang tidak
+        // pernah dibangun di Nexus (FILES array mockup, nx-shell renderVals) -- lihat
+        // komentar di App.jsx soal penomoran ini TIDAK diikuti verbatim.
+        code: "1.11", label: "Option Requests", slug: "option-requests",
+        path: "/crm/option-requests", icon: ClipboardCheck,
+        tabs: [
+          { code: "1.11.1", label: "Option Requests", slug: "option-requests", path: "/crm/option-requests",
+            desc: "meninjau dan menyetujui/menolak permintaan opsi baru pada dropdown list (Industry, Lead Category, Lost Reason).",
+            mounts: [
+              { menuId: "crm-option-requests", path: "/crm/option-requests" },
+            ] },
+        ],
+      },
     ],
   },
   {
