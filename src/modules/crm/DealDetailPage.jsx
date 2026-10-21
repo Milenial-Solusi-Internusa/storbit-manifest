@@ -641,7 +641,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // per inquiry ini, bukan diambil dari feed gabungan lintas-CRM).
       const { data: historyRows } = await supabase
         .from('inquiry_status_history')
-        .select('id, from_status, to_status, changed_by, changed_at')
+        .select('id, from_status, to_status, changed_by, changed_at, reason')
         .eq('inquiry_id', inq.id)
         .order('changed_at', { ascending: true }).limit(200);
 
@@ -908,12 +908,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       days: daysBetween(statusHistory[statusHistory.length - 1].changed_at, null),
     },
   ];
+  // TD-318 Irisan 3, commit 7 -- `reason` dibawa apa adanya dari
+  // inquiry_status_history (sudah diisi trigger log_inquiry_status_change,
+  // migrasi 20261021000001 TASK 8): transisi ke WON = won_reason (manual 4
+  // alasan atau "Accepted quotation"); transisi KELUAR dari WON (revert) =
+  // revert_won_reason. LOST/CANCELLED sudah ditulis sejak Irisan 2, tidak
+  // berubah.
   const statusHistoryEvents = statusHistory.map((h, i) => ({
     key: h.id,
     from: h.from_status,
     to: h.to_status,
     changedAt: h.changed_at,
     byName: profMap[h.changed_by] || '—',
+    reason: h.reason || null,
     fromDays: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
   })).reverse();
 
@@ -2100,6 +2107,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                             <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
                               {fmtDate(e.changedAt)}, {e.byName}, after {daysLabel(e.fromDays)} in {STATUS_LABEL[e.from] || e.from}
                             </span>
+                            {/* TD-318 Irisan 3, commit 7 -- `reason` BARU
+                                di-select+dirender di sini sama sekali (Irisan
+                                2 menghitung statusHistoryEvents tapi TIDAK
+                                membawa kolom ini). Won (manual 4 alasan atau
+                                "Accepted quotation") dan Revert dibaca apa
+                                adanya dari kolom yang sudah diisi trigger
+                                (migrasi 20261021000001 TASK 8); LOST/CANCELLED
+                                ikut tampil sebagai efek samping -- trigger
+                                lama sudah mengisinya sejak Irisan 2, hanya
+                                baru sekarang dibaca+ditampilkan. */}
+                            {e.reason && (
+                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>{e.reason}</span>
+                            )}
                           </div>
                         </div>
                       ))}
