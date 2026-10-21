@@ -64,7 +64,23 @@ export const BD_SALES_ROLES = [
 // 20260912000006): is_sales_functional() OR has_role('gm_bd') (+ super_admin
 // bypass). 'sales' lama dicabut di FE-2 sesudah Blok B live — RLS sudah tidak
 // mengenalnya dan roster produksi nol pemegang (dormant, pilot 3, 12 Sep 2026).
-export const PRF_CREATOR_ROLES = [...BD_SALES_ROLES, 'gm_bd', 'super_admin'];
+//
+// 'bd_digital_marketing_manager' DITAMBAHKAN 21 Okt 2026 (hotfix produksi,
+// branch hotfix/prf-create-dm-manager) — BUKAN diam-diam, ini PEMBALIKAN
+// SADAR atas keputusan #3 (12 Sep 2026, migrasi 20260912000006) yang
+// eksplisit mengecualikan bd_digital_marketing_spv/manager dari PRF creator
+// ("nol bukti butuh PRF/SO" saat itu). Keputusan Den/Mas 21 Okt 2026: Faris
+// kini Business Process Owner modul CRM — perannya BUKAN lagi sekadar
+// Digital Marketing, dan ia butuh membuat PRF. Ditambahkan sebagai entri
+// LITERAL TERPISAH (BUKAN dimasukkan ke BD_SALES_ROLES, yang cermin
+// is_sales_functional() dan dipakai 4 fitur lain yang tidak terkait —
+// roster visit/activity, strategic handover, sales report) — pola yang
+// SAMA dengan 'gm_bd' di baris ini. RLS prf_insert diubah manual via SQL
+// Editor hari yang sama, direkam migrasi retroaktif
+// 20261021000002_prf_insert_bd_digital_marketing_manager.sql. Gate
+// sales_orders_insert SENGAJA TIDAK ikut diubah (keputusan terpisah,
+// di luar scope hotfix ini) — Faris bisa membuat PRF tapi belum Sales Order.
+export const PRF_CREATOR_ROLES = [...BD_SALES_ROLES, 'gm_bd', 'bd_digital_marketing_manager', 'super_admin'];
 
 // Role yang "hanya melihat miliknya sendiri" di CRM. ⚠️ Flag RESTRIKTIF —
 // dievaluasi terhadap ROLE UTAMA (erpRole), BUKAN lewat hasAnyRole: user
