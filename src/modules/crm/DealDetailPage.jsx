@@ -481,6 +481,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
+  // terbaru dari sales_orders.inquiry_id, null kalau belum ada).
+  const [salesOrder, setSalesOrder] = useState(null);
   // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
   // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
   const [statusHistory, setStatusHistory] = useState([]);
@@ -559,6 +562,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
+
+      // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order". Baris
+      // terbaru saja (sales_orders.inquiry_id FK langsung, nol deleted_at di
+      // tabel ini — kolomnya memang tidak ada). "Purchase Order" TETAP "Not
+      // yet" permanen: nol tabel di Nexus yang merepresentasikan PO vendor
+      // (lihat PLAN Irisan 3 §1g/§9.9) — tidak disentuh di sini.
+      const { data: soRows } = await supabase
+        .from('sales_orders')
+        .select('id, so_no, status, created_at')
+        .eq('inquiry_id', inq.id)
+        .order('created_at', { ascending: false }).limit(1);
+      const so = (soRows || [])[0] || null;
 
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
       const { data: prfRows } = await supabase
@@ -648,6 +663,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setInquiry(inq);
       setAccount(acc);
       setQuotations(quos || []);
+      setSalesOrder(so);
       setPrfs(prfsAugmented);
       setStatusHistory(historyRows || []);
       setActivities(acts);
@@ -757,11 +773,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const inquiryAge = inquiryAgeLabel(inquiry?.created_at);
   // TD-318 Irisan 2 Inquiry, commit 5: node rantai dokumen (mockup Detail/
   // DocumentFlow). "Rate Request" mockup = PRF Nexus (nama tab TIDAK diubah --
-  // lihat komentar src/kit/DocumentFlow.jsx). Sales Order/Purchase Order/Job
-  // Order/Carrier Booking/Invoice SELALU "none" -- empat terakhir karena
-  // mockup SENDIRI hardcode begitu (modul itu belum ada di CRM fiktif
-  // mockup juga), Sales Order karena halaman ini tidak mem-fetch tabel
-  // sales_orders (menambahnya = query baru yang tidak diminta task ini).
+  // lihat komentar src/kit/DocumentFlow.jsx). Job Order/Carrier Booking/
+  // Invoice SELALU "none" -- mockup SENDIRI hardcode begitu (modul itu belum
+  // ada di CRM fiktif mockup juga). [TD-318 Irisan 3, commit 1] Sales Order
+  // kini data-driven dari `salesOrder` (state, diisi query `sales_orders`
+  // di effect fetch utama) -- nol link ke halaman Detail SO (modul itu belum
+  // dibangun Nexus, sama seperti node 'inquiry' di atas yang juga no-op).
+  // Purchase Order TETAP "none" permanen -- nol tabel di Nexus yang
+  // merepresentasikan PO vendor (PLAN Irisan 3 §1g/§9.9, dilaporkan bukan
+  // ditebak).
   const documentFlowNodes = [
     {
       type: 'lead', active: false,
@@ -793,7 +813,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       value: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
       onClick: () => onViewQuotation?.(activeQuotation),
     } : { type: 'quotation', active: false, label: 'Quotation', state: 'none' },
-    { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
+    salesOrder ? {
+      type: 'salesOrder', active: false, label: 'Sales Order', state: 'doc',
+      value: salesOrder.so_no, onClick: () => {},
+    } : { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
     { type: 'purchaseOrder', active: false, label: 'Purchase Order', state: 'none' },
     { type: 'jobOrder', active: false, label: 'Job Order', state: 'none' },
     { type: 'carrierBooking', active: false, label: 'Carrier Booking', state: 'none' },
