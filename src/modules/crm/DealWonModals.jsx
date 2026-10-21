@@ -18,13 +18,7 @@
 import { useState } from 'react';
 import { CheckCircle2, RotateCcw, AlertTriangle, Paperclip } from 'lucide-react';
 import { C, HEAD, BODY } from './DealPanels';
-
-const WON_REASONS = [
-  'Quoted outside Nexus',
-  'Repeat order under existing agreement',
-  'Verbal confirmation',
-  'Legacy data',
-];
+import { WON_MANUAL_REASONS } from './inquiryOptions';
 
 const overlay = {
   position: 'fixed', inset: 0, zIndex: 1000,
@@ -134,7 +128,7 @@ export function MarkWonModal({ open, inquiryNo, saving, uploadError, onSave, onC
         <span style={label}>Won Reason <span style={{ color: C.amber }}>*</span></span>
         <select style={field} value={reason} onChange={(e) => setReason(e.target.value)}>
           <option value="">Select a reason</option>
-          {WON_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          {WON_MANUAL_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
       </label>
 

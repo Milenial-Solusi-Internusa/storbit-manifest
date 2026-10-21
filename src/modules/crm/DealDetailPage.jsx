@@ -48,13 +48,13 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
-import { MarkWonModal } from './DealWonModals';
+import { MarkWonModal, RevertWonModal } from './DealWonModals';
 import { fetchOperationalRoster } from './salesRoster';
 import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS } from './inquiryOptions';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
@@ -520,6 +520,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // TERBUKA supaya user bisa menekan "Yes, Mark as Won" lagi dengan file
   // yang sama, bukan tombol Retry tersendiri).
   const [wonUploadError, setWonUploadError] = useState('');
+  // TD-318 Irisan 3, commit 5 -- Revert Manual Win.
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [revertSaving, setRevertSaving] = useState(false);
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
@@ -764,6 +767,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // sudah computed di atas). WON/LOST/CANCELLED nol primary action.
   const showCreateQuotationPrimary =
     ['OPEN', 'IN_REVIEW'].includes(String(inquiry?.status || 'OPEN').toUpperCase()) && !!onCreateQuotation;
+  // TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert Manual
+  // Win". isManualWin = won_reason ADA di whitelist 4 alasan (BUKAN
+  // "<> 'Accepted quotation'" -- staging punya baris won_reason teks bebas
+  // yang bukan salah satu dari 4 ini dan bukan juga 'Accepted quotation';
+  // whitelist positif menolak keduanya, sama persis gate revert_manual_win
+  // di DB). canRevertWon: Manager ke atas DI ENTITAS inquiry ATAU Super
+  // Admin -- BUKAN owner (final decision #2, beda dari canMarkWon).
+  const isManualWin = dealStatus === 'WON' && WON_MANUAL_REASONS.includes(inquiry?.won_reason);
+  const canRevertWon = isManualWin
+    && (isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id }) || isAllEntities(erpRoles));
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -1038,6 +1051,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }
     setWonOpen(false);
     showToast?.('Inquiry marked as Won. The linked account is now a customer.', 'success');
+    refetch();
+  }
+
+  // ── TD-318 Irisan 3, commit 5 -- Revert Manual Win. revert_manual_win
+  // menegakkan gate manager/super_admin + whitelist won_reason sebenarnya;
+  // canRevertWon di atas murni UX. Status asal diturunkan RPC dari
+  // inquiry_status_history (bukan dikirim dari sini) -- quotation yang
+  // sudah SUPERSEDED TIDAK dipulihkan, accounts.lifecycle_stage TIDAK
+  // dikembalikan (final decision #2).
+  async function revertManualWin({ reason }) {
+    if (!inquiry?.id) return;
+    setRevertSaving(true);
+    const { error } = await supabase.rpc('revert_manual_win', { p_inquiry_id: inquiry.id, p_reason: reason });
+    setRevertSaving(false);
+    if (error) { showToast?.(error.message, 'error'); return; }
+    setRevertOpen(false);
+    showToast?.('Manual win reverted for ' + inquiry.inquiry_no, 'success');
     refetch();
   }
 
@@ -1406,6 +1436,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               )}
               {(inquiry.additional_services || []).includes('undername') && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+              {/* TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert
+                  Manual Win", posisi mockup :282 (sesudah Quotation-expired,
+                  sebelum Free Trade Zone -- keduanya belum dibangun di Nexus,
+                  jadi posisi praktisnya langsung sesudah chip terakhir yang
+                  sudah ada, Undername). Link HANYA tampil untuk canRevertWon
+                  (Manager/Super Admin) -- bukan owner (final decision #2). */}
+              {isManualWin && (
+                <>
+                  <TintBadge meta={{ label: 'Manual win', bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+                  {canRevertWon && (
+                    <button type="button" onClick={() => setRevertOpen(true)}
+                      style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Inter, sans-serif', color: C.navy, cursor: 'pointer' }}>
+                      Revert Manual Win
+                    </button>
+                  )}
+                </>
               )}
             </div>
             {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
@@ -2123,6 +2170,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         uploadError={wonUploadError}
         onSave={markInquiryWon}
         onCancel={() => { setWonOpen(false); setWonUploadError(''); }}
+      />
+
+      {/* TD-318 Irisan 3, commit 5 -- Revert Manual Win. */}
+      <RevertWonModal
+        key={revertOpen ? `revert-${inquiry?.id}` : 'revert-closed'}
+        open={revertOpen}
+        inquiryNo={inquiry?.inquiry_no}
+        saving={revertSaving}
+        onSave={revertManualWin}
+        onCancel={() => setRevertOpen(false)}
       />
     </div>
   );

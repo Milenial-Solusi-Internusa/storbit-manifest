@@ -75,3 +75,19 @@ export const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Clas
    label Inggris akan membuat <select> edit tak punya opsi yang cocok untuk
    baris lama (muncul kosong/tak terpilih padahal datanya ada). */
 export const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
+
+/* TD-318 Irisan 3 -- 4 alasan Won manual, tersimpan di `inquiries.won_reason`.
+   SATU sumber kebenaran untuk tiga pemakai: DealWonModals.jsx (pilihan
+   <select>), DealDetailPage.jsx (menentukan "ini Won manual" untuk chip
+   "Manual win" + link Revert -- BUKAN "<> 'Accepted quotation'", karena
+   staging punya baris won_reason teks bebas yang bukan salah satu dari 4
+   ini dan bukan juga 'Accepted quotation'; whitelist positif menolak
+   keduanya dari dianggap "manual yang valid"), dan migrasi
+   20261021000001 (badan mark_inquiry_won/revert_manual_win -- disalin
+   manual di SQL, bukan diimpor, tapi WAJIB bergerak bersama daftar ini). */
+export const WON_MANUAL_REASONS = [
+  'Quoted outside Nexus',
+  'Repeat order under existing agreement',
+  'Verbal confirmation',
+  'Legacy data',
+];
