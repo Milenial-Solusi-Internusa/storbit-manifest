@@ -1786,14 +1786,27 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     yang sudah punya quotation TIDAK BISA lagi melahirkan
                     quotation kedua (UNIQUE quotation_no+revision) — yang kedua
                     memang seharusnya REVISI. Menyodorkan "Create Quotation" di
-                    sana berarti menawarkan jalan buntu. */}
+                    sana berarti menawarkan jalan buntu.
+
+                    [TD-318 Irisan 3, commit 2] Keadaan KETIGA: inquiry Won.
+                    Teks persis mockup rule 109 ("Won, quotation locked").
+                    Ini lapis UI saja (early-check sebelum RPC/trigger ada) —
+                    penjagaan sebenarnya menyusul di migrasi (commit 3, TASK 6):
+                    trg_fn_lock_quotation_closed_inquiry/trg_fn_lock_quotation_
+                    items_closed_inquiry diperluas ke status WON. Pengecualian
+                    Rate Sheet (rule 109) SENGAJA TIDAK diimplementasikan (final
+                    decision #4) — kunci berlaku rata untuk semua quotation. */}
                 <ListView
                   mode="table"
                   rows={quotations}
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this inquiry will appear here."
-                  right={activeQuotation ? (
+                  right={dealStatus === 'WON' ? (
+                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
+                      Won, quotation locked
+                    </span>
+                  ) : activeQuotation ? (
                     <button onClick={() => setReviseOpen(true)} disabled={revising}
                       style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff', cursor: revising ? 'not-allowed' : 'pointer', opacity: revising ? 0.6 : 1 }}>
                       <FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
