@@ -24,7 +24,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog, CheckCircle2,
+  Ban, UserCog, CheckCircle2, MoreVertical,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { markInquiryWonWithEvidence } from '../../lib/db';
@@ -526,6 +526,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
+  // TD-318 Irisan 3, commit 6 -- kebab (menu titik tiga).
+  const [kebabOpen, setKebabOpen] = useState(false);
   const [ownerDraft,  setOwnerDraft]  = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [salesOpts,   setSalesOpts]   = useState([]);
@@ -777,6 +779,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const isManualWin = dealStatus === 'WON' && WON_MANUAL_REASONS.includes(inquiry?.won_reason);
   const canRevertWon = isManualWin
     && (isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id }) || isAllEntities(erpRoles));
+  // TD-318 Irisan 3, commit 6 -- kebab (mockup :1029 showDMenu). Terminal =
+  // kebalikan LOSABLE_INQUIRY_STATUS (OPEN/IN_REVIEW/QUOTED/NEGOTIATION).
+  // Pengecualian: Won TANPA Sales Order nyata (state `salesOrder`, commit 1)
+  // tetap menampilkan kebab -- mockup `st==='Won' && !cur.so`.
+  const isTerminalStatus = !LOSABLE_INQUIRY_STATUS.includes(dealStatus);
+  const showKebab = !isTerminalStatus || (dealStatus === 'WON' && !salesOrder);
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -1313,16 +1321,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {/* TD-318 Irisan 3, commit 6: link "Reassign" inline DICABUT
+                    (final decision #9.3) -- mockup Detail TIDAK punya link
+                    reassign di metric row sama sekali, aksinya cuma lewat
+                    kebab "Reassign Owner". Avatar+nama Owner TETAP tampil
+                    (info), hanya tautan aksinya yang pindah. */}
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Avatar name={ownerName} size={24} />
                   <span style={{ fontFamily: BODY, fontSize: 13, color: C.text, fontWeight: 600 }}>{ownerName || 'Unassigned'}</span>
                 </span>
-                {canReassignOwner && (
-                  <button type="button" onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
-                    style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Montserrat, sans-serif', color: C.navy, cursor: 'pointer' }}>
-                    Reassign
-                  </button>
-                )}
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1354,13 +1361,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <Pencil size={14} />Edit Inquiry
             </button>
           )}
-          {canReassignOwner && (
-            <button
-              onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
-              style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
-              <UserCog size={14} />Change Owner
-            </button>
-          )}
           {/* TD-318 Irisan 3, commit 4 -- aksi utama dinamis (final decision
               #9.1): Open/In Review = Create Quotation; Quoted/Negotiation =
               Mark as Won (kalau canMarkWon). "Request Rates" mockup TIDAK
@@ -1376,17 +1376,46 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
             </button>
           )}
-          {(canMarkLost || canCancel) && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginLeft: 'auto' }}>
-              {canMarkLost && (
-                <button onClick={() => setLossOpen(true)} style={{ ...ACT_BTN, border: `1px solid ${C.redBd}`, color: C.red }}>
-                  <XCircle size={14} />Mark as Lost
-                </button>
-              )}
-              {canCancel && (
-                <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
-                  <Ban size={14} />Cancel Inquiry
-                </button>
+          {/* TD-318 Irisan 3, commit 6 -- kebab (menu titik tiga), urutan
+              mockup persis: Reassign Owner, divider, Mark as Lost, Cancel
+              Inquiry (final decision §9.3/§6). "Request Rates"/"Create
+              Quotation" duplikat/"Close as Duplicate" TIDAK dibangun (§9.2,
+              Irisan 4). Link inline "Reassign" di metric row DICABUT --
+              satu-satunya entry point sekarang di sini. */}
+          {showKebab && (canReassignOwner || canMarkLost || canCancel) && (
+            <div style={{ position: 'relative' }}>
+              <button type="button" title="More actions" onClick={() => setKebabOpen((v) => !v)}
+                style={{ ...ACT_BTN, width: 36, padding: 0, justifyContent: 'center', background: kebabOpen ? C.navySoft : '#fff' }}>
+                <MoreVertical size={16} />
+              </button>
+              {kebabOpen && (
+                <>
+                  <div onClick={() => setKebabOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
+                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(22,36,58,.16)', padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
+                    {canReassignOwner && (
+                      <button type="button"
+                        onClick={() => { setKebabOpen(false); setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.text, cursor: 'pointer', textAlign: 'left' }}>
+                        <UserCog size={14} />Reassign Owner
+                      </button>
+                    )}
+                    {canReassignOwner && (canMarkLost || canCancel) && (
+                      <div style={{ height: 1, background: C.border, margin: '4px 0' }} />
+                    )}
+                    {canMarkLost && (
+                      <button type="button" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.red, cursor: 'pointer', textAlign: 'left' }}>
+                        <XCircle size={14} />Mark as Lost
+                      </button>
+                    )}
+                    {canCancel && (
+                      <button type="button" onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.textMute, cursor: 'pointer', textAlign: 'left' }}>
+                        <Ban size={14} />Cancel Inquiry
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
