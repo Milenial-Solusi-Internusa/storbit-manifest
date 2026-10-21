@@ -242,8 +242,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   PERFORM set_config('request.jwt.claim.sub', v_uuid_manager::text, true);
@@ -364,8 +364,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   PERFORM set_config('request.jwt.claim.sub', v_uuid_sales_owner::text, true);
@@ -403,8 +403,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   SELECT status, rejection_reason INTO v_status_sebelum, v_reason_sebelum FROM quotations WHERE id = v_quo_id;
@@ -438,8 +438,8 @@ BEGIN
   -- mekanisme RLS, menyala untuk SEMUA role termasuk postgres.
   v_caught := false;
   BEGIN
-    INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, status)
-    VALUES (v_company_id, 'UJI-QUO2-' || extract(epoch FROM now())::text, 1, v_inq_id, 'DRAFT');
+    INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, status, created_by)
+    VALUES (v_company_id, 'UJI-QUO2-' || extract(epoch FROM now())::text, 1, v_inq_id, 'DRAFT', v_uuid_sales_owner);
   EXCEPTION WHEN OTHERS THEN v_caught := true; GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
   END;
   IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL -- insert quotation baru seharusnya ditolak (inquiry WON)'; END IF;
@@ -486,8 +486,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   PERFORM set_config('request.jwt.claim.sub', v_uuid_sales_owner::text, true);
@@ -499,8 +499,8 @@ BEGIN
 
   v_caught := false;
   BEGIN
-    INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, status)
-    VALUES (v_company_id, 'UJI-QUO2-' || extract(epoch FROM now())::text, 1, v_inq_id, 'DRAFT');
+    INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, status, created_by)
+    VALUES (v_company_id, 'UJI-QUO2-' || extract(epoch FROM now())::text, 1, v_inq_id, 'DRAFT', v_uuid_sales_owner);
   EXCEPTION WHEN OTHERS THEN v_caught := true; GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
   END;
   IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL -- insert quotation baru seharusnya ditolak'; END IF;
@@ -592,8 +592,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   PERFORM set_config('request.jwt.claim.sub', v_uuid_manager::text, true);
@@ -640,8 +640,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, rejection_reason)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SUPERSEDED', NULL)
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, rejection_reason, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SUPERSEDED', NULL, v_uuid_sales_owner)
   RETURNING id INTO v_quo_id;
 
   v_caught := false;
@@ -682,8 +682,8 @@ BEGIN
   VALUES (v_company_id, 'UJI-INQ-' || extract(epoch FROM now())::text, v_account_id, 'QUOTED', v_uuid_sales_owner)
   RETURNING id INTO v_inq_id;
 
-  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status)
-  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT')
+  INSERT INTO quotations (company_id, quotation_no, revision, inquiry_id, prospect_id, status, created_by)
+  VALUES (v_company_id, 'UJI-QUO-' || extract(epoch FROM now())::text, 1, v_inq_id, v_account_id, 'SENT', v_uuid_sales_owner)
   RETURNING id INTO v_quo_id_n;
 
   PERFORM set_config('request.jwt.claim.sub', v_uuid_manager::text, true);
