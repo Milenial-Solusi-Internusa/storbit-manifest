@@ -128,13 +128,13 @@ export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
   'product-detail':     [`${AS}/products/:id`],
 });
 
-/** 26 destinasi AdminHub (id kartu HUB_GROUPS di pages/foundation/AdminHub.jsx; dokumen lama menyebut 25 — `sales-targets` ditambah 30 Agu 2026)
+/** 27 destinasi AdminHub (id kartu HUB_GROUPS di pages/foundation/AdminHub.jsx; dokumen lama menyebut 25/26 — `sales-targets` ditambah 30 Agu 2026, `locations` ditambah Irisan 6 Inquiry Management)
  *  → `/admin-settings/<id>` saat AdminHub jadi nested route (G6). */
 export const ADMIN_SECTION_IDS = Object.freeze([
   'companies', 'branches', 'departments', 'positions', 'org-structure', 'entity-settings',
   'user-access', 'role-defaults',
   'document-types', 'document-settings', 'status-catalog', 'dc-master',
-  'sales-targets',
+  'sales-targets', 'locations',
   'finance-defaults', 'taxes', 'payment-terms',
   'products', 'bulk-price',
   'approval-workflows', 'notifications', 'security-policy', 'audit-log', 'general-preferences', 'integrations',
