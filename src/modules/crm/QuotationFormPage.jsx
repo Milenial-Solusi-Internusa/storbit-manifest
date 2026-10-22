@@ -198,20 +198,36 @@ function Field({ label, req, children, full }) {
 // Efek samping: baris 'QUO' di document_sequences jadi dorman. Tidak di-drop
 // (tak berbahaya), tapi jangan dikira rusak.
 //
-// Segmen dipecah per '/' — BUKAN .replace('INQ','QUO'), karena nama customer
-// pun bisa memuat "INQ".
+// Dua format harus dikenali (Irisan 4 Lingkup A menambah format baru TANPA
+// mengubah baris lama — nomor INQ/... lama tetap beredar selamanya):
+//   - LAMA  : INQ/{ENTITY}/{TAHUN}/{URUT} — segmen dipecah per '/', BUKAN
+//             .replace('INQ','QUO'), karena nama customer pun bisa memuat "INQ".
+//   - BARU  : {ENTITY}-INQ-{ROMAWI}-{TAHUN}-{URUT:04d} (trigger server-side
+//             assign_inquiry_no, migrasi 20261022000001) — segmen '-INQ-'
+//             diganti persis, pola identik qNo() mockup
+//             (design-handoff/mockup/Quotation Management.dc.html).
 function quotationNoFromInquiry(inquiryNo) {
-  const parts = String(inquiryNo || '').split('/');
+  const no = String(inquiryNo || '');
   // No silent fallback: nomor karangan jauh lebih berbahaya daripada simpan
   // yang gagal. Caller's try/catch yang menampilkan pesannya.
-  if (parts.length < 2 || parts[0] !== 'INQ') {
+  if (no.includes('/')) {
+    const parts = no.split('/');
+    if (parts.length < 2 || parts[0] !== 'INQ') {
+      throw new Error(
+        `Inquiry number "${inquiryNo || '(empty)'}" does not follow the INQ/... format, `
+        + 'so the quotation number cannot be derived from it. Fix the inquiry number first.',
+      );
+    }
+    parts[0] = 'QUO';
+    return parts.join('/');
+  }
+  if (!no.includes('-INQ-')) {
     throw new Error(
-      `Inquiry number "${inquiryNo || '(empty)'}" does not follow the INQ/... format, `
+      `Inquiry number "${inquiryNo || '(empty)'}" does not follow a recognized INQ format, `
       + 'so the quotation number cannot be derived from it. Fix the inquiry number first.',
     );
   }
-  parts[0] = 'QUO';
-  return parts.join('/');
+  return no.replace('-INQ-', '-QUO-');
 }
 
 // ─── Section component ────────────────────────────────────────────────────

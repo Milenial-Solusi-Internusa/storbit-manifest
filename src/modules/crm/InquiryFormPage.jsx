@@ -123,14 +123,11 @@ function RadioPill({ value, current, onClick, children }) {
   );
 }
 
-async function generateInquiryNo(companyId, companyCode) {
-  const year = new Date().getFullYear();
-  const { data, error } = await supabase.rpc('increment_document_sequence', {
-    p_company_id: companyId, p_document_type: 'INQ', p_department_code: 'CRM', p_year: year, p_month: 0,
-  });
-  if (error) throw new Error('Failed to generate the document number, please try again.');
-  return `INQ/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
-}
+// Irisan 4 Lingkup A: penomoran pindah ke server (trigger BEFORE INSERT
+// assign_inquiry_no, migrasi 20261022000001). generateInquiryNo() dihapus —
+// client tidak lagi menghitung/mengirim inquiry_no; nilai apa pun yang
+// dikirim akan DITIMPA oleh DB. Lihat handleSave() untuk .select() yang
+// membaca balik nomor otoritatif.
 
 export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create', prefillAccountId = null, prefillContactId = null }) {
   const { profile, erpRole, user } = useAuth();
@@ -146,6 +143,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     cargo_types: [], un_number: '', imo_class: '', has_msds: '',
     additional_services: [],
     pickup_address: '', delivery_address: '',
+    // Irisan 4 Lingkup C — wajib terisi HANYA bila possibleDuplicates (di
+    // bawah) menemukan pasangan saat create. Edit mode mewarisi nilai lama
+    // apa adanya (populate di effect "Edit mode" di bawah) tapi deteksinya
+    // TIDAK dijalankan ulang di edit — lihat gate `!isEdit` pada effect itu.
+    duplicate_warning_reason: '',
   });
   const [prospects, setProspects] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -259,6 +261,41 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     return () => { cancelled = true; };
   }, [resolvedAccountId]);
 
+  // ── Possible Duplicate (Irisan 4 Lingkup C) ──────────────────────────────
+  // Hanya saat CREATE (mockup rule 105: peringatan muncul saat membuat
+  // inquiry baru, bukan saat edit). Debounced 500ms supaya tidak memanggil
+  // RPC di setiap keystroke POL/POD. find_possible_duplicate_inquiries
+  // SECURITY DEFINER (lihat migrasi 20261022000003) — bukan RLS biasa —
+  // supaya pasangan lintas-sales ikut terdeteksi, bukan hanya milik sendiri.
+  const [possibleDuplicates, setPossibleDuplicates] = useState([]);
+  const [dupCheckLoading, setDupCheckLoading] = useState(false);
+  // Setiap setState dijadwalkan lewat setTimeout, bahkan untuk cabang
+  // "bersihkan" — menghindari setState sinkron di badan effect (aturan
+  // react-hooks/set-state-in-effect, pola sama src/kit/Overlay.jsx useMounted()).
+  useEffect(() => {
+    let cancelled = false;
+    if (isEdit || !profile?.company_id || !resolvedAccountId || !form.pol || !form.pod) {
+      const t = setTimeout(() => { if (!cancelled) setPossibleDuplicates([]); }, 0);
+      return () => { cancelled = true; clearTimeout(t); };
+    }
+    const loadingTimer = setTimeout(() => { if (!cancelled) setDupCheckLoading(true); }, 0);
+    const timer = setTimeout(() => {
+      supabase.rpc('find_possible_duplicate_inquiries', {
+        p_company_id: profile.company_id,
+        p_customer_id: resolvedAccountId,
+        p_pol: form.pol,
+        p_pod: form.pod,
+        p_container_types: form.container_types,
+        p_exclude_id: null,
+      }).then(({ data, error }) => {
+        if (cancelled) return;
+        setDupCheckLoading(false);
+        setPossibleDuplicates(error ? [] : (data || []));
+      });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(loadingTimer); clearTimeout(timer); };
+  }, [isEdit, profile?.company_id, resolvedAccountId, form.pol, form.pod, form.container_types]);
+
   // Edit mode — fetch the inquiry and populate the form once.
   useEffect(() => {
     if (!isEdit) return undefined;
@@ -298,6 +335,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           additional_services: data.additional_services || [],
           pickup_address: data.pickup_address || '',
           delivery_address: data.delivery_address || '',
+          duplicate_warning_reason: data.duplicate_warning_reason || '',
         });
         // Make sure the linked account appears in its dropdown (it may be inactive
         // or in the other status bucket) so the name renders instead of blank.
@@ -321,6 +359,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Select prospect';
     if (sourceType === 'customer' && !form.customer_id) e.source = 'Select customer';
     if (!form.service_type) e.service_type = 'Required';
+    // Irisan 4 Lingkup C — possibleDuplicates hanya mungkin terisi saat
+    // create (effect di atas mengosongkannya di edit mode), jadi cek ini
+    // efektif create-only tanpa perlu gate `!isEdit` tambahan di sini.
+    if (possibleDuplicates.length > 0 && !form.duplicate_warning_reason.trim()) {
+      e.duplicate_warning_reason = 'Required when a possible duplicate is shown';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -366,6 +410,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         additional_services: form.additional_services.length ? form.additional_services : null,
         pickup_address: form.pickup_address || null,
         delivery_address: form.delivery_address || null,
+        duplicate_warning_reason: form.duplicate_warning_reason || null,
       };
 
       if (isEdit) {
@@ -379,10 +424,6 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         return;
       }
 
-      const companyRow = await supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle();
-      const companyCode = companyRow.data?.code || 'MSI';
-      const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
-
       // `owner_id` = pembuat inquiry (keputusan Den 30 Agu 2026). Kolomnya lahir
       // di Batch Persiapan dengan backfill dari created_by, tapi sampai batch ini
       // NOL jalur tulis mengisinya — akibatnya setiap inquiry baru sejak 27 Agu
@@ -390,13 +431,20 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       // tak punya apa pun untuk dikelompokkan. Nilainya sengaja sama dengan
       // created_by di sini, TAPI dua kolom ini bukan sinonim: created_by permanen,
       // owner_id bisa dipindahtangankan selama deal masih terbuka (Detail Deal).
-      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, owner_id: profile.id, ...fields };
-      const { error } = await supabase.from('inquiries').insert(payload);
+      //
+      // Irisan 4 Lingkup A — inquiry_no TIDAK dikirim sama sekali (trigger
+      // server-side assign_inquiry_no menimpa apa pun yang dikirim, jadi
+      // mengirim nilai tebakan hanya menyesatkan). .select() membaca balik
+      // id + nomor OTORITATIF dari DB untuk audit log & toast — sebelumnya
+      // insert ini tanpa .select(), sehingga entityId SELALU null dan
+      // entityLabel memakai nomor yang client tebak sendiri.
+      const payload = { company_id: profile.company_id, status: 'OPEN', created_by: profile.id, owner_id: profile.id, ...fields };
+      const { data: inserted, error } = await supabase.from('inquiries').insert(payload).select('id, inquiry_no').single();
       if (error) throw error;
       logAudit(supabase, {
-        action: ACTION_TYPES.CREATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: null, entityLabel: inquiry_no,
+        action: ACTION_TYPES.CREATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: inserted?.id || null, entityLabel: inserted?.inquiry_no,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.('Inquiry created');
+      showToast?.('Inquiry created' + (inserted?.inquiry_no ? ` — ${inserted.inquiry_no}` : ''));
       onBack();
     } catch (err) {
       showToast?.('Failed to save: ' + err.message, 'error');
@@ -417,7 +465,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'New Inquiry'}</h1>
               <div style={S.hSub}>Request for Quotation (RFQ) Form</div>
             </div>
-            <span style={S.inqBadge}>{isEdit ? (editNo || '—') : `INQ/MSI/${new Date().getFullYear()}/—`}</span>
+            <span style={S.inqBadge}>{isEdit ? (editNo || '—') : 'Assigned on save'}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
@@ -440,7 +488,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Inquiry Date</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. Inquiry</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>INQ/MSI/{new Date().getFullYear()}/—</span></span></div>
+              <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. Inquiry</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>{isEdit ? (editNo || '—') : 'Assigned on save'}</span></span></div>
             </div>
 
             <div style={{ display: 'grid', gap: 18 }}>
@@ -600,6 +648,49 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   {CONTAINER_TYPES.map(t => <Pill key={t} active={form.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}
                 </div>
               </div>
+
+              {/* Irisan 4 Lingkup C — possible-duplicate warning. Mockup
+                  (Inquiry Management.dc.html, modal "mDup") menampilkannya
+                  sebagai popup interupsi; di sini dibuat sebagai kartu
+                  inline supaya cocok dengan pola deteksi yang berjalan
+                  kontinu/debounced (bukan satu titik interupsi) — deviasi
+                  disengaja, dicatat di laporan. Submit diblok lewat
+                  validate() sampai alasan terisi (lihat errors.duplicate_warning_reason). */}
+              {!isEdit && !dupCheckLoading && possibleDuplicates.length > 0 && (
+                <div style={{ background: '#FEF9E7', border: '1px solid #F2D675', borderRadius: 10, padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <AlertTriangle size={18} color="#92700A" style={{ flex: '0 0 18px', marginTop: 1 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: '#5C4700' }}>
+                        Possible duplicate{possibleDuplicates.length > 1 ? 's' : ''} found
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#5C4700', marginTop: 4 }}>
+                        Same account, same route, created in the last 30 days:
+                      </div>
+                      <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                        {possibleDuplicates.map(d => (
+                          <li key={d.id} style={{ fontSize: 12.5, color: '#5C4700', fontFamily: "'IBM Plex Mono',monospace" }}>
+                            {d.inquiry_no} — {new Date(d.created_at).toLocaleDateString('en-GB')}{d.owner_name ? ` (${d.owner_name})` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ ...S.label, color: '#5C4700' }}>Reason to continue as a separate shipment</div>
+                        <textarea
+                          value={form.duplicate_warning_reason}
+                          onChange={set('duplicate_warning_reason')}
+                          rows={2}
+                          style={{ ...S.textarea, borderColor: errors.duplicate_warning_reason ? C.error : '#F2D675' }}
+                          placeholder="Explain why this is a separate shipment…"
+                        />
+                        {errors.duplicate_warning_reason && (
+                          <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.duplicate_warning_reason}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div style={grid2}>
                 <Field label="Item Name (EN)"><input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
