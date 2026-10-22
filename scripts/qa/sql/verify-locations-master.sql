@@ -44,6 +44,21 @@
 -- Kode/nama lokasi uji dipagari prefiks `ZZTEST` + potongan gen_random_uuid()
 -- supaya unik tiap kali dijalankan dan tidak pernah bertabrakan dengan data
 -- asli -- sama konvensi `ZZZTEST-*` akun uji (lihat CLAUDE.md).
+--
+-- ⚠️ DUA KOREKSI dari review Vir atas draf pertama skrip ini:
+--   (e) DELETE ditolak `insufficient_privilege` (42501) SEBELUM RLS sempat
+--       dievaluasi -- migrasi 20261023000001 hanya `GRANT SELECT, INSERT,
+--       UPDATE` (nol `DELETE`), jadi kekurangan privilege TABEL itu sendiri
+--       yang menolak, bukan default-deny RLS (yang akan "sukses, nol baris
+--       terkena" seperti draf pertama uji ini mengasumsikan).
+--   (i1) Keputusan Den: Location Master dikelola HANYA `super_admin` --
+--        `request_new_location` (migrasi 20261023000004, dipatch Vir)
+--        mengirim notifikasi ke `rl.code='super_admin'`, BUKAN lagi
+--        "manager-ke-atas". Penerima dicari DINAMIS (query live ke
+--        `user_roles`/`roles`/`profiles`), BUKAN UUID manager yang
+--        di-hardcode -- staging bisa punya 0/1/banyak akun `super_admin`
+--        aktif, dan fixture manager (level 6) di atas BUKAN LAGI penerima
+--        yang sah di bawah aturan baru ini.
 -- =============================================================================
 
 -- =====================================================================
@@ -200,34 +215,40 @@ BEGIN
 END $$;
 
 -- =====================================================================
--- (e) Tidak ada policy DELETE -- DELETE oleh manager (atau role mana pun)
--- mengenai NOL baris (RLS default-deny untuk command tanpa policy, bukan
--- exception), baris tetap ada sesudahnya.
+-- (e) [KOREKSI review Vir] Nol GRANT DELETE -- DELETE oleh manager (atau
+-- role mana pun) DITOLAK `insufficient_privilege` (42501) SEBELUM RLS
+-- sempat dievaluasi (migrasi 20261023000001 hanya GRANT SELECT/INSERT/
+-- UPDATE), bukan "sukses, nol baris terkena" seperti draf pertama uji ini.
+-- Baris tetap ada sesudahnya.
 -- =====================================================================
 DO $$
 DECLARE
   v_uuid_manager uuid := '7f218c76-196e-4580-baf1-6bdf17c6a35a';
   v_code text := 'ZZTEST' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
   v_id uuid;
-  v_deleted_count int;
+  v_caught boolean := false;
   v_still_exists boolean;
 BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_uuid_manager::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
 
   INSERT INTO public.locations (code, name, country, type)
-    VALUES (v_code, 'Uji Nol Delete Policy', 'Indonesia', 'FTZ')
+    VALUES (v_code, 'Uji Nol Grant Delete', 'Indonesia', 'FTZ')
     RETURNING id INTO v_id;
 
-  DELETE FROM public.locations WHERE id = v_id;
-  GET DIAGNOSTICS v_deleted_count = ROW_COUNT;
+  BEGIN
+    DELETE FROM public.locations WHERE id = v_id;
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_caught := true;
+    RAISE NOTICE 'DELETE ditolak (nol GRANT DELETE), pesan: %', SQLERRM;
+  END;
 
   EXECUTE 'RESET ROLE';
   SELECT EXISTS(SELECT 1 FROM public.locations WHERE id = v_id) INTO v_still_exists;
 
-  RAISE NOTICE 'DELETE terkena % baris, baris masih ada=%', v_deleted_count, v_still_exists;
-  IF v_deleted_count <> 0 OR NOT v_still_exists THEN
-    RAISE EXCEPTION 'UJI GAGAL -- DELETE seharusnya mengenai NOL baris (nol policy DELETE) tapi baris terhapus';
+  RAISE NOTICE 'DELETE ditangkap=%, baris masih ada=%', v_caught, v_still_exists;
+  IF NOT v_caught OR NOT v_still_exists THEN
+    RAISE EXCEPTION 'UJI GAGAL -- DELETE seharusnya ditolak insufficient_privilege (nol GRANT DELETE) dan baris tetap ada';
   END IF;
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja)';
@@ -390,39 +411,81 @@ BEGIN
 END $$;
 
 -- =====================================================================
--- (i1) request_new_location -- mengirim notifikasi ke manager-ke-atas
--- (termasuk manager fixture), company_id tiap baris = company PENERIMA.
--- Dibaca sesudah RESET ROLE (RLS notifications_read = user_id=auth.uid(),
--- aktor pengirim bukan pemiliknya).
+-- (i1) [KOREKSI review Vir] request_new_location -- penerima kini HANYA
+-- `super_admin` aktif (Keputusan Den), BUKAN manager-ke-atas. Dicari
+-- DINAMIS (replika PERSIS WHERE badan migrasi 20261023000004 pasca-patch
+-- Vir) -- BUKAN UUID manager yang di-hardcode, karena manager (level 6)
+-- BUKAN LAGI penerima yang sah di bawah aturan baru, dan staging bisa
+-- punya 0/1/banyak akun super_admin aktif. Assert: jumlah notifikasi =
+-- jumlah super_admin aktif selain pengirim, company_id (max, dicast ke
+-- text -- max(uuid) tidak eksis) notifikasi = company_id (max, dicast
+-- sama) super_admin penerima, DAN nol notifikasi bocor ke user yang
+-- bukan super_admin aktif. Dibaca sesudah RESET ROLE (RLS
+-- notifications_read = user_id=auth.uid(), aktor pengirim bukan
+-- pemiliknya).
 -- =====================================================================
 DO $$
 DECLARE
   v_uuid_sales uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
-  v_uuid_manager uuid := '7f218c76-196e-4580-baf1-6bdf17c6a35a';
   v_marker text := 'ZZTESTLOC-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
-  v_notif_to_manager int;
-  v_notif_company uuid;
-  v_manager_company uuid;
+  v_expected_count int;
+  v_expected_company_text text;
+  v_actual_count int;
+  v_notif_company_text text;
+  v_leaked_to_non_super int;
 BEGIN
+  -- Dihitung SEBELUM impersonasi (sesi masih postgres, bypass RLS) --
+  -- replika PERSIS WHERE badan request_new_location (migrasi
+  -- 20261023000004 pasca-koreksi Vir: rl.code='super_admin').
+  SELECT count(*), max(p.company_id::text)
+    INTO v_expected_count, v_expected_company_text
+    FROM public.user_roles ur
+    JOIN public.roles rl ON rl.id = ur.role_id
+    JOIN public.profiles p ON p.id = ur.user_id
+   WHERE rl.code = 'super_admin'
+     AND ur.is_active = true
+     AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+     AND p.active = true
+     AND ur.user_id <> v_uuid_sales;
+  IF v_expected_count = 0 THEN
+    RAISE EXCEPTION 'UJI TIDAK BISA DIJALANKAN -- nol akun super_admin aktif di staging (selain sales) untuk diuji';
+  END IF;
+
   PERFORM set_config('request.jwt.claim.sub', v_uuid_sales::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
 
   PERFORM public.request_new_location(v_marker, 'catatan uji otomatis');
 
   EXECUTE 'RESET ROLE';
-  SELECT count(*), max(company_id) INTO v_notif_to_manager, v_notif_company
+  SELECT count(*), max(company_id::text) INTO v_actual_count, v_notif_company_text
     FROM public.notifications
-   WHERE user_id = v_uuid_manager
-     AND event_type = 'location_requested'
+   WHERE event_type = 'location_requested'
      AND body LIKE '%' || v_marker || '%';
-  v_manager_company := (SELECT company_id FROM public.profiles WHERE id = v_uuid_manager);
 
-  RAISE NOTICE 'Notifikasi ke manager=%, company_id notifikasi=%, company_id manager=%', v_notif_to_manager, v_notif_company, v_manager_company;
-  IF v_notif_to_manager <> 1 THEN
-    RAISE EXCEPTION 'UJI GAGAL -- manager seharusnya menerima TEPAT 1 notifikasi location_requested, didapat %', v_notif_to_manager;
+  -- Nol kebocoran: setiap PENERIMA notifikasi ini harus punya SETIDAKNYA
+  -- satu baris user_roles aktif ber-role super_admin (tidak disyaratkan
+  -- valid_until di sini -- cek keanggotaan role, bukan replika gate penuh).
+  SELECT count(*) INTO v_leaked_to_non_super
+    FROM public.notifications n
+   WHERE n.event_type = 'location_requested'
+     AND n.body LIKE '%' || v_marker || '%'
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur2
+         JOIN public.roles rl2 ON rl2.id = ur2.role_id
+        WHERE ur2.user_id = n.user_id AND rl2.code = 'super_admin' AND ur2.is_active = true
+     );
+
+  RAISE NOTICE 'expected_count=%, actual_count=%, expected_company=%, notif_company=%, leaked_non_super=%',
+    v_expected_count, v_actual_count, v_expected_company_text, v_notif_company_text, v_leaked_to_non_super;
+
+  IF v_actual_count <> v_expected_count THEN
+    RAISE EXCEPTION 'UJI GAGAL -- jumlah notifikasi (%) != jumlah super_admin aktif selain pengirim (%)', v_actual_count, v_expected_count;
   END IF;
-  IF v_notif_company IS DISTINCT FROM v_manager_company THEN
-    RAISE EXCEPTION 'UJI GAGAL -- company_id notifikasi (%) seharusnya = company_id PENERIMA (%)', v_notif_company, v_manager_company;
+  IF v_notif_company_text IS DISTINCT FROM v_expected_company_text THEN
+    RAISE EXCEPTION 'UJI GAGAL -- company_id notifikasi (%) != company_id super_admin penerima (%)', v_notif_company_text, v_expected_company_text;
+  END IF;
+  IF v_leaked_to_non_super <> 0 THEN
+    RAISE EXCEPTION 'UJI GAGAL -- % notifikasi bocor ke user yang BUKAN super_admin aktif', v_leaked_to_non_super;
   END IF;
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja)';
