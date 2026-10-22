@@ -5,6 +5,7 @@
 // weight_kg, volume_cbm, cargo_types[], un_number, imo_class, has_msds,
 // additional_services[]) added to the form + INSERT payload.
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import {
   ChevronLeft, ChevronDown, Send, X, Check, User, Calendar, Hash, Anchor, MapPin,
   AlertTriangle,
@@ -14,7 +15,9 @@ import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { isSuperAdmin } from '../../lib/roles';
 import AccountPicker from '../../components/AccountPicker';
+import { LocationPicker } from '../../kit';
 // Sumber TUNGGAL kosakata kargo & layanan tambahan (+ incoterms/container/
 // imo/msds, dipindah ke sini Irisan 2 Inquiry lanjutan) — dipakai bersama
 // DealDetailPage. Tidak boleh dideklarasikan ulang di sini.
@@ -27,6 +30,18 @@ const C = {
   border: '#E2E8F0', borderStrong: '#CBD5E1',
   text: '#0F172A', sub: '#475569', muted: '#94A3B8',
   success: '#16A34A', warning: '#F59E0B', error: '#DC2626',
+};
+
+// Irisan 6 -- LocationPicker (src/kit/LocationPicker.jsx) adalah TOKEN-
+// AGNOSTIC (pola sama RouteStrip/DocumentFlow -- CRM belum migrasi kit
+// sage). Dipetakan dari C di atas; warn* dipakai ulang dari warna banner
+// possible-duplicate yang sudah ada di halaman ini (#FEF9E7/#F2D675/
+// #92700A) supaya dua elemen amber di satu halaman konsisten, bukan dua
+// kuning berbeda.
+const LOCATION_PICKER_TOKENS = {
+  bg: '#F8FAFC', card: C.card, border: C.border, text: C.text, textMute: C.sub,
+  placeholder: C.muted, hover: C.navySoft, divider: C.border,
+  warnBg: '#FEF9E7', warnBorder: '#F2D675', warnText: '#92700A',
 };
 
 const SERVICE_TYPES_FALLBACK = [
@@ -130,7 +145,8 @@ function RadioPill({ value, current, onClick, children }) {
 // membaca balik nomor otoritatif.
 
 export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create', prefillAccountId = null, prefillContactId = null }) {
-  const { profile, erpRole, user } = useAuth();
+  const { profile, erpRole, erpRoles, user } = useAuth();
+  const navigate = useNavigate();
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const isEdit = mode === 'edit' && !!inquiryId;
 
@@ -139,6 +155,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     route: '', estimated_volume: '', estimated_value: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
+    // Irisan 6 -- FK ke locations, ditulis BERSAMAAN dengan pol/pod teks
+    // oleh LocationPicker.onChange (lihat handleSave). null = belum
+    // dipilih dari master (baris baru belum diisi, ATAU baris lama
+    // pra-Irisan 6 yang belum terpetakan -- lihat backfill-inquiry-locations.sql).
+    pol_location_id: null, pod_location_id: null,
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
     cargo_types: [], un_number: '', imo_class: '', has_msds: '',
     additional_services: [],
@@ -174,6 +195,26 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     supabase.from('accounts').select('id, name, lifecycle_stage').eq('company_id', profile.company_id).in('lifecycle_stage', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
+
+  // Irisan 6 -- daftar locations SEKALI untuk kedua LocationPicker (POL+POD)
+  // di halaman ini, bukan satu fetch per instance picker (pola sama
+  // prospects/customers di atas -- kit LocationPicker murni presentasional,
+  // tidak fetch sendiri, lihat header src/kit/LocationPicker.jsx).
+  const [locations, setLocations] = useState([]);
+  useEffect(() => {
+    supabase.from('locations').select('id, code, name, country, type, active').order('name').limit(1000)
+      .then(({ data }) => setLocations(data || []));
+  }, []);
+  // Koreksi review Vir: Location Master dikelola HANYA super_admin
+  // (Keputusan Den) -- manager/role lain memakai jalur onRequest, bukan
+  // onManage, sama seperti sales.
+  const canManageLocations = isSuperAdmin(erpRoles);
+  const openLocationMaster = () => navigate('/admin-settings/locations');
+  const requestNewLocation = (name, note) => {
+    supabase.rpc('request_new_location', { p_name: name, p_note: note }).then(({ error }) => {
+      showToast?.(error ? 'Failed to send request: ' + error.message : 'Request sent to managers.', error ? 'error' : 'success');
+    });
+  };
 
   // Akun yang sedang jadi sumber inquiry ini. Satu turunan dipakai bersama oleh
   // fetch kontak + render field Kontak, supaya tak ada dua definisi yang melenceng.
@@ -261,12 +302,15 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     return () => { cancelled = true; };
   }, [resolvedAccountId]);
 
-  // ── Possible Duplicate (Irisan 4 Lingkup C) ──────────────────────────────
+  // ── Possible Duplicate (Irisan 4 Lingkup C, Irisan 6: ID lokasi) ─────────
   // Hanya saat CREATE (mockup rule 105: peringatan muncul saat membuat
   // inquiry baru, bukan saat edit). Debounced 500ms supaya tidak memanggil
-  // RPC di setiap keystroke POL/POD. find_possible_duplicate_inquiries
-  // SECURITY DEFINER (lihat migrasi 20261022000003) — bukan RLS biasa —
-  // supaya pasangan lintas-sales ikut terdeteksi, bukan hanya milik sendiri.
+  // RPC di setiap pilihan POL/POD. find_possible_duplicate_inquiries
+  // SECURITY DEFINER (migrasi 20261023000003) — bukan RLS biasa — supaya
+  // pasangan lintas-sales ikut terdeteksi, bukan hanya milik sendiri.
+  // Irisan 6: dipicu oleh pol_location_id/pod_location_id (ID lokasi),
+  // BUKAN lagi teks form.pol/form.pod — menutup kewajiban yang ditinggalkan
+  // Irisan 4 (RPC lama membandingkan teks, kini membandingkan ID).
   const [possibleDuplicates, setPossibleDuplicates] = useState([]);
   const [dupCheckLoading, setDupCheckLoading] = useState(false);
   // Setiap setState dijadwalkan lewat setTimeout, bahkan untuk cabang
@@ -274,7 +318,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   // react-hooks/set-state-in-effect, pola sama src/kit/Overlay.jsx useMounted()).
   useEffect(() => {
     let cancelled = false;
-    if (isEdit || !profile?.company_id || !resolvedAccountId || !form.pol || !form.pod) {
+    if (isEdit || !profile?.company_id || !resolvedAccountId || !form.pol_location_id || !form.pod_location_id) {
       const t = setTimeout(() => { if (!cancelled) setPossibleDuplicates([]); }, 0);
       return () => { cancelled = true; clearTimeout(t); };
     }
@@ -283,8 +327,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       supabase.rpc('find_possible_duplicate_inquiries', {
         p_company_id: profile.company_id,
         p_customer_id: resolvedAccountId,
-        p_pol: form.pol,
-        p_pod: form.pod,
+        p_pol_location_id: form.pol_location_id,
+        p_pod_location_id: form.pod_location_id,
         p_container_types: form.container_types,
         p_exclude_id: null,
       }).then(({ data, error }) => {
@@ -294,7 +338,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       });
     }, 500);
     return () => { cancelled = true; clearTimeout(loadingTimer); clearTimeout(timer); };
-  }, [isEdit, profile?.company_id, resolvedAccountId, form.pol, form.pod, form.container_types]);
+  }, [isEdit, profile?.company_id, resolvedAccountId, form.pol_location_id, form.pod_location_id, form.container_types]);
 
   // Edit mode — fetch the inquiry and populate the form once.
   useEffect(() => {
@@ -321,6 +365,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           deadline_quote: data.deadline_quote || '',
           pol: data.pol || '',
           pod: data.pod || '',
+          pol_location_id: data.pol_location_id || null,
+          pod_location_id: data.pod_location_id || null,
           incoterms: data.incoterms || [],
           container_types: data.container_types || [],
           goods_name: data.goods_name || '',
@@ -396,6 +442,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         deadline_quote: form.deadline_quote || null,
         pol: form.pol || null,
         pod: form.pod || null,
+        pol_location_id: form.pol_location_id || null,
+        pod_location_id: form.pod_location_id || null,
         incoterms: form.incoterms.length ? form.incoterms : null,
         container_types: form.container_types.length ? form.container_types : null,
         goods_name: form.goods_name || null,
@@ -615,12 +663,35 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                 <div style={{ minWidth: 0 }}>
                   <div style={S.miniLabel}>Origin</div>
                   <div style={S.label}><Anchor size={13} color={C.navy} /> POL: Port of Loading</div>
-                  <input value={form.pol} onChange={set('pol')} style={S.input} placeholder="cth: Tanjung Priok - IDJKT" />
+                  {/* Irisan 6 -- input teks bebas diganti LocationPicker (rule 108:
+                      "replaces free text for... Origin and Destination"). onChange
+                      menulis pol (teks) DAN pol_location_id (ID) bersamaan -- lihat
+                      header src/kit/LocationPicker.jsx untuk alasan (reader lama
+                      tetap jalan tanpa sentuhan). */}
+                  <LocationPicker
+                    value={form.pol_location_id}
+                    textValue={form.pol}
+                    options={locations}
+                    tokens={LOCATION_PICKER_TOKENS}
+                    placeholder="Select port of loading…"
+                    onChange={(id, loc) => setForm((f) => ({ ...f, pol_location_id: id, pol: loc.name }))}
+                    onManage={canManageLocations ? openLocationMaster : undefined}
+                    onRequest={canManageLocations ? undefined : requestNewLocation}
+                  />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ ...S.miniLabel, color: C.orange }}>Destination</div>
                   <div style={S.label}><MapPin size={13} color={C.orange} /> POD: Port of Discharge</div>
-                  <input value={form.pod} onChange={set('pod')} style={S.input} placeholder="cth: Singapore - SGSIN" />
+                  <LocationPicker
+                    value={form.pod_location_id}
+                    textValue={form.pod}
+                    options={locations}
+                    tokens={LOCATION_PICKER_TOKENS}
+                    placeholder="Select port of discharge or city…"
+                    onChange={(id, loc) => setForm((f) => ({ ...f, pod_location_id: id, pod: loc.name }))}
+                    onManage={canManageLocations ? openLocationMaster : undefined}
+                    onRequest={canManageLocations ? undefined : requestNewLocation}
+                  />
                 </div>
               </div>
 

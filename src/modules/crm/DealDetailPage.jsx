@@ -21,6 +21,7 @@
 // mark_inquiry_won (server-side: pipeline_stage='WON'), bukan lewat PostgREST.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router';
 import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
@@ -29,7 +30,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove, canCreatePrf, isAllEntities } from '../../lib/roles';
+import { isManagerOrAbove, isSuperAdmin, canCreatePrf, isAllEntities } from '../../lib/roles';
 import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import {
   C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
@@ -41,6 +42,7 @@ import ListView from './v3/ListView';
 import { RADIUS, SP, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
+import LocationPicker from '../../kit/LocationPicker';
 import { DocumentFlow } from '../../kit/DocumentFlow';
 import { RelatedDocuments } from '../../kit/RelatedDocuments';
 import { SectionHeader, SelectField, LockedField, TextField, ChipToggleField, TextareaField } from './dealOverviewFieldInputs';
@@ -59,6 +61,17 @@ import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
+// Irisan 6 -- LocationPicker (src/kit/LocationPicker.jsx) adalah TOKEN-
+// AGNOSTIC (pola sama RouteStrip/DocumentFlow/RelatedDocuments -- CRM
+// belum migrasi kit sage). Dipetakan dari C (./DealPanels, navy/orange/
+// cream) -- amber/amberBg/amberBd SUDAH ADA di palet itu, dipakai ulang
+// persis (bukan warna amber kedua di halaman yang sama).
+const LOCATION_PICKER_TOKENS = {
+  bg: C.surfaceAlt, card: C.surface, border: C.border, text: C.text, textMute: C.textMute,
+  placeholder: C.textFaint, hover: C.navySoft, divider: C.border,
+  warnBg: C.amberBg, warnBorder: C.amberBd, warnText: C.amber,
+};
+
 const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 
 // B3 — "Batalkan" memakai gate yang SAMA PERSIS dengan "Tandai Kalah": keduanya
@@ -478,6 +491,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
 /* ========================================================================= */
 export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
@@ -554,6 +568,25 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
+  // Irisan 6 -- daftar locations SEKALI untuk kedua LocationPicker (POL+POD,
+  // section "Route & Terms" edit mode) -- kit LocationPicker murni
+  // presentasional, tidak fetch sendiri (lihat header src/kit/LocationPicker.jsx).
+  const [locations, setLocations] = useState([]);
+  useEffect(() => {
+    supabase.from('locations').select('id, code, name, country, type, active').order('name').limit(1000)
+      .then(({ data }) => setLocations(data || []));
+  }, []);
+  // Koreksi review Vir: Location Master dikelola HANYA super_admin
+  // (Keputusan Den) -- manager/role lain memakai jalur onRequest, bukan
+  // onManage, sama seperti sales.
+  const canManageLocations = isSuperAdmin(erpRoles);
+  const openLocationMaster = () => navigate('/admin-settings/locations');
+  const requestNewLocation = (name, note) => {
+    supabase.rpc('request_new_location', { p_name: name, p_note: note }).then(({ error }) => {
+      showToast?.(error ? 'Failed to send request: ' + error.message : 'Request sent to managers.', error ? 'error' : 'success');
+    });
+  };
+
   useEffect(() => {
     if (!inquiryId) return undefined;
     let cancelled = false;
@@ -562,7 +595,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1727,6 +1760,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           onEdit={() => {
             setSectionDraft({
               pol: inquiry.pol || '', pod: inquiry.pod || '',
+              // Irisan 6 -- ID lokasi ikut diseed draft (dibaca LocationPicker
+              // di bawah); pol/pod teks tetap diseed juga, ditulis ulang
+              // bersamaan oleh LocationPicker.onChange kalau user memilih lagi.
+              pol_location_id: inquiry.pol_location_id || null, pod_location_id: inquiry.pod_location_id || null,
               pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
               incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
             });
@@ -1735,16 +1772,47 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
           onSave={() => saveInquirySection({
             pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
+            pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
             pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
             incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
             container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
           }, 'Route & Terms')}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
-          <TextField label="Port of Loading" editing={editingSection === 'Route'} value={inquiry.pol}
-            draft={sectionDraft.pol} onDraft={(v) => setSectionDraft((d) => ({ ...d, pol: v }))} />
-          <TextField label="Port of Discharge" editing={editingSection === 'Route'} value={inquiry.pod}
-            draft={sectionDraft.pod} onDraft={(v) => setSectionDraft((d) => ({ ...d, pod: v }))} />
+          {/* Irisan 6 -- POL/POD pakai LocationPicker HANYA saat editing (rule
+              108: "replaces free text for... Origin and Destination in
+              Inquiry detail"); tampilan read-only TETAP TextField apa adanya
+              (zero perubahan ke komponen itu) -- minimal footprint, pola
+              sama field lain di section ini yang tak tersentuh. */}
+          {editingSection === 'Route' ? (
+            <>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: C.textMute, marginBottom: 6 }}>Port of Loading</div>
+                <LocationPicker
+                  value={sectionDraft.pol_location_id} textValue={sectionDraft.pol} options={locations}
+                  tokens={LOCATION_PICKER_TOKENS} placeholder="Select port of loading…"
+                  onChange={(id, loc) => setSectionDraft((d) => ({ ...d, pol_location_id: id, pol: loc.name }))}
+                  onManage={canManageLocations ? openLocationMaster : undefined}
+                  onRequest={canManageLocations ? undefined : requestNewLocation}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: C.textMute, marginBottom: 6 }}>Port of Discharge</div>
+                <LocationPicker
+                  value={sectionDraft.pod_location_id} textValue={sectionDraft.pod} options={locations}
+                  tokens={LOCATION_PICKER_TOKENS} placeholder="Select port of discharge or city…"
+                  onChange={(id, loc) => setSectionDraft((d) => ({ ...d, pod_location_id: id, pod: loc.name }))}
+                  onManage={canManageLocations ? openLocationMaster : undefined}
+                  onRequest={canManageLocations ? undefined : requestNewLocation}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <TextField label="Port of Loading" editing={false} value={inquiry.pol} />
+              <TextField label="Port of Discharge" editing={false} value={inquiry.pod} />
+            </>
+          )}
           <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}
             draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
           <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}

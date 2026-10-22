@@ -39,6 +39,7 @@ const TaxesPage          = lazy(() => import("../../modules/admin/pages/TaxesPag
 const PaymentTermsPage   = lazy(() => import("../../modules/admin/pages/PaymentTermsPage"));
 const DcMasterPage       = lazy(() => import("../../modules/admin/pages/DcMasterPage"));
 const SalesTargetsPage   = lazy(() => import("../../modules/admin/pages/SalesTargetsPage"));
+const LocationMasterPage = lazy(() => import("../../modules/admin/pages/LocationMasterPage"));
 
 /* ---------- lazy imports — 9 eks-AdminSettingsHub (./admin-settings/*) ---------- */
 const EntitySettingsPage     = lazy(() => import("./admin-settings/EntitySettingsPage"));
@@ -96,6 +97,15 @@ const HUB_GROUPS = [
     title: "Commercial",
     cards: [
       { id: "sales-targets", icon: "scale", name: "Sales Targets", desc: "Target penjualan per salesperson per bulan." },
+      // Irisan 6 -- master data CRM lain yang disebut komentar di atas
+      // (sejak 20 Sep 2026). Lintas entitas (bukan company-scoped seperti
+      // kartu lain grup ini) -- rule 108: "the real home of Location
+      // Master is Admin Settings, group Shared Master Data". Gate
+      // `foundation_master` DISAMAKAN dengan kartu lain grup ini (bukan
+      // kunci menu baru) -- lihat laporan PLAN Irisan 6 soal status grant
+      // key ini hari ini (belum diseed ke role mana pun di migrasi apa pun
+      // yang bisa ditemukan).
+      { id: "locations", icon: "mappin", name: "Location Master", desc: "Master lokasi pelabuhan, bandara, kota -- lintas entitas." },
     ],
   },
   {
@@ -251,6 +261,16 @@ export default function AdminHub({ onExit, initialSection }) {
     // jadi nol seeding role_menu_permissions. Penegak sebenarnya tetap RLS
     // sales_targets (baca: manager+ atau pemilik target; tulis: manager+).
     "sales-targets":         { view: gMaster,   open: gMaster },
+    // Irisan 6. Pola IDENTIK baris di atas (sales-targets) -- menumpang
+    // foundation_master, TIDAK memakai menu key baru. Mockup Location
+    // Master.dc.html menuntut non-manager tetap bisa MEMBUKA halaman
+    // (read-only + banner) -- itu diterapkan DI DALAM LocationMasterPage
+    // sendiri (gate RLS/role per aksi), BUKAN di sini: `open: gMaster`
+    // berarti kartu ini (dan SELURUH kartu AdminHub lain) hari ini hanya
+    // terbuka untuk pemegang foundation_master -- lihat laporan PLAN
+    // Irisan 6 soal status seeding key itu (nol hit di migrasi mana pun
+    // yang bisa ditemukan untuk role mana pun selain bypass super_admin).
+    "locations":             { view: gMaster,   open: gMaster },
     "entity-settings":      { view: gSettings, open: gSettings },
     "document-settings":    { view: gSettings, open: gSettings },
     "finance-defaults":     { view: gSettings, open: gSettings },
@@ -286,6 +306,7 @@ export default function AdminHub({ onExit, initialSection }) {
       case "payment-terms":       return <PaymentTermsPage onHome={backToLanding} />;
       case "dc-master":            return <DcMasterPage onHome={backToLanding} />;
       case "sales-targets":       return <SalesTargetsPage onHome={backToLanding} />;
+      case "locations":           return <LocationMasterPage onHome={backToLanding} />;
       case "entity-settings":     return <EntitySettingsPage onHome={backToLanding} />;
       case "document-settings":   return <DocumentSettingsPage onHome={backToLanding} />;
       case "finance-defaults":    return <FinanceDefaultsPage onHome={backToLanding} />;
