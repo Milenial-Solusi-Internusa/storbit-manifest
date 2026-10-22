@@ -481,6 +481,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
+  // Bugfix Irisan 4: inquiry_no inquiry yang DIPERTAHANKAN, diambil lewat
+  // query TERPISAH (bukan embed) -- lihat catatan di titik fetch-nya di
+  // bawah untuk alasan ambiguitas self-reference PostgREST. null = belum
+  // ada duplikat, ATAU inquiry yang dipertahankan gagal dibaca (RLS/tidak
+  // ditemukan) -- kedua kasus sengaja dibedakan dari "halaman tidak
+  // ditemukan", lihat komentar di titik render.
+  const [duplicateOfNo, setDuplicateOfNo] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
   // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
@@ -555,10 +562,37 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, duplicate_of:inquiries!inquiries_duplicate_of_id_fkey(inquiry_no)')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
+
+      // Bugfix Irisan 4: inquiry_no inquiry yang dipertahankan dibaca lewat
+      // QUERY TERPISAH, bukan embed `duplicate_of:inquiries!inquiries_
+      // duplicate_of_id_fkey(...)` pada select utama di atas. Embed
+      // self-reference (inquiries menunjuk inquiries lewat FK yang sama)
+      // AMBIGU bagi PostgREST -- select UTAMA gagal total untuk SETIAP
+      // inquiry (bukan hanya yang ber-duplicate_of_id), karena PostgREST
+      // menolak seluruh statement saat parsing embed yang ambigu, bukan
+      // hanya kolom itu -- gejalanya "Inquiry not found" di SEMUA inquiry,
+      // persis yang dilaporkan dari staging. Query kedua ini SENGAJA
+      // dibungkus try/catch sendiri dan TIDAK PERNAH memicu setNotFound --
+      // kegagalannya (RLS inquiries_read tak meloloskan baris yang
+      // dipertahankan untuk sales biasa, atau baris itu sudah dihapus)
+      // bukan alasan membuat HALAMAN INI gagal, cuma teksnya jatuh ke '—'.
+      let duplicateOfNoValue = null;
+      if (inq.duplicate_of_id) {
+        try {
+          const { data: dupRow } = await supabase
+            .from('inquiries')
+            .select('inquiry_no')
+            .eq('id', inq.duplicate_of_id)
+            .maybeSingle();
+          duplicateOfNoValue = dupRow?.inquiry_no || null;
+        } catch {
+          duplicateOfNoValue = null;
+        }
+      }
 
       let acc = null;
       if (inq.prospect_id) {
@@ -673,6 +707,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       if (cancelled) return;
       setInquiry(inq);
+      setDuplicateOfNo(duplicateOfNoValue);
       setAccount(acc);
       setQuotations(quos || []);
       setSalesOrder(so);
@@ -1934,7 +1969,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     tombol untuk MEMULAI Close as Duplicate sendiri SENGAJA
                     belum dibangun di halaman ini (ditunda ke Irisan 8/Owner
                     Assignment), jadi teks ini murni pasif: tampil begitu ADA
-                    baris ber-duplicate_of_id, dari jalur mana pun ia terisi. */}
+                    baris ber-duplicate_of_id, dari jalur mana pun ia terisi.
+
+                    [Bugfix, hari setelahnya] Nomor inquiry yang dipertahankan
+                    dibaca dari state `duplicateOfNo` (query terpisah, lihat
+                    komentar di titik fetch) — BUKAN embed `inquiry?.
+                    duplicate_of?.inquiry_no` seperti sebelumnya (embed itu
+                    sendiri yang membuat select utama gagal untuk SEMUA
+                    inquiry). Fallback '—' berlaku untuk DUA kasus berbeda
+                    yang sengaja TIDAK dibedakan di UI: (a) baris itu memang
+                    tak ditemukan (dihapus/id salah), dan (b) RLS inquiries_
+                    read menolak sales biasa membaca inquiry yang bukan
+                    miliknya — kasus (b) akan sering terjadi karena inquiry
+                    yang DIPERTAHANKAN bisa dimiliki sales lain. Membedakan
+                    keduanya di UI memerlukan RPC pembaca sendiri (pola
+                    SECURITY DEFINER ala find_possible_duplicate_inquiries) —
+                    ditunda ke Irisan 8 bersama UI Close as Duplicate lainnya. */}
                 <ListView
                   mode="table"
                   rows={quotations}
@@ -1943,7 +1993,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   emptySub="Quotations created from this inquiry will appear here."
                   right={inquiry?.duplicate_of_id ? (
                     <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
-                      Locked, inquiry closed as duplicate of {inquiry?.duplicate_of?.inquiry_no || '—'}
+                      Locked, inquiry closed as duplicate of {duplicateOfNo || '—'}
                     </span>
                   ) : dealStatus === 'WON' ? (
                     <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
