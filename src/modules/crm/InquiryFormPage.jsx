@@ -15,7 +15,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
-import { isManagerOrAbove } from '../../lib/roles';
+import { isSuperAdmin } from '../../lib/roles';
 import AccountPicker from '../../components/AccountPicker';
 import { LocationPicker } from '../../kit';
 // Sumber TUNGGAL kosakata kargo & layanan tambahan (+ incoterms/container/
@@ -205,7 +205,10 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     supabase.from('locations').select('id, code, name, country, type, active').order('name').limit(1000)
       .then(({ data }) => setLocations(data || []));
   }, []);
-  const canManageLocations = isManagerOrAbove(erpRoles);
+  // Koreksi review Vir: Location Master dikelola HANYA super_admin
+  // (Keputusan Den) -- manager/role lain memakai jalur onRequest, bukan
+  // onManage, sama seperti sales.
+  const canManageLocations = isSuperAdmin(erpRoles);
   const openLocationMaster = () => navigate('/admin-settings/locations');
   const requestNewLocation = (name, note) => {
     supabase.rpc('request_new_location', { p_name: name, p_note: note }).then(({ error }) => {

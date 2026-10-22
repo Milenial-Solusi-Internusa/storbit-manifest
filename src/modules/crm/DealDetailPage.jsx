@@ -30,7 +30,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove, canCreatePrf, isAllEntities } from '../../lib/roles';
+import { isManagerOrAbove, isSuperAdmin, canCreatePrf, isAllEntities } from '../../lib/roles';
 import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import {
   C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
@@ -576,7 +576,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     supabase.from('locations').select('id, code, name, country, type, active').order('name').limit(1000)
       .then(({ data }) => setLocations(data || []));
   }, []);
-  const canManageLocations = isManagerOrAbove(erpRoles);
+  // Koreksi review Vir: Location Master dikelola HANYA super_admin
+  // (Keputusan Den) -- manager/role lain memakai jalur onRequest, bukan
+  // onManage, sama seperti sales.
+  const canManageLocations = isSuperAdmin(erpRoles);
   const openLocationMaster = () => navigate('/admin-settings/locations');
   const requestNewLocation = (name, note) => {
     supabase.rpc('request_new_location', { p_name: name, p_note: note }).then(({ error }) => {
