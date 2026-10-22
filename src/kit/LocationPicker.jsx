@@ -31,10 +31,23 @@
    tetap utuh dipakai mandiri/di halaman yang sudah sage nanti.
 
    Posisi popover: `position:fixed` dihitung dari getBoundingClientRect()
-   tombol pemicu, flip ke atas kalau ruang bawah kurang -- replika persis
-   `toggle()` mockup. Tanpa portal (beda dari MasterSelect) karena
-   pemakai pertama (InquiryFormPage/DealDetailPage) adalah halaman penuh,
-   bukan di dalam Modal ber-overflow -- fixed positioning sudah cukup.
+   tombol pemicu, flip ke sisi yang ruangnya lebih besar (atas/bawah) --
+   DIHITUNG ULANG (bukan sekali saat dibuka) oleh `computePosition()`,
+   dipanggil `toggle()` SAAT MEMBUKA dan effect scroll/resize SELAMA
+   popover terbuka, supaya tetap menempel tombol pemicu dan bisa membalik
+   arah kalau ruang berubah (mis. keyboard layar tablet muncul/hilang).
+   [Bugfix, laporan Vir/Den] Tinggi popover TIDAK LAGI nilai tetap 330px
+   (mockup) -- dihitung dari ruang yang benar-benar tersedia, dengan
+   `window.visualViewport?.height` sbg sumber tinggi viewport kalau ada
+   (mengecilkan diri saat keyboard layar muncul, beda dari
+   `window.innerHeight` yang tidak selalu ikut berubah). Scroll DI DALAM
+   popover sendiri (daftar hasil overflow) TIDAK menutup popover -- hanya
+   scroll di LUAR-nya (halaman/container induk) yang menggeser posisi, dan
+   HANYA menutup kalau tombol pemicu sudah sepenuhnya keluar viewport;
+   resize/visualViewport TIDAK PERNAH menutup, hanya menghitung ulang.
+   Tanpa portal (beda dari MasterSelect) karena pemakai pertama
+   (InquiryFormPage/DealDetailPage) adalah halaman penuh, bukan di dalam
+   Modal ber-overflow -- fixed positioning sudah cukup.
 
    "Not recorded" (mockup): value teks ADA (`textValue`) tapi `value` (ID)
    tidak merujuk opsi mana pun -- badge amber, bukan ditebak/dipaksa cocok.
@@ -48,6 +61,66 @@ const DEFAULT_TOKENS = {
 };
 
 const VARIANT_SIZE = { cell: 36, field: 56, box: 44 };
+
+// Geometri popover (bugfix laporan Vir/Den -- lihat header file). Nilai
+// non-MARGIN/TRIGGER_GAP di bawah adalah PERKIRAAN tinggi elemen non-list
+// di dalam popover (search box + divider + baris Manage/Request) --
+// popover belum ter-render saat posisi dihitung, jadi tak bisa diukur DOM
+// langsung; dipilih supaya cocok dgn nilai style literal JSX di bawah
+// (search box height:40, wrapper padding:4 + gap:4, divider height:1,
+// baris aksi ~36px). Dipakai HANYA utk menyisakan ruang supaya search box
+// + baris Manage/Request SELALU terlihat -- bukan patokan px presisi.
+const MARGIN = 8;        // jarak minimum dari tepi viewport yang TERLIHAT
+const TRIGGER_GAP = 4;   // jarak popover ke tombol pemicu
+const MIN_LIST_H = 96;   // lantai daftar hasil -- tak pernah lenyap total di layar sangat sempit
+const SEARCH_ROW_H = 40;
+const POPOVER_GAP = 4;
+const DIVIDER_H = 1;
+const ACTION_ROW_H = 36;
+const POPOVER_PADDING = 4;
+
+// `window.visualViewport` mengecilkan diri saat keyboard layar muncul
+// (tablet/HP) -- `window.innerHeight` tidak selalu ikut berubah. Dipakai
+// di SEMUA perhitungan geometri di bawah supaya popover tidak menghitung
+// ruang yang sebenarnya sudah ditutup keyboard.
+function viewportSize() {
+  return {
+    h: window.visualViewport?.height ?? window.innerHeight,
+    w: window.visualViewport?.width ?? window.innerWidth,
+  };
+}
+
+function isTriggerFullyOutOfView(rect) {
+  const { h, w } = viewportSize();
+  return rect.bottom <= 0 || rect.top >= h || rect.right <= 0 || rect.left >= w;
+}
+
+// Posisi + ukuran popover -- DIHITUNG ULANG tiap dipanggil (bukan sekali
+// saat dibuka): toggle() memanggilnya SAAT MEMBUKA, dan effect scroll/
+// resize memanggilnya ULANG SELAMA popover terbuka, supaya ia ikut
+// menempel tombol pemicu dan bisa membalik arah kalau ruang yang tersedia
+// berubah (scroll halaman, atau keyboard layar muncul/hilang).
+function computePosition(rect, hasFooter) {
+  const { h: viewportH, w: viewportW } = viewportSize();
+  const width = Math.max(rect.width, 300);
+  const left = Math.min(rect.left, Math.max(MARGIN, viewportW - width - MARGIN));
+
+  const spaceBelow = viewportH - rect.bottom - MARGIN;
+  const spaceAbove = rect.top - MARGIN;
+  const openUp = spaceAbove > spaceBelow; // sisi yang ruangnya LEBIH BESAR, bukan nilai tetap
+  const available = Math.max(0, openUp ? spaceAbove : spaceBelow);
+
+  const chromeReserve = POPOVER_PADDING * 2 + SEARCH_ROW_H + POPOVER_GAP
+    + (hasFooter ? POPOVER_GAP + DIVIDER_H + POPOVER_GAP + ACTION_ROW_H : 0);
+  const listMaxHeight = Math.max(MIN_LIST_H, available - chromeReserve);
+  const popoverHeight = chromeReserve + listMaxHeight;
+
+  const top = openUp
+    ? Math.max(MARGIN, rect.top - TRIGGER_GAP - popoverHeight)
+    : rect.bottom + TRIGGER_GAP;
+
+  return { top, left, width, listMaxHeight };
+}
 
 function TypeBadge({ type, tokens }) {
   if (!type) return null;
@@ -73,7 +146,7 @@ export default function LocationPicker({
   const tokens = tokensProp || DEFAULT_TOKENS;
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 300 });
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 300, listMaxHeight: 260 });
   const [requesting, setRequesting] = useState(false);
   const [reqName, setReqName] = useState('');
   const [reqNote, setReqNote] = useState('');
@@ -84,34 +157,67 @@ export default function LocationPicker({
   const hasVal = !!(value || (textValue || '').trim());
   // "Not recorded": nilai teks ADA tapi tidak (lagi) merujuk opsi master manapun.
   const notRecorded = hasVal && !current;
+  // Dipakai computePosition() utk menyisakan ruang bagi baris Manage/
+  // Request -- boolean primitif (bukan identitas fungsi onManage/onRequest
+  // itu sendiri) supaya dependency effect di bawah stabil lintas render.
+  const hasFooter = !!(onManage || onRequest);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDocMouseDown = (e) => {
+
+    const onOutsideStart = (e) => {
       if (btnRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return;
       setOpen(false);
     };
-    const onScrollOrResize = () => setOpen(false);
-    document.addEventListener('mousedown', onDocMouseDown);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    window.addEventListener('resize', onScrollOrResize);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      window.removeEventListener('scroll', onScrollOrResize, true);
-      window.removeEventListener('resize', onScrollOrResize);
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
     };
-  }, [open]);
+    // Resize/visualViewport -- TIDAK PERNAH menutup (bugfix: keyboard
+    // layar tablet memicu 'resize', dulu ikut menutup popover). Hanya
+    // menghitung ulang posisi + tinggi daftar.
+    const recompute = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setPos(computePosition(r, hasFooter));
+    };
+    // Scroll -- DIBEDAKAN dari resize: scroll DI DALAM popover sendiri
+    // (daftar hasil overflow) diabaikan total (bugfix: dulu capture=true
+    // menutup popover begitu daftarnya sendiri digulung). Scroll di LUAR
+    // popover (halaman/container induk) menggeser posisi tombol pemicu --
+    // popover ikut menempel, dan HANYA menutup kalau tombol pemicu sudah
+    // sepenuhnya keluar viewport.
+    const onWindowScroll = (e) => {
+      if (popRef.current?.contains(e.target)) return;
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) { setOpen(false); return; }
+      if (isTriggerFullyOutOfView(r)) { setOpen(false); return; }
+      setPos(computePosition(r, hasFooter));
+    };
+
+    document.addEventListener('mousedown', onOutsideStart);
+    document.addEventListener('touchstart', onOutsideStart);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', onWindowScroll, true);
+    window.addEventListener('resize', recompute);
+    window.visualViewport?.addEventListener('resize', recompute);
+    window.visualViewport?.addEventListener('scroll', recompute);
+    return () => {
+      document.removeEventListener('mousedown', onOutsideStart);
+      document.removeEventListener('touchstart', onOutsideStart);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', onWindowScroll, true);
+      window.removeEventListener('resize', recompute);
+      window.visualViewport?.removeEventListener('resize', recompute);
+      window.visualViewport?.removeEventListener('scroll', recompute);
+    };
+  }, [open, hasFooter]);
 
   const toggle = () => {
     if (disabled) return;
     if (open) { setOpen(false); return; }
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    const w = Math.max(r.width, 300);
-    const popH = 330;
-    const top = (r.bottom + 4 + popH > window.innerHeight && r.top > popH + 4) ? r.top - popH - 4 : r.bottom + 4;
-    const left = Math.min(r.left, Math.max(8, window.innerWidth - w - 8));
-    setPos({ top, left, width: w });
+    setPos(computePosition(r, hasFooter));
     setQ('');
     setRequesting(false);
     setOpen(true);
@@ -194,7 +300,7 @@ export default function LocationPicker({
                 <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code or name"
                   style={{ flex: 1, minWidth: 0, height: 36, border: 0, background: 'transparent', outline: 'none', font: '400 13.5px Inter,sans-serif', color: tokens.text }} />
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 260, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', maxHeight: pos.listMaxHeight, overflowY: 'auto' }}>
                 {filtered.map((o) => (
                   <button key={o.id} type="button" onClick={() => pick(o)}
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', border: 0, borderRadius: 8, background: current?.id === o.id ? tokens.bg : 'transparent', color: tokens.text, font: '400 13.5px Inter,sans-serif', cursor: 'pointer', textAlign: 'left' }}>
