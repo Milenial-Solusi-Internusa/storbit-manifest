@@ -27,6 +27,7 @@ export { DropZone, UploadBox } from './Upload';
 export { Banner } from './Banner';
 export { DropdownMenu } from './DropdownMenu';
 export { LaneTable } from './LaneTable';
+export { default as LocationPicker } from './LocationPicker';
 export { FileChip } from './FileChip';
 export { default as Icon } from './Icon';
 export { default as useToast } from './useToast';

@@ -11,11 +11,15 @@
    DIHILANGKAN dari mockup, DILAPORKAN bukan ditebak (nol sumber data):
      - Baris kota/negara di bawah nama pelabuhan (RT.lCity/rCity) -- mockup
        mengambilnya dari tabel hardcode nama-pelabuhan->kota di dalam file
-       mockup sendiri; Nexus TIDAK punya master lokasi (LocationSelect/
-       Location Master -- Irisan 6, belum ada). pol/pod di Nexus adalah
-       teks bebas, bukan referensi ke master yang punya kota/negara.
-     - Warna teks peringatan RT.lFg/rFg (pelabuhan tak dikenal) -- turunan
-       dari master lokasi yang sama, tidak ada.
+       mockup sendiri. [Koreksi Irisan 6] Nexus KINI punya master lokasi
+       (tabel `locations` + LocationPicker, migrasi 20261023000001) dengan
+       kolom `country` -- tapi RouteStrip sendiri masih menerima `pol`/`pod`
+       sbg STRING polos (props tak berubah di Irisan 6, lihat pemanggilnya
+       di DealDetailPage.jsx), jadi baris kota/negara TETAP tidak dirender
+       di sini -- menambahkannya butuh RouteStrip menerima objek lokasi
+       (country, dsb), bukan string, di luar lingkup Irisan 6.
+     - Warna teks peringatan RT.lFg/rFg (pelabuhan tak dikenal) -- idem,
+       tersedia di `locations` tapi belum disalurkan ke komponen ini.
      - Chip "Customs by {entity}" di varian Door-to-Door -- tidak ada kolom
        penanda "entitas yang menangani customs" di `inquiries`.
    Keduanya TIDAK dirender sama sekali (bukan placeholder kosong) -- lihat
