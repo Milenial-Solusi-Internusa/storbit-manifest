@@ -555,7 +555,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, duplicate_of:inquiries!inquiries_duplicate_of_id_fkey(inquiry_no)')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1919,14 +1919,33 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     trg_fn_lock_quotation_closed_inquiry/trg_fn_lock_quotation_
                     items_closed_inquiry diperluas ke status WON. Pengecualian
                     Rate Sheet (rule 109) SENGAJA TIDAK diimplementasikan (final
-                    decision #4) — kunci berlaku rata untuk semua quotation. */}
+                    decision #4) — kunci berlaku rata untuk semua quotation.
+
+                    [Irisan 4 Lingkup B] Keadaan KEEMPAT: inquiry ditutup
+                    sebagai duplikat (duplicate_of_id terisi, status
+                    CANCELLED). Teks persis mockup Quotation Management.dc.html
+                    ("Locked, inquiry closed as duplicate of " + no). Dicek
+                    SEBELUM dealStatus==='WON' karena keduanya tidak pernah
+                    tumpang tindih (Close as Duplicate menulis CANCELLED, bukan
+                    WON) — urutan di sini murni supaya kondisi paling spesifik
+                    dibaca lebih dulu. Backend-nya SUDAH hidup (migrasi
+                    20261022000002, trg_fn_quotation_auto_close_on_inquiry_
+                    closed cabang CANCELLED+duplicate_of_id -> SUPERSEDED) —
+                    tombol untuk MEMULAI Close as Duplicate sendiri SENGAJA
+                    belum dibangun di halaman ini (ditunda ke Irisan 8/Owner
+                    Assignment), jadi teks ini murni pasif: tampil begitu ADA
+                    baris ber-duplicate_of_id, dari jalur mana pun ia terisi. */}
                 <ListView
                   mode="table"
                   rows={quotations}
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this inquiry will appear here."
-                  right={dealStatus === 'WON' ? (
+                  right={inquiry?.duplicate_of_id ? (
+                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
+                      Locked, inquiry closed as duplicate of {inquiry?.duplicate_of?.inquiry_no || '—'}
+                    </span>
+                  ) : dealStatus === 'WON' ? (
                     <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
                       Won, quotation locked
                     </span>
