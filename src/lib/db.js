@@ -2129,6 +2129,44 @@ export async function signInvoiceAttachment(storagePath) {
   return { data: data?.signedUrl || null, error };
 }
 
+// TD-318 Irisan 3 -- bucket bukti Won manual, pola IDENTIK invoice-docs
+// (migrasi 20261021000001): privat, path <company_id>/<inquiry_id>/<uuid>.<ext>,
+// FE memvalidasi lebih dulu supaya pesan bisa dibaca, bucket+RPC tetap batas
+// sesungguhnya.
+export const INQUIRY_WON_EVIDENCE_BUCKET = 'inquiry-won-evidence';
+export const INQUIRY_WON_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+export const INQUIRY_WON_EVIDENCE_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
+
+/**
+ * Won manual: byte ke Storage, lalu mark_inquiry_won (4 argumen) yang
+ * menegakkan gate owner/manager/super_admin + 4 alasan whitelist + path
+ * harus diawali <company_id>/<inquiry_id>/. Urutan byte-dulu sama alasannya
+ * dengan uploadInvoiceAttachment: metadata (di sini: inquiries.won_reason/
+ * won_evidence_path) yang menunjuk berkas tak ada lebih buruk daripada
+ * berkas yatim yang tak terlihat siapa pun.
+ */
+export async function markInquiryWonWithEvidence({ inquiryId, companyId, reason, notes, file }) {
+  if (!file) return { error: { message: 'Tidak ada berkas yang dipilih.' } };
+  if (file.size > INQUIRY_WON_EVIDENCE_MAX_BYTES) {
+    return { error: { message: `Berkas ${file.name} lebih dari 10 MB.` } };
+  }
+  if (!INQUIRY_WON_EVIDENCE_MIME.includes(file.type)) {
+    return { error: { message: `Jenis berkas ${file.type || '(tidak dikenali)'} tidak diterima. Hanya PDF, JPG, dan PNG.` } };
+  }
+  const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const path = `${companyId}/${inquiryId}/${crypto.randomUUID()}.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from(INQUIRY_WON_EVIDENCE_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (upErr) return { error: upErr, isUploadError: true };
+
+  const { error } = await supabase.rpc('mark_inquiry_won', {
+    p_inquiry_id: inquiryId, p_reason: reason, p_evidence_path: path, p_notes: notes,
+  });
+  return { error };
+}
+
 /** Isi nomor Faktur Pajak dan/atau kode transaksi Coretax. Isi SEKALI;
  *  mengubah yang sudah terisi hanya super_admin. Berjejak di audit_logs. */
 export async function setInvoiceTaxInfo({ invoiceId, fakturNo = null, coretaxTxCode = null }) {

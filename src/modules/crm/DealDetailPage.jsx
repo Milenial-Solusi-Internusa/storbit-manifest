@@ -24,11 +24,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog, CheckCircle2,
+  Ban, UserCog, CheckCircle2, MoreVertical,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove, canCreatePrf } from '../../lib/roles';
+import { isManagerOrAbove, canCreatePrf, isAllEntities } from '../../lib/roles';
 import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import {
   C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
@@ -47,12 +48,13 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
+import { MarkWonModal, RevertWonModal } from './DealWonModals';
 import { fetchOperationalRoster } from './salesRoster';
 import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS } from './inquiryOptions';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
@@ -481,6 +483,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
+  // terbaru dari sales_orders.inquiry_id, null kalau belum ada).
+  const [salesOrder, setSalesOrder] = useState(null);
   // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
   // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
   const [statusHistory, setStatusHistory] = useState([]);
@@ -510,9 +515,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // diminta), RPC mark_inquiry_won yang menegakkan izin sebenarnya.
   const [wonOpen, setWonOpen] = useState(false);
   const [wonSaving, setWonSaving] = useState(false);
+  // TD-318 Irisan 3, commit 4 -- pesan generik saat upload bukti ke bucket
+  // inquiry-won-evidence gagal (final decision §9.6: toast + modal TETAP
+  // TERBUKA supaya user bisa menekan "Yes, Mark as Won" lagi dengan file
+  // yang sama, bukan tombol Retry tersendiri).
+  const [wonUploadError, setWonUploadError] = useState('');
+  // TD-318 Irisan 3, commit 5 -- Revert Manual Win.
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [revertSaving, setRevertSaving] = useState(false);
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
+  // TD-318 Irisan 3, commit 6 -- kebab (menu titik tiga).
+  const [kebabOpen, setKebabOpen] = useState(false);
   const [ownerDraft,  setOwnerDraft]  = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [salesOpts,   setSalesOpts]   = useState([]);
@@ -540,7 +555,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name)')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -559,6 +574,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
+
+      // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order". Baris
+      // terbaru saja (sales_orders.inquiry_id FK langsung, nol deleted_at di
+      // tabel ini — kolomnya memang tidak ada). "Purchase Order" TETAP "Not
+      // yet" permanen: nol tabel di Nexus yang merepresentasikan PO vendor
+      // (lihat PLAN Irisan 3 §1g/§9.9) — tidak disentuh di sini.
+      const { data: soRows } = await supabase
+        .from('sales_orders')
+        .select('id, so_no, status, created_at')
+        .eq('inquiry_id', inq.id)
+        .order('created_at', { ascending: false }).limit(1);
+      const so = (soRows || [])[0] || null;
 
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
       const { data: prfRows } = await supabase
@@ -614,7 +641,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // per inquiry ini, bukan diambil dari feed gabungan lintas-CRM).
       const { data: historyRows } = await supabase
         .from('inquiry_status_history')
-        .select('id, from_status, to_status, changed_by, changed_at')
+        .select('id, from_status, to_status, changed_by, changed_at, reason')
         .eq('inquiry_id', inq.id)
         .order('changed_at', { ascending: true }).limit(200);
 
@@ -648,6 +675,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setInquiry(inq);
       setAccount(acc);
       setQuotations(quos || []);
+      setSalesOrder(so);
       setPrfs(prfsAugmented);
       setStatusHistory(historyRows || []);
       setActivities(acts);
@@ -720,16 +748,43 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // B3 — gate dua aksi baru. Penegak izin sebenarnya tetap RLS inquiries_update;
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
-  // Aksi "Mark as Won" — gate UI murni UX (RPC mark_inquiry_won yang menegakkan
-  // izin sebenarnya): cuma pembuat inquiry atau super_admin. KOREKSI (keputusan
-  // Mas, ikut mockup rule "isTerminal = !isOpen" — Pipeline & Inquiry Tracking
-  // .dc.html:895): status terminal (WON/LOST/CANCELLED) TIDAK lagi diizinkan —
-  // sebelumnya hanya WON yang dikecualikan, sehingga tombol ini masih tampil
-  // untuk LOST/CANCELLED. Gate OWNER/MANAGER (bukan isInquiryCreator) menyusul
-  // Irisan 3, TIDAK disentuh di sini.
-  const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
-  const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
-    && LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  // Aksi "Mark as Won" — TD-318 Irisan 3: gate OWNER/MANAGER (final decision
+  // #1), menggantikan isInquiryCreator (created_by) yang dipakai sementara
+  // sejak sprint 8 Sep. owner_id adalah sumbu kepemilikan RESMI sejak 18 Sep
+  // (bukan created_by — dua kolom berbeda, lihat gotcha #18/komentar
+  // canReassignOwner di bawah). isManagerOrAbove di-scope ke company_id
+  // INQUIRY ITU (bukan company home user) — cermin PERSIS gate server
+  // is_manager_or_above_in(v_company_id) di RPC mark_inquiry_won/
+  // revert_manual_win. Gate UI murni UX; RPC yang menegakkan izin sebenarnya.
+  const isInquiryOwner = !!(inquiry?.owner_id && profile?.id && inquiry.owner_id === profile.id);
+  const canMarkWon = (
+    isInquiryOwner
+    || isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id })
+    || isAllEntities(erpRoles)
+  ) && LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
+  // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
+  // "Create Quotation"). Status QUOTED/NEGOTIATION primary-nya "Mark as
+  // Won" (lihat render, bukan dihitung di sini -- butuh canMarkWon yang
+  // sudah computed di atas). WON/LOST/CANCELLED nol primary action.
+  const showCreateQuotationPrimary =
+    ['OPEN', 'IN_REVIEW'].includes(String(inquiry?.status || 'OPEN').toUpperCase()) && !!onCreateQuotation;
+  // TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert Manual
+  // Win". isManualWin = won_reason ADA di whitelist 4 alasan (BUKAN
+  // "<> 'Accepted quotation'" -- staging punya baris won_reason teks bebas
+  // yang bukan salah satu dari 4 ini dan bukan juga 'Accepted quotation';
+  // whitelist positif menolak keduanya, sama persis gate revert_manual_win
+  // di DB). canRevertWon: Manager ke atas DI ENTITAS inquiry ATAU Super
+  // Admin -- BUKAN owner (final decision #2, beda dari canMarkWon).
+  const isManualWin = dealStatus === 'WON' && WON_MANUAL_REASONS.includes(inquiry?.won_reason);
+  const canRevertWon = isManualWin
+    && (isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id }) || isAllEntities(erpRoles));
+  // TD-318 Irisan 3, commit 6 -- kebab (mockup :1029 showDMenu). Terminal =
+  // kebalikan LOSABLE_INQUIRY_STATUS (OPEN/IN_REVIEW/QUOTED/NEGOTIATION).
+  // Pengecualian: Won TANPA Sales Order nyata (state `salesOrder`, commit 1)
+  // tetap menampilkan kebab -- mockup `st==='Won' && !cur.so`.
+  const isTerminalStatus = !LOSABLE_INQUIRY_STATUS.includes(dealStatus);
+  const showKebab = !isTerminalStatus || (dealStatus === 'WON' && !salesOrder);
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -757,11 +812,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const inquiryAge = inquiryAgeLabel(inquiry?.created_at);
   // TD-318 Irisan 2 Inquiry, commit 5: node rantai dokumen (mockup Detail/
   // DocumentFlow). "Rate Request" mockup = PRF Nexus (nama tab TIDAK diubah --
-  // lihat komentar src/kit/DocumentFlow.jsx). Sales Order/Purchase Order/Job
-  // Order/Carrier Booking/Invoice SELALU "none" -- empat terakhir karena
-  // mockup SENDIRI hardcode begitu (modul itu belum ada di CRM fiktif
-  // mockup juga), Sales Order karena halaman ini tidak mem-fetch tabel
-  // sales_orders (menambahnya = query baru yang tidak diminta task ini).
+  // lihat komentar src/kit/DocumentFlow.jsx). Job Order/Carrier Booking/
+  // Invoice SELALU "none" -- mockup SENDIRI hardcode begitu (modul itu belum
+  // ada di CRM fiktif mockup juga). [TD-318 Irisan 3, commit 1] Sales Order
+  // kini data-driven dari `salesOrder` (state, diisi query `sales_orders`
+  // di effect fetch utama) -- nol link ke halaman Detail SO (modul itu belum
+  // dibangun Nexus, sama seperti node 'inquiry' di atas yang juga no-op).
+  // Purchase Order TETAP "none" permanen -- nol tabel di Nexus yang
+  // merepresentasikan PO vendor (PLAN Irisan 3 §1g/§9.9, dilaporkan bukan
+  // ditebak).
   const documentFlowNodes = [
     {
       type: 'lead', active: false,
@@ -793,7 +852,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       value: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
       onClick: () => onViewQuotation?.(activeQuotation),
     } : { type: 'quotation', active: false, label: 'Quotation', state: 'none' },
-    { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
+    salesOrder ? {
+      type: 'salesOrder', active: false, label: 'Sales Order', state: 'doc',
+      value: salesOrder.so_no, onClick: () => {},
+    } : { type: 'salesOrder', active: false, label: 'Sales Order', state: 'none' },
     { type: 'purchaseOrder', active: false, label: 'Purchase Order', state: 'none' },
     { type: 'jobOrder', active: false, label: 'Job Order', state: 'none' },
     { type: 'carrierBooking', active: false, label: 'Carrier Booking', state: 'none' },
@@ -846,12 +908,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       days: daysBetween(statusHistory[statusHistory.length - 1].changed_at, null),
     },
   ];
+  // TD-318 Irisan 3, commit 7 -- `reason` dibawa apa adanya dari
+  // inquiry_status_history (sudah diisi trigger log_inquiry_status_change,
+  // migrasi 20261021000001 TASK 8): transisi ke WON = won_reason (manual 4
+  // alasan atau "Accepted quotation"); transisi KELUAR dari WON (revert) =
+  // revert_won_reason. LOST/CANCELLED sudah ditulis sejak Irisan 2, tidak
+  // berubah.
   const statusHistoryEvents = statusHistory.map((h, i) => ({
     key: h.id,
     from: h.from_status,
     to: h.to_status,
     changedAt: h.changed_at,
     byName: profMap[h.changed_by] || '—',
+    reason: h.reason || null,
     fromDays: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
   })).reverse();
 
@@ -970,19 +1039,50 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
-  // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
-  // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
-  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.lifecycle_stage
-  // + became_customer_at otomatis; RPC itu sendiri yang sekalian set
-  // accounts.pipeline_stage='WON'. Pesan error ditampilkan apa adanya dari RPC.
-  async function markInquiryWon() {
+  // ── Tandai INQUIRY menang secara manual. TD-318 Irisan 3: mark_inquiry_won
+  // kini 4 argumen (reason/evidence_path/notes) dan menegakkan gate owner_id/
+  // manager-di-entitas/super_admin + 4 alasan whitelist + bukti wajib — gate
+  // `canMarkWon` di atas murni UX, bukan pengganti validasi RPC. Trigger
+  // set_customer_on_inquiry_won yang sudah ada mengurus accounts.lifecycle_
+  // stage + became_customer_at otomatis.
+  //
+  // Upload gagal (final decision §9.6): pesan GENERIK ("Upload failed. Try
+  // again."), modal TETAP TERBUKA (wonOpen tidak diubah) — user menekan
+  // "Yes, Mark as Won" lagi dengan file yang sama untuk mencoba ulang,
+  // bukan tombol Retry tersendiri. RPC gagal: pesan RPC apa adanya, modal
+  // juga tetap terbuka (bukan upload error -> tidak menimpa wonUploadError).
+  async function markInquiryWon({ reason, notes, file }) {
     if (!inquiry?.id) return;
     setWonSaving(true);
-    const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
+    setWonUploadError('');
+    const { error, isUploadError } = await markInquiryWonWithEvidence({
+      inquiryId: inquiry.id, companyId: inquiry.company_id, reason, notes, file,
+    });
     setWonSaving(false);
-    if (error) { showToast?.(error.message, 'error'); return; }
+    if (error) {
+      if (isUploadError) { setWonUploadError('Upload failed. Try again.'); return; }
+      showToast?.(error.message, 'error');
+      return;
+    }
+    setWonOpen(false);
     showToast?.('Inquiry marked as Won. The linked account is now a customer.', 'success');
+    refetch();
+  }
+
+  // ── TD-318 Irisan 3, commit 5 -- Revert Manual Win. revert_manual_win
+  // menegakkan gate manager/super_admin + whitelist won_reason sebenarnya;
+  // canRevertWon di atas murni UX. Status asal diturunkan RPC dari
+  // inquiry_status_history (bukan dikirim dari sini) -- quotation yang
+  // sudah SUPERSEDED TIDAK dipulihkan, accounts.lifecycle_stage TIDAK
+  // dikembalikan (final decision #2).
+  async function revertManualWin({ reason }) {
+    if (!inquiry?.id) return;
+    setRevertSaving(true);
+    const { error } = await supabase.rpc('revert_manual_win', { p_inquiry_id: inquiry.id, p_reason: reason });
+    setRevertSaving(false);
+    if (error) { showToast?.(error.message, 'error'); return; }
+    setRevertOpen(false);
+    showToast?.('Manual win reverted for ' + inquiry.inquiry_no, 'success');
     refetch();
   }
 
@@ -1228,16 +1328,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {/* TD-318 Irisan 3, commit 6: link "Reassign" inline DICABUT
+                    (final decision #9.3) -- mockup Detail TIDAK punya link
+                    reassign di metric row sama sekali, aksinya cuma lewat
+                    kebab "Reassign Owner". Avatar+nama Owner TETAP tampil
+                    (info), hanya tautan aksinya yang pindah. */}
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Avatar name={ownerName} size={24} />
                   <span style={{ fontFamily: BODY, fontSize: 13, color: C.text, fontWeight: 600 }}>{ownerName || 'Unassigned'}</span>
                 </span>
-                {canReassignOwner && (
-                  <button type="button" onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
-                    style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Montserrat, sans-serif', color: C.navy, cursor: 'pointer' }}>
-                    Reassign
-                  </button>
-                )}
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1258,7 +1357,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiryAge}</span>
             </div>
           </div>
-          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
+          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner || showCreateQuotationPrimary) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
               status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
@@ -1269,11 +1368,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <Pencil size={14} />Edit Inquiry
             </button>
           )}
-          {canReassignOwner && (
-            <button
-              onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
-              style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
-              <UserCog size={14} />Change Owner
+          {/* TD-318 Irisan 3, commit 4 -- aksi utama dinamis (final decision
+              #9.1): Open/In Review = Create Quotation; Quoted/Negotiation =
+              Mark as Won (kalau canMarkWon). "Request Rates" mockup TIDAK
+              dibangun. Won/Lost/Cancelled = nol primary action. */}
+          {showCreateQuotationPrimary && (
+            <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
+              <FileText size={14} />Create Quotation
             </button>
           )}
           {canMarkWon && (
@@ -1282,17 +1383,46 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
             </button>
           )}
-          {(canMarkLost || canCancel) && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginLeft: 'auto' }}>
-              {canMarkLost && (
-                <button onClick={() => setLossOpen(true)} style={{ ...ACT_BTN, border: `1px solid ${C.redBd}`, color: C.red }}>
-                  <XCircle size={14} />Mark as Lost
-                </button>
-              )}
-              {canCancel && (
-                <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
-                  <Ban size={14} />Cancel Inquiry
-                </button>
+          {/* TD-318 Irisan 3, commit 6 -- kebab (menu titik tiga), urutan
+              mockup persis: Reassign Owner, divider, Mark as Lost, Cancel
+              Inquiry (final decision §9.3/§6). "Request Rates"/"Create
+              Quotation" duplikat/"Close as Duplicate" TIDAK dibangun (§9.2,
+              Irisan 4). Link inline "Reassign" di metric row DICABUT --
+              satu-satunya entry point sekarang di sini. */}
+          {showKebab && (canReassignOwner || canMarkLost || canCancel) && (
+            <div style={{ position: 'relative' }}>
+              <button type="button" title="More actions" onClick={() => setKebabOpen((v) => !v)}
+                style={{ ...ACT_BTN, width: 36, padding: 0, justifyContent: 'center', background: kebabOpen ? C.navySoft : '#fff' }}>
+                <MoreVertical size={16} />
+              </button>
+              {kebabOpen && (
+                <>
+                  <div onClick={() => setKebabOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
+                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(22,36,58,.16)', padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
+                    {canReassignOwner && (
+                      <button type="button"
+                        onClick={() => { setKebabOpen(false); setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.text, cursor: 'pointer', textAlign: 'left' }}>
+                        <UserCog size={14} />Reassign Owner
+                      </button>
+                    )}
+                    {canReassignOwner && (canMarkLost || canCancel) && (
+                      <div style={{ height: 1, background: C.border, margin: '4px 0' }} />
+                    )}
+                    {canMarkLost && (
+                      <button type="button" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.red, cursor: 'pointer', textAlign: 'left' }}>
+                        <XCircle size={14} />Mark as Lost
+                      </button>
+                    )}
+                    {canCancel && (
+                      <button type="button" onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.textMute, cursor: 'pointer', textAlign: 'left' }}>
+                        <Ban size={14} />Cancel Inquiry
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -1342,6 +1472,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               )}
               {(inquiry.additional_services || []).includes('undername') && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+              {/* TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert
+                  Manual Win", posisi mockup :282 (sesudah Quotation-expired,
+                  sebelum Free Trade Zone -- keduanya belum dibangun di Nexus,
+                  jadi posisi praktisnya langsung sesudah chip terakhir yang
+                  sudah ada, Undername). Link HANYA tampil untuk canRevertWon
+                  (Manager/Super Admin) -- bukan owner (final decision #2). */}
+              {isManualWin && (
+                <>
+                  <TintBadge meta={{ label: 'Manual win', bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+                  {canRevertWon && (
+                    <button type="button" onClick={() => setRevertOpen(true)}
+                      style={{ background: 'none', border: 'none', padding: 0, font: '600 12.5px Inter, sans-serif', color: C.navy, cursor: 'pointer' }}>
+                      Revert Manual Win
+                    </button>
+                  )}
+                </>
               )}
             </div>
             {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
@@ -1763,14 +1910,27 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     yang sudah punya quotation TIDAK BISA lagi melahirkan
                     quotation kedua (UNIQUE quotation_no+revision) — yang kedua
                     memang seharusnya REVISI. Menyodorkan "Create Quotation" di
-                    sana berarti menawarkan jalan buntu. */}
+                    sana berarti menawarkan jalan buntu.
+
+                    [TD-318 Irisan 3, commit 2] Keadaan KETIGA: inquiry Won.
+                    Teks persis mockup rule 109 ("Won, quotation locked").
+                    Ini lapis UI saja (early-check sebelum RPC/trigger ada) —
+                    penjagaan sebenarnya menyusul di migrasi (commit 3, TASK 6):
+                    trg_fn_lock_quotation_closed_inquiry/trg_fn_lock_quotation_
+                    items_closed_inquiry diperluas ke status WON. Pengecualian
+                    Rate Sheet (rule 109) SENGAJA TIDAK diimplementasikan (final
+                    decision #4) — kunci berlaku rata untuk semua quotation. */}
                 <ListView
                   mode="table"
                   rows={quotations}
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this inquiry will appear here."
-                  right={activeQuotation ? (
+                  right={dealStatus === 'WON' ? (
+                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
+                      Won, quotation locked
+                    </span>
+                  ) : activeQuotation ? (
                     <button onClick={() => setReviseOpen(true)} disabled={revising}
                       style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff', cursor: revising ? 'not-allowed' : 'pointer', opacity: revising ? 0.6 : 1 }}>
                       <FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
@@ -1947,6 +2107,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                             <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
                               {fmtDate(e.changedAt)}, {e.byName}, after {daysLabel(e.fromDays)} in {STATUS_LABEL[e.from] || e.from}
                             </span>
+                            {/* TD-318 Irisan 3, commit 7 -- `reason` BARU
+                                di-select+dirender di sini sama sekali (Irisan
+                                2 menghitung statusHistoryEvents tapi TIDAK
+                                membawa kolom ini). Won (manual 4 alasan atau
+                                "Accepted quotation") dan Revert dibaca apa
+                                adanya dari kolom yang sudah diisi trigger
+                                (migrasi 20261021000001 TASK 8); LOST/CANCELLED
+                                ikut tampil sebagai efek samping -- trigger
+                                lama sudah mengisinya sejak Irisan 2, hanya
+                                baru sekarang dibaca+ditampilkan. */}
+                            {e.reason && (
+                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>{e.reason}</span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2032,18 +2205,30 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         onCancel={() => setReviseOpen(false)}
       />
 
-      {/* Tandai inquiry MENANG — konfirmasi polos (nol form alasan), RPC yang
-          menegakkan izin. Modal ditutup SEGERA saat konfirmasi (pola sama
-          offerSwitchConfirm di atas) supaya tombol "Ya" tak bisa diklik dobel. */}
-      <ConfirmModal
+      {/* TD-318 Irisan 3, commit 4 -- Won manual: alasan (4 pilihan), bukti
+          wajib, notes opsional. Modal TIDAK ditutup di sini saat submit --
+          markInquiryWon sendiri yang menutupnya HANYA saat sukses (upload
+          gagal atau RPC gagal -> modal tetap terbuka, lihat komentar
+          markInquiryWon). `key` berubah tiap kali dibuka supaya form bersih
+          -- pola sama LostReasonModal/CancelReasonModal. */}
+      <MarkWonModal
+        key={wonOpen ? `won-${inquiry?.id}` : 'won-closed'}
         open={wonOpen}
-        variant="info"
-        title="Mark as Won"
-        message="Mark this inquiry as Won? The linked account will automatically become a customer."
-        confirmLabel="Yes, Mark as Won"
-        cancelLabel="Cancel"
-        onConfirm={() => { setWonOpen(false); markInquiryWon(); }}
-        onCancel={() => setWonOpen(false)}
+        inquiryNo={inquiry?.inquiry_no}
+        saving={wonSaving}
+        uploadError={wonUploadError}
+        onSave={markInquiryWon}
+        onCancel={() => { setWonOpen(false); setWonUploadError(''); }}
+      />
+
+      {/* TD-318 Irisan 3, commit 5 -- Revert Manual Win. */}
+      <RevertWonModal
+        key={revertOpen ? `revert-${inquiry?.id}` : 'revert-closed'}
+        open={revertOpen}
+        inquiryNo={inquiry?.inquiry_no}
+        saving={revertSaving}
+        onSave={revertManualWin}
+        onCancel={() => setRevertOpen(false)}
       />
     </div>
   );
