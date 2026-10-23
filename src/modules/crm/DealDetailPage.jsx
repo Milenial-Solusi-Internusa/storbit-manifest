@@ -600,28 +600,30 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
 
-      // Bugfix Irisan 4: inquiry_no inquiry yang dipertahankan dibaca lewat
-      // QUERY TERPISAH, bukan embed `duplicate_of:inquiries!inquiries_
-      // duplicate_of_id_fkey(...)` pada select utama di atas. Embed
-      // self-reference (inquiries menunjuk inquiries lewat FK yang sama)
-      // AMBIGU bagi PostgREST -- select UTAMA gagal total untuk SETIAP
-      // inquiry (bukan hanya yang ber-duplicate_of_id), karena PostgREST
-      // menolak seluruh statement saat parsing embed yang ambigu, bukan
-      // hanya kolom itu -- gejalanya "Inquiry not found" di SEMUA inquiry,
-      // persis yang dilaporkan dari staging. Query kedua ini SENGAJA
-      // dibungkus try/catch sendiri dan TIDAK PERNAH memicu setNotFound --
-      // kegagalannya (RLS inquiries_read tak meloloskan baris yang
-      // dipertahankan untuk sales biasa, atau baris itu sudah dihapus)
-      // bukan alasan membuat HALAMAN INI gagal, cuma teksnya jatuh ke '—'.
+      // Bugfix Irisan 4, diganti Putaran 3 Tahap 3A (Lingkup E): inquiry_no
+      // inquiry yang dipertahankan dibaca lewat RPC SECURITY DEFINER
+      // get_duplicate_of_inquiry_no (migrasi 20261024000002) -- BUKAN lagi
+      // query langsung ke `inquiries` (yang gagal SENYAP untuk sales bukan
+      // owner target, lihat riwayat di bawah) DAN BUKAN embed PostgREST
+      // `duplicate_of:inquiries!inquiries_duplicate_of_id_fkey(...)` pada
+      // select utama di atas -- embed self-reference (inquiries menunjuk
+      // inquiries lewat FK yang sama) AMBIGU bagi PostgREST, membuat select
+      // UTAMA gagal total untuk SETIAP inquiry (bukan hanya yang ber-
+      // duplicate_of_id), persis yang dilaporkan dari staging saat Irisan 4.
+      // RPC ini menggantikan try/catch lama: gerbangnya sendiri (replika
+      // persis USING inquiries_read) menentukan NULL vs nomor asli --
+      // bedanya dari query langsung, sales pemilik inquiry Duplicate kini
+      // BISA membaca nomor Kept walau Kept dimiliki sales lain (itulah
+      // tujuan RPC ini ada), bukan selalu jatuh ke '--' seperti sebelumnya.
+      // Dibungkus try/catch sendiri, TETAP TIDAK PERNAH memicu setNotFound --
+      // kegagalan apa pun di titik ini (jaringan, dll) bukan alasan membuat
+      // HALAMAN INI gagal, cuma teksnya jatuh ke '—'.
       let duplicateOfNoValue = null;
       if (inq.duplicate_of_id) {
         try {
-          const { data: dupRow } = await supabase
-            .from('inquiries')
-            .select('inquiry_no')
-            .eq('id', inq.duplicate_of_id)
-            .maybeSingle();
-          duplicateOfNoValue = dupRow?.inquiry_no || null;
+          const { data: dupNo } = await supabase
+            .rpc('get_duplicate_of_inquiry_no', { p_inquiry_id: inq.id });
+          duplicateOfNoValue = dupNo || null;
         } catch {
           duplicateOfNoValue = null;
         }
