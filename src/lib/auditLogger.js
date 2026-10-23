@@ -29,6 +29,9 @@ export const ACTION_TYPES = {
   CREATE_INQUIRY:      'CREATE_INQUIRY',
   UPDATE_INQUIRY:      'UPDATE_INQUIRY',
   DELETE_INQUIRY:      'DELETE_INQUIRY',
+  // Putaran 3 Tahap 3A, Lingkup B -- inline/bulk edit Direction & Service Type
+  // dari InquiryClassificationPage.jsx. Entity tetap INQUIRY (bukan entity baru).
+  UPDATE_INQUIRY_CLASSIFICATION: 'UPDATE_INQUIRY_CLASSIFICATION',
   CREATE_QUOTATION:    'CREATE_QUOTATION',
   UPDATE_QUOTATION:    'UPDATE_QUOTATION',
   DELETE_QUOTATION:    'DELETE_QUOTATION',

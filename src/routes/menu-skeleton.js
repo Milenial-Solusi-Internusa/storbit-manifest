@@ -83,10 +83,14 @@ export const SKELETON = [
             id: "ph-1-2-1", menuKey: "skel_1_2_1", mounts: [] },
           { code: "1.2.2", label: "Inquiry Classification", slug: "classification", path: "/crm/inquiry/classification",
             desc: "mengelompokkan inquiry berdasarkan jenis (import/export/domestik, freight/trading/customs).",
-            id: "ph-1-2-2", menuKey: "skel_1_2_2", mounts: [] },
+            mounts: [
+              { menuId: "crm-inquiry-classification", path: "/crm/inquiry/classification" },
+            ] },
           { code: "1.2.3", label: "Inquiry Owner Assignment", slug: "owner-assignment", path: "/crm/inquiry/owner-assignment",
             desc: "menetapkan sales yang bertanggung jawab atas inquiry tersebut.",
-            id: "ph-1-2-3", menuKey: "skel_1_2_3", mounts: [] },
+            mounts: [
+              { menuId: "crm-inquiry-owner-assignment", path: "/crm/inquiry/owner-assignment" },
+            ] },
           { code: "1.2.4", label: "Inquiry Status & History", slug: "status-history", path: "/crm/inquiry/status-history",
             desc: "memantau status berjalan dan riwayat perubahan tiap inquiry.",
             mounts: [

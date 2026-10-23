@@ -600,28 +600,30 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
 
-      // Bugfix Irisan 4: inquiry_no inquiry yang dipertahankan dibaca lewat
-      // QUERY TERPISAH, bukan embed `duplicate_of:inquiries!inquiries_
-      // duplicate_of_id_fkey(...)` pada select utama di atas. Embed
-      // self-reference (inquiries menunjuk inquiries lewat FK yang sama)
-      // AMBIGU bagi PostgREST -- select UTAMA gagal total untuk SETIAP
-      // inquiry (bukan hanya yang ber-duplicate_of_id), karena PostgREST
-      // menolak seluruh statement saat parsing embed yang ambigu, bukan
-      // hanya kolom itu -- gejalanya "Inquiry not found" di SEMUA inquiry,
-      // persis yang dilaporkan dari staging. Query kedua ini SENGAJA
-      // dibungkus try/catch sendiri dan TIDAK PERNAH memicu setNotFound --
-      // kegagalannya (RLS inquiries_read tak meloloskan baris yang
-      // dipertahankan untuk sales biasa, atau baris itu sudah dihapus)
-      // bukan alasan membuat HALAMAN INI gagal, cuma teksnya jatuh ke '—'.
+      // Bugfix Irisan 4, diganti Putaran 3 Tahap 3A (Lingkup E): inquiry_no
+      // inquiry yang dipertahankan dibaca lewat RPC SECURITY DEFINER
+      // get_duplicate_of_inquiry_no (migrasi 20261024000002) -- BUKAN lagi
+      // query langsung ke `inquiries` (yang gagal SENYAP untuk sales bukan
+      // owner target, lihat riwayat di bawah) DAN BUKAN embed PostgREST
+      // `duplicate_of:inquiries!inquiries_duplicate_of_id_fkey(...)` pada
+      // select utama di atas -- embed self-reference (inquiries menunjuk
+      // inquiries lewat FK yang sama) AMBIGU bagi PostgREST, membuat select
+      // UTAMA gagal total untuk SETIAP inquiry (bukan hanya yang ber-
+      // duplicate_of_id), persis yang dilaporkan dari staging saat Irisan 4.
+      // RPC ini menggantikan try/catch lama: gerbangnya sendiri (replika
+      // persis USING inquiries_read) menentukan NULL vs nomor asli --
+      // bedanya dari query langsung, sales pemilik inquiry Duplicate kini
+      // BISA membaca nomor Kept walau Kept dimiliki sales lain (itulah
+      // tujuan RPC ini ada), bukan selalu jatuh ke '--' seperti sebelumnya.
+      // Dibungkus try/catch sendiri, TETAP TIDAK PERNAH memicu setNotFound --
+      // kegagalan apa pun di titik ini (jaringan, dll) bukan alasan membuat
+      // HALAMAN INI gagal, cuma teksnya jatuh ke '—'.
       let duplicateOfNoValue = null;
       if (inq.duplicate_of_id) {
         try {
-          const { data: dupRow } = await supabase
-            .from('inquiries')
-            .select('inquiry_no')
-            .eq('id', inq.duplicate_of_id)
-            .maybeSingle();
-          duplicateOfNoValue = dupRow?.inquiry_no || null;
+          const { data: dupNo } = await supabase
+            .rpc('get_duplicate_of_inquiry_no', { p_inquiry_id: inq.id });
+          duplicateOfNoValue = dupNo || null;
         } catch {
           duplicateOfNoValue = null;
         }
@@ -1180,34 +1182,27 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Ganti pemilik deal (owner_id). Hanya selama status masih di Pipeline;
-  // sesudah closed, trigger DB `trg_z_lock_inquiry_owner` menolak perubahan
-  // dengan exception — gate di sini murni lapis UI, bukan penggantinya.
+  // ── Ganti pemilik deal (owner_id) -- Putaran 3 Tahap 3B, Lingkup F: diganti
+  // dari UPDATE langsung ke RPC reassign_inquiry_owner (migrasi
+  // 20261024000004), SATU fungsi dipakai bersama tab "Unassigned" halaman
+  // Inquiry Owner Assignment. RPC sendiri yang menggerbang (manager-ke-atas
+  // di company inquiry ini ATAU super admin), menolak status terminal, dan
+  // mencatat audit_logs REASSIGN_INQUIRY_OWNER -- logAudit DICABUT dari sini
+  // supaya tidak ganda (RPC yang mencatat, bukan FE lagi). Pesan error RPC
+  // ditampilkan apa adanya (RAISE EXCEPTION di server -> error.message di
+  // sini) -- lebih spesifik dari pesan generik lama ("you do not have
+  // permission..."). UI panel/gate canReassignOwner/toks sukses TIDAK
+  // disentuh.
   async function reassignOwner() {
     if (!inquiry?.id || !ownerDraft) return;
     if (ownerDraft === inquiry.owner_id) { setOwnerOpen(false); return; }
-    const prevName = ownerName || '(empty)';
-    const nextName = salesOpts.find((s) => s.id === ownerDraft)?.full_name || ownerDraft;
     setOwnerSaving(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .update({ owner_id: ownerDraft })
-      .eq('id', inquiry.id)
-      .select('id');
+    const { error } = await supabase.rpc('reassign_inquiry_owner', {
+      p_inquiry_id: inquiry.id,
+      p_new_owner_id: ownerDraft,
+    });
     setOwnerSaving(false);
     if (error) { showToast?.('Failed to change owner: ' + error.message, 'error'); return; }
-    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
-    if (!data || data.length === 0) {
-      showToast?.('Failed to change owner: you do not have permission to modify this inquiry.', 'error');
-      return;
-    }
-    logAudit(supabase, {
-      action: ACTION_TYPES.UPDATE_INQUIRY,
-      entityType: ENTITY_TYPES.INQUIRY,
-      entityId: inquiry.id,
-      entityLabel: inquiry.inquiry_no,
-      notes: `Inquiry owner: ${prevName} → ${nextName}`,
-    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setOwnerOpen(false);
     showToast?.('Inquiry owner updated.', 'success');
     refetch();
