@@ -840,3 +840,205 @@ BEGIN
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (s)';
 END $$;
+
+
+-- =============================================================================
+-- Tambahan sesudah review Vir -- perbaikan RPC migrasi 20261025000005
+-- (NULL-safety undername, gerbang manager super_admin, validasi
+-- service_type, lane pol/pod='' ) -- (t)-(w).
+-- =============================================================================
+
+
+-- ===== (t) p_direction NULL dengan undername_import=true + IOR/duties/
+--           docs lengkap, service customs -- tersimpan undername_import=
+--           false dan klaster NULL (koreksi 1 -- sebelumnya BYPASS diam-diam
+--           karena NOT(NULL AND true)=NULL) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_new_id uuid;
+  v_under boolean; v_ior text; v_duties text; v_docs boolean;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (t) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-T-1', 'Uji T 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-T-2', 'Uji T 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'customs',
+    p_direction := NULL, -- SENGAJA NULL, bukan 'Export'/'Import'
+    p_customer_role := 'Consignee',
+    p_undername_import := true,
+    p_importer_of_record := 'PT Mitra Niaga Sejahtera',
+    p_duties_and_taxes := 'Included in price',
+    p_supporting_docs_received := true,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji T 1', 'pod', 'Uji T 2'))
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+
+  SELECT undername_import, importer_of_record, duties_and_taxes, supporting_docs_received
+    INTO v_under, v_ior, v_duties, v_docs FROM public.inquiries WHERE id = v_new_id;
+  RAISE NOTICE '(t) direction NULL -- undername_import=% (harus false), importer_of_record=% (harus NULL), duties_and_taxes=% (harus NULL), supporting_docs_received=% (harus false)',
+    v_under, COALESCE(v_ior,'<NULL>'), COALESCE(v_duties,'<NULL>'), v_docs;
+
+  IF v_under <> false OR v_ior IS NOT NULL OR v_duties IS NOT NULL OR v_docs <> false THEN
+    RAISE EXCEPTION 'UJI GAGAL (t) -- klaster undername seharusnya dinormalisasi kosong untuk direction NULL (bug NOT(NULL AND..)=NULL seharusnya sudah diperbaiki)';
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (t)';
+END $$;
+
+
+-- ===== (u) Caller super_admin TANPA baris user_roles aktif di company
+--           target -- p_owner_id=NULL -> Unassigned; p_owner_id=kandidat
+--           valid -> owner_id=kandidat itu (koreksi 2 -- sebelumnya
+--           is_manager_or_above_in SAJA bisa false utk super_admin
+--           semacam ini, memaksanya owner_id=auth.uid() milik dirinya
+--           sendiri) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_super_no_role uuid;
+  v_account uuid; v_loc1 uuid; v_loc2 uuid; v_loc3 uuid; v_loc4 uuid;
+  v_new_id uuid; v_owner uuid;
+BEGIN
+  -- Fixture dicari DINAMIS: super_admin aktif TANPA satu pun baris
+  -- user_roles aktif di company MSI. Kalau tidak ada, blok ini mencatat
+  -- "TIDAK TERUJI" dengan jelas (RAISE NOTICE + RAISE EXCEPTION berlabel
+  -- beda) -- bukan lulus palsu.
+  SELECT ur.user_id INTO v_super_no_role
+    FROM public.user_roles ur JOIN public.roles r ON r.id = ur.role_id
+   WHERE r.code = 'super_admin' AND ur.is_active = true AND r.deleted_at IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur2
+        WHERE ur2.user_id = ur.user_id AND ur2.company_id = v_company AND ur2.is_active = true
+     )
+   LIMIT 1;
+
+  IF v_super_no_role IS NULL THEN
+    RAISE NOTICE '(u) TIDAK TERUJI -- nol fixture super_admin aktif yang benar2 tanpa baris user_roles aktif di company MSI di staging hari ini. Uji ini TIDAK membuktikan apa pun, bukan lulus.';
+    RAISE EXCEPTION 'UJI TIDAK TERUJI (dibatalkan, nol baris ditulis) (u)';
+  END IF;
+
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (u) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-U-1', 'Uji U 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-U-2', 'Uji U 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-U-3', 'Uji U 3', 'Singapore', 'Seaport') RETURNING id INTO v_loc3;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-U-4', 'Uji U 4', 'Indonesia', 'Seaport') RETURNING id INTO v_loc4;
+
+  -- Skenario 1: p_owner_id = NULL -> Unassigned.
+  PERFORM set_config('request.jwt.claim.sub', v_super_no_role::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper', p_owner_id := NULL,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji U 1', 'pod', 'Uji U 2'))
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+  SELECT owner_id INTO v_owner FROM public.inquiries WHERE id = v_new_id;
+  RAISE NOTICE '(u.1) super_admin tanpa role di MSI, p_owner_id=NULL -> owner_id=% (harus NULL)', COALESCE(v_owner::text, '<NULL>');
+  IF v_owner IS NOT NULL THEN
+    RAISE EXCEPTION 'UJI GAGAL (u.1) -- owner seharusnya NULL (Unassigned), dapat % -- is_manager_or_above_in SAJA mungkin masih dipakai', v_owner;
+  END IF;
+
+  -- Skenario 2: p_owner_id = kandidat valid (sales_a) -> owner_id=sales_a.
+  PERFORM set_config('request.jwt.claim.sub', v_super_no_role::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper', p_owner_id := v_sales_a,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc3, 'pod_location_id', v_loc4, 'pol', 'Uji U 3', 'pod', 'Uji U 4'))
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+  SELECT owner_id INTO v_owner FROM public.inquiries WHERE id = v_new_id;
+  RAISE NOTICE '(u.2) super_admin tanpa role di MSI, p_owner_id=sales_a -> owner_id=% (harus = sales_a %)', v_owner, v_sales_a;
+  IF v_owner IS DISTINCT FROM v_sales_a THEN
+    RAISE EXCEPTION 'UJI GAGAL (u.2) -- owner seharusnya sales_a, dapat % -- super_admin seharusnya dianggap manager di entitas manapun', COALESCE(v_owner::text, '<NULL>');
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (u)';
+END $$;
+
+
+-- ===== (v) p_service_type = 'xyz_tidak_ada' -- exception (koreksi 3) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_caught boolean := false;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (v) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-V-1', 'Uji V 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-V-2', 'Uji V 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM t.id FROM public.create_inquiry_with_lanes(
+      p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'xyz_tidak_ada',
+      p_direction := 'Export', p_customer_role := 'Shipper',
+      p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji V 1', 'pod', 'Uji V 2'))
+    ) AS t;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    RAISE NOTICE '(v) ditolak sesuai ekspektasi: %', SQLERRM;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL (v) -- seharusnya ditolak (service_type tidak ada di dropdown_options)'; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (v)';
+END $$;
+
+
+-- ===== (w) lane dengan pol_location_id='' -- exception ramah (koreksi 4,
+--           BUKAN error cast uuid mentah) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc2 uuid;
+  v_caught boolean := false;
+  v_msg text;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (w) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-W-2', 'Uji W 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM t.id FROM public.create_inquiry_with_lanes(
+      p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+      p_direction := 'Export', p_customer_role := 'Shipper',
+      p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', '', 'pod_location_id', v_loc2, 'pol', 'Uji W 1', 'pod', 'Uji W 2'))
+    ) AS t;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    v_msg := SQLERRM;
+    RAISE NOTICE '(w) ditolak: %', v_msg;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL (w) -- seharusnya ditolak (pol_location_id string kosong)'; END IF;
+  IF v_msg ILIKE '%invalid input syntax for type uuid%' THEN
+    RAISE EXCEPTION 'UJI GAGAL (w) -- ditolak TAPI dengan error cast uuid MENTAH (%), bukan pesan ramah -- perbaikan NULLIF belum efektif', v_msg;
+  END IF;
+  IF v_msg NOT ILIKE '%Port of Loading%' THEN
+    RAISE EXCEPTION 'UJI GAGAL (w) -- pesan error tidak sesuai ekspektasi ("Setiap lane wajib punya Port of Loading..."), dapat: %', v_msg;
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (w)';
+END $$;

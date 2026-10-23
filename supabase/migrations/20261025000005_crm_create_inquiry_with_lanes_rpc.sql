@@ -82,6 +82,60 @@
 -- NOL EXCEPTION WHEN OTHERS -- error apa pun (termasuk dari trigger
 -- assign_inquiry_no/trg_block_inquiry_for_pooled_account, atau dari CHECK
 -- constraint) menjalar apa adanya (pola reassign_inquiry_owner).
+--
+-- EMPAT PERBAIKAN (review Vir, staging -- migrasi #1-4 sudah dijalankan dan
+-- lolos, #5 ini BELUM karena dua bug di bawah):
+--
+-- (1) LOGIKA NULL PADA NORMALISASI UNDERNAME -- bug nyata, SILENT WRONG DATA
+-- (bukan sekadar error tak ramah): `IF NOT (p_direction = 'Import' AND
+-- p_service_type IN ('customs','door_to_door')) THEN` -- kalau p_direction
+-- NULL, `NULL AND true` = NULL, `NOT NULL` = NULL, dan `IF NULL THEN` TIDAK
+-- dieksekusi (bukan exception, bukan true) -- normalisasi (a) DILEWATI,
+-- sehingga inquiry dgn Direction belum terisi bisa tersimpan dgn
+-- undername_import=true + IOR/duties/docs terisi lengkap (CHECK
+-- inquiries_undername_docs_check tetap lolos, karena datanya KONSISTEN
+-- SATU SAMA LAIN -- cuma salah secara bisnis, Undername semestinya nol
+-- kalau Direction belum Import). Diganti `p_direction IS DISTINCT FROM
+-- 'Import' OR p_service_type NOT IN ('customs','door_to_door')` -- kedua
+-- operand sudah dijamin bukan NULL di titik ini (p_service_type divalidasi
+-- NOT NULL/kosong di atas; IS DISTINCT FROM sendiri tak pernah NULL).
+--
+-- Kondisi LAIN yang diperiksa dgn pola sama (NOT(...)/perbandingan yg bisa
+-- NULL) -- hasil lengkap di laporan chat, ringkasannya: company_id NULL
+-- (celah nyata, DIPERBAIKI -- lihat guard baru di langkah (1) badan fungsi,
+-- FE tak pernah mengirim NULL tapi pemanggil RPC langsung bisa) · booleans
+-- DEFAULT false (p_undername_import/p_supporting_docs_received) yang
+-- dikirim NULL eksplisit -- TIDAK diperbaiki (COALESCE) karena kolom
+-- tujuannya NOT NULL di DB (migrasi 20261025000002), jadi kegagalannya
+-- tetap KERAS (NOT NULL violation), bukan silent -- beda kelas dari bug (1)
+-- yang datanya KONSISTEN secara CHECK sehingga lolos tanpa error sama
+-- sekali · p_inquiry_type NULL eksplisit -- DIPERBAIKI (guard tambahan,
+-- murah & konsisten dgn pola p_service_type) walau kolom tujuannya juga
+-- NOT NULL (gagal keras tanpa perbaikan ini juga, tapi pesannya jadi ramah).
+--
+-- (2) STATUS MANAGER -- `v_is_manager := is_manager_or_above_in(p_company_id)`
+-- SAJA salah utk super_admin yang tidak punya baris user_roles aktif di
+-- entitas target (super_admin lolos GERBANG AKSES lewat is_super_admin(),
+-- bukan lewat baris role di company_id itu) -- is_manager_or_above_in
+-- murni query ke user_roles, jadi bisa false utk super_admin tanpa baris di
+-- sana, memaksanya owner_id=auth.uid() milik SUPER ADMIN itu sendiri alih-
+-- alih membolehkan ia memilih/mengosongkan owner. Diganti `v_is_manager :=
+-- public.is_super_admin() OR public.is_manager_or_above_in(p_company_id);`
+-- -- pola identik gerbang reassign_inquiry_owner (migrasi 20261024000004).
+--
+-- (3) VALIDASI service_type -- SETELAH cek NULL/kosong, divalidasi harus
+-- ada di dropdown_options aktif (list_key='service_type', is_active=true,
+-- deleted_at IS NULL, company_id NULL [global] atau = p_company_id)
+-- -- RAISE EXCEPTION ramah, bukan membiarkan nilai asing tersimpan
+-- (service_type TIDAK punya CHECK literal di DB -- lihat catatan
+-- 03_DATA_MODEL -- jadi tanpa ini, nilai apa pun lolos tanpa pengecekan).
+--
+-- (4) LANE pol_location_id/pod_location_id='' -- sebelumnya hanya `IS NULL`
+-- dicek; string kosong lolos pengecekan lalu meledak di `::uuid` cast
+-- dgn error Postgres mentah ("invalid input syntax for type uuid: \"\"").
+-- Diganti `NULLIF(..., '') IS NULL` -- string kosong diperlakukan sama
+-- dgn NULL, pesan ramah yang SAMA ("Setiap lane wajib punya Port of
+-- Loading dan Port of Discharge.") utk kedua kasus.
 -- =============================================================================
 
 BEGIN;
@@ -157,7 +211,13 @@ BEGIN
   -- (1) company_id caller valid -- defense-in-depth (SECURITY DEFINER
   -- melewati RLS inquiries_insert, yang hanya berlaku utk INSERT langsung
   -- dari sesi caller sebagai invoker -- fungsi ini WAJIB mengecek sendiri).
-  IF NOT (public.is_super_admin() OR p_company_id IN (SELECT public.get_user_company_ids())) THEN
+  -- p_company_id IS NULL dicek EKSPLISIT di depan -- tanpa ini,
+  -- `NULL IN (SELECT ...)` = NULL, `NOT NULL` = NULL, dan IF NULL tidak
+  -- dieksekusi -- gerbang akses akan terlewati diam-diam (kolom tujuannya
+  -- NOT NULL di DB sehingga tetap gagal pada akhirnya, tapi dengan pesan
+  -- mentah dan sesudah kerja yang terbuang -- lihat header migrasi).
+  IF p_company_id IS NULL
+     OR NOT (public.is_super_admin() OR p_company_id IN (SELECT public.get_user_company_ids())) THEN
     RAISE EXCEPTION 'Anda tidak punya peran aktif di entitas ini.';
   END IF;
 
@@ -167,7 +227,24 @@ BEGIN
   IF p_service_type IS NULL OR p_service_type = '' THEN
     RAISE EXCEPTION 'Service Type wajib diisi.';
   END IF;
-  IF p_inquiry_type NOT IN ('Single Shipment', 'Rate Sheet Request') THEN
+
+  -- (3) service_type TIDAK punya CHECK literal di DB (hanya character
+  -- varying polos) -- divalidasi di sini terhadap dropdown_options aktif,
+  -- global (company_id NULL) atau milik entitas ini, supaya nilai asing
+  -- ditolak dengan pesan ramah sebelum sempat tersimpan.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.dropdown_options
+     WHERE list_key = 'service_type' AND value = p_service_type
+       AND is_active = true AND deleted_at IS NULL
+       AND (company_id IS NULL OR company_id = p_company_id)
+  ) THEN
+    RAISE EXCEPTION 'Service Type tidak dikenal: %', p_service_type;
+  END IF;
+
+  -- p_inquiry_type NULL eksplisit -- dicek terpisah dari NOT IN (pola sama
+  -- p_service_type) supaya pesannya ramah; kolom tujuannya NOT NULL juga,
+  -- jadi tanpa ini tetap gagal, hanya dengan pesan mentah.
+  IF p_inquiry_type IS NULL OR p_inquiry_type NOT IN ('Single Shipment', 'Rate Sheet Request') THEN
     RAISE EXCEPTION 'inquiry_type tidak dikenal: %', p_inquiry_type;
   END IF;
 
@@ -176,7 +253,11 @@ BEGIN
     RAISE EXCEPTION 'Customer Role wajib diisi untuk Service Type ini.';
   END IF;
 
-  v_is_manager := public.is_manager_or_above_in(p_company_id);
+  -- (2) is_manager_or_above_in SAJA salah utk super_admin yang tidak punya
+  -- baris user_roles aktif di company_id ini -- super_admin lolos gerbang
+  -- akses lewat is_super_admin(), bukan lewat baris role di entitas target.
+  -- Pola identik gerbang reassign_inquiry_owner (20261024000004).
+  v_is_manager := public.is_super_admin() OR public.is_manager_or_above_in(p_company_id);
 
   -- (F.2/F.3) Owner -- dipaksa utk non-manager, divalidasi utk manager.
   IF NOT v_is_manager THEN
@@ -202,7 +283,10 @@ BEGIN
   END IF;
 
   -- (a) Undername hanya relevan Customs Clearance/Door-to-Door + Import.
-  IF NOT (p_direction = 'Import' AND p_service_type IN ('customs', 'door_to_door')) THEN
+  -- (1) `p_direction IS DISTINCT FROM 'Import'` -- NULL-safe: p_direction
+  -- NULL dihitung "bukan Import" (benar, bukan dilewati). p_service_type
+  -- sudah dijamin bukan NULL/kosong di atas, jadi NOT IN di sini aman.
+  IF p_direction IS DISTINCT FROM 'Import' OR p_service_type NOT IN ('customs', 'door_to_door') THEN
     v_undername_import := false;
     v_importer_of_record := NULL;
     v_duties_and_taxes := NULL;
@@ -247,14 +331,19 @@ BEGIN
     RAISE EXCEPTION 'Minimal 1 lane (Port of Loading + Port of Discharge) wajib diisi.';
   END IF;
 
+  -- (4) NULLIF(..., '') -- string kosong diperlakukan SAMA dengan NULL;
+  -- tanpa ini, '' lolos cek IS NULL lalu meledak di ::uuid cast dengan
+  -- error Postgres mentah ("invalid input syntax for type uuid").
   FOR v_lane IN SELECT * FROM jsonb_array_elements(p_lanes)
   LOOP
-    IF v_lane->>'pol_location_id' IS NULL OR v_lane->>'pod_location_id' IS NULL THEN
+    IF NULLIF(v_lane->>'pol_location_id', '') IS NULL OR NULLIF(v_lane->>'pod_location_id', '') IS NULL THEN
       RAISE EXCEPTION 'Setiap lane wajib punya Port of Loading dan Port of Discharge.';
     END IF;
   END LOOP;
 
   -- Lane pertama (indeks 0) -- disalin ke kolom pol/pod inquiries sendiri.
+  -- Validasi di atas sudah menjamin nol string kosong di SELURUH elemen
+  -- p_lanes pada titik ini -- cast di bawah tidak lagi bisa meledak mentah.
   v_primary_pol_loc := (p_lanes->0->>'pol_location_id')::uuid;
   v_primary_pod_loc := (p_lanes->0->>'pod_location_id')::uuid;
   v_primary_pol := p_lanes->0->>'pol';
@@ -340,7 +429,7 @@ COMMIT;
 --  WHERE n.nspname='public' AND p.proname='create_inquiry_with_lanes'; -- prosecdef=true
 -- SELECT proacl FROM pg_proc WHERE proname='create_inquiry_with_lanes'; -- grantee hanya authenticated
 --
--- Lihat scripts/qa/sql/verify-inquiry-putaran-4.sql utk uji self-rollback lengkap (a)-(s).
+-- Lihat scripts/qa/sql/verify-inquiry-putaran-4.sql utk uji self-rollback lengkap (a)-(w).
 --
 -- Rollback (sebelum ada pemanggil baru bergantung padanya):
 --   DROP FUNCTION public.create_inquiry_with_lanes(
