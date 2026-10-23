@@ -82,16 +82,16 @@ const SERVICE_LABEL = {
   freight_forwarding: 'Freight Forwarding',
   customs: 'Customs Clearance',
   trading: 'General Trading',
+  door_to_door: 'Door to Door', // dropdown_options seed Putaran 4 (20261025000004) -- label tampilan saja.
 };
 // TD-318 Irisan 2 Inquiry, commit 4 — RouteStripDoorToDoor (mockup Detail/
-// RouteStripDoorToDoor) dipicu oleh service_type door-to-door. SENGAJA KOSONG:
-// SERVICE_LABEL di atas membuktikan satu-satunya tiga nilai service_type yang
-// pernah ada di sistem hari ini adalah freight_forwarding/customs/trading —
-// nol "door_to_door"/"trucking". Array ini TIDAK ditebak isinya; begitu nilai
-// service_type door-to-door lahir di masa depan, tambahkan di sini, bukan di
-// komponen RouteStrip. Sampai itu terjadi, cabang RouteStripDoorToDoor di
-// bawah adalah dead code path yang dibangun sesuai permintaan eksplisit —
-// dilaporkan, bukan disembunyikan.
+// RouteStripDoorToDoor) dipicu oleh service_type door-to-door. SENGAJA KOSONG
+// MASIH — nilai 'door_to_door' kini ADA di dropdown_options (Putaran 4 Tahap
+// 4A, migrasi 20261025000004) tapi wizard create yang bisa memilihnya belum
+// dibangun (Tahap 4B/4C). Mengaktifkan array ini adalah perubahan BEHAVIOR
+// (menyalakan komponen RouteStripDoorToDoor), bukan label tampilan — sengaja
+// TIDAK disentuh di Tahap 4A ("nol perubahan FE" kecuali label map, lihat
+// instruksi eksekusi 4A). Aktifkan di Tahap 4B/4C bersamaan wizard-nya.
 const DOOR_TO_DOOR_SERVICE_TYPES = [];
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,

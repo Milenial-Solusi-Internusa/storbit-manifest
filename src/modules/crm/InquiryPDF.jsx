@@ -14,6 +14,7 @@ const ORANGE_SOFT = '#FDF0E9';
 
 const SERVICE_TYPE_LABELS = {
   freight_forwarding: 'Freight Forwarding', customs: 'Customs Clearance', trading: 'General Trading',
+  door_to_door: 'Door to Door', // dropdown_options seed Putaran 4 (20261025000004) -- label tampilan saja.
 };
 const CARGO_LABELS = {
   normal: 'Normal Cargo', dg: 'DG / Hazmat', liquid: 'Barang Cair',

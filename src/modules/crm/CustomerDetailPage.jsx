@@ -378,7 +378,7 @@ function VisitRow({ v }) {
 }
 
 // ── Tahap 3a: nested inquiry → quotation row (Riwayat tab) ──
-const INQ_SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading' };
+const INQ_SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading', door_to_door: 'Door to Door' }; // door_to_door: dropdown_options seed Putaran 4 (20261025000004) -- label tampilan saja.
 const QUO_TONE = {
   DRAFT:     { bg: '#EEEAE0', fg: '#6B7280' }, SENT:      { bg: '#E1ECF7', fg: '#2563EB' },
   SUBMITTED: { bg: '#E1ECF7', fg: '#2563EB' }, ACCEPTED:  { bg: '#DEF0E4', fg: '#1F8B4D' },
