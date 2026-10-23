@@ -10,6 +10,7 @@ import InquiryPDF from './InquiryPDF';
 import { STATUS_LABEL, RADIUS } from './v3/tokens';
 import ListView from './v3/ListView';
 import { fetchOperationalRoster } from './salesRoster';
+import CodeNamePicker from '../../components/CodeNamePicker';
 
 const C = {
   bg:        '#F6EFE3',
@@ -68,6 +69,17 @@ const SERVICE_TYPE_LABELS = {
   customs:            'Customs Clearance',
   trading:            'General Trading',
 };
+
+// Putaran 3 Tahap 3A -- kolom direction (mockup Matrix baris 815-816,
+// migrasi 20261024000001). NULL = "Not set", bukan nilai keempat di sini --
+// filter Direction punya opsi 'Not set' tersendiri (lihat FILTER_DIRECTION)
+// yang diterjemahkan ke `.is('direction', null)`, bukan `.eq(...)`.
+const DIRECTION_OPTIONS = ['Import', 'Export', 'Domestic'];
+const FILTER_DIRECTIONS = [
+  { value: 'all', label: 'All Directions' },
+  ...DIRECTION_OPTIONS.map((d) => ({ value: d, label: d })),
+  { value: 'not_set', label: 'Not set' },
+];
 
 // Urutan kanonik chip (progresi status). Status di luar daftar → jatuh ke akhir.
 const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
@@ -270,6 +282,15 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [filterService, setFilterService] = useState('all');
   const [filterOwner, setFilterOwner] = useState('all');
   const [filterDeadline, setFilterDeadline] = useState('all');
+  // Putaran 3 Tahap 3A -- filter Location (ID lokasi, cocok pol_location_id
+  // ATAU pod_location_id) dan Direction. filterLocationId SELALU ID asli
+  // yang datang dari onPick CodeNamePicker (baris locations yang sungguh
+  // ada) -- tidak pernah diisi dari ketikan bebas, jadi aman diselipkan ke
+  // `.or()` PostgREST tanpa risiko injection.
+  const [filterLocationId, setFilterLocationId] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationOptions, setLocationOptions] = useState([]);
+  const [filterDirection, setFilterDirection] = useState('all');
   /* Default "All", bukan "My" — halaman ini dipakai manager untuk mengawasi, dan
      membuka daftar yang diam-diam sudah tersaring ke diri sendiri menyembunyikan
      pekerjaan tim tanpa memberi tahu. */
@@ -297,7 +318,8 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         .from('inquiries')
         .select(`
           id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
-          pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
+          pol, pod, pol_location_id, pod_location_id, direction,
+          incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
           cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
           prospect:accounts!inquiries_prospect_id_fkey(name),
           customer:accounts!inquiries_customer_id_fkey(name),
@@ -317,6 +339,15 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
+      // Putaran 3 Tahap 3A -- Location: cocok pol_location_id ATAU
+      // pod_location_id (satu dropdown, bukan dua filter POL/POD terpisah,
+      // instruksi eksplisit). Baris tanpa ID (NULL di kedua kolom) tidak
+      // pernah cocok filter apa pun selain 'All' -- konsekuensi alami OR
+      // di atas NULL, tidak perlu kondisi tambahan.
+      if (filterLocationId) query = query.or(`pol_location_id.eq.${filterLocationId},pod_location_id.eq.${filterLocationId}`);
+      // Direction: 'not_set' -> IS NULL (bukan .eq, yang tidak pernah match NULL).
+      if (filterDirection === 'not_set') query = query.is('direction', null);
+      else if (filterDirection !== 'all') query = query.eq('direction', filterDirection);
       if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
       if (search.trim()) query = query.ilike('inquiry_no', `%${search.trim()}%`);
 
@@ -344,10 +375,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, filterDeadline, scopeMine, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, filterDeadline, filterLocationId, filterDirection, scopeMine, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, filterDeadline, scopeMine, search]);
+  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, filterDeadline, filterLocationId, filterDirection, scopeMine, search]);
 
   // Query ringan terpisah untuk chip: ambil kolom status saja (dataset kecil, patuh
   // .limit(1000)), hitung per status di client. Scope RLS + service + search SAMA
@@ -363,6 +394,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
+      if (filterLocationId) query = query.or(`pol_location_id.eq.${filterLocationId},pod_location_id.eq.${filterLocationId}`);
+      if (filterDirection === 'not_set') query = query.is('direction', null);
+      else if (filterDirection !== 'all') query = query.eq('direction', filterDirection);
       if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
       if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
       const { data, error } = await query.limit(1000);
@@ -375,7 +409,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setCountsTotal((data || []).length);
     })();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterDeadline, scopeMine, search]);
+  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterDeadline, filterLocationId, filterDirection, scopeMine, search]);
 
   /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
      CRMDashboardPage, bukan query distinct owner_id sendiri. Roster memuat sales
@@ -389,6 +423,21 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       .catch(() => { if (!cancelled) setOwnerOptions([]); });
     return () => { cancelled = true; };
   }, [profile?.company_id]);
+
+  /* Putaran 3 Tahap 3A -- opsi dropdown Location, SEKALI per pemuatan
+     halaman (dipakai ulang CodeNamePicker filter di bawah). Lintas entitas
+     (locations tidak punya company_id, Irisan 6) -- nol filter company di
+     sini. SENGAJA termasuk lokasi non-aktif: filter ini mencari data
+     HISTORIS (inquiry lama bisa saja merujuk lokasi yang sejak itu
+     dinonaktifkan di Location Master), beda dari LocationPicker.jsx form
+     entry yang sengaja membatasi ke aktif saja. */
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('locations').select('id, name, code').order('name').limit(1000)
+      .then(({ data }) => { if (!cancelled) setLocationOptions(data || []); })
+      .catch(() => { if (!cancelled) setLocationOptions([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   /* Chip status lama dipetakan ke savedViews ListView, kini mengirim TRIO
      {bg,text,border} sehingga pil aktif tampil TINTED — bentuk yang sama dengan
@@ -428,6 +477,41 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     return ownerNames[inq.owner_id] || '(unnamed)';
   };
 
+  /* Putaran 3 Tahap 3A -- Route dibangun dari TEKS inquiries.pol/.pod
+     (keduanya selalu ikut tersimpan bersamaan oleh LocationPicker.onChange
+     sejak Irisan 6 -- lihat InquiryFormPage.jsx/DealDetailPage.jsx), BUKAN
+     dari query ke `locations` di sini (instruksi eksplisit: nol query
+     lokasi tambahan untuk kolom ini -- halaman ini HANYA pernah menyentuh
+     tabel locations lewat fetch locationOptions di atas, untuk filter,
+     bukan untuk kolom). Badge "Not recorded" muncul kalau ADA teks pol/pod
+     tapi ID-nya (pol_location_id/pod_location_id) NULL -- baris lama dari
+     SEBELUM Irisan 6, atau diisi manual sebelum picker ada. Kalau pol DAN
+     pod dua-duanya kosong, jatuh ke `inquiries.route` (field bebas lama,
+     tak terkait lokasi sama sekali -- PLAN Putaran 3 §3). */
+  const routeCell = (inq) => {
+    const pol = (inq.pol || '').trim();
+    const pod = (inq.pod || '').trim();
+    if (!pol && !pod) return inq.route || '—';
+    const notRecorded = (!!pol && !inq.pol_location_id) || (!!pod && !inq.pod_location_id);
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{pol || '—'} to {pod || '—'}</span>
+        {notRecorded && (
+          <span
+            title="Teks lokasi ada, tapi belum terpetakan ke Location Master."
+            style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', background: C.warnBg, color: C.warn, border: `1px solid ${C.warnBd}` }}
+          >
+            Not recorded
+          </span>
+        )}
+      </span>
+    );
+  };
+
+  // Direction: NULL = "Not set" (mockup Matrix), bukan string kosong.
+  const directionCell = (inq) =>
+    inq.direction || <span style={{ color: C.inkFaint, fontStyle: 'italic' }}>Not set</span>;
+
   const columns = [
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
@@ -441,7 +525,8 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       ) },
     { key: 'service_type', label: 'Service Type',
       render: (inq) => SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—' },
-    { key: 'route', label: 'Route', render: (inq) => inq.route || '—' },
+    { key: 'direction', label: 'Direction', render: directionCell },
+    { key: 'route', label: 'Route', render: routeCell },
     { key: 'status', label: 'Status', render: (inq) => <StatusBadge status={inq.status} /> },
     { key: 'owner', label: 'Owner', render: ownerCell },
     { key: 'created_at', label: 'Created At', render: (inq) => fmtDate(inq.created_at) },
@@ -580,6 +665,36 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 <option key={d.id} value={d.id}>{d.label}</option>
               ))}
             </select>
+            {/* Putaran 3 Tahap 3A -- Direction, SERVER-SIDE sama pola di atas. */}
+            <select value={filterDirection} onChange={e => setFilterDirection(e.target.value)} style={selStyle}>
+              {FILTER_DIRECTIONS.map(d => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+            {/* Putaran 3 Tahap 3A -- Location, SATU dropdown tercari (CodeNamePicker,
+                sibling AccountPicker/DcPicker dkk -- pola reuse yang sudah mapan
+                untuk "cari dari daftar code+name"), cocok pol_location_id ATAU
+                pod_location_id. SERVER-SIDE, lihat .or() di fetchInquiries. */}
+            <div style={{ position: 'relative', width: 200 }}>
+              <CodeNamePicker
+                value={locationQuery}
+                items={locationOptions}
+                inputStyle={{ ...selStyle, width: '100%', cursor: 'text' }}
+                placeholder="All Locations"
+                onChangeText={(v) => { setLocationQuery(v); if (!v) setFilterLocationId(''); }}
+                onPick={(loc) => { setLocationQuery(loc.name); setFilterLocationId(loc.id); }}
+              />
+              {filterLocationId && (
+                <button
+                  type="button"
+                  onClick={() => { setLocationQuery(''); setFilterLocationId(''); }}
+                  title="Clear location filter"
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: C.inkFaint, display: 'flex' }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </>
         }
         columns={columns}
