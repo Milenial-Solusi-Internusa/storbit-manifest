@@ -2,10 +2,8 @@
 // Putaran 3 Tahap 3B -- halaman BARU "Inquiry Owner Assignment" (menu 1.2.3,
 // src/routes/menu-skeleton.js). Mockup acuan design-handoff/mockup/Inquiry
 // Management.dc.html -- dibaca UTUH (baris 156-249 filter+bagian pOwner,
-// 710 AV, 716 overdue, 827-830 wlRows/meList, 974-979 ownOpts/ownCount/
-// wlRows/meRows, 1030 openReassign) sebelum ditulis. Tab "Possible
-// duplicates" (baris 207/913-922) DITAMBAHKAN di commit berikutnya --
-// di sini hanya Unassigned + Team Workload + Assigned to Me (Sales).
+// 710 AV, 716 overdue, 827-830 wlRows/meList, 913-922 dupPairRows/dupIntro,
+// 974-979 ownOpts/ownCount/wlRows/meRows, 1030 openReassign) sebelum ditulis.
 //
 // ⛔ KOREKSI atas instruksi tugas, DIKONFIRMASI Den: tab kedua mockup
 // "Team Workload" (baris 220-228) adalah tabel AGREGAT per-salesperson
@@ -21,10 +19,10 @@
 //
 // Scope SENGAJA DIPERSEMPIT (instruksi eksplisit Tahap 3B): TANPA bulk
 // assign, TANPA filter Created Date/Entity -- "filter Entity" yang
-// ditunda berarti SELURUH halaman ini (termasuk tab Possible Duplicates
-// yang menyusul) di-scope ke profile.company_id SAJA untuk SEMUA peran
+// ditunda berarti SELURUH halaman ini (Unassigned/Team Workload/Possible
+// Duplicates) di-scope ke profile.company_id SAJA untuk SEMUA peran
 // termasuk super_admin/isAllEntities -- roster (fetchOperationalRoster)
-// dan RPC reassign_inquiry_owner/list_possible_duplicate_inquiry_pairs
+// dan RPC list_possible_duplicate_inquiry_pairs/reassign_inquiry_owner
 // semuanya mengambil SATU company_id, jadi pandangan lintas-entitas sejati
 // butuh perubahan terpisah di ketiganya (giliran berikutnya kalau
 // diperlukan), bukan dibangun diam-diam di sini.
@@ -52,6 +50,11 @@
 // datang dari roster (fetchOperationalRoster), BUKAN pola dua-langkah
 // profiles -- roster ITU SENDIRI adalah himpunan nama yang dibutuhkan
 // (satu baris per kandidat owner), jadi tak perlu query nama terpisah.
+//
+// Tab "Possible duplicates" (mockup baris 207/913-922): RPC
+// list_possible_duplicate_inquiry_pairs (migrasi 20261024000005) + aksi
+// "Close as Duplicate" -> RPC EXISTING close_inquiry_as_duplicate
+// (Irisan 4, TIDAK ditulis ulang logikanya di sini -- instruksi eksplisit).
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -62,6 +65,7 @@ import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { fetchOperationalRoster } from './salesRoster';
 import { STATUS_LABEL } from './v3/tokens';
 import { fmtRp } from './DealPanels';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
   bg:        '#F6EFE3',
@@ -197,9 +201,13 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [roster, setRoster] = useState([]);
-  const [activeTab, setActiveTab] = useState('unassigned'); // 'unassigned' | 'workload'
+  const [activeTab, setActiveTab] = useState('unassigned'); // 'unassigned' | 'workload' | 'duplicates'
+  const [dupPairs, setDupPairs] = useState([]);
+  const [dupLoading, setDupLoading] = useState(true);
   const [assignDraft, setAssignDraft] = useState({});
   const [savingRowId, setSavingRowId] = useState(null);
+  const [closeDupTarget, setCloseDupTarget] = useState(null);
+  const [closingDup, setClosingDup] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -223,6 +231,23 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
     fetchOperationalRoster(profile.company_id).then((r) => { if (!cancelled) setRoster(r); });
     return () => { cancelled = true; };
   }, [isManager, profile?.company_id]);
+
+  const fetchDupPairs = useCallback(async () => {
+    if (!isManager || !profile?.company_id) { setDupLoading(false); return; }
+    setDupLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('list_possible_duplicate_inquiry_pairs', { p_company_id: profile.company_id });
+      if (error) throw error;
+      setDupPairs(data || []);
+    } catch (err) {
+      showToast?.('Failed to load possible duplicates: ' + err.message, 'error');
+    } finally {
+      setDupLoading(false);
+    }
+  }, [isManager, profile, showToast]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchDupPairs(); }, [fetchDupPairs]);
 
   // ── Tab Unassigned: owner_id IS NULL + status editable (mockup "Every
   // inquiry has an owner." empty state -- line 218 -- berarti tabel ini
@@ -279,14 +304,37 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
     fetchRows();
   }
 
+  async function handleCloseDup() {
+    if (!closeDupTarget) return;
+    setClosingDup(true);
+    const { error } = await supabase.rpc('close_inquiry_as_duplicate', {
+      p_inquiry_id: closeDupTarget.dup_id,
+      p_keep_inquiry_id: closeDupTarget.keep_id,
+    });
+    setClosingDup(false);
+    if (error) {
+      showToast?.(error.message, 'error');
+      setCloseDupTarget(null);
+      fetchDupPairs();
+      return;
+    }
+    showToast?.(`${closeDupTarget.dup_no} closed as duplicate of ${closeDupTarget.keep_no}.`, 'success');
+    setCloseDupTarget(null);
+    fetchDupPairs();
+    fetchRows();
+  }
+
   const tabs = isManager ? [
     { key: 'unassigned', label: 'Unassigned', count: unassignedRows.length },
     { key: 'workload', label: 'Team Workload' },
+    { key: 'duplicates', label: 'Possible duplicates', count: dupPairs.length },
   ] : [];
 
   const ownCountText = activeTab === 'unassigned'
     ? `${unassignedRows.length} ${unassignedRows.length === 1 ? 'inquiry' : 'inquiries'} without an owner`
-    : `${roster.length} ${roster.length === 1 ? 'salesperson' : 'salespeople'}`;
+    : activeTab === 'duplicates'
+      ? `${dupPairs.length} possible duplicate ${dupPairs.length === 1 ? 'pair' : 'pairs'}`
+      : `${roster.length} ${roster.length === 1 ? 'salesperson' : 'salespeople'}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -310,6 +358,42 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
             </div>
             <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>{ownCountText}</span>
           </div>
+
+          {activeTab === 'duplicates' && (
+            <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft }}>
+                Same customer and same lane (POL, POD, mode, container or LCL), both open, created within 30 days
+                of each other (proposal), whoever owns them. The status of both stays as it is until the Sales
+                Manager closes one as a duplicate.
+              </span>
+              {dupLoading ? (
+                <div style={{ padding: 16, color: C.inkFaint, fontFamily: "'Inter', sans-serif", fontSize: 13 }}>Loading…</div>
+              ) : dupPairs.length === 0 ? (
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft }}>
+                  No possible duplicates among open inquiries.
+                </span>
+              ) : dupPairs.map((p) => (
+                <div key={`${p.keep_id}-${p.dup_id}`} style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 10, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: C.ink }}>
+                    {p.customer_name || '—'}, {p.pol || '—'} → {p.pod || '—'}
+                  </span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft }}>
+                    {p.keep_no} (earlier). Owner: {p.keep_owner_name || 'Unassigned'}, created {fmtDate(p.keep_created_at)}.
+                  </span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft }}>
+                    {p.dup_no}. Owner: {p.dup_owner_name || 'Unassigned'}, created {fmtDate(p.dup_created_at)}.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCloseDupTarget(p)}
+                    style={{ height: 36, padding: '0 14px', borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer' }}
+                  >
+                    Close {(p.dup_no || '').slice(-4)} as Duplicate of {(p.keep_no || '').slice(-4)}
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
 
           {activeTab === 'unassigned' && (
             <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden' }}>
@@ -480,6 +564,19 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
             </div>
           </section>
         </>
+      )}
+
+      {closeDupTarget && (
+        <ConfirmModal
+          open
+          variant="warning"
+          title="Close as Duplicate"
+          message={`Close ${closeDupTarget.dup_no} as a duplicate of ${closeDupTarget.keep_no}? ${closeDupTarget.dup_no} will be marked Cancelled and linked to ${closeDupTarget.keep_no}.`}
+          confirmLabel={closingDup ? 'Closing…' : 'Yes, Close as Duplicate'}
+          cancelLabel="Cancel"
+          onConfirm={handleCloseDup}
+          onCancel={() => setCloseDupTarget(null)}
+        />
       )}
     </div>
   );
