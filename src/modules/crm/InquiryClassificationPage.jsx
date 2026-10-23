@@ -89,18 +89,18 @@ const STATUS_META = {
 };
 
 // `service_type` DINAMIS dari dropdown_options (Admin Settings -> General
-// Preferences -> Dropdown Management), BUKAN tiga kolom tetap -- instruksi
-// eksplisit tugas. Fallback = 3 nilai yang hidup di produksi hari ini
-// (pola + array fallback disalin verbatim dari InquiryFormPage.jsx/
-// QuotationFormPage.jsx -- SATU-SATUNYA perbedaan: file-file itu juga
-// mengenal 'trucking', yang di sini TIDAK dimasukkan fallback karena
-// DealDetailPage.jsx:89 mencatat 'trucking' belum pernah dipakai data
-// produksi -- fallback hanya menyala saat dropdown_options kosong/gagal,
-// jadi daftar fallback-nya boleh lebih pendek dari superset teoretis).
+// Preferences -> Dropdown Management), BUKAN tiga/empat kolom tetap --
+// instruksi eksplisit tugas. Fallback = 4 nilai yang hidup di produksi
+// hari ini (koreksi review Vir, Putaran 3 Tahap 3A: production punya 8
+// inquiry ber-service_type='trucking' -- klaim "belum pernah dipakai"
+// yang sebelumnya tertulis di sini SALAH, sudah dibuang). Fallback hanya
+// menyala saat dropdown_options kosong/gagal -- 'warehousing' SENGAJA
+// TIDAK ditambahkan (bukan nilai yang diminta/dikonfirmasi dipakai).
 const SERVICE_TYPES_FALLBACK = [
   { value: 'freight_forwarding', label: 'Freight Forwarding' },
   { value: 'customs',            label: 'Customs Clearance' },
   { value: 'trading',            label: 'General Trading' },
+  { value: 'trucking',           label: 'Trucking' },
 ];
 
 const DIRECTION_ROWS = ['Import', 'Export', 'Domestic', 'Not set'];
@@ -154,33 +154,52 @@ export default function InquiryClassificationPage({ showToast }) {
     if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
-      let query = supabase
-        .from('inquiries')
-        .select(`
-          id, inquiry_no, service_type, direction, status, estimated_value, created_at, owner_id,
-          prospect:accounts!inquiries_prospect_id_fkey(name),
-          customer:accounts!inquiries_customer_id_fkey(name)
-        `)
-        .is('deleted_at', null);
-      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
-      query = query.order('created_at', { ascending: false }).limit(1000);
+      // Perbaikan review Vir, Putaran 3 Tahap 3A: production sudah 947
+      // inquiry -- .limit(1000) TUNGGAL memotong Matrix diam-diam begitu
+      // lewat ambang itu (nol error, cuma sebagian data). Diganti loop
+      // .range() berhalaman sampai halaman terakhir < PAGE_SIZE baris.
+      // Order WAJIB deterministik lintas halaman (created_at desc + id
+      // sbg tiebreak) -- tanpa tiebreak, paginasi offset bisa melewatkan
+      // atau menduplikasi baris saat banyak created_at persis sama.
+      const PAGE_SIZE = 1000;
+      let list = [];
+      let from = 0;
+      let more = true;
+      while (more) {
+        let query = supabase
+          .from('inquiries')
+          .select(`
+            id, inquiry_no, service_type, direction, status, estimated_value, created_at, owner_id,
+            prospect:accounts!inquiries_prospect_id_fkey(name),
+            customer:accounts!inquiries_customer_id_fkey(name)
+          `)
+          .is('deleted_at', null);
+        if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+        query = query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
 
-      const { data, error } = await query;
-      if (error) throw error;
-      const list = data || [];
+        const { data, error } = await query;
+        if (error) throw error;
+        const page = data || [];
+        list = list.concat(page);
+        more = page.length === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
       setRows(list);
 
-      // Pola dua-langkah nama owner (lihat header file).
+      // Pola dua-langkah nama owner (lihat header file) -- diambil per
+      // potongan 200 id (bukan satu .in() raksasa), karena daftar owner_id
+      // kini bisa jauh melewati 1000 baris sejak paginasi di atas.
       const ownerIds = [...new Set(list.map((r) => r.owner_id).filter(Boolean))];
-      if (ownerIds.length) {
-        const { data: profs } = await supabase
-          .from('profiles').select('id, full_name').in('id', ownerIds).limit(1000);
-        const map = {};
+      const map = {};
+      for (let i = 0; i < ownerIds.length; i += 200) {
+        const chunk = ownerIds.slice(i, i + 200);
+        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', chunk);
         (profs || []).forEach((p) => { map[p.id] = p.full_name; });
-        setOwnerNames(map);
-      } else {
-        setOwnerNames({});
       }
+      setOwnerNames(map);
     } catch (err) {
       showToast?.('Failed to load inquiries: ' + err.message, 'error');
     } finally {
@@ -305,13 +324,42 @@ export default function InquiryClassificationPage({ showToast }) {
     setConfirmStep(false);
   }
 
-  async function applyBulk() {
-    if (!bulkValue) return;
+  // BUG review Vir, Putaran 3 Tahap 3A: versi lama membaca state `bulkValue`
+  // dari DALAM applyBulk() setelah onConfirm memanggil setBulkValue(chosen)
+  // lalu applyBulk() pada render yang sama -- applyBulk membaca `bulkValue`
+  // yang LAMA (closure sebelum render berikutnya), bukan `chosen`. Untuk
+  // Service Type, nilai lama itu adalah LABEL ("Freight Forwarding"), bukan
+  // kode (`freight_forwarding`) -- service_type tak punya CHECK, jadi DB
+  // menerimanya diam-diam dan baris itu keluar dari Matrix/dropdown Detail.
+  // Perbaikan: `applyBulk` MENERIMA nilai sebagai ARGUMEN (tidak membaca
+  // state `bulkValue`), DAN dropdown bulk Service Type (BulkFieldModal di
+  // bawah) kini mengirim VALUE langsung lewat pasangan {value,label}, BUKAN
+  // label -- translasi label->value yang rawan itu dihapus total, bukan
+  // ditambal. Validasi sisa (defensif, bukan jalur utama): `valueToApply`
+  // tetap dicocokkan ulang ke `serviceTypeOpts` SAAT INI sebelum ditulis --
+  // opsi dropdown_options bisa berubah (Admin Settings) di antara modal
+  // dibuka dan Apply diklik; kalau tak ketemu, BATALKAN + toast, nol tulis.
+  async function applyBulk(valueToApply) {
+    if (!valueToApply) return;
     const ids = editableTableRows.filter((r) => selectedIds.has(r.id)).map((r) => r.id);
     if (!ids.length) { closeBulk(); return; }
-    const patch = bulkField === 'direction'
-      ? { direction: bulkValue === 'Not set' ? null : bulkValue }
-      : { service_type: bulkValue };
+
+    let patch;
+    let auditLabel; // catatan audit tetap pakai LABEL yang mudah dibaca.
+    if (bulkField === 'direction') {
+      patch = { direction: valueToApply === 'Not set' ? null : valueToApply };
+      auditLabel = valueToApply;
+    } else {
+      const match = serviceTypeOpts.find((o) => o.value === valueToApply);
+      if (!match) {
+        showToast?.('Failed to save: unknown service type, nothing was changed.', 'error');
+        closeBulk();
+        return;
+      }
+      patch = { service_type: match.value };
+      auditLabel = match.label;
+    }
+
     setSavingBulk(true);
     const { data, error } = await supabase.from('inquiries').update(patch).in('id', ids).select('id');
     setSavingBulk(false);
@@ -333,7 +381,7 @@ export default function InquiryClassificationPage({ showToast }) {
         entityType: ENTITY_TYPES.INQUIRY,
         entityId: id,
         entityLabel: row?.inquiry_no || id,
-        notes: `Bulk ${fieldLabel} → ${bulkValue}`,
+        notes: `Bulk ${fieldLabel} → ${auditLabel}`,
       }, actor);
     });
     if (updatedIds.length < ids.length) {
@@ -501,17 +549,13 @@ export default function InquiryClassificationPage({ showToast }) {
           value={bulkValue}
           onChangeValue={setBulkValue}
           count={editableTableRows.filter((r) => selectedIds.has(r.id)).length}
-          options={bulkField === 'direction' ? DIRECTION_EDIT_OPTIONS : serviceTypeOpts.map((o) => o.label)}
+          options={bulkField === 'direction'
+            ? DIRECTION_EDIT_OPTIONS.map((d) => ({ value: d, label: d }))
+            : serviceTypeOpts}
           saving={savingBulk}
           confirmStep={confirmStep}
           onRequestConfirm={() => setConfirmStep(true)}
-          onConfirm={() => {
-            const chosen = bulkField === 'direction'
-              ? bulkValue
-              : serviceTypeOpts.find((o) => o.label === bulkValue)?.value || bulkValue;
-            setBulkValue(chosen);
-            applyBulk();
-          }}
+          onConfirm={() => applyBulk(bulkValue)}
           onCancel={closeBulk}
         />
       )}
@@ -563,15 +607,21 @@ function MatrixCell({ cellData, active, onSelectCell }) {
   );
 }
 
+// `options` SELALU array {value,label} (uniform utk Direction & Service
+// Type sejak perbaikan review Vir) -- `value` adalah state `bulkValue`
+// yang mengalir langsung ke applyBulk(bulkValue), nol translasi balik
+// berdasarkan label yang jadi akar bug lama. Label dipakai HANYA untuk
+// ditampilkan (teks <option>, pesan konfirmasi) via lookup `value`.
 function BulkFieldModal({ field, value, onChangeValue, count, options, saving, confirmStep, onRequestConfirm, onConfirm, onCancel }) {
   const title = field === 'direction' ? 'Set Direction' : 'Set Service Type';
+  const selectedLabel = options.find((o) => o.value === value)?.label || value;
   if (confirmStep) {
     return (
       <ConfirmModal
         open
         variant="warning"
         title={title}
-        message={`This will update ${field === 'direction' ? 'Direction' : 'Service Type'} to "${value}" for ${count} ${count === 1 ? 'inquiry' : 'inquiries'}. Continue?`}
+        message={`This will update ${field === 'direction' ? 'Direction' : 'Service Type'} to "${selectedLabel}" for ${count} ${count === 1 ? 'inquiry' : 'inquiries'}. Continue?`}
         confirmLabel={saving ? 'Saving…' : 'Yes, Apply'}
         cancelLabel="Back"
         onConfirm={onConfirm}
@@ -592,7 +642,7 @@ function BulkFieldModal({ field, value, onChangeValue, count, options, saving, c
           style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 10px', fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink }}
         >
           <option value="">— Select —</option>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" onClick={onCancel} style={{ ...bulkBtnStyle, border: '1px solid transparent' }}>Cancel</button>
