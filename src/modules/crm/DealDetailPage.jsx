@@ -1182,34 +1182,27 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Ganti pemilik deal (owner_id). Hanya selama status masih di Pipeline;
-  // sesudah closed, trigger DB `trg_z_lock_inquiry_owner` menolak perubahan
-  // dengan exception — gate di sini murni lapis UI, bukan penggantinya.
+  // ── Ganti pemilik deal (owner_id) -- Putaran 3 Tahap 3B, Lingkup F: diganti
+  // dari UPDATE langsung ke RPC reassign_inquiry_owner (migrasi
+  // 20261024000004), SATU fungsi dipakai bersama tab "Unassigned" halaman
+  // Inquiry Owner Assignment. RPC sendiri yang menggerbang (manager-ke-atas
+  // di company inquiry ini ATAU super admin), menolak status terminal, dan
+  // mencatat audit_logs REASSIGN_INQUIRY_OWNER -- logAudit DICABUT dari sini
+  // supaya tidak ganda (RPC yang mencatat, bukan FE lagi). Pesan error RPC
+  // ditampilkan apa adanya (RAISE EXCEPTION di server -> error.message di
+  // sini) -- lebih spesifik dari pesan generik lama ("you do not have
+  // permission..."). UI panel/gate canReassignOwner/toks sukses TIDAK
+  // disentuh.
   async function reassignOwner() {
     if (!inquiry?.id || !ownerDraft) return;
     if (ownerDraft === inquiry.owner_id) { setOwnerOpen(false); return; }
-    const prevName = ownerName || '(empty)';
-    const nextName = salesOpts.find((s) => s.id === ownerDraft)?.full_name || ownerDraft;
     setOwnerSaving(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .update({ owner_id: ownerDraft })
-      .eq('id', inquiry.id)
-      .select('id');
+    const { error } = await supabase.rpc('reassign_inquiry_owner', {
+      p_inquiry_id: inquiry.id,
+      p_new_owner_id: ownerDraft,
+    });
     setOwnerSaving(false);
     if (error) { showToast?.('Failed to change owner: ' + error.message, 'error'); return; }
-    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
-    if (!data || data.length === 0) {
-      showToast?.('Failed to change owner: you do not have permission to modify this inquiry.', 'error');
-      return;
-    }
-    logAudit(supabase, {
-      action: ACTION_TYPES.UPDATE_INQUIRY,
-      entityType: ENTITY_TYPES.INQUIRY,
-      entityId: inquiry.id,
-      entityLabel: inquiry.inquiry_no,
-      notes: `Inquiry owner: ${prevName} → ${nextName}`,
-    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setOwnerOpen(false);
     showToast?.('Inquiry owner updated.', 'success');
     refetch();
