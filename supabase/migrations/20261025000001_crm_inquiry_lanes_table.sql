@@ -47,15 +47,25 @@
 -- scope) -- itu AKAN lebih longgar dari inquiries_read sungguhan dan
 -- membiarkan Sales B (company sama, bukan owner/manager/procurement-ber-PRF)
 -- membaca lane milik inquiry Sales A yang inquiries_read SENDIRI menolaknya.
--- Kondisi di bawah DISALIN VERBATIM dari inquiries_read LIVE
--- (20260830000003_inquiries_rls_owner_based.sql:91-106): is_super_admin()
--- OR (company_id IN get_user_company_ids() AND (is_manager_or_above() OR
--- owner_id=auth.uid() OR (is_procurement_functional() AND EXISTS prf ber-
--- inquiry_id ini))) -- "otomatis ikut RLS inquiries_read" (koreksi Den/Vir
--- poin 1) berarti REPLIKA PERSIS kondisi itu, bukan sekadar company-scope.
--- ⚠️ RISIKO DRIFT YANG DITERIMA (pola sama reassign_inquiry_owner): kalau
--- inquiries_read berubah lagi di masa depan, policy ini TIDAK otomatis ikut
--- -- harus disunting manual bersamaan.
+--
+-- KOREKSI KEDUA (Den/Vir): policy di bawah TIDAK menyalin kondisi
+-- inquiries_read sama sekali -- `USING (EXISTS (SELECT 1 FROM public.inquiries
+-- i WHERE i.id = inquiry_lanes.inquiry_id))` POLOS, tanpa AND company_id/
+-- owner_id/is_manager_or_above/is_procurement_functional apa pun. Ini BUKAN
+-- lupa mengetatkan -- RLS Postgres dievaluasi sebagai peran PEMANGGIL (bukan
+-- SECURITY DEFINER), jadi subquery SELECT ke public.inquiries di dalam EXISTS
+-- ini TUNDUK SENDIRI pada RLS inquiries_read milik pemanggil yang sama:
+-- baris inquiries yang tak lolos inquiries_read untuk sesi itu TIDAK PERNAH
+-- terlihat oleh subquery ini, sehingga EXISTS otomatis jadi false -- nol
+-- duplikasi logika is_super_admin()/is_manager_or_above()/owner_id/
+-- is_procurement_functional(). Keuntungannya atas replika verbatim (draf
+-- migrasi sebelumnya): policy ini TIDAK PERNAH basi kalau inquiries_read
+-- berubah lagi di masa depan -- ia mengikuti definisi TERKINI inquiries_read
+-- secara otomatis, bukan salinan yang harus disunting manual bersamaan.
+-- Konsekuensinya dites ulang di scripts/qa/sql/verify-inquiry-putaran-4.sql
+-- uji (o): Sales B (company sama, bukan owner/manager/procurement-ber-PRF)
+-- tetap 0 baris, manager tetap melihatnya -- hasilnya identik dengan replika
+-- verbatim, HANYA mekanismenya yang berubah (cascading RLS, bukan duplikasi).
 --
 -- Index pada inquiry_id DITAMBAHKAN eksplisit -- quotation_items SENDIRI
 -- lupa index ini pada quotation_id, tidak diwarisi di sini.
@@ -92,25 +102,6 @@ CREATE POLICY inquiry_lanes_read ON public.inquiry_lanes
   USING (EXISTS (
     SELECT 1 FROM public.inquiries i
     WHERE i.id = inquiry_lanes.inquiry_id
-      AND (
-        public.is_super_admin()
-        OR (
-          i.company_id IN (SELECT public.get_user_company_ids())
-          AND (
-            public.is_manager_or_above()
-            OR i.owner_id = auth.uid()
-            OR (
-              public.is_procurement_functional()
-              AND EXISTS (
-                SELECT 1 FROM public.prf p
-                WHERE p.inquiry_id = i.id
-                  AND p.company_id = i.company_id
-                  AND p.deleted_at IS NULL
-              )
-            )
-          )
-        )
-      )
   ));
 
 -- Nol policy INSERT/UPDATE/DELETE untuk authenticated (keputusan di atas).

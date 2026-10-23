@@ -606,21 +606,33 @@ END $$;
 
 
 -- ===== (o) Sales B (company SAMA, bukan owner/manager/procurement-ber-PRF)
---           TIDAK bisa SELECT lane dari inquiry milik Sales A; manager BISA
---           -- membuktikan inquiry_lanes_read mereplika inquiries_read
---           (owner/manager/procurement), bukan company-scope polos =====
+--           TIDAK bisa SELECT lane dari inquiry milik Sales A; manager BISA;
+--           super admin BISA -- membuktikan inquiry_lanes_read (EXISTS
+--           POLOS ke inquiries, tanpa AND apa pun -- koreksi Den/Vir)
+--           mewarisi RLS inquiries_read milik pemanggil lewat CASCADING,
+--           bukan replika kondisi yang disalin manual =====
 DO $$
 DECLARE
   v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
   v_manager uuid := '7f218c76-196e-4580-baf1-6bdf17c6a35a';
   v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
   v_sales_b uuid := '6739c239-e2ff-48ff-97ed-23059f749218';
+  v_super_admin uuid;
   v_account uuid; v_loc1 uuid; v_loc2 uuid;
-  v_new_id uuid; v_count_b int; v_count_mgr int;
+  v_new_id uuid; v_count_b int; v_count_mgr int; v_count_super int;
 BEGIN
   SELECT id INTO v_account FROM public.accounts
    WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
   IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (o) -- nol akun fixture'; END IF;
+
+  SELECT ur.user_id INTO v_super_admin
+    FROM public.user_roles ur JOIN public.roles r ON r.id = ur.role_id
+   WHERE r.code = 'super_admin' AND ur.is_active = true AND r.deleted_at IS NULL
+   LIMIT 1;
+  IF v_super_admin IS NULL THEN
+    RAISE EXCEPTION 'UJI GAGAL (o) -- nol user fixture ber-role super_admin aktif, uji perlu akun lain';
+  END IF;
+
   INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-O-1', 'Uji O 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
   INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-O-2', 'Uji O 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
 
@@ -634,20 +646,30 @@ BEGIN
   EXECUTE 'RESET ROLE';
 
   -- Sales B: company sama, bukan owner, bukan manager, bukan procurement-ber-PRF.
+  -- Terhalang lewat RLS inquiries_read milik sales_b sendiri (cascading dari
+  -- EXISTS polos, bukan AND eksplisit di policy inquiry_lanes_read).
   PERFORM set_config('request.jwt.claim.sub', v_sales_b::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
   SELECT count(*) INTO v_count_b FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
   EXECUTE 'RESET ROLE';
 
-  -- Manager: is_manager_or_above() -> selalu lolos, company sama.
+  -- Manager: inquiries_read mengizinkan lewat is_manager_or_above(), company sama.
   PERFORM set_config('request.jwt.claim.sub', v_manager::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
   SELECT count(*) INTO v_count_mgr FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
   EXECUTE 'RESET ROLE';
 
-  RAISE NOTICE '(o) sales_b melihat % baris (harus 0), manager melihat % baris (harus 1)', v_count_b, v_count_mgr;
+  -- Super admin: inquiries_read mengizinkan lewat is_super_admin(), lintas-company.
+  PERFORM set_config('request.jwt.claim.sub', v_super_admin::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT count(*) INTO v_count_super FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
+  EXECUTE 'RESET ROLE';
+
+  RAISE NOTICE '(o) sales_b melihat % baris (harus 0), manager melihat % baris (harus 1), super_admin melihat % baris (harus 1)',
+    v_count_b, v_count_mgr, v_count_super;
   IF v_count_b <> 0 THEN RAISE EXCEPTION 'UJI GAGAL (o) -- sales_b seharusnya 0 baris, dapat %', v_count_b; END IF;
   IF v_count_mgr <> 1 THEN RAISE EXCEPTION 'UJI GAGAL (o) -- manager seharusnya 1 baris, dapat %', v_count_mgr; END IF;
+  IF v_count_super <> 1 THEN RAISE EXCEPTION 'UJI GAGAL (o) -- super_admin seharusnya 1 baris, dapat %', v_count_super; END IF;
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (o)';
 END $$;
