@@ -427,6 +427,14 @@ const CRM_MENU_ITEMS = [
     ],
   },
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
+  // Putaran 3 Tahap 3A, Lingkup B: menu BARU 1.2.2 (Inquiry Classification).
+  // Entri registry ini WAJIB ada supaya isMenuAccessible/navChildGate
+  // menggerbang id ini secara SPESIFIK lewat MENU_KEY_MAP di bawah -- tanpa
+  // entri di sini, id yang tak dikenal findMenuItemById jatuh ke fallback
+  // "ikuti visibilitas modul" (lihat isMenuAccessible), yang terlalu longgar
+  // (siapa pun dengan izin CRM APA PUN akan lolos, bukan khusus
+  // crm_inquiry_classification) -- pola persis crm-lead-qualification di bawah.
+  { id: 'crm-inquiry-classification', label: 'Inquiry Classification', icon: ClipboardCheck },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
   // Option Requests (Irisan 5, TD-318 item #18) — gate BUKAN hasMenuPermission
@@ -1062,6 +1070,10 @@ const MENU_KEY_MAP = {
   // SAMA dengan Capture (nol izin baru, keputusan Den).
   'crm-lead-qualification': 'crm_prospects',
   'crm-inquiry':     'crm_inquiry',
+  // Putaran 3 Tahap 3A, Lingkup B — menu BARU, izin disalin dari crm_inquiry
+  // (migrasi 20261024000003: module_menus/menu_actions/role_menu_permissions
+  // disalin dinamis dari baris crm_inquiry, bukan array role manual).
+  'crm-inquiry-classification': 'crm_inquiry_classification',
   'quotation-draft': 'crm_quotation',
   'crm-customers':       'crm_customers',
   'customer-detail':     'crm_customers',

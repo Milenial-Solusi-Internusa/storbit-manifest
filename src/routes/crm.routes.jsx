@@ -59,6 +59,7 @@ const LeadCapturePage         = lazy(() => import('@/modules/crm/lead/pages/Lead
 const LeadDetailPage         = lazy(() => import('@/modules/crm/lead/pages/LeadDetailPage'));
 const LeadQualificationPage  = lazy(() => import('@/modules/crm/lead/pages/LeadQualificationPage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
+const InquiryClassificationPage = lazy(() => import('@/modules/crm/InquiryClassificationPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
 const QuotationListPage      = lazy(() => import('@/modules/crm/QuotationListPage'));
@@ -350,6 +351,21 @@ function InquiryListRoute() {
         onSelectInquiry={(inq) => navigate(`${P_INQUIRY}/${inq.id}`)}
         showToast={showToast}
       />
+    </Boundary>
+  );
+}
+
+// Inquiry Classification (Putaran 3 Tahap 3A, Lingkup B) -- gate halaman
+// ikut crm_inquiry (migrasi 20261024000003 menyalin role_menu_permissions-
+// nya), jadi Sales yang boleh membuka Inquiry List otomatis boleh membuka
+// halaman ini juga; RLS inquiries_read yang menyaring dataset ke ownernya.
+// Nol prop handoff -- halaman murni baca+UPDATE langsung, nol state App.jsx
+// yang dirujuk.
+function InquiryClassificationRoute() {
+  const { showToast } = useAppShell();
+  return (
+    <Boundary title="Inquiry Classification temporarily unavailable">
+      <InquiryClassificationPage showToast={showToast} />
     </Boundary>
   );
 }
@@ -708,7 +724,7 @@ function SalesOrderDocDetailRoute() {
 export const CRM_MENU_IDS = Object.freeze([
   'crm-dashboard', 'indomarco-dashboard', 'crm-pipeline',
   'crm-prospects', 'crm-lead-qualification', 'crm-lead-pool', 'crm-lead-pool-approval',
-  'crm-inquiry', 'quotation-draft', 'crm-customers', 'customer-detail',
+  'crm-inquiry', 'crm-inquiry-classification', 'quotation-draft', 'crm-customers', 'customer-detail',
   'crm-calls', 'crm-activity-log', 'riwayat-visit',
   'reporting-sales', 'crm-rate-list', 'crm-sales-order',
 ]);
@@ -732,6 +748,7 @@ export const crmRoutes = [
       { path: `${P_INQUIRY}/new`,                   handle: { menuId: 'crm-inquiry' },            element: <InquiryNewRoute /> },
       { path: `${P_INQUIRY}/:id`,                   handle: { menuId: 'crm-inquiry' },            element: <DealDetailRoute /> },
       { path: `${P_INQUIRY}/:id/edit`,              handle: { menuId: 'crm-inquiry' },            element: <InquiryEditRoute /> },
+      { path: MENU_PATHS['crm-inquiry-classification'], handle: { menuId: 'crm-inquiry-classification' }, element: <InquiryClassificationRoute /> },
 
       { path: P_QUOTATION,                          handle: { menuId: 'quotation-draft' },        element: <QuotationListRoute /> },
       { path: `${P_QUOTATION}/new`,                 handle: { menuId: 'quotation-draft' },        element: <QuotationFormRoute mode="new" /> },
