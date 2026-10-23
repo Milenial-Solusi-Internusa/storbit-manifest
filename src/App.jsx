@@ -435,6 +435,10 @@ const CRM_MENU_ITEMS = [
   // (siapa pun dengan izin CRM APA PUN akan lolos, bukan khusus
   // crm_inquiry_classification) -- pola persis crm-lead-qualification di bawah.
   { id: 'crm-inquiry-classification', label: 'Inquiry Classification', icon: ClipboardCheck },
+  // Putaran 3 Tahap 3B: menu BARU 1.2.3 (Inquiry Owner Assignment). Entri
+  // registry WAJIB ada -- pola dan alasan PERSIS crm-inquiry-classification
+  // di atas (lihat komentarnya) dan crm-lead-qualification lebih bawah.
+  { id: 'crm-inquiry-owner-assignment', label: 'Inquiry Owner Assignment', icon: Users },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
   // Option Requests (Irisan 5, TD-318 item #18) — gate BUKAN hasMenuPermission
@@ -1074,6 +1078,9 @@ const MENU_KEY_MAP = {
   // (migrasi 20261024000003: module_menus/menu_actions/role_menu_permissions
   // disalin dinamis dari baris crm_inquiry, bukan array role manual).
   'crm-inquiry-classification': 'crm_inquiry_classification',
+  // Putaran 3 Tahap 3B -- izin disalin dari crm_inquiry (migrasi
+  // 20261024000006, pola persis 20261024000003).
+  'crm-inquiry-owner-assignment': 'crm_inquiry_owner_assignment',
   'quotation-draft': 'crm_quotation',
   'crm-customers':       'crm_customers',
   'customer-detail':     'crm_customers',

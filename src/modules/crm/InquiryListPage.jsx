@@ -254,7 +254,18 @@ function InquiryDetailModal({ inquiry, onClose }) {
   );
 }
 
-export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast }) {
+// `presetOwnerId`/`presetStatus` -- Putaran 3 Tahap 3B: deviasi sementara
+// (Lingkup C, baris mockup 829 `go: () => set({ page: 'status', owner: n,
+// scope: 'all', stSel: OPEN })`). Tujuan AKHIR mockup adalah halaman
+// 1.2.4 tersendiri ("Inquiry Status & History") yang belum dibangun di
+// Nexus -- halaman INI (1.2.4 di kontrak/menu-skeleton.js, tapi secara
+// kode masih memakai komponen yang sama dengan "Inquiry" 1.2 lama) dipakai
+// sebagai pengganti terdekat. Dua prop OPSIONAL ini HANYA SEED nilai awal
+// filter (dibaca sekali lewat useState initializer, pola sama seedFromState
+// di crm.routes.jsx) -- bukan state terkontrol dari luar, bukan sumber
+// kebenaran lintas-render. Pemanggil: InquiryListRoute (crm.routes.jsx)
+// dari location.state, dikirim oleh Team Workload (InquiryOwnerAssignmentPage.jsx).
+export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast, presetOwnerId, presetStatus }) {
   const { profile, erpRoles } = useAuth();
   /* Scope per-baris TIDAK lagi disaring di sini — policy `inquiries_read`
      (migrasi 20260830000003) yang menanganinya di server: manager-ke-atas
@@ -278,9 +289,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState(presetStatus || 'all');
   const [filterService, setFilterService] = useState('all');
-  const [filterOwner, setFilterOwner] = useState('all');
+  const [filterOwner, setFilterOwner] = useState(presetOwnerId || 'all');
   const [filterDeadline, setFilterDeadline] = useState('all');
   // Putaran 3 Tahap 3A -- filter Location (ID lokasi, cocok pol_location_id
   // ATAU pod_location_id) dan Direction. filterLocationId SELALU ID asli

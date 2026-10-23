@@ -88,7 +88,9 @@ export const SKELETON = [
             ] },
           { code: "1.2.3", label: "Inquiry Owner Assignment", slug: "owner-assignment", path: "/crm/inquiry/owner-assignment",
             desc: "menetapkan sales yang bertanggung jawab atas inquiry tersebut.",
-            id: "ph-1-2-3", menuKey: "skel_1_2_3", mounts: [] },
+            mounts: [
+              { menuId: "crm-inquiry-owner-assignment", path: "/crm/inquiry/owner-assignment" },
+            ] },
           { code: "1.2.4", label: "Inquiry Status & History", slug: "status-history", path: "/crm/inquiry/status-history",
             desc: "memantau status berjalan dan riwayat perubahan tiap inquiry.",
             mounts: [

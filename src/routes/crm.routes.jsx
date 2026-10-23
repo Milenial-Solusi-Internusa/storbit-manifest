@@ -60,6 +60,7 @@ const LeadDetailPage         = lazy(() => import('@/modules/crm/lead/pages/LeadD
 const LeadQualificationPage  = lazy(() => import('@/modules/crm/lead/pages/LeadQualificationPage'));
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
 const InquiryClassificationPage = lazy(() => import('@/modules/crm/InquiryClassificationPage'));
+const InquiryOwnerAssignmentPage = lazy(() => import('@/modules/crm/InquiryOwnerAssignmentPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
 const QuotationListPage      = lazy(() => import('@/modules/crm/QuotationListPage'));
@@ -339,9 +340,14 @@ function LeadAssignmentApprovalRoute() {
 // ============================================================================
 // Inquiry / Deal — 4 rute
 // ============================================================================
+// `location.state.presetOwnerId`/`presetStatus` -- Putaran 3 Tahap 3B,
+// deviasi sementara (lihat komentar di InquiryListPage.jsx): Team Workload
+// (InquiryOwnerAssignmentPage.jsx) menavigasi ke sini dengan preset filter
+// owner+status, menggantikan tujuan mockup "halaman 1.2.4" yang belum ada.
 function InquiryListRoute() {
   const { showToast, setInquiryPrefill } = useAppShell();
   const navigate = useNavigate();
+  const location = useLocation();
   return (
     <Boundary title="CRM Inquiry temporarily unavailable">
       {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
@@ -350,6 +356,8 @@ function InquiryListRoute() {
         onAddInquiry={() => { setInquiryPrefill(null); navigate(`${P_INQUIRY}/new`); }}
         onSelectInquiry={(inq) => navigate(`${P_INQUIRY}/${inq.id}`)}
         showToast={showToast}
+        presetOwnerId={location.state?.presetOwnerId}
+        presetStatus={location.state?.presetStatus}
       />
     </Boundary>
   );
@@ -366,6 +374,24 @@ function InquiryClassificationRoute() {
   return (
     <Boundary title="Inquiry Classification temporarily unavailable">
       <InquiryClassificationPage showToast={showToast} />
+    </Boundary>
+  );
+}
+
+// Inquiry Owner Assignment (Putaran 3 Tahap 3B) -- onViewSalesInquiries =
+// Team Workload row click (mockup baris 829), navigasi ke Inquiry List
+// dgn location.state preset owner+status (deviasi sementara, lihat
+// komentar InquiryListPage.jsx/InquiryListRoute di atas -- tujuan akhir
+// mockup = halaman 1.2.4 tersendiri yang belum ada).
+function InquiryOwnerAssignmentRoute() {
+  const { showToast } = useAppShell();
+  const navigate = useNavigate();
+  return (
+    <Boundary title="Inquiry Owner Assignment temporarily unavailable">
+      <InquiryOwnerAssignmentPage
+        showToast={showToast}
+        onViewSalesInquiries={(ownerId) => navigate(P_INQUIRY, { state: { presetOwnerId: ownerId, presetStatus: 'OPEN' } })}
+      />
     </Boundary>
   );
 }
@@ -724,7 +750,7 @@ function SalesOrderDocDetailRoute() {
 export const CRM_MENU_IDS = Object.freeze([
   'crm-dashboard', 'indomarco-dashboard', 'crm-pipeline',
   'crm-prospects', 'crm-lead-qualification', 'crm-lead-pool', 'crm-lead-pool-approval',
-  'crm-inquiry', 'crm-inquiry-classification', 'quotation-draft', 'crm-customers', 'customer-detail',
+  'crm-inquiry', 'crm-inquiry-classification', 'crm-inquiry-owner-assignment', 'quotation-draft', 'crm-customers', 'customer-detail',
   'crm-calls', 'crm-activity-log', 'riwayat-visit',
   'reporting-sales', 'crm-rate-list', 'crm-sales-order',
 ]);
@@ -749,6 +775,7 @@ export const crmRoutes = [
       { path: `${P_INQUIRY}/:id`,                   handle: { menuId: 'crm-inquiry' },            element: <DealDetailRoute /> },
       { path: `${P_INQUIRY}/:id/edit`,              handle: { menuId: 'crm-inquiry' },            element: <InquiryEditRoute /> },
       { path: MENU_PATHS['crm-inquiry-classification'], handle: { menuId: 'crm-inquiry-classification' }, element: <InquiryClassificationRoute /> },
+      { path: MENU_PATHS['crm-inquiry-owner-assignment'], handle: { menuId: 'crm-inquiry-owner-assignment' }, element: <InquiryOwnerAssignmentRoute /> },
 
       { path: P_QUOTATION,                          handle: { menuId: 'quotation-draft' },        element: <QuotationListRoute /> },
       { path: `${P_QUOTATION}/new`,                 handle: { menuId: 'quotation-draft' },        element: <QuotationFormRoute mode="new" /> },
