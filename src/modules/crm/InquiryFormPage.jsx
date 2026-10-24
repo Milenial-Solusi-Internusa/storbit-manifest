@@ -713,7 +713,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   bukan editor lane. */}
               {hasLanes && (
                 <div style={{ fontSize: 12, color: C.sub, marginTop: -8 }}>
-                  This inquiry has multiple route options. Port of Loading/Discharge are set from Route Options on the Detail Inquiry page and can&apos;t be edited here.
+                  Port of Loading and Port of Discharge come from this inquiry&apos;s route options and can&apos;t be edited here yet.
                 </div>
               )}
 

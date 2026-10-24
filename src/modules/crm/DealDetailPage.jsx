@@ -1785,8 +1785,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           }}
           onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
           onSave={() => saveInquirySection({
-            pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
-            pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
+            // Putaran 4 Tahap 4B, review fix 5 -- pol/pod/*_location_id TIDAK
+            // disertakan sama sekali saat inquiry ini punya baris inquiry_lanes
+            // (lanes.length > 0): lane utama adalah sumber kebenaran untuk
+            // field-field itu (RPC create_inquiry_with_lanes yang menulisnya),
+            // menyertakannya di sini bisa menimpa lane utama dengan nilai yang
+            // tidak pernah diedit lewat alur lane. Field lain di section ini
+            // tetap dikirim seperti biasa.
+            ...(lanes.length > 0 ? {} : {
+              pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
+              pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
+            }),
             pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
             incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
             container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
@@ -1797,8 +1806,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               108: "replaces free text for... Origin and Destination in
               Inquiry detail"); tampilan read-only TETAP TextField apa adanya
               (zero perubahan ke komponen itu) -- minimal footprint, pola
-              sama field lain di section ini yang tak tersentuh. */}
-          {editingSection === 'Route' ? (
+              sama field lain di section ini yang tak tersentuh.
+              Putaran 4 Tahap 4B, review fix 5 -- begitu inquiry ini punya
+              baris inquiry_lanes (lanes.length > 0), POL/POD TETAP read-only
+              WALAU editingSection==='Route' -- celah yang sebelumnya membiarkan
+              LocationPicker tetap editable di sini padahal lane utama sudah
+              mengunci field yang sama di InquiryFormPage.jsx. */}
+          {editingSection === 'Route' && lanes.length === 0 ? (
             <>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: C.textMute, marginBottom: 6 }}>Port of Loading</div>
@@ -1825,6 +1839,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <>
               <TextField label="Port of Loading" editing={false} value={inquiry.pol} />
               <TextField label="Port of Discharge" editing={false} value={inquiry.pod} />
+              {lanes.length > 0 && editingSection === 'Route' && (
+                <div style={{ gridColumn: '1 / -1', fontSize: 12, color: C.textMute }}>
+                  Port of Loading and Port of Discharge come from this inquiry&apos;s route options and can&apos;t be edited here yet.
+                </div>
+              )}
             </>
           )}
           <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}

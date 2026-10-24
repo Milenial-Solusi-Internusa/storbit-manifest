@@ -29,6 +29,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { isSuperAdmin, isManagerOrAbove } from '../../lib/roles';
+import { readMoneyInput, formatIdNumber } from '../../lib/numberFormat';
 import AccountPicker from '../../components/AccountPicker';
 import LocationPicker from '../../kit/LocationPicker';
 import { fetchOperationalRoster } from './salesRoster';
@@ -197,7 +198,10 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // Kartu 'trading' (General Trading) DISEMBUNYIKAN di wizard ini — GT tetap
   // dibuat lewat InquiryFormPage.jsx lama (deviasi #2 PLAN, di luar lingkup
   // Putaran 4 sama sekali: Items table/Delivery step/price-list auto-calc).
-  const serviceTypeOpts = useMemo(() => serviceTypeOptsRaw.filter((o) => o.value !== 'trading'), [serviceTypeOptsRaw]);
+  // 'warehousing' DISEMBUNYIKAN juga (review fix 6) -- bukan kartu Service
+  // Type di mockup sama sekali (hanya tag di Additional Services, SERVICES
+  // id='warehouse' -- konsep berbeda). dropdown_options tidak disentuh.
+  const serviceTypeOpts = useMemo(() => serviceTypeOptsRaw.filter((o) => o.value !== 'trading' && o.value !== 'warehousing'), [serviceTypeOptsRaw]);
   const { options: laneModeOpts } = useDropdownOptions('lane_mode', LANE_MODE_FALLBACK);
   const { options: laneUnitOpts } = useDropdownOptions('lane_unit', LANE_UNIT_FALLBACK);
   const { options: iorOpts } = useDropdownOptions('importer_of_record', IMPORTER_OF_RECORD_FALLBACK);
@@ -230,10 +234,39 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     duplicate_warning_reason: '',
   });
   const [directionTouched, setDirectionTouched] = useState(false);
+  // Review fix 2 (TD-285) -- Estimated Value/Total Weight/Volume: SATU field
+  // dipakai utk tampilan DAN kirim (pola CaptureLeadModal.jsx, bukan buffer
+  // teks terpisah ala InputSPPage.jsx -- field ini WAJIB memblokir Create
+  // kalau tak terbaca, beda dari pola SP yang membiarkan 0 tersimpan).
+  // Format ulang HANYA saat blur, bukan live -- mengetik "1.500.000" apa
+  // adanya sampai user pindah field.
+  const [weightUnrecognized, setWeightUnrecognized] = useState(false);
+  const [volumeUnrecognized, setVolumeUnrecognized] = useState(false);
+  const [estValUnrecognized, setEstValUnrecognized] = useState(false);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const setNum = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value.replace(/[^\d.]/g, '') }));
   const toggleArr = (k, v) => setF((x) => ({ ...x, [k]: x[k].includes(v) ? x[k].filter((y) => y !== v) : [...x[k], v] }));
+
+  const handleWeightChange = (v) => { setF((x) => ({ ...x, weight_kg: v })); setWeightUnrecognized(readMoneyInput(v).unrecognized); };
+  const handleWeightBlur = () => {
+    const { value, unrecognized } = readMoneyInput(f.weight_kg);
+    if (unrecognized) return;
+    setF((x) => ({ ...x, weight_kg: x.weight_kg.trim() === '' ? '' : formatIdNumber(value) }));
+  };
+  const handleVolumeChange = (v) => { setF((x) => ({ ...x, volume_cbm: v })); setVolumeUnrecognized(readMoneyInput(v).unrecognized); };
+  const handleVolumeBlur = () => {
+    const { value, unrecognized } = readMoneyInput(f.volume_cbm);
+    if (unrecognized) return;
+    setF((x) => ({ ...x, volume_cbm: x.volume_cbm.trim() === '' ? '' : formatIdNumber(value) }));
+  };
+  const handleEstValChange = (v) => { setF((x) => ({ ...x, estimated_value: v })); setEstValUnrecognized(readMoneyInput(v).unrecognized); };
+  const handleEstValBlur = () => {
+    const { value, unrecognized } = readMoneyInput(f.estimated_value);
+    if (unrecognized) return;
+    setF((x) => ({ ...x, estimated_value: x.estimated_value.trim() === '' ? '' : formatIdNumber(value) }));
+  };
+  // n_containers -- integer (p_n_containers RPC), digit saja, nol titik/koma.
+  const handleNContainersChange = (e) => setF((x) => ({ ...x, n_containers: e.target.value.replace(/\D/g, '') }));
 
   const isDoorToDoor = f.service_type === 'door_to_door';
   const SK = isDoorToDoor ? STEPS_DOOR_TO_DOOR : STEPS_DEFAULT;
@@ -378,10 +411,16 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const [possibleDuplicates, setPossibleDuplicates] = useState([]);
   const [dupCheckLoading, setDupCheckLoading] = useState(false);
   const containerTypesKey = f.container_types.join(',');
+  // Review fix 4 -- duplicate_warning_reason dikosongkan SETIAP kali input
+  // yang menentukan "situasi duplikat ini" berubah (akun/lane/container di
+  // deps effect ini), bukan hanya saat daftarnya jadi kosong. Pindah rute
+  // lalu balik ke daftar duplikat yang BERBEDA tetap butuh alasan baru --
+  // alasan lama untuk situasi lama tidak boleh ikut terkirim diam-diam.
+  const clearStaleDupReason = () => setF((x) => (x.duplicate_warning_reason ? { ...x, duplicate_warning_reason: '' } : x));
   useEffect(() => {
     let cancelled = false;
     if (!profile?.company_id || !resolvedAccountId || !primaryPolLoc || !primaryPodLoc || !f.container_types.length) {
-      const t = setTimeout(() => { if (!cancelled) setPossibleDuplicates([]); }, 0);
+      const t = setTimeout(() => { if (!cancelled) { setPossibleDuplicates([]); clearStaleDupReason(); } }, 0);
       return () => { cancelled = true; clearTimeout(t); };
     }
     const loadingTimer = setTimeout(() => { if (!cancelled) setDupCheckLoading(true); }, 0);
@@ -397,6 +436,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         if (cancelled) return;
         setDupCheckLoading(false);
         setPossibleDuplicates(error ? [] : (data || []));
+        clearStaleDupReason();
       });
     }, 500);
     return () => { cancelled = true; clearTimeout(loadingTimer); clearTimeout(timer); };
@@ -447,6 +487,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     const undernameActive = f.direction === 'Import' && ['customs', 'door_to_door'].includes(f.service_type) && f.undername_import;
     if (undernameActive) {
       if (!f.importer_of_record) e.under_ior = 'Importer of Record is required';
+      // Review fix 1 -- divalidasi juga di sini (bukan hanya bergantung pada
+      // default yang di-set saat checkbox dicentang) supaya kombinasi mana
+      // pun yang membuat duties_and_taxes kosong tetap tertangkap sebelum
+      // RPC/CHECK inquiries_undername_docs_check menolaknya.
+      if (!f.duties_and_taxes) e.under_duties = 'Duties & Taxes is required';
       if (!f.supporting_docs_received) e.under_docs = 'Supporting documents must be confirmed received';
     }
     const laneRows = f.laneMode ? f.lanes : [{ pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id }];
@@ -457,6 +502,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     if (possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
       e.route_dup = 'Required when a possible duplicate is shown';
     }
+    // Review fix 2 (TD-285) -- angka tak terbaca MEMBLOKIR Create (pola
+    // CaptureLeadModal.jsx), bukan diam-diam terkirim null.
+    if (weightUnrecognized) e.cargo_weight = 'Angka tidak dikenali';
+    if (volumeUnrecognized) e.cargo_volume = 'Angka tidak dikenali';
+    if (estValUnrecognized) e.commercial_estval = 'Angka tidak dikenali';
     return e;
   };
   // Pemetaan error -> langkah (urutan SK), untuk "lompat ke step pertama yang error".
@@ -465,6 +515,8 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     if (key.startsWith('svc_')) return 'svc';
     if (key.startsWith('under_')) return isDoorToDoor ? 'customs' : 'svc';
     if (key.startsWith('route_')) return 'route';
+    if (key.startsWith('cargo_')) return 'cargo';
+    if (key.startsWith('commercial_')) return 'commercial';
     return 'review';
   };
 
@@ -482,9 +534,16 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     setErrors({});
     setSaving(true);
     try {
+      // Review fix 3 -- mode/load_unit lane TUNGGAL (laneMode mati) diturunkan
+      // dari container_types, PERSIS modeOf() mockup (baris 743:
+      // "(f.cont||[]).some(c => c.indexOf('FCL')===0) ? 'Sea FCL' : 'Sea LCL'")
+      // dan unit-nya startLanes baris 949 ("Sea FCL" -> 'Container' else 'CBM')
+      // -- sebelumnya di-hardcode 'Sea LCL'/'CBM' walau user memilih FCL.
+      const singleLaneMode = f.container_types.some((c) => c.indexOf('FCL') === 0) ? 'Sea FCL' : 'Sea LCL';
       const laneRows = (f.laneMode ? f.lanes : [{
         pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id,
-        via_location_id: null, pol: f.pol, pod: f.pod, via: null, mode: 'Sea LCL', load_unit: 'CBM',
+        via_location_id: null, pol: f.pol, pod: f.pod, via: null,
+        mode: singleLaneMode, load_unit: unitForMode(singleLaneMode),
       }]).map((l) => ({
         pol_location_id: l.pol_location_id, pod_location_id: l.pod_location_id,
         via_location_id: l.via_location_id || null,
@@ -492,6 +551,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         mode: l.mode || null, load_unit: l.load_unit || null,
       }));
       const undernameActive = f.direction === 'Import' && ['customs', 'door_to_door'].includes(f.service_type) && f.undername_import;
+      // Review fix 2 -- nilai ke RPC = readMoneyInput(...).value (angka
+      // tak terbaca sudah diblokir di stepErrors di atas, jadi di sini
+      // string yang tersisa sudah pasti kosong ATAU benar-benar terbaca).
+      const estVal = f.estimated_value.trim() === '' ? null : readMoneyInput(f.estimated_value).value;
+      const weightVal = f.weight_kg.trim() === '' ? null : readMoneyInput(f.weight_kg).value;
+      const volumeVal = f.volume_cbm.trim() === '' ? null : readMoneyInput(f.volume_cbm).value;
 
       const params = {
         p_company_id: profile.company_id,
@@ -501,14 +566,14 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_customer_role: f.customer_role || null,
         p_contact_id: f.contact_id || null,
         p_deadline_quote: f.deadline_quote || null,
-        p_estimated_value: f.estimated_value !== '' ? Number(f.estimated_value) : null,
+        p_estimated_value: estVal,
         p_notes: f.notes || null,
         p_incoterms: f.incoterms.length ? f.incoterms : null,
         p_container_types: f.container_types.length ? f.container_types : null,
         p_goods_name: f.goods_name || null,
         p_hs_code: f.hs_code || null,
-        p_weight_kg: f.weight_kg !== '' ? Number(f.weight_kg) : null,
-        p_volume_cbm: f.volume_cbm !== '' ? Number(f.volume_cbm) : null,
+        p_weight_kg: weightVal,
+        p_volume_cbm: volumeVal,
         p_dimension: f.dimension || null,
         p_cargo_types: f.cargo_types.length ? f.cargo_types : null,
         p_un_number: f.un_number || null,
@@ -517,7 +582,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_additional_services: f.additional_services.length ? f.additional_services : null,
         p_pickup_address: f.pickup_address || null,
         p_delivery_address: f.delivery_address || null,
-        p_duplicate_warning_reason: f.duplicate_warning_reason || null,
+        // Review fix 4 -- hanya dikirim saat kartu duplikat BENAR-BENAR
+        // tampil saat ini (possibleDuplicates.length > 0), bukan apa pun
+        // yang kebetulan masih ada di field teksnya (bisa basi dari rute
+        // sebelumnya -- lihat juga efek yang mengosongkannya di atas).
+        p_duplicate_warning_reason: possibleDuplicates.length > 0 ? (f.duplicate_warning_reason || null) : null,
         p_n_containers: f.n_containers !== '' ? Number(f.n_containers) : null,
         p_cargo_ready_date: f.cargo_ready_date || null,
         p_undername_import: undernameActive,
@@ -724,7 +793,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 </div>
                 <div style={grid2}>
                   <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>
-                    <input value={f.n_containers} onChange={setNum('n_containers')} style={S.input} placeholder="0" />
+                    <input value={f.n_containers} onChange={handleNContainersChange} inputMode="numeric" style={S.input} placeholder="0" />
                     <FieldError>{errors.route_ncont}</FieldError>
                   </Field>
                   <Field label="Cargo ready date">
@@ -774,15 +843,17 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 <div style={grid2}>
                   <Field label="Total Weight">
                     <div style={{ position: 'relative' }}>
-                      <input value={f.weight_kg} onChange={setNum('weight_kg')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
+                      <input value={f.weight_kg} onChange={(e) => handleWeightChange(e.target.value)} onBlur={handleWeightBlur} inputMode="decimal" style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
                       <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>KG</span>
                     </div>
+                    {weightUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
                   </Field>
                   <Field label="Volume">
                     <div style={{ position: 'relative' }}>
-                      <input value={f.volume_cbm} onChange={setNum('volume_cbm')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
+                      <input value={f.volume_cbm} onChange={(e) => handleVolumeChange(e.target.value)} onBlur={handleVolumeBlur} inputMode="decimal" style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
                       <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>CBM</span>
                     </div>
+                    {volumeUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
                   </Field>
                 </div>
                 <div style={grid2}>
@@ -843,8 +914,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 <Field label="Estimated (intake)" hint="Leave empty if unknown.">
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>Rp</span>
-                    <input value={f.estimated_value} onChange={setNum('estimated_value')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingLeft: 38 }} placeholder="0" />
+                    <input value={f.estimated_value} onChange={(e) => handleEstValChange(e.target.value)} onBlur={handleEstValBlur} inputMode="decimal" style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingLeft: 38 }} placeholder="0" />
                   </div>
+                  {estValUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
                 </Field>
                 {canPickOwner ? (
                   <Field label="Owner">
@@ -900,7 +972,17 @@ function UndernamePanel({ f, setF, errors, iorOpts }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, background: '#FFF8EE', border: '1px solid #F0DCAE', borderRadius: 14 }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text }}>
-        <input type="checkbox" checked={f.undername_import} onChange={(e) => setF((x) => ({ ...x, undername_import: e.target.checked }))} />
+        <input type="checkbox" checked={f.undername_import} onChange={(e) => setF((x) => ({
+          ...x,
+          undername_import: e.target.checked,
+          // Review fix 1 -- mockup blankF.duties (baris 557) = 'Included in
+          // price', dan select-nya TANPA opsi kosong (baris 66/73) -- begitu
+          // Undername dicentang, state HARUS ikut diset ke default yang sama
+          // dengan apa yang langsung TAMPIL (opsi pertama <select>), supaya
+          // "yang terlihat = yang terkirim". Tidak menimpa pilihan user yang
+          // sudah ada (toggle off lalu on lagi).
+          duties_and_taxes: e.target.checked && !x.duties_and_taxes ? DUTIES_AND_TAXES_OPTS[0] : x.duties_and_taxes,
+        }))} />
         Undername import
       </label>
       {f.undername_import && (
@@ -920,6 +1002,7 @@ function UndernamePanel({ f, setF, errors, iorOpts }) {
                 {DUTIES_AND_TAXES_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select><Chevron />
             </div>
+            <FieldError>{errors.under_duties}</FieldError>
           </Field>
           <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input type="checkbox" checked={f.supporting_docs_received} onChange={(e) => setF((x) => ({ ...x, supporting_docs_received: e.target.checked }))} />
