@@ -502,6 +502,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ditemukan) -- kedua kasus sengaja dibedakan dari "halaman tidak
   // ditemukan", lihat komentar di titik render.
   const [duplicateOfNo, setDuplicateOfNo] = useState(null);
+  // Putaran 4 Tahap 4B, Task 2 -- baris inquiry_lanes (urut sort_order),
+  // read-only. []  = belum ada lane sama sekali (inquiry lama, pra-Putaran 4)
+  // ATAU baru 1 lane (block "Route Options" di bawah hanya tampil >1, lihat
+  // titik render) -- kedua kasus sengaja tidak dibedakan di state ini.
+  const [lanes, setLanes] = useState([]);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
   // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
@@ -638,6 +643,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         acc = data || null;
       }
 
+      // Putaran 4 Tahap 4B, Task 2 -- Route Options read-only (inquiry_lanes,
+      // migrasi 20261025000001). Query TERPISAH dari `inquiries` di atas --
+      // BUKAN embed (rule "jangan embed inquiries ke inquiries", dan tabel
+      // ini toh anak dari inquiries, bukan inquiries itu sendiri). RLS
+      // inquiry_lanes_read mengikuti RLS inquiries_read via EXISTS polos
+      // (lihat migrasi) -- nol filter company/owner tambahan perlu di sini.
+      const { data: laneRows } = await supabase
+        .from('inquiry_lanes')
+        .select('id, sort_order, pol, pod, via, mode, load_unit')
+        .eq('inquiry_id', inq.id)
+        .order('sort_order', { ascending: true })
+        .limit(1000);
+
       const { data: quos } = await supabase
         .from('quotations')
         .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
@@ -743,6 +761,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (cancelled) return;
       setInquiry(inq);
       setDuplicateOfNo(duplicateOfNoValue);
+      setLanes(laneRows || []);
       setAccount(acc);
       setQuotations(quos || []);
       setSalesOrder(so);
@@ -1819,6 +1838,45 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             values={inquiry.container_types} draft={sectionDraft.container_types}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
         </div>
+
+        {/* Putaran 4 Tahap 4B, Task 2 -- "Route Options", read-only, tanpa
+            edit. Hanya tampil bila >1 lane (inquiry lama/single-lane sudah
+            terwakili sepenuhnya oleh Port of Loading/Discharge di atas --
+            menampilkannya lagi di sini untuk 1 baris cuma mengulang info
+            yang sama). Baris lane TIDAK pernah diedit dari sini (PLAN addendum
+            Putaran 4 Task 3: inquiries.pol/pod dikunci di InquiryFormPage.jsx
+            begitu ada baris inquiry_lanes -- editor lane sendiri menyusul
+            lewat PLAN tersendiri). */}
+        {lanes.length > 1 && (
+          <div style={{ marginTop: 20, marginBottom: 20 }}>
+            <h4 style={{ margin: '0 0 12px', fontFamily: HEAD, fontSize: 13.5, fontWeight: 700, color: C.text }}>
+              Route Options ({lanes.length})
+            </h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['#', 'POL', 'POD', 'Via', 'Mode', 'Load unit'].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '7px 8px', fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.textFaint, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lanes.map((l, i) => (
+                    <tr key={l.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: '8px', color: C.textFaint }}>{i + 1}</td>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{l.pol || '—'}</td>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{l.pod || '—'}</td>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap', color: C.textMute }}>{l.via || '—'}</td>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{l.mode || '—'}</td>
+                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{l.load_unit || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
         {/* ===== Section "Cargo" (Irisan 2 Inquiry, lanjutan audit mockup,
