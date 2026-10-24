@@ -364,12 +364,27 @@ DECLARE
   v_account uuid; v_loc1 uuid; v_loc2 uuid;
   v_new_id uuid; v_count int;
 BEGIN
+  -- Koreksi Mas (gagal palsu ditemukan di blok (bb)/(ii)): LIMIT 1 tanpa
+  -- ORDER BY + hanya NOT IN (v_sales_a) bisa memilih user yang KEBETULAN
+  -- juga super admin atau punya peran aktif di MSI (mis. ZZZTEST Admin) --
+  -- user semacam itu akan LOLOS gerbang company/peran, membuat uji "harus
+  -- ditolak/harus 0 baris" ini gagal untuk alasan yang salah. Sekarang:
+  -- aktif di SOA, NOL peran aktif di MSI mana pun, NOL role super_admin
+  -- aktif, ORDER BY user_id supaya hasilnya deterministik antar-run.
   SELECT ur.user_id INTO v_other_user FROM public.user_roles ur
    WHERE ur.company_id = v_company_soa AND ur.is_active = true
-     AND ur.user_id NOT IN (v_sales_a) -- pastikan bukan fixture MSI yg kebetulan juga di SOA
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_msi
+        WHERE ur_msi.user_id = ur.user_id AND ur_msi.company_id = v_company_msi AND ur_msi.is_active = true
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_sa JOIN public.roles r_sa ON r_sa.id = ur_sa.role_id
+        WHERE ur_sa.user_id = ur.user_id AND ur_sa.is_active = true AND r_sa.code = 'super_admin'
+     )
+   ORDER BY ur.user_id
    LIMIT 1;
   IF v_other_user IS NULL THEN
-    RAISE EXCEPTION 'UJI GAGAL (h) -- nol user fixture aktif di company SOA, uji perlu akun lain';
+    RAISE EXCEPTION 'UJI GAGAL (h) -- nol user fixture aktif di company SOA TANPA peran MSI/super_admin, uji perlu akun lain';
   END IF;
 
   SELECT id INTO v_account FROM public.accounts
@@ -1269,12 +1284,25 @@ DECLARE
   v_account uuid; v_loc1 uuid; v_loc2 uuid; v_loc3 uuid; v_loc4 uuid;
   v_inq_id uuid; v_caught boolean := false; v_msg text;
 BEGIN
+  -- Koreksi Mas -- pola sama (h), lihat komentar di sana: LIMIT 1 tanpa
+  -- ORDER BY + hanya NOT IN (v_sales_a) bisa memilih user yang KEBETULAN
+  -- juga super admin atau punya peran aktif di MSI, membuat uji "harus
+  -- DITOLAK di gerbang company" ini gagal palsu (user semacam itu justru
+  -- LOLOS gerbang).
   SELECT ur.user_id INTO v_other_user FROM public.user_roles ur
    WHERE ur.company_id = v_company_soa AND ur.is_active = true
-     AND ur.user_id NOT IN (v_sales_a)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_msi
+        WHERE ur_msi.user_id = ur.user_id AND ur_msi.company_id = v_company_msi AND ur_msi.is_active = true
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_sa JOIN public.roles r_sa ON r_sa.id = ur_sa.role_id
+        WHERE ur_sa.user_id = ur.user_id AND ur_sa.is_active = true AND r_sa.code = 'super_admin'
+     )
+   ORDER BY ur.user_id
    LIMIT 1;
   IF v_other_user IS NULL THEN
-    RAISE EXCEPTION 'UJI GAGAL (bb) -- nol user fixture aktif di company SOA, uji perlu akun lain';
+    RAISE EXCEPTION 'UJI GAGAL (bb) -- nol user fixture aktif di company SOA TANPA peran MSI/super_admin, uji perlu akun lain';
   END IF;
 
   SELECT id INTO v_account FROM public.accounts
@@ -1656,11 +1684,23 @@ DECLARE
   v_account uuid; v_loc1 uuid; v_loc2 uuid; v_loc3 uuid; v_loc4 uuid;
   v_inq_id uuid; v_count int;
 BEGIN
+  -- Koreksi Mas -- pola sama (h)/(bb): LIMIT 1 tanpa ORDER BY + hanya
+  -- NOT IN (v_sales_a) bisa memilih user yang kebetulan juga super admin
+  -- atau punya peran aktif di MSI, membuat uji "RLS tetap 0 baris" ini
+  -- gagal palsu.
   SELECT ur.user_id INTO v_other_user FROM public.user_roles ur
    WHERE ur.company_id = v_company_soa AND ur.is_active = true
-     AND ur.user_id NOT IN (v_sales_a)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_msi
+        WHERE ur_msi.user_id = ur.user_id AND ur_msi.company_id = v_company_msi AND ur_msi.is_active = true
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM public.user_roles ur_sa JOIN public.roles r_sa ON r_sa.id = ur_sa.role_id
+        WHERE ur_sa.user_id = ur.user_id AND ur_sa.is_active = true AND r_sa.code = 'super_admin'
+     )
+   ORDER BY ur.user_id
    LIMIT 1;
-  IF v_other_user IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (ii) -- nol user fixture aktif di company SOA'; END IF;
+  IF v_other_user IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (ii) -- nol user fixture aktif di company SOA TANPA peran MSI/super_admin'; END IF;
 
   SELECT id INTO v_account FROM public.accounts
    WHERE company_id = v_company_msi AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
