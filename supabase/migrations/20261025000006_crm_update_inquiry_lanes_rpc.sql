@@ -110,6 +110,19 @@
 -- NOL EXCEPTION WHEN OTHERS -- error apa pun (termasuk dari CHECK
 -- constraint atau cast ::uuid yang gagal) menjalar apa adanya ke client,
 -- pola yang sama dengan create_inquiry_with_lanes/reassign_inquiry_owner.
+--
+-- KUALIFIKASI KOLOM (ditemukan Vir di staging, error 42702) -- RETURNS
+-- TABLE (id uuid, inquiry_no text) membuat dua OUT-parameter bernama id
+-- dan inquiry_no. Referensi kolom id/inquiry_no TANPA alias tabel di
+-- badan fungsi bentrok dengan OUT-parameter itu ("column reference is
+-- ambiguous") -- CREATE FUNCTION tetap berhasil karena plpgsql baru
+-- diperiksa saat dipanggil, bukan saat dibuat. Seluruh referensi ke kolom
+-- id/inquiry_no di badan fungsi ini memakai alias tabel eksplisit
+-- (i/pr/q), bukan #variable_conflict.
+--
+-- KUNCI BARIS -- SELECT langkah (1) memakai FOR UPDATE: tanpa ini, dua
+-- panggilan bersamaan pada inquiry yang sama bisa saling menimpa lewat
+-- replace-all (DELETE lalu INSERT).
 -- =============================================================================
 
 BEGIN;
@@ -139,11 +152,13 @@ DECLARE
   v_user_full_name  text;
   v_user_role       text;
 BEGIN
-  -- (1) Inquiry harus ada, tidak soft-deleted.
-  SELECT company_id, status, owner_id, inquiry_no
+  -- (1) Inquiry harus ada, tidak soft-deleted. FOR UPDATE mengunci baris
+  -- ini sampai transaksi selesai -- lihat KUNCI BARIS di header migrasi.
+  SELECT i.company_id, i.status, i.owner_id, i.inquiry_no
     INTO v_company_id, v_status, v_owner_id, v_inquiry_no
-    FROM public.inquiries
-   WHERE id = p_inquiry_id AND deleted_at IS NULL;
+    FROM public.inquiries i
+   WHERE i.id = p_inquiry_id AND i.deleted_at IS NULL
+   FOR UPDATE;
   IF v_company_id IS NULL THEN
     RAISE EXCEPTION 'Inquiry tidak ditemukan.';
   END IF;
@@ -190,15 +205,19 @@ BEGIN
     FROM public.inquiry_lanes
    WHERE inquiry_id = p_inquiry_id;
 
+  -- WITH ORDINALITY + ORDER BY ord -- jsonb_agg TANPA pengurutan eksplisit
+  -- tidak dijamin mengikuti urutan baris sumbernya; ini membuat urutan
+  -- v_new_lanes_norm DETERMINISTIK mengikuti urutan p_lanes, supaya
+  -- perbandingan no-op (langkah 6) dan RETURN lane (langkah 8/audit) benar.
   SELECT jsonb_agg(jsonb_build_object(
     'pol_location_id', (le->>'pol_location_id')::uuid,
     'pod_location_id', (le->>'pod_location_id')::uuid,
     'via_location_id', NULLIF(le->>'via_location_id', '')::uuid,
     'pol', le->>'pol', 'pod', le->>'pod', 'via', le->>'via',
     'mode', le->>'mode', 'load_unit', le->>'load_unit'
-  ))
+  ) ORDER BY ord)
     INTO v_new_lanes_norm
-    FROM jsonb_array_elements(p_lanes) AS le;
+    FROM jsonb_array_elements(p_lanes) WITH ORDINALITY AS t(le, ord);
 
   IF v_old_lanes = v_new_lanes_norm THEN
     RETURN QUERY SELECT i.id, i.inquiry_no FROM public.inquiries i WHERE i.id = p_inquiry_id;
@@ -230,14 +249,14 @@ BEGIN
   v_primary_pol := p_lanes->0->>'pol';
   v_primary_pod := p_lanes->0->>'pod';
 
-  UPDATE public.inquiries SET
+  UPDATE public.inquiries AS q SET
     pol = v_primary_pol, pod = v_primary_pod,
     pol_location_id = v_primary_pol_loc, pod_location_id = v_primary_pod_loc,
     updated_at = now()
-  WHERE id = p_inquiry_id;
+  WHERE q.id = p_inquiry_id;
 
   -- (9) Audit -- pola PERSIS reassign_inquiry_owner (20261024000004:127-141).
-  SELECT email, full_name INTO v_user_email, v_user_full_name FROM public.profiles WHERE id = auth.uid();
+  SELECT pr.email, pr.full_name INTO v_user_email, v_user_full_name FROM public.profiles pr WHERE pr.id = auth.uid();
   SELECT r.code INTO v_user_role FROM public.user_roles ur JOIN public.roles r ON r.id = ur.role_id
    WHERE ur.user_id = auth.uid() AND ur.is_active = true
      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
