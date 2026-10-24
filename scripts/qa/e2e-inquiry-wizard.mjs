@@ -9,19 +9,29 @@
 // detail-routes.mjs (fingerprint/rute) -- skrip ini mengisi FORM sungguhan.
 //
 // Pola KEAMANAN SAMA PERSIS dengan menu-sweep.mjs/detail-routes.mjs: menolak
-// jalan ke ref PRODUKSI (untmpqceexwxzuhlmyrg), password HANYA dari env
-// QA_PASSWORD (tidak pernah ditulis ke berkas/stdout), login via GoTrue
-// password grant lalu sesi disuntik ke localStorage (nol ketikan password
-// di UI, nol screenshot/log yang bisa memuatnya).
+// jalan ke ref PRODUKSI (untmpqceexwxzuhlmyrg); password dari env QA_PASSWORD
+// ATAU, kalau kosong dan stdin TTY, dari prompt tersembunyi interaktif (lihat
+// resolvePassword) -- kedua jalur sama-sama tidak pernah ditulis ke
+// berkas/stdout/log, login via GoTrue password grant lalu sesi disuntik ke
+// localStorage (nol ketikan password di UI aplikasi, nol screenshot/log yang
+// bisa memuatnya).
 //
-// CARA JALAN (CC tidak pernah menjalankan ini -- nol akses password):
+// CARA JALAN (CC tidak pernah menjalankan ini dengan password sendiri --
+// nol akses password; kalau CC menjalankan tanpa QA_PASSWORD di terminal
+// yang terlihat pemilik, skrip berhenti di prompt sampai pemilik mengetik):
 //   1. Build yang mau diuji sudah dilayani statis:
 //        npm run build && npx vite preview --port 4173
 //   2. env lokal (.env.local atau --env) menunjuk STAGING (bukan produksi --
 //      skrip menolak ref produksi apa pun isi env-nya).
-//   3. Jalankan:
-//        QA_PASSWORD='<password akun uji>' node scripts/qa/e2e-inquiry-wizard.mjs \
-//          --base http://localhost:4173
+//   3. Jalankan, DUA CARA (pilih satu):
+//        a) QA_PASSWORD='<password akun uji>' node scripts/qa/e2e-inquiry-wizard.mjs \
+//             --base http://localhost:4173
+//        b) node scripts/qa/e2e-inquiry-wizard.mjs --base http://localhost:4173
+//           (QA_PASSWORD dikosongkan, dijalankan di terminal interaktif --
+//           skrip menanyakan password dengan input TERSEMBUNYI, karakter
+//           tidak ditampilkan sama sekali, dipakai hanya di memori utk login
+//           GoTrue, tidak pernah ditulis ke berkas/log/output. Ctrl+C
+//           membatalkan dengan bersih, terminal tidak tertinggal tersembunyi)
 //      Opsi: --account <email> (default test@msi.com) · --env .env.local ·
 //            --settle <ms> (default 1200) · --headed (lihat browsernya)
 //
@@ -57,8 +67,53 @@ const has = (n) => argv.includes(`--${n}`);
 const BASE = opt('base', 'http://localhost:4173').replace(/\/+$/, '');
 const ACCOUNT = opt('account', 'test@msi.com');
 const SETTLE = Number(opt('settle', '1200'));
-const PASSWORD = process.env.QA_PASSWORD;
-if (!PASSWORD) { console.error('QA_PASSWORD (env) wajib — password bersama akun uji, JANGAN ditulis di repo'); process.exit(2); }
+
+// Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
+// QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
+// Echo terminal dimatikan oleh termios raw mode itu sendiri (bukan ditulis
+// ulang per-karakter) -- nol tampilan sama sekali, bukan tanda bintang.
+function promptHiddenPassword(promptText) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const { stdin, stdout } = process;
+    stdout.write(promptText);
+    const wasRaw = stdin.isRaw;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    let input = '';
+    const cleanup = () => {
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(wasRaw || false);
+      stdin.pause();
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === '') { cleanup(); stdout.write('\n'); rejectPromise(new Error('CANCELLED')); return; } // Ctrl+C
+        if (ch === '\r' || ch === '\n' || ch === '') { cleanup(); stdout.write('\n'); resolvePromise(input); return; } // Enter / Ctrl+D
+        if (ch === '' || ch === '\b') { input = input.slice(0, -1); continue; } // Backspace/Delete
+        input += ch;
+      }
+    };
+    stdin.on('data', onData);
+  });
+}
+
+async function resolvePassword() {
+  if (process.env.QA_PASSWORD) return process.env.QA_PASSWORD;
+  if (!process.stdin.isTTY) {
+    console.error('QA_PASSWORD (env) wajib saat stdin bukan TTY — password bersama akun uji, JANGAN ditulis di repo');
+    process.exit(2);
+  }
+  let pw;
+  try {
+    pw = await promptHiddenPassword(`Password akun uji untuk ${ACCOUNT} (tersembunyi, Enter untuk kirim): `);
+  } catch (e) {
+    console.error(e.message === 'CANCELLED' ? 'Dibatalkan (Ctrl+C) — nol password terbaca.' : `Dibatalkan: ${e.message}`);
+    process.exit(130);
+  }
+  if (!pw) { console.error('Password kosong — dibatalkan.'); process.exit(2); }
+  return pw;
+}
 
 // ── env + gerbang ref produksi (pola IDENTIK menu-sweep.mjs/detail-routes.mjs) ──
 function readEnv(file) {
@@ -86,18 +141,92 @@ async function settle(page, extra = 0) {
   await page.waitForTimeout(SETTLE + extra);
 }
 
+// Pill aktif (InquiryIntakeWizardPage.jsx) berwarna solid navy `#1B4D8A` =
+// rgb(27, 77, 138) -- IDENTIK pola assert Direction "Import" di bawah.
+// Dipakai utk memastikan handleCreate BENAR melempar wizard balik ke step
+// yang errornya berasal, bukan cuma menebak dari "URL tidak berubah" (URL
+// memang TAK PERNAH berubah sampai Create sungguhan sukses -- itu assert
+// yang trivial-benar, bukan bukti jump-on-error jalan).
+async function isStepActive(page, stepLabel) {
+  const btn = page.locator(`button:text-is(${JSON.stringify(stepLabel)})`);
+  if (await btn.count() === 0) return false;
+  const bg = await btn.evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
+  return /27,\s*77,\s*138/.test(bg || '');
+}
+
+// Tombol "Create Inquiry" HANYA dirender saat `stepIdx===SK.length` (lihat
+// footer navigasi wizard -- "Next" dan "Create Inquiry" SALING EKSKLUSIF,
+// nol kemungkinan ambigu). Klik "Next" berulang sampai Review -- bukan klik
+// pill "N. Review" langsung -- supaya jalur ini tidak bergantung pada index
+// SK[] mana pun; dibatasi `maxSteps` iterasi supaya tak mungkin berputar
+// tanpa akhir kalau tombol Create ternyata tidak pernah muncul (gejala
+// APLIKASI, bukan skrip -- lihat pemanggil).
+async function goToReviewViaNext(page, maxSteps = 10) {
+  for (let i = 0; i < maxSteps; i++) {
+    if (await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false)) return true;
+    const nextBtn = page.locator('button:has-text("Next")').first();
+    if (await nextBtn.count() === 0) return false;
+    await nextBtn.click();
+    await settle(page, 300);
+  }
+  return await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false);
+}
+
+// Diagnostik dipakai SETELAH Create ditolak tanpa penjelasan dari assert
+// biasa, supaya akarnya terlihat dari output tanpa membuka browser headed
+// manual. Tiga sumber: (a) pill step mana yang AKTIF saat ini (background
+// navy solid rgb(27,77,138) -- IDENTIK isStepActive, tapi di sini discan
+// SEMUA pill sekali jalan, bukan mencocokkan satu label yang ditebak); (b)
+// SELURUH <span> ber-warna merah FieldError (color rgb(220,38,38) =
+// C.error `#DC2626`, InquiryIntakeWizardPage.jsx:128-131) yang SEDANG
+// tampil -- mencakup pesan under_docs/route_*/svc_* dkk, yang bentuk
+// teksnya berbeda-beda per field; (c) teks toast yang sedang tampil.
+// Screenshot full halaman disimpan ke `screenshotPath` supaya pemanggil
+// (manusia/alat baca gambar) bisa memverifikasi visual, bukan hanya
+// tekstual.
+async function captureRejectionDiagnostics(page, screenshotPath) {
+  const activePill = await page.evaluate(() => {
+    const hit = Array.from(document.querySelectorAll('button')).find((b) => {
+      const t = (b.textContent || '').trim();
+      return /^\d+\.\s/.test(t) && getComputedStyle(b).backgroundColor === 'rgb(27, 77, 138)';
+    });
+    return hit ? hit.textContent.trim() : null;
+  }).catch(() => null);
+  const fieldErrors = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('span').forEach((el) => {
+      if (getComputedStyle(el).color === 'rgb(220, 38, 38)') {
+        const t = (el.textContent || '').trim();
+        if (t) out.push(t);
+      }
+    });
+    return Array.from(new Set(out));
+  }).catch(() => []);
+  const toastText = (await page.locator('[class*="toast" i], [role="alert" i], [role="status" i]').allInnerTexts().catch(() => [])).filter(Boolean);
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  return { activePill, fieldErrors, toastText };
+}
+
 // XPath: cari div/label yang teksnya PERSIS sama dengan `label` (bukan
 // substring — mockup punya label pendek "Owner" yang jadi substring label
-// lain), lalu ambil elemen `tag` pertama di dalam SIBLING SETELAHNYA.
+// lain), lalu ambil elemen `tag` di SIBLING SETELAHNYA.
 // Mencocokkan struktur nyata Field({label, children}) di InquiryIntakeWizardPage.jsx:
 // <div><div>{label}{*}</div>{children}</div> — label dan children SIBLING,
-// bukan nested.
+// bukan nested. `children` punya DUA bentuk nyata yang keduanya harus
+// tertangkap: (a) `tag` langsung sebagai sibling TANPA div pembungkus (mis.
+// Number of containers -- <input> langsung), dan (b) `tag` BERSARANG di
+// dalam div pembungkus (mis. Total Weight/Volume/Estimated -- <div><input/></div>,
+// Importer of Record/Duties & Taxes -- <div><select/></div>), dan (c) `tag`
+// itu sendiri adalah div tanpa anak apa pun (Source, read-only). `//tag`
+// (descendant SAJA) menangkap (b) tapi BUKAN (a)/(c) -- `descendant-or-self::`
+// menangkap ketiganya sekaligus karena ia menyertakan node SIBLING itu
+// sendiri, bukan hanya anaknya.
 function fieldLocator(page, label, tag) {
   // normalize-space menyamakan "Importer of Record *" (asterisk ikut node teks
   // yang sama di beberapa browser) dengan "Importer of Record" — dicocokkan
   // dengan starts-with supaya asterisk wajib tidak menggagalkan pencocokan.
   return page.locator(
-    `xpath=//div[starts-with(normalize-space(.), ${JSON.stringify(label)})][not(.//div[starts-with(normalize-space(.), ${JSON.stringify(label)})])]/following-sibling::*[1]//${tag}`
+    `xpath=//div[starts-with(normalize-space(.), ${JSON.stringify(label)})][not(.//div[starts-with(normalize-space(.), ${JSON.stringify(label)})])]/following-sibling::*[1]/descendant-or-self::${tag}`
   ).first();
 }
 // SectionHeader (DealDetailPage.jsx): <div><h3>{title}</h3>{button Edit}</div> —
@@ -106,18 +235,38 @@ function sectionButton(page, title, buttonText) {
   return page.locator(`xpath=//h3[normalize-space(text())=${JSON.stringify(title)}]/parent::div//button[normalize-space(text())=${JSON.stringify(buttonText)}]`).first();
 }
 
+// Hasil dicari DI DALAM panel yang SEDANG TERBUKA saja, bukan di seluruh
+// halaman -- `button:has-text(resultText)` global bisa mengenai tombol
+// PEMICU LocationPicker LAIN yang sudah terisi (mis. pemicu POD lane 1
+// "Jakarta (Tanjung Priok)", yang ada LEBIH DULU di urutan DOM daripada
+// opsi dropdown lane 2 yang baru dibuka) dan `.first()` mengambil yang
+// salah, meninggalkan lane yang dimaksud tetap kosong TANPA error. Panel
+// = dua tingkat ancestor dari input pencarian (input -> span pencarian ->
+// div popover `position:fixed`, src/kit/LocationPicker.jsx:290-302); karena
+// hanya SATU LocationPicker pernah `open` di satu waktu sepanjang alur ini
+// (popover lain yang sudah dipilih otomatis unmount, `{open && (...)}`),
+// input pencarian ini SELALU unik di DOM saat dipanggil. Pemilihan opsi
+// memakai teks PERSIS (bukan substring) pada <span> NAMA lokasi SAJA
+// (`:has(span:text-is(...))`, bukan cocok ke seluruh tombol yang juga
+// memuat kode+tipe+negara tergabung tanpa pemisah) -- substring "Jakarta"
+// cocok DUA opsi sekaligus: "Jakarta (Tanjung Priok)" DAN "Soekarno-Hatta
+// Airport (Jakarta)".
 async function pickLocation(page, triggerLocator, searchText, resultText) {
   await triggerLocator.click();
-  await page.waitForSelector('input[placeholder="Search code or name"]', { timeout: 10000 });
-  await page.fill('input[placeholder="Search code or name"]', searchText);
+  const searchInput = page.locator('input[placeholder="Search code or name"]');
+  await searchInput.waitFor({ timeout: 10000 });
+  await searchInput.fill(searchText);
   await page.waitForTimeout(300);
-  const result = page.locator(`button:has-text("${resultText}")`).first();
+  const panel = page.locator('xpath=//input[@placeholder="Search code or name"]/ancestor::span[1]/parent::div');
+  const result = panel.locator(`button:has(span:text-is(${JSON.stringify(resultText)}))`).first();
   await result.waitFor({ timeout: 10000 });
   await result.click();
 }
 
 (async () => {
   console.log(`e2e-inquiry-wizard — ${BASE} · project ${REF} · akun ${ACCOUNT}\n`);
+
+  const PASSWORD = await resolvePassword();
 
   const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
@@ -183,7 +332,7 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await settle(page);
   await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
   await settle(page);
-  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta');
+  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
   await settle(page);
 
   // ── balik ke Langkah 2 — assert Direction otomatis Import, isi Customer
@@ -237,10 +386,19 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   const laneHeading = await page.locator('h4:has-text("Route options")').innerText().catch(() => '');
   check('Tabel lane menunjukkan 2 lane setelah "Add route option"', laneHeading.includes('(2)'), laneHeading);
   const lane2PodTrigger = page.locator('button:has-text("Port of Discharge")').first();
-  if (await lane2PodTrigger.count() > 0) {
-    await pickLocation(page, lane2PodTrigger, 'Jakarta', 'Jakarta');
+  const lane2PodWasEmpty = await lane2PodTrigger.count() > 0;
+  if (lane2PodWasEmpty) {
+    await pickLocation(page, lane2PodTrigger, 'Jakarta', 'Jakarta (Tanjung Priok)');
     await settle(page, 300);
   }
+  // Assert eksplisit pasca-pilih -- bukti lane 2 BENAR terisi (bukan lane 1
+  // yang kena klik berulang kalau pickLocation salah memilih tombol), dan
+  // nol placeholder POD kosong tersisa di MANA PUN tabel lane (dua lane,
+  // keduanya wajib terisi sampai titik ini).
+  const emptyPodCount = await page.locator('button:has-text("Port of Discharge")').count();
+  check('Nol tombol POD placeholder "Port of Discharge" (kosong) tersisa di tabel lane', emptyPodCount === 0, `tersisa: ${emptyPodCount}`);
+  const jakartaPodCount = await page.locator('button:has-text("Jakarta (Tanjung Priok)")').count();
+  check('Lane 2 (dan lane 1) sama-sama menampilkan "Jakarta (Tanjung Priok)" di kolom POD', jakartaPodCount >= 2, `jumlah tombol ber-"Jakarta (Tanjung Priok)": ${jakartaPodCount}`);
 
   // ── Langkah 4 — Cargo: Weight "1,5" / Volume "2,25" (TD-285, FIX 2) ────
   await page.locator('button:text-is("4. Cargo")').click();
@@ -266,18 +424,37 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await settle(page, 300);
   check('Estimated "abc" memunculkan "Angka tidak dikenali" inline', await page.locator('text="Angka tidak dikenali"').count() > 0);
 
-  // coba Create sementara "abc" masih di field -- harus DITOLAK (lompat balik
-  // ke langkah yang error, toast peringatan, BUKAN membuat inquiry).
+  // coba Create sementara "abc" masih di field -- harus DITOLAK: handleCreate
+  // (stepErrors) melempar wizard BALIK ke step "Commercial" begitu diklik.
+  // Tombol dipastikan TERLIHAT dulu sebelum diklik (klik "membabi buta" ke
+  // selector yang belum tentu match menutupi akar masalah sesungguhnya kalau
+  // tombolnya tidak ada) -- dan assert "ditolak" memeriksa DUA hal, bukan
+  // satu: URL tidak berubah (ini SELALU benar sampai Create sungguhan
+  // sukses, jadi sendirian ia trivial) DAN wizard benar-benar pindah ke pill
+  // "6. Commercial" (bukti nyata jalur jump-on-error jalan, bukan sekadar
+  // klik yang tidak mengenai
+  // apa pun).
   await page.locator('button:text-is("7. Review")').click();
   await settle(page);
   const createBtnLocator = page.locator('button:text-is("Create Inquiry")');
+  const createVisibleBeforeBadAttempt = await createBtnLocator.isVisible().catch(() => false);
+  check('Tombol "Create Inquiry" terlihat di step Review (sebelum percobaan Create yang ditolak)', createVisibleBeforeBadAttempt);
   const urlBeforeBadCreate = page.url();
-  if (await createBtnLocator.count() > 0) await createBtnLocator.click();
+  if (createVisibleBeforeBadAttempt) await createBtnLocator.click();
   await settle(page, 500);
   check('Create DITOLAK selama Estimated "abc" tak dikenali (URL tidak pindah ke Detail Inquiry)',
     page.url() === urlBeforeBadCreate, page.url());
+  check('Wizard berpindah balik ke step "6. Commercial" setelah Create ditolak (jump-on-error stepErrors)',
+    await isStepActive(page, '6. Commercial'));
 
-  // perbaiki ke nilai yang benar, lanjutkan alur sukses.
+  // handleCreate melompat ke step PERTAMA yang errornya ditemukan
+  // stepErrors() (urutan: cust_account, svc_*, under_*, route_*, cargo_*,
+  // commercial_*). Klik pill "6. Commercial" EKSPLISIT di sini -- bukan
+  // hanya mengandalkan lompatan otomatis di atas -- supaya alur tetap aman
+  // kalau field lain kebetulan ikut tidak valid (stepErrors menemukan error
+  // itu lebih dulu dan wizard melompat ke step lain; tanpa klik eksplisit
+  // ini, fieldLocator('Estimated...') berikutnya menunggu 30 detik lalu
+  // timeout).
   await page.locator('button:text-is("6. Commercial")').click();
   await settle(page);
   await estInput.fill('1.500.000');
@@ -285,12 +462,21 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await settle(page, 300);
   check('"Angka tidak dikenali" hilang setelah Estimated diperbaiki', await page.locator('text="Angka tidak dikenali"').count() === 0);
 
-  // ── Create sungguhan — tangkap inquiry_no dari RESPON RPC (kebenaran
-  // network-level, bukan menebak dari toast yang bisa hilang sebelum dibaca). ──
-  await page.locator('button:text-is("7. Review")').click();
-  await settle(page);
+  // ── Create sungguhan — klik "Next" (BUKAN pill "N. Review") sampai tombol
+  // "Create Inquiry" terlihat, sesuai instruksi review: jalur ini tidak
+  // bergantung pada index SK[] mana pun. Assert eksplisit tombol TERLIHAT
+  // sebelum diklik -- kalau tombolnya TIDAK PERNAH muncul walau sudah di
+  // step terakhir, itu gejala APLIKASI (dilaporkan apa adanya, bukan
+  // ditambal di sini). Tangkap inquiry_no dari RESPON RPC (kebenaran
+  // network-level, bukan menebak dari toast yang bisa hilang sebelum
+  // dibaca). ──
+  const reachedReview = await goToReviewViaNext(page);
+  check('Step Review tercapai via "Next" setelah Estimated diperbaiki', reachedReview);
+  const createVisibleForReal = await createBtnLocator.isVisible().catch(() => false);
+  check('Tombol "Create Inquiry" terlihat sebelum diklik (percobaan sungguhan)', createVisibleForReal);
+
   const rpcRespPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
-  await page.locator('button:text-is("Create Inquiry")').click();
+  if (createVisibleForReal) await createBtnLocator.click();
   const rpcResp = await rpcRespPromise;
   let inquiryNo = null, inquiryId = null;
   if (rpcResp && rpcResp.ok()) {
@@ -299,10 +485,32 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
     inquiryNo = row?.inquiry_no || null;
     inquiryId = row?.id || null;
   }
-  check('RPC create_inquiry_with_lanes merespon sukses', !!rpcResp && rpcResp.ok(), rpcResp ? `HTTP ${rpcResp.status()}` : 'nol respon tertangkap');
+  const rpcOk = check('RPC create_inquiry_with_lanes merespon sukses', !!rpcResp && rpcResp.ok(), rpcResp ? `HTTP ${rpcResp.status()}` : 'nol respon tertangkap');
   await settle(page, 800);
+  // Diagnostik (dicetak apa adanya, TIDAK ditambal di sini) kalau Create
+  // ditolak lagi walau Estimated sudah benar -- berarti stepErrors()
+  // menemukan error LAIN lebih dulu (lihat urutan di dalamnya: cust_account,
+  // svc_*, under_*, route_*, cargo_*, commercial_*) dan handleCreate kembali
+  // ke `return` sebelum RPC sempat dipanggil (RPC TIDAK PERNAH menolak --
+  // ia tidak pernah dipanggil sama sekali, konsisten dengan rpcResp null di
+  // sini). Pill aktif menunjukkan KE STEP APA ia melompat; FieldError
+  // menunjukkan KUNCI mana yang gagal; screenshot untuk verifikasi visual.
+  if (!rpcOk) {
+    const shotPath = '/tmp/e2e-wizard-after-reject.png';
+    const diag = await captureRejectionDiagnostics(page, shotPath);
+    console.log(`  ⚠ Diagnostik (Create ditolak client-side, RPC tak terpanggil) --`);
+    console.log(`      pill aktif saat ini: ${diag.activePill || '(tak terdeteksi -- nol pill berwarna navy solid)'}`);
+    console.log(`      FieldError merah terlihat: ${JSON.stringify(diag.fieldErrors)}`);
+    console.log(`      toast terlihat: ${JSON.stringify(diag.toastText)}`);
+    console.log(`      screenshot: ${shotPath} · URL saat ini: ${page.url()}`);
+  }
   check('Toast sukses tampil', (await page.locator('text=/Inquiry created/i').count()) > 0 || !!inquiryNo);
-  check('Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/[0-9a-f-]+$/i.test(page.url()), page.url());
+  // Rute Detail Inquiry sungguhan = /crm/inquiry/status-history/<id> (menu
+  // "Inquiry Status & History" -- src/routes/menu-skeleton.js, redirect lama
+  // /crm/inquiry/:id -> /crm/inquiry/status-history/:id), BUKAN
+  // /crm/inquiry/<id> polos; `(?:status-history\/)?` opsional supaya tetap
+  // cocok kalau rutenya berubah kembali ke bentuk pendek di masa depan.
+  check('Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page.url()), page.url());
 
   console.log(`\n  → Nomor inquiry yang dibuat: ${inquiryNo || '(tidak tertangkap dari respon RPC — cek manual di Detail Inquiry/DB)'}  ${inquiryId ? `(id: ${inquiryId})` : ''}`);
 

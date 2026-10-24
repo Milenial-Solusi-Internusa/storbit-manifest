@@ -9,7 +9,7 @@ Skrip QA yang **di-commit** (keputusan Den 21 Sep 2026, #12). Tiga gate determin
 | `menu-sweep.mjs` | Buka semua tujuan menu (`KNOWN_MENU_IDS` + probe tak sah) untuk beberapa akun uji, rekam fingerprint (hash, bukan teks), `--compare` dengan baseline | lokal, per giliran |
 | `detail-routes.mjs` | **[BARU, G2]** Uji rute **detail ber-`:id`** — bagian yang tidak bisa dibuktikan sweep (sweep hanya membuka tujuan MENU, cold load): **checklist butir 2** (refresh di detail → konteks bertahan) & **butir 4** (deep-link id tak sah → keadaan wajar, bukan layar putih), plus klik baris mengubah alamat, tombol kembali → path daftar induk, Back/Forward. Ber-`--suite <modul>`; hari ini **dua** suite: `logistics-warehouse` (Detail SP · Picking · Surat Jalan = 3 flow × 5 butir + 3 deep-link palsu = **18** cek) dan **`crm` [BARU, G3]** (Detail Deal · Detail Quotation · Detail Customer · Detail SO = 4 flow × 5 butir + 5 deep-link palsu = **25** cek). Suite baru ditambahkan per giliran G4–G6 | lokal, per giliran |
 | `butir5.mjs` | Checklist butir 5 (role terbatas): aksi ber-gate ROLE hilang untuk user yang boleh membuka halamannya tapi tak berhak — G2: tombol "Input SP". Butuh grant menu sementara + **wajib dicabut** (resep di bawah) | lokal, tiap giliran yang mengubah gate |
-| `e2e-inquiry-wizard.mjs` | **[BARU, Putaran 4 Tahap 4B]** Mengisi FORM sungguhan (bukan cuma membuka tujuan) — satu alur ujung-ke-ujung wizard Intake Form baru (`InquiryIntakeWizardPage.jsx`): Prospect+account, Customs Clearance, POL/POD (assert Direction auto Import), Customer Role, Undername+IOR+Supporting docs, container FCL 20', dua lane, Weight/Volume/Estimated id-ID, Create → assert Route Options (2 baris) + POL/POD terkunci saat edit; assert negatif (angka tak dikenali memblokir Create, kartu Warehousing/General Trading absen). Lihat komentar kepala berkas utk perintah jalan | lokal, per giliran yang menyentuh wizard |
+| `e2e-inquiry-wizard.mjs` | **[BARU, Putaran 4 Tahap 4B]** Mengisi FORM sungguhan (bukan cuma membuka tujuan) — satu alur ujung-ke-ujung wizard Intake Form baru (`InquiryIntakeWizardPage.jsx`): Prospect+account, Customs Clearance, POL/POD (assert Direction auto Import), Customer Role, Undername+IOR+Supporting docs, container FCL 20', dua lane, Weight/Volume/Estimated id-ID, Create → assert Route Options (2 baris) + POL/POD terkunci saat edit; assert negatif (angka tak dikenali memblokir Create, kartu Warehousing/General Trading absen). Password: env `QA_PASSWORD` ATAU, kalau dikosongkan di terminal interaktif, prompt tersembunyi (nol echo, nol tulis ke berkas). Lihat komentar kepala berkas utk perintah jalan | lokal, per giliran yang menyentuh wizard |
 
 ## Sweep — cara pakai
 
@@ -35,6 +35,28 @@ QA_PASSWORD='<password bersama akun uji>' node scripts/qa/menu-sweep.mjs \
 - ⛔ **AKAR SEBENARNYA dari insiden di atas — dikoreksi 22 Sep 2026 sesudah mode `menu` diulang bersih; baca ini SEBELUM bullet di atas:** penyebabnya **bukan kontensi**, melainkan **`npm run build` yang dijalankan selama `vite preview` melayani `dist/`** (di G2: oleh agen dokumentasi, di latar, untuk mengukur ulang gate). Rebuild mengganti nama chunk ber-hash, sehingga halaman yang sedang dibuka meminta chunk yang sudah tidak ada → **404 atas chunk**, app tak pernah mount, `lastMenu`/`lastPath` null, `surfaceHash` = hash string kosong. Buktinya: `restore` yang berjalan **berbarengan** justru **bersih**, dan 404 mengenai *sumber daya tertentu*, bukan melambat seperti khas beban. **ATURAN: jangan menjalankan build — termasuk lewat agen/alat lain — selama `vite preview` melayani `dist/`.** Saran "mode dijalankan berurutan" + gerbang `gagal-muat N > 0` di bullet sebelumnya **tetap berlaku sebagai kehati-hatian**, tapi keduanya bukan obat untuk kelas kegagalan ini. Mode `menu` yang diulang **sendirian, tanpa build berjalan** → `✔ identik (5/5 akun)`, gagal-muat 0. ✅ **Aturan ini TERBUKTI di G3 (23 Sep 2026):** ketiga mode dijalankan **berurutan** dan tidak ada build yang menimpa `dist/` selama sweep → **2.910 pembanding, ketiga mode `✔ identik (5/5 akun)`, `gagal-muat 0` di seluruh 15 akun-run, NOL run dibuang** — lawan dua run yang dibuang di G2.
 - ⚠️ **Baca kata "identik" bersama CAKUPANNYA (skrip diperkeras 22 Sep 2026, G2).** Pemicunya: satu run G2 gagal login **kelima** akun, dan skrip versi lama tetap mencetak `✔ identik dengan baseline` padahal **nol data terkumpul** — kesimpulan terbalik dari kenyataan. Sekarang: **nol akun berdata → `✖ pembandingan DIBATALKAN — nol data` + exit 1** (nol data = *tidak ada pembanding*, bukan nol perbedaan); hasil jalur sweep **selalu menyebut cakupan** — `✔ identik dengan baseline (5/5 akun)` atau `✖ … (HANYA 3/5 akun)` — dan **exit code gagal juga ketika nol perbedaan tapi akun tak lengkap**. ⚠️ Baris cakupan itu **hanya** dicetak jalur sweep (`--compare`); jalur **`--diff <dirA> <dirB>`** tetap mencetak `✔ identik` polos, jadi kalau memakai `--diff`, hitung sendiri berapa akun yang ada di kedua folder.
 - 💡 **Jangan saring output sweep lewat `| tail -N`.** Di G2 outputnya disalurkan begitu dan progres tak terlihat ±15 menit — sulit membedakan "masih jalan" dari "menggantung". Pakai `tee` penuh (mis. `… | tee scripts/qa/out/<label>.log`) supaya log lengkap tersimpan **dan** progres terlihat; kalau sweep diam tanpa kemajuan, periksa `ps -o %cpu,time` alih-alih menunggu.
+
+## `e2e-inquiry-wizard.mjs` — cara pakai
+
+```bash
+# 1. jalankan build yang mau diuji, layani statis
+npm run build && npx vite preview --port 4173
+
+# 2. env (.env.local atau --env) harus menunjuk STAGING; skrip menolak ref produksi.
+#    DUA CARA memberi password, pilih satu:
+#    a) lewat env (tanpa prompt):
+QA_PASSWORD='<password akun uji>' node scripts/qa/e2e-inquiry-wizard.mjs --base http://localhost:4173
+#    b) prompt TERSEMBUNYI di terminal interaktif (QA_PASSWORD dikosongkan) --
+#       karakter TIDAK TAMPIL SAMA SEKALI (bukan tanda bintang), dipakai hanya
+#       di memori untuk login GoTrue, tidak pernah ditulis ke berkas/log:
+node scripts/qa/e2e-inquiry-wizard.mjs --base http://localhost:4173
+```
+
+Opsi: `--account <email>` (default `test@msi.com`) · `--env .env.local` · `--settle <ms>` (default 1200) · `--headed` (lihat browsernya).
+
+⚠️ **Berbeda dari `menu-sweep.mjs`/`detail-routes.mjs` — skrip ini mengisi FORM sungguhan, bukan cuma membuka tujuan.** **Setiap run yang LULUS sampai Create membuat SATU baris inquiry baru di staging** (nomor dicetak di ringkasan akhir, mis. `MSI-INQ-X-2026-00XX`) — ini bukan efek samping yang tidak disengaja, melainkan konsekuensi langsung dari menguji alur Create ujung-ke-ujung. Jangan jalankan berulang kali tanpa alasan hanya untuk "memastikan" — setiap run menambah satu baris data uji permanen di tabel `inquiries`/`inquiry_lanes` staging.
+
+Diagnostik (opsional, aktif otomatis kalau ada assert Create yang gagal tanpa penjelasan): pill step yang aktif, seluruh teks `FieldError` merah yang terlihat, teks toast, dan screenshot halaman ke `/tmp/e2e-wizard-after-reject.png` — dicetak ke stdout, tidak pernah memuat password.
 
 ## `env-drift-check` — RUTINITAS SEBELUM UAT (Tahap 3 TD-279, berlaku 28 Sep 2026)
 
