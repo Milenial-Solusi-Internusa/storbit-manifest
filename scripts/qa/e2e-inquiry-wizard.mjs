@@ -263,6 +263,39 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await result.click();
 }
 
+// ── Ronde "Lane Editor", Tahap B — helper utk blok "Route Options" (Detail
+// Inquiry, DealDetailPage.jsx) DAN tabel lane wizard (keduanya kini memakai
+// `src/kit/LaneTable.jsx` yang sama sejak ekstraksi kit). Struktur nyata
+// (LaneTable.jsx:48-127): <div wrapper><div>{h4 "Route options (N)"}{Add
+// lane?}</div><div border>{row header grid}{row data grid}*N</div></div> --
+// h4 adalah SIBLING dari div bordered-container (following-sibling dari
+// PARENT h4, bukan dari h4 itu sendiri). Baris data dihitung dari STRUKTUR
+// (anak container dikurangi 1 baris header), bukan dari teks heading "(N)"
+// itu sendiri -- heading diturunkan dari state yang SAMA yang mau
+// diverifikasi, jadi menghitung lewat heading saja tautologis.
+function laneTableContainer(page) {
+  return page.locator('xpath=//h4[starts-with(normalize-space(.), "Route options")]/parent::div/following-sibling::div[1]').first();
+}
+// Baris index-0 = header (background tokens.bg, bukan baris data) -- lane ke-i
+// (0-based) = anak ke (i+1). `nth()` di-resolve ULANG setiap dipanggil (lazy),
+// aman dipakai berkali-kali setelah state React berubah (reorder/add/remove)
+// tanpa memegang handle basi dari render sebelumnya.
+function laneRow(page, i) { return laneTableContainer(page).locator('> div').nth(i + 1); }
+async function laneRowCount(page) { return Math.max(0, await laneTableContainer(page).locator('> div').count() - 1); }
+
+// FieldWrap (DealDetailPage.jsx, dealOverviewFieldInputs.jsx:41-48):
+// <div><span>{label}</span>{sibling}</div> -- label SPAN (beda dari
+// fieldLocator wizard di atas, yang label-nya DIV/Field()). Dipakai utk
+// baca nilai read-only "Port of Loading"/"Port of Discharge" section
+// "Route & Terms" (DealDetailPage.jsx:1954-1955, SELALU editing={false} --
+// baca langsung inquiry.pol/pod, mirror kolom yang disinkron RPC
+// update_inquiry_lanes dari lane PERTAMA setelah urutan baru).
+function dealFieldValue(page, label) {
+  return page.locator(
+    `xpath=//span[starts-with(normalize-space(.), ${JSON.stringify(label)})][not(.//span[starts-with(normalize-space(.), ${JSON.stringify(label)})])]/following-sibling::*[1]`
+  ).first();
+}
+
 (async () => {
   console.log(`e2e-inquiry-wizard — ${BASE} · project ${REF} · akun ${ACCOUNT}\n`);
 
@@ -380,11 +413,18 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   const nContainersInput = fieldLocator(page, 'Number of containers', 'input');
   await nContainersInput.fill('2');
 
+  // "Add route option" (InquiryIntakeWizardPage.jsx:790, `startLanes`) --
+  // tombol wizard-LOKAL, DI LUAR LaneTable, yang mentransisikan laneMode
+  // false->true dan men-seed 2 lane langsung. BUKAN tombol "Add lane" milik
+  // LaneTable sendiri (itu baru muncul SESUDAH laneMode true, utk menambah
+  // lane ke-3+) -- teksnya TIDAK berubah oleh kit extraction, nol regresi
+  // di titik ini (koreksi atas kesimpulan awal yang sempat salah).
   await page.locator('button:has-text("Add route option")').click();
   await settle(page);
-  const laneRows = page.locator('div:has(> div > h4:text-is("Route options (2)")) ~ div table, table'); // lihat assert di bawah utk hitungan baris sungguhan
   const laneHeading = await page.locator('h4:has-text("Route options")').innerText().catch(() => '');
-  check('Tabel lane menunjukkan 2 lane setelah "Add route option"', laneHeading.includes('(2)'), laneHeading);
+  check('Heading lane menunjukkan 2 lane setelah "Add lane" (sanity teks)', laneHeading.includes('(2)'), laneHeading);
+  const laneCountAfterAdd = await laneRowCount(page);
+  check('Tabel lane (struktur, bukan teks heading) punya tepat 2 baris setelah "Add lane"', laneCountAfterAdd === 2, `dapat: ${laneCountAfterAdd}`);
   const lane2PodTrigger = page.locator('button:has-text("Port of Discharge")').first();
   const lane2PodWasEmpty = await lane2PodTrigger.count() > 0;
   if (lane2PodWasEmpty) {
@@ -414,6 +454,17 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   const volumeAfterBlur = await volumeInput.inputValue();
   check('Weight "1,5" diformat ulang id-ID saat blur (bukan dibuang/NaN)', weightAfterBlur === '1,5', `dapat: "${weightAfterBlur}"`);
   check('Volume "2,25" diformat ulang id-ID saat blur', volumeAfterBlur === '2,25', `dapat: "${volumeAfterBlur}"`);
+
+  // ── Langkah 5 — Additional Services: pilih "Cargo Insurance" (BUKAN
+  // "Undername" -- sudah ada checkbox Undername terpisah di langkah lain,
+  // menghindari pencampuran konsep) supaya assert Review "Additional
+  // Services bila diisi" (5a) teruji sungguhan, bukan trivial-kosong.
+  // STEPS_DEFAULT (service_type Customs Clearance, bukan Door-to-Door)
+  // memuat 'addl' sebagai step kelima -- InquiryIntakeWizardPage.jsx:96. ──
+  await page.locator('button:text-is("5. Additional Services")').click();
+  await settle(page);
+  await page.locator('button:has-text("Cargo Insurance")').click();
+  await settle(page, 300);
 
   // ── Langkah 6 — Commercial: assert negatif "abc" dulu (FIX 2), baru isi
   // Estimated yang benar "1.500.000". ─────────────────────────────────────
@@ -472,6 +523,25 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   // dibaca). ──
   const reachedReview = await goToReviewViaNext(page);
   check('Step Review tercapai via "Next" setelah Estimated diperbaiki', reachedReview);
+
+  // ── Isi Review step (5a) — Cargo/Undername/Additional Services, SEBELUM
+  // klik "Create Inquiry". Label persis ReviewRow (InquiryIntakeWizardPage.jsx
+  // fungsi ReviewStep, baris 1054-1152); ReviewRow = <div><div>{label}</div>
+  // <span>{value}</span></div> -- bentuk SAMA dgn Field() yang fieldLocator
+  // sudah dibangun utk, jadi dipakai ulang apa adanya. ──────────────────────
+  if (reachedReview) {
+    const weightReview = (await fieldLocator(page, 'Total Weight (KG)', 'span').innerText().catch(() => '')).trim();
+    check('Review step menampilkan Total Weight (KG) "1,5"', weightReview === '1,5', `dapat: "${weightReview}"`);
+    const volumeReview = (await fieldLocator(page, 'Volume (CBM)', 'span').innerText().catch(() => '')).trim();
+    check('Review step menampilkan Volume (CBM) "2,25"', volumeReview === '2,25', `dapat: "${volumeReview}"`);
+    const iorReview = (await fieldLocator(page, 'Importer of Record', 'span').innerText().catch(() => '')).trim();
+    check('Review step menampilkan Importer of Record "PT Sentra Impor Nusantara"', iorReview.includes('PT Sentra Impor Nusantara'), `dapat: "${iorReview}"`);
+    const dutiesReview = (await fieldLocator(page, 'Duties & Taxes', 'span').innerText().catch(() => '')).trim();
+    check('Review step menampilkan Duties & Taxes "Included in price"', dutiesReview === 'Included in price', `dapat: "${dutiesReview}"`);
+    const addlReview = (await fieldLocator(page, 'Additional Services', 'span').innerText().catch(() => '')).trim();
+    check('Review step menampilkan Additional Services "Cargo Insurance" (bila diisi)', addlReview.includes('Cargo Insurance'), `dapat: "${addlReview}"`);
+  }
+
   const createVisibleForReal = await createBtnLocator.isVisible().catch(() => false);
   check('Tombol "Create Inquiry" terlihat sebelum diklik (percobaan sungguhan)', createVisibleForReal);
 
@@ -514,14 +584,28 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
 
   console.log(`\n  → Nomor inquiry yang dibuat: ${inquiryNo || '(tidak tertangkap dari respon RPC — cek manual di Detail Inquiry/DB)'}  ${inquiryId ? `(id: ${inquiryId})` : ''}`);
 
-  // ── Detail Inquiry: blok "Route Options" berisi 2 baris + POL/POD
-  // read-only saat edit section Route & Terms (FIX 5). ────────────────────
+  // ── Detail Inquiry: blok "Route Options" (SectionHeader <h3> + LaneTable
+  // <h4> bersarang sejak kit extraction -- lihat laneTableContainer di atas)
+  // berisi 2 baris, keduanya Sea FCL/Container (verifikasi fix 5c end-to-end,
+  // item a), + POL/POD read-only saat edit section Route & Terms (FIX 5). ──
   await settle(page, 800);
-  const routeOptionsHeading = await page.locator('h4:has-text("Route Options")').innerText().catch(() => '');
-  check('Blok "Route Options" tampil di Detail Inquiry', routeOptionsHeading.includes('Route Options'), routeOptionsHeading);
-  check('Blok "Route Options" berisi 2 baris', routeOptionsHeading.includes('(2)'), routeOptionsHeading);
-  const routeOptionsRows = await page.locator('h4:has-text("Route Options") ~ div table tbody tr, h4:has-text("Route Options") + div table tbody tr').count().catch(() => 0);
-  check('Tabel Route Options punya tepat 2 <tr>', routeOptionsRows === 2, `dapat: ${routeOptionsRows}`);
+  check('Section "Route Options" (SectionHeader) tampil di Detail Inquiry', await page.locator('h3:text-is("Route Options")').count() > 0);
+  const routeOptionsHeading = await page.locator('h4:has-text("Route options")').innerText().catch(() => '');
+  check('Heading LaneTable menunjukkan 2 lane (sanity teks)', routeOptionsHeading.includes('(2)'), routeOptionsHeading);
+  const detailLaneCount = await laneRowCount(page);
+  check('Blok Route Options (struktur, bukan teks heading) punya tepat 2 baris', detailLaneCount === 2, `dapat: ${detailLaneCount}`);
+
+  // item (a) -- Mode/Load unit kedua lane harus Sea FCL/Container (kontainer
+  // dipilih "FCL 20'" di wizard; sebelum fix 5c, blankLane/startLanes
+  // hardcode Sea LCL/CBM utk jalur lane-mode -- gejala MSI-INQ-X-2026-0024).
+  if (detailLaneCount >= 2) {
+    const row0ModeUnit = await laneRow(page, 0).locator('select').evaluateAll((els) => els.map((el) => el.value));
+    const row1ModeUnit = await laneRow(page, 1).locator('select').evaluateAll((els) => els.map((el) => el.value));
+    check('Lane 1 Detail Inquiry menunjukkan Mode "Sea FCL"', row0ModeUnit[0] === 'Sea FCL', `dapat: ${JSON.stringify(row0ModeUnit)}`);
+    check('Lane 1 Detail Inquiry menunjukkan Load unit "Container"', row0ModeUnit[1] === 'Container', `dapat: ${JSON.stringify(row0ModeUnit)}`);
+    check('Lane 2 Detail Inquiry menunjukkan Mode "Sea FCL"', row1ModeUnit[0] === 'Sea FCL', `dapat: ${JSON.stringify(row1ModeUnit)}`);
+    check('Lane 2 Detail Inquiry menunjukkan Load unit "Container"', row1ModeUnit[1] === 'Container', `dapat: ${JSON.stringify(row1ModeUnit)}`);
+  }
 
   const routeEditBtn = sectionButton(page, 'Route & Terms', 'Edit');
   check('Tombol Edit "Route & Terms" ditemukan', await routeEditBtn.count() > 0);
@@ -533,7 +617,84 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
     check('LocationPicker POL/POD TIDAK muncul (read-only, bukan editable)',
       (await page.locator('button:has-text("Select port of loading…")').count()) === 0
       && (await page.locator('button:has-text("Select port of discharge or city…")').count()) === 0);
+    // editingSection adalah state TUNGGAL (satu section aktif sekaligus,
+    // dealOverviewFieldInputs.jsx) -- Cancel dulu sebelum masuk edit Route
+    // Options, kalau tidak klik Edit di bawah tidak akan berefek.
+    const routeCancelBtn = sectionButton(page, 'Route & Terms', 'Cancel');
+    if (await routeCancelBtn.count() > 0) { await routeCancelBtn.click(); await settle(page, 300); }
   }
+
+  // ── item (c): Edit Route Options — tambah lane ke-3, tukar urutan, Save,
+  // reload, assert jumlah+urutan persisten DAN POL/POD header (mirror sync
+  // inquiries.pol/pod) mengikuti lane pertama baru. Lane ke-3 SENGAJA dibalik
+  // (POL Jakarta / POD Singapore, kebalikan lane 1 & 2 yang sama-sama
+  // Singapore→Jakarta) supaya hasil reorder bisa DIBUKTIKAN dari konten,
+  // bukan ditebak. ──────────────────────────────────────────────────────────
+  const routeOptionsEditBtn = sectionButton(page, 'Route Options', 'Edit');
+  check('Tombol Edit "Route Options" ditemukan', await routeOptionsEditBtn.count() > 0);
+  let laneEditorOk = false;
+  if (await routeOptionsEditBtn.count() > 0) {
+    await routeOptionsEditBtn.click();
+    await settle(page, 300);
+    await page.locator('button:has-text("Add lane")').click();
+    await settle(page, 300);
+    const countAfterAdd3rd = await laneRowCount(page);
+    check('Lane ke-3 bertambah (3 baris) setelah "Add lane" di editor Route Options', countAfterAdd3rd === 3, `dapat: ${countAfterAdd3rd}`);
+    if (countAfterAdd3rd === 3) {
+      const lane3Pol = laneRow(page, 2).locator('> div').nth(1).locator('button').first();
+      await pickLocation(page, lane3Pol, 'Jakarta', 'Jakarta (Tanjung Priok)');
+      await settle(page, 300);
+      const lane3Pod = laneRow(page, 2).locator('> div').nth(2).locator('button').first();
+      await pickLocation(page, lane3Pod, 'Singapore', 'Singapore');
+      await settle(page, 300);
+
+      // Tukar urutan: klik "Move up" baris index-2 (lane-3 pindah ke index-1),
+      // lalu klik "Move up" baris index-1 (pindah lagi ke index-0). Locator
+      // di-resolve ULANG tiap klik (lazy) -- aman walau konten di posisi itu
+      // berubah antar-klik.
+      await laneRow(page, 2).locator('button[title="Move up"]').click();
+      await settle(page, 300);
+      await laneRow(page, 1).locator('button[title="Move up"]').click();
+      await settle(page, 300);
+
+      const row0PolBefore = (await laneRow(page, 0).locator('> div').nth(1).innerText().catch(() => '')).trim();
+      const row0PodBefore = (await laneRow(page, 0).locator('> div').nth(2).innerText().catch(() => '')).trim();
+      check('Sebelum Save: baris 1 (hasil reorder) POL "Jakarta (Tanjung Priok)"', row0PolBefore.includes('Jakarta (Tanjung Priok)'), `dapat: "${row0PolBefore}"`);
+      check('Sebelum Save: baris 1 (hasil reorder) POD "Singapore"', row0PodBefore.includes('Singapore'), `dapat: "${row0PodBefore}"`);
+
+      const laneSaveBtn = sectionButton(page, 'Route Options', 'Save');
+      const laneRpcPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/update_inquiry_lanes'), { timeout: 20000 }).catch(() => null);
+      await laneSaveBtn.click();
+      const laneRpcResp = await laneRpcPromise;
+      laneEditorOk = check('RPC update_inquiry_lanes merespon sukses', !!laneRpcResp && laneRpcResp.ok(), laneRpcResp ? `HTTP ${laneRpcResp.status()}` : 'nol respon tertangkap');
+      await settle(page, 500);
+      // Toast TIDAK diasumsikan teksnya persis "Changes saved" -- kalau beda,
+      // dilaporkan apa adanya (bukan ditambal diam-diam di kode/skrip). Bukti
+      // UTAMA keberhasilan (c) adalah respons RPC di atas + data pasca-reload
+      // di bawah, bukan teks toast ini.
+      const laneToastText = (await page.locator('[class*="toast" i], [role="alert" i], [role="status" i]').allInnerTexts().catch(() => [])).filter(Boolean);
+      check('Toast tampil setelah Save Route Options (teks dicatat, tidak diasumsikan persis)', laneToastText.length > 0, `teks sebenarnya: ${JSON.stringify(laneToastText)}`);
+
+      // Reload PENUH (bukan navigasi SPA) -- data yang diverifikasi di bawah
+      // wajib datang dari DB lewat refetch, bukan state klien yang kebetulan
+      // masih benar.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await settle(page, 800);
+
+      const countAfterReload = await laneRowCount(page);
+      check('Pasca-reload: jumlah lane tetap 3 (persisten)', countAfterReload === 3, `dapat: ${countAfterReload}`);
+      const row0PolAfter = (await laneRow(page, 0).locator('> div').nth(1).innerText().catch(() => '')).trim();
+      const row0PodAfter = (await laneRow(page, 0).locator('> div').nth(2).innerText().catch(() => '')).trim();
+      check('Pasca-reload: urutan lane persisten -- baris 1 POL "Jakarta (Tanjung Priok)"', row0PolAfter.includes('Jakarta (Tanjung Priok)'), `dapat: "${row0PolAfter}"`);
+      check('Pasca-reload: urutan lane persisten -- baris 1 POD "Singapore"', row0PodAfter.includes('Singapore'), `dapat: "${row0PodAfter}"`);
+
+      const headerPol = (await dealFieldValue(page, 'Port of Loading').innerText().catch(() => '')).trim();
+      const headerPod = (await dealFieldValue(page, 'Port of Discharge').innerText().catch(() => '')).trim();
+      check('POL/POD "Route & Terms" (mirror inquiries.pol/pod) mengikuti lane pertama baru -- POL "Jakarta (Tanjung Priok)"', headerPol.includes('Jakarta (Tanjung Priok)'), `dapat: "${headerPol}"`);
+      check('POL/POD "Route & Terms" (mirror inquiries.pol/pod) mengikuti lane pertama baru -- POD "Singapore"', headerPod.includes('Singapore'), `dapat: "${headerPod}"`);
+    }
+  }
+  if (!laneEditorOk) console.log('  ⚠ Editor Route Options tidak sampai Save sukses -- lihat hasil check() di atas untuk titik gagalnya.');
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
