@@ -22,7 +22,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ChevronLeft, ChevronRight, X, Check, Anchor, MapPin,
-  AlertTriangle, Ship, Shield, Home, Truck, Plus, Trash2, Loader2,
+  AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -32,6 +32,8 @@ import { isSuperAdmin, isManagerOrAbove } from '../../lib/roles';
 import { readMoneyInput, formatIdNumber } from '../../lib/numberFormat';
 import AccountPicker from '../../components/AccountPicker';
 import LocationPicker from '../../kit/LocationPicker';
+import { LaneTable } from '../../kit/LaneTable';
+import { deriveLaneMode, unitForMode } from '../../kit/laneUtils';
 import { fetchOperationalRoster } from './salesRoster';
 import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
 
@@ -182,14 +184,25 @@ function RadioPill({ value, current, onClick, children }) {
 }
 function Chevron() { return <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></span>; }
 
-// ── mode-default load unit, meniru modeOf()/startLanes mockup (baris 949):
-// Sea FCL -> Container, selain itu CBM. ───────────────────────────────────
-const unitForMode = (mode) => (mode === 'Sea FCL' ? 'Container' : 'CBM');
-const blankLane = (seed = {}) => ({
-  pol_location_id: seed.pol_location_id ?? null, pod_location_id: seed.pod_location_id ?? null,
-  via_location_id: null, pol: seed.pol ?? '', pod: seed.pod ?? '', via: '',
-  mode: 'Sea LCL', load_unit: unitForMode('Sea LCL'),
-});
+// Ronde "Lane Editor" (5c, bug nyata dikonfirmasi data staging
+// MSI-INQ-X-2026-0024 -- kontainer FCL 20' tapi kedua lane tetap Sea
+// LCL/CBM): `blankLane` SEBELUMNYA hardcode mode:'Sea LCL' tanpa syarat --
+// `deriveLaneMode()`/`unitForMode()` (sekarang di src/kit/LaneTable.jsx,
+// dipakai ulang bersama DealDetailPage.jsx) HANYA diterapkan di jalur
+// single-lane `handleCreate`, tidak pernah di `startLanes`/`addLane`.
+// `blankLane` sekarang MENERIMA `seed.mode` (bukan selalu hardcode) --
+// `startLanes` mengoper `deriveLaneMode(f.container_types)` ke KEDUA baris
+// yang diseed; `addLane` TETAP mewarisi dari baris terakhir (tidak
+// diubah -- itu perilaku yang sudah benar: user mungkin sengaja mengubah
+// mode baris sebelumnya).
+const blankLane = (seed = {}) => {
+  const mode = seed.mode ?? 'Sea LCL';
+  return {
+    pol_location_id: seed.pol_location_id ?? null, pod_location_id: seed.pod_location_id ?? null,
+    via_location_id: null, pol: seed.pol ?? '', pod: seed.pod ?? '', via: '',
+    mode, load_unit: unitForMode(mode),
+  };
+};
 
 export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefillContactId = null, onBack, onCreated, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
@@ -453,16 +466,32 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     fetchOperationalRoster(profile.company_id).then((r) => { if (!cancelled) setRoster(r); });
     return () => { cancelled = true; };
   }, [canPickOwner, profile?.company_id]);
+  // 5b -- Owner default = diri sendiri untuk manager BILA ia ada di roster
+  // sales (bukan selalu "Leave unassigned" seperti sebelumnya). Pola
+  // "touched" SAMA dengan Direction (directionTouched) -- berhenti menimpa
+  // begitu user menyentuh Owner manual (termasuk balik ke "Leave unassigned"),
+  // dan berjalan sekali setelah roster termuat, bukan tiap render.
+  const [ownerTouched, setOwnerTouched] = useState(false);
+  useEffect(() => {
+    if (ownerTouched || !canPickOwner || !roster.length || !profile?.id) return undefined;
+    if (!roster.some((r) => r.id === profile.id)) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => { if (!cancelled) setF((x) => (x.owner_id ? x : { ...x, owner_id: profile.id })); }, 0);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [ownerTouched, canPickOwner, roster, profile?.id]);
 
   // ── Lane table (laneMode) — mockup startLanes baris 949: dua baris awal
-  // mewarisi POL (dan Via/Mode) dari pasangan POL/POD yang sudah terisi. ────
+  // mewarisi POL (dan Via/Mode) dari pasangan POL/POD yang sudah terisi.
+  // Mode diturunkan dari container_types SEKALI (deriveLaneMode) dan dioper
+  // ke KEDUA baris yang diseed (5c -- lihat komentar blankLane). ───────────
   const startLanes = () => {
+    const mode = deriveLaneMode(f.container_types);
     setF((x) => ({
       ...x,
       laneMode: true,
       lanes: x.lanes.length ? x.lanes : [
-        blankLane({ pol_location_id: x.pol_location_id, pol: x.pol, pod_location_id: x.pod_location_id, pod: x.pod }),
-        blankLane({ pol_location_id: x.pol_location_id, pol: x.pol }),
+        blankLane({ pol_location_id: x.pol_location_id, pol: x.pol, pod_location_id: x.pod_location_id, pod: x.pod, mode }),
+        blankLane({ pol_location_id: x.pol_location_id, pol: x.pol, mode }),
       ],
     }));
   };
@@ -534,12 +563,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     setErrors({});
     setSaving(true);
     try {
-      // Review fix 3 -- mode/load_unit lane TUNGGAL (laneMode mati) diturunkan
-      // dari container_types, PERSIS modeOf() mockup (baris 743:
-      // "(f.cont||[]).some(c => c.indexOf('FCL')===0) ? 'Sea FCL' : 'Sea LCL'")
-      // dan unit-nya startLanes baris 949 ("Sea FCL" -> 'Container' else 'CBM')
-      // -- sebelumnya di-hardcode 'Sea LCL'/'CBM' walau user memilih FCL.
-      const singleLaneMode = f.container_types.some((c) => c.indexOf('FCL') === 0) ? 'Sea FCL' : 'Sea LCL';
+      // Mode/load_unit lane TUNGGAL (laneMode mati) diturunkan dari
+      // container_types lewat deriveLaneMode() bersama (src/kit/LaneTable.jsx,
+      // PERSIS modeOf() mockup baris 743) -- SATU sumber dengan blankLane/
+      // startLanes (5c), bukan dua salinan logika yang sama.
+      const singleLaneMode = deriveLaneMode(f.container_types);
       const laneRows = (f.laneMode ? f.lanes : [{
         pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id,
         via_location_id: null, pol: f.pol, pod: f.pod, via: null,
@@ -765,7 +793,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   </>
                 ) : (
                   <LaneTable
-                    lanes={f.lanes} locations={locations} laneModeOpts={laneModeOpts} laneUnitOpts={laneUnitOpts}
+                    lanes={f.lanes} locations={locations} laneModeOpts={laneModeOpts} laneUnitOpts={laneUnitOpts} tokens={LOCATION_PICKER_TOKENS}
                     canManageLocations={canManageLocations} openLocationMaster={openLocationMaster} requestNewLocation={requestNewLocation}
                     onUpdate={updateLane} onRemove={removeLane} onAdd={addLane}
                   />
@@ -921,7 +949,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 {canPickOwner ? (
                   <Field label="Owner">
                     <div style={{ position: 'relative' }}>
-                      <select value={f.owner_id || ''} onChange={(e) => setF((x) => ({ ...x, owner_id: e.target.value || null }))} style={selInput}>
+                      <select value={f.owner_id || ''} onChange={(e) => { setOwnerTouched(true); setF((x) => ({ ...x, owner_id: e.target.value || null })); }} style={selInput}>
                         <option value="">Leave unassigned</option>
                         {roster.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
                       </select><Chevron />
@@ -1015,72 +1043,10 @@ function UndernamePanel({ f, setF, errors, iorOpts }) {
   );
 }
 
-// ── Lane table — mockup baris 102-126 (dikurangi kolom "Use"/checkbox dan
-// tombol "Load from Sell Rate Card", KHUSUS Rate Sheet Request — Tahap 4C,
-// tidak dibangun di sini). ──────────────────────────────────────────────
-function LaneTable({ lanes, locations, laneModeOpts, laneUnitOpts, canManageLocations, openLocationMaster, requestNewLocation, onUpdate, onRemove, onAdd }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h4 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, flex: 1 }}>Route options ({lanes.length})</h4>
-        <button type="button" onClick={onAdd} style={{ ...S.btnGhost, height: 36, padding: '0 14px' }}><Plus size={14} />Add lane</button>
-      </div>
-      <div style={{ border: '1px solid ' + C.border, borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '28px minmax(160px,1fr) minmax(160px,1fr) minmax(140px,1fr) 120px 110px 36px', background: '#F1F5F9', borderBottom: '1px solid ' + C.border }}>
-          {['#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit', ''].map((h) => (
-            <div key={h} style={{ padding: '9px 8px', fontFamily: "'Montserrat',sans-serif", fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.sub }}>{h}</div>
-          ))}
-        </div>
-        {lanes.map((l, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px minmax(160px,1fr) minmax(160px,1fr) minmax(140px,1fr) 120px 110px 36px', alignItems: 'center', borderBottom: '1px solid ' + C.border }}>
-            <div style={{ padding: '6px 8px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: C.sub }}>{i + 1}</div>
-            <div style={{ padding: '6px 4px' }}>
-              <LocationPicker variant="cell" value={l.pol_location_id} textValue={l.pol} options={locations} tokens={LOCATION_PICKER_TOKENS}
-                placeholder="Port of Loading" invalid={!l.pol_location_id}
-                onChange={(id, loc) => onUpdate(i, { pol_location_id: id, pol: loc.name })}
-                onManage={canManageLocations ? openLocationMaster : undefined}
-                onRequest={canManageLocations ? undefined : requestNewLocation} />
-            </div>
-            <div style={{ padding: '6px 4px' }}>
-              <LocationPicker variant="cell" value={l.pod_location_id} textValue={l.pod} options={locations} tokens={LOCATION_PICKER_TOKENS}
-                placeholder="Port of Discharge" invalid={!l.pod_location_id}
-                onChange={(id, loc) => onUpdate(i, { pod_location_id: id, pod: loc.name })}
-                onManage={canManageLocations ? openLocationMaster : undefined}
-                onRequest={canManageLocations ? undefined : requestNewLocation} />
-            </div>
-            <div style={{ padding: '6px 4px' }}>
-              <LocationPicker variant="cell" value={l.via_location_id} textValue={l.via} options={locations} tokens={LOCATION_PICKER_TOKENS}
-                placeholder="Optional"
-                onChange={(id, loc) => onUpdate(i, { via_location_id: id, via: loc.name })}
-                onManage={canManageLocations ? openLocationMaster : undefined}
-                onRequest={canManageLocations ? undefined : requestNewLocation} />
-            </div>
-            <div style={{ padding: '6px 4px' }}>
-              <select value={l.mode} onChange={(e) => onUpdate(i, { mode: e.target.value, load_unit: unitForMode(e.target.value) })}
-                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + C.border, background: '#fff', padding: '0 8px', fontSize: 12.5 }}>
-                {laneModeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div style={{ padding: '6px 4px' }}>
-              <select value={l.load_unit} onChange={(e) => onUpdate(i, { load_unit: e.target.value })}
-                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + C.border, background: '#fff', padding: '0 8px', fontSize: 12.5 }}>
-                {laneUnitOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div style={{ padding: '6px 4px', display: 'flex', justifyContent: 'center' }}>
-              {/* Minimum 1 lane ditegakkan (koreksi atas gap validasi mockup —
-                  lihat PLAN v1 §3.1): tombol hapus disabled di baris terakhir. */}
-              <button type="button" onClick={() => onRemove(i)} disabled={lanes.length <= 1}
-                style={{ background: 'none', border: 0, cursor: lanes.length <= 1 ? 'not-allowed' : 'pointer', color: lanes.length <= 1 ? C.muted : C.sub, opacity: lanes.length <= 1 ? 0.4 : 1 }}>
-                <Trash2 size={15} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// Ronde "Lane Editor" -- LaneTable diekstrak ke src/kit/LaneTable.jsx
+// (unitForMode/deriveLaneMode ke src/kit/laneUtils.js), dipakai ulang
+// bersama DealDetailPage.jsx section "Route Options" -- bukan lagi
+// didefinisikan lokal di sini.
 
 // ── Review — ringkasan sederhana per langkah, cukup setia dengan mockup
 // (field + value/"Not set", required-but-missing ditandai) tanpa menyalin
@@ -1104,6 +1070,12 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, s
   const lanesText = f.laneMode
     ? f.lanes.map((l) => `${l.pol || '…'} → ${l.pod || '…'}`).join('; ')
     : `${f.pol || '…'} → ${f.pod || '…'}`;
+  // 5a -- gate SAMA dengan kedua tempat Undername inline muncul di
+  // langkah-langkah sebelumnya: Door-to-Door (langkah "customs") ATAU
+  // Customs Clearance + Import (langkah "svc"). Pricing Basis tetap
+  // Door-to-Door-only (hanya step itu yang punya field ini).
+  const showUndernameReview = isDoorToDoor || (f.service_type === 'customs' && f.direction === 'Import');
+  const additionalServicesLabel = f.additional_services.map((id) => SERVICES.find((s) => s.id === id)?.label || id).join(', ');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
@@ -1130,12 +1102,38 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, s
           <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
         </div>
       </div>
-      {isDoorToDoor && (
+      {/* 5a -- sebelumnya ABSEN dari Review sama sekali (Cargo/Additional
+          Services/Notes) atau SEBAGIAN (Undername: cuma flag Yes/No, dan
+          hanya utk Door-to-Door -- jalur Customs Clearance+Import nol
+          representasi apa pun). */}
+      <div>
+        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Cargo</div>
+        <div style={grid3}>
+          <ReviewRow label="Total Weight (KG)" value={f.weight_kg} />
+          <ReviewRow label="Volume (CBM)" value={f.volume_cbm} />
+        </div>
+      </div>
+      {showUndernameReview && (
         <div>
           <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Customs &amp; Undername</div>
           <div style={grid3}>
-            <ReviewRow label="Pricing Basis" value={f.pricing_basis} />
+            {isDoorToDoor && <ReviewRow label="Pricing Basis" value={f.pricing_basis} />}
             <ReviewRow label="Undername import" value={f.undername_import ? 'Yes' : 'No'} />
+            {f.undername_import && (
+              <>
+                <ReviewRow label="Importer of Record" value={f.importer_of_record} required />
+                <ReviewRow label="Duties & Taxes" value={f.duties_and_taxes} />
+                <ReviewRow label="Supporting Documents Received" value={f.supporting_docs_received ? 'Yes' : 'No'} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {f.additional_services.length > 0 && (
+        <div>
+          <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Additional Services</div>
+          <div style={grid3}>
+            <ReviewRow label="Additional Services" value={additionalServicesLabel} />
           </div>
         </div>
       )}
@@ -1145,6 +1143,7 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, s
           <ReviewRow label="Deadline Quote" value={f.deadline_quote} />
           <ReviewRow label="Estimated (intake)" value={f.estimated_value} />
           <ReviewRow label="Owner" value={ownerLabel} />
+          <ReviewRow label="Notes" value={f.notes} />
         </div>
       </div>
     </div>
