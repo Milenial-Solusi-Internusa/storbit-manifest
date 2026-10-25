@@ -141,6 +141,7 @@ DECLARE
   v_path    text;
   v_status  text; v_acc_at timestamptz; v_acc_by uuid; v_acc_path text;
   v_inq_status text; v_inq_won_reason text;
+  v_audit_notes text;
 BEGIN
   SELECT id INTO v_account FROM public.accounts
    WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
@@ -166,22 +167,28 @@ BEGIN
 
   PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
-  PERFORM public.set_quotation_outcome(v_quo_id, 'ACCEPTED', NULL, v_path);
+  PERFORM public.set_quotation_outcome(v_quo_id, 'ACCEPTED', 'Catatan uji K1d c', v_path);
   EXECUTE 'RESET ROLE';
 
   SELECT status, accepted_at, accepted_by, accepted_evidence_path
     INTO v_status, v_acc_at, v_acc_by, v_acc_path
     FROM public.quotations WHERE id = v_quo_id;
   SELECT status, won_reason INTO v_inq_status, v_inq_won_reason FROM public.inquiries WHERE id = v_inq_id;
+  SELECT notes INTO v_audit_notes FROM public.audit_logs
+   WHERE action = 'ACCEPT_QUOTATION' AND entity_id = v_quo_id
+   ORDER BY created_at DESC LIMIT 1;
 
-  RAISE NOTICE '(c) quotation %: status=%, accepted_at=%, accepted_by=%, path=% | inquiry %: status=%, won_reason=%',
-    v_quo_id, v_status, v_acc_at, v_acc_by, v_acc_path, v_inq_no, v_inq_status, v_inq_won_reason;
+  RAISE NOTICE '(c) quotation %: status=%, accepted_at=%, accepted_by=%, path=% | inquiry %: status=%, won_reason=% | audit_logs.notes=%',
+    v_quo_id, v_status, v_acc_at, v_acc_by, v_acc_path, v_inq_no, v_inq_status, v_inq_won_reason, v_audit_notes;
 
   IF v_status <> 'ACCEPTED' OR v_acc_at IS NULL OR v_acc_by IS DISTINCT FROM v_sales_a OR v_acc_path IS DISTINCT FROM v_path THEN
     RAISE EXCEPTION 'UJI GAGAL (c) -- kolom quotations tidak terisi benar sesudah ACCEPTED';
   END IF;
   IF v_inq_status <> 'WON' OR v_inq_won_reason IS DISTINCT FROM 'Accepted quotation' THEN
     RAISE EXCEPTION 'UJI GAGAL (c) -- inquiry seharusnya WON dengan won_reason=''Accepted quotation'', dapat status=%/won_reason=%', v_inq_status, v_inq_won_reason;
+  END IF;
+  IF v_audit_notes IS DISTINCT FROM 'Catatan uji K1d c' THEN
+    RAISE EXCEPTION 'UJI GAGAL (c) -- audit_logs.notes untuk ACCEPT_QUOTATION seharusnya ''Catatan uji K1d c'', dapat %', v_audit_notes;
   END IF;
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (c)';
