@@ -231,6 +231,11 @@ BEGIN
   -- transaksi) -- pola identik nexus.quotation_auto_close
   -- (20261012000007:314-324): nyala tepat di sekitar SATU statement yang
   -- butuh bypass, mati lagi sebelum statement lain di fungsi yang sama.
+  -- ⚠️ GET DIAGNOSTICS WAJIB tepat sesudah UPDATE, SEBELUM set_config 'off' --
+  -- PERFORM adalah statement SQL juga, jadi kalau diselipkan di antaranya
+  -- ROW_COUNT tertimpa jadi 1 (ROW_COUNT dari PERFORM itu sendiri) dan
+  -- pengecekan "0 baris" di bawah tidak akan pernah menolak (dibuktikan Vir
+  -- di staging: UPDATE 0 baris + PERFORM set_config sesudahnya -> ROW_COUNT=1).
   PERFORM set_config('nexus.quotations_outcome_trusted', 'on', true);
 
   UPDATE public.quotations
@@ -243,9 +248,10 @@ BEGIN
          updated_by             = auth.uid()
   WHERE  id = p_quotation_id;
 
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
   PERFORM set_config('nexus.quotations_outcome_trusted', 'off', true);
 
-  GET DIAGNOSTICS v_count = ROW_COUNT;
   IF v_count = 0 THEN
     RAISE EXCEPTION 'Tidak ada izin mengubah quotation ini (RLS).';
   END IF;
