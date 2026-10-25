@@ -28,7 +28,17 @@
    `unitForMode`/`deriveLaneMode` TIDAK diekspor dari sini -- pindah ke
    `./laneUtils.js` (react-refresh/only-export-components menolak file
    komponen mengekspor apa pun selain komponen) -- impor langsung dari
-   sana di pemanggil. */
+   sana di pemanggil.
+
+   `showUseColumn`/`onToggleUse` (baru, Putaran 4 Tahap 4C -- mode "Rate
+   Sheet Request"): kolom pertama jadi checkbox "Use" (lane.on !== false)
+   menggantikan nomor baris -- HANYA dipakai wizard saat inquiry_type =
+   'Rate Sheet Request'. Default `showUseColumn` undefined/false -- SEMUA
+   pemakai lain (Lane Editor Detail Inquiry, wizard mode Single Shipment)
+   TIDAK berubah perilakunya sama sekali. State "on" hidup di FE saja (lihat
+   InquiryIntakeWizardPage.jsx) -- komponen ini TIDAK menyaring baris yang
+   di-uncheck dari tampilan (semua lane tetap dirender supaya bisa dicentang
+   lagi), penyaringan sebelum RPC terjadi di pemanggil. */
 
 import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import LocationPicker from './LocationPicker';
@@ -41,9 +51,12 @@ export function LaneTable({
   lanes, locations, laneModeOpts, laneUnitOpts, tokens,
   canManageLocations, openLocationMaster, requestNewLocation,
   onUpdate, onRemove, onAdd, onMove, readOnly,
+  showUseColumn, onToggleUse,
 }) {
   const cols = readOnly ? COLS_READONLY : COLS_EDIT;
-  const headers = readOnly ? ['#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit'] : ['#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit', ''];
+  const headers = readOnly
+    ? [showUseColumn ? 'Use' : '#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit']
+    : [showUseColumn ? 'Use' : '#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit', ''];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -64,7 +77,12 @@ export function LaneTable({
         {lanes.map((l, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: cols, alignItems: 'center', borderBottom: '1px solid ' + tokens.border }}>
             <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: tokens.textMute }}>{i + 1}</span>
+              {showUseColumn ? (
+                <input type="checkbox" checked={l.on !== false} onChange={() => onToggleUse?.(i)} disabled={readOnly}
+                  title="Include this lane" style={{ width: 16, height: 16, accentColor: tokens.textMute, cursor: readOnly ? 'default' : 'pointer' }} />
+              ) : (
+                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: tokens.textMute }}>{i + 1}</span>
+              )}
               {!readOnly && onMove && (
                 <span style={{ display: 'flex', flexDirection: 'column' }}>
                   <button type="button" onClick={() => onMove(i, i - 1)} disabled={i === 0} title="Move up"
