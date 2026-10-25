@@ -38,6 +38,12 @@
 // Akun uji: test@msi.com ("ZZZTEST Admin", super_admin @ MSI -- PROGRESS.md
 // 2026-09-21, dipakai berulang di detail-routes.mjs suite `crm` karena
 // satu-satunya akun yang punya data di semua daftar CRM staging hari ini).
+// Flow ketiga (Putaran 5 K1a) re-login akun KEDUA di tengah skrip yang sama:
+// zzztest.salesspv@msi.com ("ZZZ Test Sales Supervisor", bd_sales_spv_forwarding
+// level 6 @ MSI -- satu-satunya di antara akun uji yang lolos isManagerOrAbove()
+// TANPA sekaligus Super Admin). Password-nya dari env QA_PASSWORD_MANAGER ATAU
+// prompt tersembunyi interaktif KEDUA (pola identik QA_PASSWORD di atas,
+// ditanyakan menyusul sesudah flow 1+2 selesai, sebelum flow 3 dimulai).
 // Data bisnis yang diasumsikan SUDAH ADA di staging (diberikan di instruksi
 // tugas, tidak diverifikasi skrip ini sebelumnya): akun "PT Agro Sawit
 // Kalimantan" ber-source 'referral', lokasi "Singapore"/"Jakarta",
@@ -98,15 +104,18 @@ function promptHiddenPassword(promptText) {
   });
 }
 
-async function resolvePassword() {
-  if (process.env.QA_PASSWORD) return process.env.QA_PASSWORD;
+// Digeneralisasi (Putaran 5 K1a, Task 2) supaya bisa dipakai utk akun KEDUA
+// (flow ketiga, re-login manager) tanpa menduplikasi logika env/prompt --
+// perilaku utk akun PERTAMA byte-identik (envVar='QA_PASSWORD', email=ACCOUNT).
+async function resolvePasswordFor(email, envVar) {
+  if (process.env[envVar]) return process.env[envVar];
   if (!process.stdin.isTTY) {
-    console.error('QA_PASSWORD (env) wajib saat stdin bukan TTY — password bersama akun uji, JANGAN ditulis di repo');
+    console.error(`${envVar} (env) wajib saat stdin bukan TTY — password bersama akun uji, JANGAN ditulis di repo`);
     process.exit(2);
   }
   let pw;
   try {
-    pw = await promptHiddenPassword(`Password akun uji untuk ${ACCOUNT} (tersembunyi, Enter untuk kirim): `);
+    pw = await promptHiddenPassword(`Password akun uji untuk ${email} (tersembunyi, Enter untuk kirim): `);
   } catch (e) {
     console.error(e.message === 'CANCELLED' ? 'Dibatalkan (Ctrl+C) — nol password terbaca.' : `Dibatalkan: ${e.message}`);
     process.exit(130);
@@ -114,6 +123,7 @@ async function resolvePassword() {
   if (!pw) { console.error('Password kosong — dibatalkan.'); process.exit(2); }
   return pw;
 }
+async function resolvePassword() { return resolvePasswordFor(ACCOUNT, 'QA_PASSWORD'); }
 
 // ── env + gerbang ref produksi (pola IDENTIK menu-sweep.mjs/detail-routes.mjs) ──
 function readEnv(file) {
@@ -304,6 +314,21 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await result.click();
 }
 
+// Login GoTrue password-grant -- diekstrak (Putaran 5 K1a, Task 2) dari kode
+// IIFE utama supaya bisa dipakai LAGI utk re-login akun KEDUA (flow ketiga,
+// akun manager) tanpa menduplikasi parsing respons. Perilaku utk login
+// PERTAMA byte-identik.
+async function loginSession(email, password) {
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!r.ok) { console.error(`login gagal (${email}): HTTP ${r.status}`); process.exit(1); }
+  const s = await r.json();
+  return { access_token: s.access_token, refresh_token: s.refresh_token, token_type: s.token_type,
+    expires_in: s.expires_in, expires_at: s.expires_at ?? Math.floor(Date.now() / 1000) + s.expires_in, user: s.user };
+}
+
 // ── Ronde "Lane Editor", Tahap B — helper utk blok "Route Options" (Detail
 // Inquiry, DealDetailPage.jsx) DAN tabel lane wizard (keduanya kini memakai
 // `src/kit/LaneTable.jsx` yang sama sejak ekstraksi kit). Struktur nyata
@@ -341,15 +366,7 @@ function dealFieldValue(page, label) {
   console.log(`e2e-inquiry-wizard — ${BASE} · project ${REF} · akun ${ACCOUNT}\n`);
 
   const PASSWORD = await resolvePassword();
-
-  const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
-    body: JSON.stringify({ email: ACCOUNT, password: PASSWORD }),
-  });
-  if (!r.ok) { console.error(`login gagal: HTTP ${r.status}`); process.exit(1); }
-  const s = await r.json();
-  const session = { access_token: s.access_token, refresh_token: s.refresh_token, token_type: s.token_type,
-    expires_in: s.expires_in, expires_at: s.expires_at ?? Math.floor(Date.now() / 1000) + s.expires_in, user: s.user };
+  const session = await loginSession(ACCOUNT, PASSWORD);
 
   const browser = await chromium.launch({ channel: 'chrome', headless: !has('headed') });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 960 } });
@@ -929,9 +946,25 @@ function dealFieldValue(page, label) {
 
   // ── Detail Inquiry — badge, 1 lane TERSIMPAN (lane 2 TIDAK ikut), Route &
   // Terms menampilkan Validity/Volume (bukan Incoterms/dll). ───────────────
+  // waitFor({state:'visible'}) -- bukan cek instan -- utk badge DAN heading
+  // LaneTable, pola IDENTIK fix flaky "Section Route Options (SectionHeader)"
+  // di flow 1 (render Detail Inquiry sesaat sesudah Create/navigasi bisa
+  // belum tuntas saat settle() berakhir; ditemukan lewat 2 run berturut-turut
+  // yang GAGAL persis di titik ini dgn "dapat: 0" padahal SELURUH check
+  // lain pada inquiry yang sama -- Validity/Volume persisten, Edit Route &
+  // Terms, 4 toast -- lulus normal sesaat sesudahnya). h4 "Route options"
+  // dan baris datanya SIBLING dalam SATU return JSX LaneTable.jsx (nol gap
+  // async di antaranya), jadi menunggu h4 visible cukup utk menjamin baris
+  // datanya juga sudah di DOM sebelum laneRowCount() dihitung.
   await settle(page, 800);
-  check('[RS] Badge "Rate Sheet Request" tampil di header Detail Inquiry', (await page.locator('text="Rate Sheet Request"').count()) > 0);
-  const rsDetailLaneCount = await laneRowCount(page);
+  let rsBadgeVisible = true;
+  try { await page.locator('text="Rate Sheet Request"').first().waitFor({ state: 'visible', timeout: 10000 }); }
+  catch { rsBadgeVisible = false; }
+  check('[RS] Badge "Rate Sheet Request" tampil di header Detail Inquiry', rsBadgeVisible);
+  let rsLaneTableReady = true;
+  try { await page.locator('h4:has-text("Route options")').first().waitFor({ state: 'visible', timeout: 10000 }); }
+  catch { rsLaneTableReady = false; }
+  const rsDetailLaneCount = rsLaneTableReady ? await laneRowCount(page) : 0;
   check('[RS] Route Options Detail Inquiry HANYA 1 baris (lane ter-uncheck tidak ikut tersimpan)', rsDetailLaneCount === 1, `dapat: ${rsDetailLaneCount}`);
   if (rsDetailLaneCount === 1) {
     const rsDetailPol = (await laneRow(page, 0).locator('> div').nth(1).innerText().catch(() => '')).trim();
@@ -1031,6 +1064,140 @@ function dealFieldValue(page, label) {
   check('[RS] Pasca-reload: Estimated Volume per Month = "2.000" (bukan "2")', rsEditVolumeAfter.includes('2.000'), `dapat: "${rsEditVolumeAfter}"`);
 
   console.log(`\n  → [RS] Inquiry yang dipakai uji edit Detail: ${rsInquiryNo || '(tidak tertangkap)'}  ${rsInquiryId ? `(id: ${rsInquiryId})` : ''} -- cek monthly_volume_cbm = 2000 di database.`);
+
+  // =========================================================================
+  // FLOW KETIGA -- Putaran 5 K1a, Task 2. Owner default-ke-diri-sendiri utk
+  // role manager-ke-atas (isManagerOrAbove() -> level<=6, src/lib/roles.js)
+  // YANG JUGA ada di roster operasional (OPERATIONAL_ROSTER_ROLES,
+  // salesRoster.js -- superset BD_SALES_ROLES+gm_bd). bd_sales_spv_forwarding
+  // (level 6, "Sales Supervisor Forwarding") adalah SATU-SATUNYA di antara
+  // 4 akun uji yang diberikan yang lolos isManagerOrAbove TANPA sekaligus
+  // Super Admin: test@msi.com punya Manager L4 TAPI JUGA Super Admin (dan
+  // role 'manager' lagipula BUKAN anggota OPERATIONAL_ROSTER_ROLES, jadi
+  // auto-fill owner_id tidak akan menyala untuknya walau canPickOwner true);
+  // sales@msi.com dan zzztest.sales2@msi.com ber-level 7, tidak lolos sama
+  // sekali. Login akun KEDUA di KONTEKS BROWSER BARU, bukan menimpa page
+  // yang sama -- ctx.addInitScript yang dipasang utk akun pertama di atas
+  // berjalan LAGI di SETIAP navigasi baru dalam konteksnya (bukan sekali
+  // saja), jadi menimpa localStorage pada page yang sama akan ditimpa BALIK
+  // oleh init script lama persis saat page.goto() berikutnya terjadi --
+  // konteks baru dengan addInitScript SENDIRI menghindari tarik-menarik itu
+  // (pola IDENTIK dengan ctx/page pertama, bukan konvensi baru).
+  // =========================================================================
+  console.log('\n— FLOW KETIGA: Owner default untuk Manager (bd_sales_spv_forwarding) —\n');
+
+  const MANAGER_ACCOUNT = 'zzztest.salesspv@msi.com';
+  const MANAGER_SELF_NAME = 'ZZZ Test Sales Supervisor';
+  const SWITCH_OWNER_NAME = 'ZZZTEST Sales';
+
+  const managerPassword = await resolvePasswordFor(MANAGER_ACCOUNT, 'QA_PASSWORD_MANAGER');
+  const managerSession = await loginSession(MANAGER_ACCOUNT, managerPassword);
+  const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+  await ctx2.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(managerSession)]);
+  const page2 = await ctx2.newPage();
+  page2.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
+
+  // Field minimum yang WAJIB lolos stepErrors() utk Single Shipment non-FCL
+  // (cust_account/svc_service_type/svc_direction/svc_customer_role/
+  // route_lanes -- lihat InquiryIntakeWizardPage.jsx:563-618): nol Undername/
+  // FCL/Weight/Volume/Additional Services disentuh, semuanya opsional di
+  // jalur ini. Pelanggan+lokasi dipakai ULANG dari flow 1/2 (instruksi
+  // eksplisit "pakai yang sudah ada di script"), BUKAN fixture baru.
+  async function openWizardAndFillToCommercial(pg, checkLabel) {
+    await pg.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+    await settle(pg);
+    check(`[MGR] Wizard Intake Form terbuka (${checkLabel})`, await pg.locator('h1:text-is("New Inquiry")').count() > 0);
+    await pg.locator('button:text-is("1. Customer & Contact")').click();
+    await settle(pg);
+    await pg.locator('button:text-is("Prospect")').click();
+    await pg.locator('input[placeholder="Search prospects…"]').fill('PT Agro Sawit Kalimantan');
+    await pg.waitForTimeout(400);
+    await pg.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+    await settle(pg);
+    await pg.locator('button:text-is("2. Service & Direction")').click();
+    await settle(pg);
+    await pg.locator('button:has-text("Freight Forwarding")').first().click();
+    await settle(pg, 300);
+    await pg.locator('button:text-is("Shipper")').click();
+    await settle(pg);
+    await pg.locator('button:text-is("3. Route & Terms")').click();
+    await settle(pg);
+    await pickLocation(pg, pg.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
+    await settle(pg);
+    await pickLocation(pg, pg.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
+    await settle(pg);
+    await pg.locator('button:text-is("6. Commercial")').click();
+    // ekstra -- menunggu fetchOperationalRoster (2 query berurutan) + efek
+    // auto-fill owner_id (setTimeout(...,0), InquiryIntakeWizardPage.jsx:519)
+    // selesai sebelum select Owner dibaca.
+    await settle(pg, 700);
+  }
+
+  // ── (a) + (b): inquiry #1 -- Owner TIDAK disentuh, harus default diri
+  // sendiri sejak wizard dibuka, dan owner_id yang tersimpan = pemanggil. ──
+  await openWizardAndFillToCommercial(page2, 'inquiry #1, diri sendiri');
+  const ownerSelect1 = fieldLocator(page2, 'Owner', 'select');
+  const ownerSelectedText1 = await ownerSelect1.evaluate((el) => el.options[el.selectedIndex]?.textContent || '').catch(() => '');
+  check('[MGR] (a) Select Owner berisi diri sendiri saat wizard dibuka (bukan kosong/"Leave unassigned")',
+    ownerSelectedText1 === MANAGER_SELF_NAME, `dapat: "${ownerSelectedText1}"`);
+
+  await page2.locator('button:text-is("7. Review")').click();
+  await settle(page2);
+  const createBtn1 = page2.locator('button:text-is("Create Inquiry")');
+  check('[MGR] Tombol "Create Inquiry" terlihat (inquiry #1)', await createBtn1.isVisible().catch(() => false));
+  const rpcResp1Promise = page2.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  await createBtn1.click();
+  const rpcResp1 = await rpcResp1Promise;
+  let mgrInquiryNo1 = null, mgrInquiryId1 = null;
+  if (rpcResp1 && rpcResp1.ok()) {
+    const body = await rpcResp1.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    mgrInquiryNo1 = row?.inquiry_no || null;
+    mgrInquiryId1 = row?.id || null;
+  }
+  check('[MGR] (b) RPC create_inquiry_with_lanes merespon sukses (inquiry #1, owner tak disentuh)', !!rpcResp1 && rpcResp1.ok(), rpcResp1 ? `HTTP ${rpcResp1.status()}` : 'nol respon tertangkap');
+  await settle(page2, 800);
+  check('[MGR] Pindah ke Detail Inquiry setelah Create (inquiry #1)', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page2.url()), page2.url());
+  const ownerDetail1 = (await dealFieldValue(page2, 'Owner').innerText().catch(() => '')).trim();
+  check('[MGR] (b) Detail Inquiry Owner = diri sendiri (owner_id tersimpan = pemanggil) (inquiry #1)',
+    ownerDetail1.includes(MANAGER_SELF_NAME), `dapat: "${ownerDetail1}"`);
+  console.log(`\n  → [MGR] Inquiry #1 (owner diri sendiri): ${mgrInquiryNo1 || '(tidak tertangkap)'}  ${mgrInquiryId1 ? `(id: ${mgrInquiryId1})` : ''}`);
+
+  // ── (c): inquiry #2 -- Owner DIGANTI manual ke "ZZZTEST Sales" sebelum
+  // Create, owner_id yang tersimpan harus ikut pilihan manual itu. ────────
+  await openWizardAndFillToCommercial(page2, 'inquiry #2, ganti owner');
+  const ownerSelect2 = fieldLocator(page2, 'Owner', 'select');
+  await ownerSelect2.selectOption({ label: SWITCH_OWNER_NAME });
+  await settle(page2, 300);
+  const ownerSelectedText2 = await ownerSelect2.evaluate((el) => el.options[el.selectedIndex]?.textContent || '').catch(() => '');
+  check('[MGR] Owner berhasil diganti ke "ZZZTEST Sales" sebelum Create', ownerSelectedText2 === SWITCH_OWNER_NAME, `dapat: "${ownerSelectedText2}"`);
+
+  await page2.locator('button:text-is("7. Review")').click();
+  await settle(page2);
+  const createBtn2 = page2.locator('button:text-is("Create Inquiry")');
+  check('[MGR] Tombol "Create Inquiry" terlihat (inquiry #2)', await createBtn2.isVisible().catch(() => false));
+  // Aturan toast -- toast sukses inquiry #1 mungkin belum habis (lihat
+  // waitForToastGone/checkToastExact di atas); TASK 1 sudah menutup akarnya
+  // di App.jsx, tapi menunggu di sini tetap aman/murah dan menghormati
+  // instruksi eksplisit.
+  await waitForToastGone(page2);
+  const rpcResp2Promise = page2.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  await createBtn2.click();
+  const rpcResp2 = await rpcResp2Promise;
+  let mgrInquiryNo2 = null, mgrInquiryId2 = null;
+  if (rpcResp2 && rpcResp2.ok()) {
+    const body = await rpcResp2.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    mgrInquiryNo2 = row?.inquiry_no || null;
+    mgrInquiryId2 = row?.id || null;
+  }
+  check('[MGR] (c) RPC create_inquiry_with_lanes merespon sukses (inquiry #2, owner diganti)', !!rpcResp2 && rpcResp2.ok(), rpcResp2 ? `HTTP ${rpcResp2.status()}` : 'nol respon tertangkap');
+  await settle(page2, 800);
+  check('[MGR] Pindah ke Detail Inquiry setelah Create (inquiry #2)', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page2.url()), page2.url());
+  const ownerDetail2 = (await dealFieldValue(page2, 'Owner').innerText().catch(() => '')).trim();
+  check('[MGR] (c) Detail Inquiry Owner = "ZZZTEST Sales" (owner_id tersimpan = pilihan manual) (inquiry #2)',
+    ownerDetail2.includes(SWITCH_OWNER_NAME), `dapat: "${ownerDetail2}"`);
+  console.log(`\n  → [MGR] Inquiry #2 (owner diganti ke ${SWITCH_OWNER_NAME}): ${mgrInquiryNo2 || '(tidak tertangkap)'}  ${mgrInquiryId2 ? `(id: ${mgrInquiryId2})` : ''}`);
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
