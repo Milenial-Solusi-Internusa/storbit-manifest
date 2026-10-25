@@ -86,6 +86,12 @@ const has = (n) => argv.includes(`--${n}`);
 const BASE = opt('base', 'http://localhost:4173').replace(/\/+$/, '');
 const ACCOUNT = opt('account', 'test@msi.com');
 const SETTLE = Number(opt('settle', '1200'));
+// --only 4 (opsional, pola spasi SAMA dengan --base/--account di atas,
+// BUKAN --only=4) -- HANYA Flow 4 (Mark Accepted) dijalankan, HANYA
+// password sales@msi.com diminta; Flow 1-3 dan login/browser-context
+// test@msi.com miliknya dilewati seluruhnya. Tanpa argumen ini, perilaku
+// skrip TIDAK berubah (byte-identik -- lihat IIFE utama di bawah).
+const ONLY = opt('only', null);
 
 // Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
 // QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
@@ -376,16 +382,22 @@ function dealFieldValue(page, label) {
 }
 
 (async () => {
+  // Diangkat ke sini (semula dideklarasikan di dalam Flow 1) supaya tetap
+  // ada untuk Flow 4 dan tally akhir walau Flow 1-3 dilewati (--only 4).
+  // Isi/urutan Flow 1-4 di bawah TIDAK disentuh -- hanya dibungkus gate ini.
+  const browser = await chromium.launch({ channel: 'chrome', headless: !has('headed') });
+  const consoleErrors = [];
+  let inquiryNo = null, inquiryId = null;
+
+  if (ONLY !== '4') {
   console.log(`e2e-inquiry-wizard — ${BASE} · project ${REF} · akun ${ACCOUNT}\n`);
 
   const PASSWORD = await resolvePassword();
   const session = await loginSession(ACCOUNT, PASSWORD);
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: !has('headed') });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   await ctx.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(session)]);
   const page = await ctx.newPage();
-  const consoleErrors = [];
   page.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
 
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
@@ -619,7 +631,7 @@ function dealFieldValue(page, label) {
   const rpcRespPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
   if (createVisibleForReal) await createBtnLocator.click();
   const rpcResp = await rpcRespPromise;
-  let inquiryNo = null, inquiryId = null;
+  inquiryNo = null; inquiryId = null; // outer-scoped (hoisted di atas) -- BUKAN `let` baru, supaya tally akhir (luar blok --only) membacanya
   if (rpcResp && rpcResp.ok()) {
     const body = await rpcResp.json().catch(() => null);
     const row = Array.isArray(body) ? body[0] : body;
@@ -1211,6 +1223,9 @@ function dealFieldValue(page, label) {
   check('[MGR] (c) Detail Inquiry Owner = "ZZZTEST Sales" (owner_id tersimpan = pilihan manual) (inquiry #2)',
     ownerDetail2.includes(SWITCH_OWNER_NAME), `dapat: "${ownerDetail2}"`);
   console.log(`\n  → [MGR] Inquiry #2 (owner diganti ke ${SWITCH_OWNER_NAME}): ${mgrInquiryNo2 || '(tidak tertangkap)'}  ${mgrInquiryId2 ? `(id: ${mgrInquiryId2})` : ''}`);
+  } // end if (ONLY !== '4') -- Flow 1-3
+
+  if (ONLY === '4') console.log(`e2e-inquiry-wizard -- Flow 4 SAJA (--only 4) -- ${BASE} · project ${REF}\n`);
 
   // =========================================================================
   // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
