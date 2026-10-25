@@ -53,6 +53,18 @@
 // ini (skrip ini TIDAK PERNAH menulis data lewat jalur lain selain wizard
 // yang sedang diuji).
 //
+// Flow KEEMPAT (Putaran 5 K1d) re-login akun KETIGA, di konteks browser
+// BARU lagi: sales@msi.com ("ZZZTEST Sales", bd_sales_executive @ MSI) --
+// pemilik seluruh fixture Quotation flow ini (created_by = dirinya sendiri,
+// supaya gate canAct di QuotationDetailPage.jsx lolos tanpa butuh
+// is_manager_or_above()). Password dari env QA_PASSWORD_SALES ATAU prompt
+// tersembunyi interaktif KETIGA, ditanyakan menyusul sesudah flow 1-3
+// selesai. BERBEDA dari flow 1-3: flow ini membuat data FIXTURE lewat REST
+// langsung (bukan lewat wizard/form UI -- modul Quotation List/Form di luar
+// scope task ini) dan TIDAK menghapusnya sendiri -- dicetak di akhir run
+// utk pembersihan manual nanti (pola sama inquiry flow 1-3, yang juga tidak
+// pernah dihapus skrip ini).
+//
 // ⚠️ Beberapa selector bergantung pada STRUKTUR DOM InquiryIntakeWizardPage.jsx/
 // DealDetailPage.jsx hari ini (nol id/name/aria-label eksplisit di kontrol
 // form -- pola yang sama dengan file itu sendiri, lihat komentarnya). Kalau
@@ -62,9 +74,10 @@
 // (lihat helper `check`), bukan diam-diam lolos.
 
 import { chromium } from 'playwright-core';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);
@@ -1198,6 +1211,302 @@ function dealFieldValue(page, label) {
   check('[MGR] (c) Detail Inquiry Owner = "ZZZTEST Sales" (owner_id tersimpan = pilihan manual) (inquiry #2)',
     ownerDetail2.includes(SWITCH_OWNER_NAME), `dapat: "${ownerDetail2}"`);
   console.log(`\n  → [MGR] Inquiry #2 (owner diganti ke ${SWITCH_OWNER_NAME}): ${mgrInquiryNo2 || '(tidak tertangkap)'}  ${mgrInquiryId2 ? `(id: ${mgrInquiryId2})` : ''}`);
+
+  // =========================================================================
+  // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
+  // pengguna, sesudah migrasi 20261026000004 LIVE di staging dan lulus
+  // seluruh uji SQL (a)-(k). Akun BARU, konteks browser BARU (pola identik
+  // Flow 3): ZZZTEST Sales (sales@msi.com) sebagai PEMILIK ketiga fixture --
+  // bukan test@msi.com (super_admin, flow 1/2) maupun zzztest.salesspv@msi.com
+  // (manager, flow 3), supaya "created_by = pemanggil" (gate canAct di
+  // QuotationDetailPage.jsx) lolos tanpa butuh is_manager_or_above().
+  //
+  // FIXTURE dibuat lewat REST LANGSUNG (fetch ke /rest/v1/..., Authorization
+  // Bearer = access_token sesi sales@msi.com -- BUKAN service_role): modul
+  // Quotation List/Form ada di luar scope task ini, dan guard BARU hanya
+  // BEFORE UPDATE (trg_z_guard_quotations_accepted_columns) sehingga INSERT
+  // langsung TIDAK terjegal olehnya -- diizinkan eksplisit oleh instruksi
+  // tugas. Nol SQL/service_role; RLS quotations_insert (company_id IN
+  // get_user_company_ids()) menegakkan sendiri siapa yang boleh menulis apa.
+  //
+  // ⚠️ TEMUAN (dicatat SEBELUM menulis fixture-nya, bukan sesudah gagal):
+  // migrasi 20261022000001_crm_inquiry_server_side_numbering memasang
+  // trigger BEFORE INSERT trg_z_assign_inquiry_no yang SELALU MENIMPA
+  // inquiries.inquiry_no dengan nomor server-generated, apa pun yang dikirim
+  // client (atau walau kolomnya diabaikan sama sekali). Fixture inquiry di
+  // bawah TIDAK mengirim inquiry_no sama sekali (percuma -- akan ditimpa)
+  // dan memakai kolom `notes` sebagai penanda ZZZTEST (nomor inquiry asli
+  // dibaca balik dari respons INSERT, dicetak di akhir run utk pembersihan).
+  // quotations.quotation_no TIDAK punya trigger sejenis (diverifikasi grep
+  // migrations/) -- ketiga fixture quotation di bawah tetap ber-nomor
+  // "ZZZTEST-E2E-K1D-*" apa adanya.
+  // =========================================================================
+  try {
+    console.log('\n— FLOW KEEMPAT: Mark Accepted dengan bukti (Quotation) —\n');
+
+    const ACC_COMPANY_MSI = '0e1840d8-e6fb-4190-bd09-88338e68b492';
+    const SALES_ACCOUNT = 'sales@msi.com';
+    const QUOTATION_DETAIL_PATH = '/crm/quotation/builder';
+
+    // Fetch REST langsung (Bearer = access_token sesi pengguna uji, BUKAN
+    // service_role) -- fixture + verifikasi DB + uji guard (8) semuanya
+    // lewat jalur ini, nol SQL dijalankan ke database.
+    async function pgrest(path, { method = 'GET', token, body, prefer } = {}) {
+      const headers = { apikey: ANON_KEY, Authorization: `Bearer ${token}` };
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      if (prefer) headers['Prefer'] = prefer;
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      const text = await r.text();
+      let json = null;
+      try { json = text ? JSON.parse(text) : null; } catch { json = text; }
+      return { ok: r.ok, status: r.status, json };
+    }
+
+    const salesPassword = await resolvePasswordFor(SALES_ACCOUNT, 'QA_PASSWORD_SALES');
+    const salesSession = await loginSession(SALES_ACCOUNT, salesPassword);
+    const salesToken = salesSession.access_token;
+    const salesUserId = salesSession.user?.id;
+    check('[ACC] Login sesi sales@msi.com berhasil (access_token diterima)', !!salesToken && !!salesUserId, salesUserId || '');
+
+    // ── prospect_id fixture -- KOSMETIK SAJA (Mark Accepted tidak butuh ini).
+    // SENGAJA TIDAK menyebut akun tertentu ("PT Agro Sawit Kalimantan", pola
+    // flow 1-3) dan TIDAK di-assert -- temuan Vir: RLS prospects_read hanya
+    // meloloskan akun yang assigned_to/created_by SESSION ITU SENDIRI (atau
+    // manager-ke-atas); sales@msi.com bukan keduanya untuk akun manapun yang
+    // dipakai flow 1-3 (punya created_by test@msi.com/zzztest.salesspv@msi.com),
+    // jadi [] di sini adalah RLS BEKERJA BENAR, bukan bug -- mengukur akun
+    // bernama tertentu akan SELALU gagal untuk pemilik ini, apa pun isi DB.
+    // GET polos limit 1 TANPA filter nama -- kalau ADA akun yang kebetulan
+    // boleh dibaca sales@msi.com, pakai itu; kalau NOL (hasil paling mungkin
+    // untuk akun ini), prospectId tetap null -- fixture quotation/inquiry
+    // tetap valid tanpa itu (kolom nullable), Mark Accepted tidak terpengaruh.
+    const acctResp = await pgrest('accounts?select=id&limit=1', { token: salesToken });
+    const prospectId = Array.isArray(acctResp.json) ? acctResp.json[0]?.id : null;
+    if (prospectId) {
+      console.log(`  ℹ [ACC] prospect_id fixture terisi dari akun pertama yang terbaca sales@msi.com: ${prospectId}`);
+    } else {
+      console.log('  ℹ [ACC] prospect_id fixture TETAP NULL -- sales@msi.com hanya melihat akun yang assigned_to/created_by dirinya sendiri (RLS prospects_read), nol di antara akun yang ada kebetulan begitu. Bukan GAGAL, tidak dihitung ke total -- fixture tetap valid (prospect_id nullable).');
+    }
+
+    const nonce = Date.now();
+
+    // ── Fixture A: inquiry QUOTED (inquiry_no SERVER-GENERATED, lihat temuan
+    // di atas -- notes = penanda ZZZTEST) + quotation SENT tertaut. ─────────
+    const inqAResp = await pgrest('inquiries', {
+      method: 'POST', token: salesToken, prefer: 'return=representation',
+      body: {
+        company_id: ACC_COMPANY_MSI, prospect_id: prospectId, service_type: 'freight_forwarding',
+        direction: 'Export', customer_role: 'Shipper', status: 'QUOTED',
+        created_by: salesUserId, owner_id: salesUserId,
+        notes: 'ZZZTEST-E2E-K1D fixture -- aman dihapus',
+      },
+    });
+    const inquiryAId = Array.isArray(inqAResp.json) ? inqAResp.json[0]?.id : null;
+    const inquiryANo = Array.isArray(inqAResp.json) ? inqAResp.json[0]?.inquiry_no : null;
+    check('[ACC] Fixture A -- inquiry QUOTED dibuat via REST (sesi sales@msi.com)', inqAResp.ok && !!inquiryAId, inqAResp.ok ? `${inquiryAId} (${inquiryANo})` : JSON.stringify(inqAResp.json));
+
+    const quoAResp = await pgrest('quotations', {
+      method: 'POST', token: salesToken, prefer: 'return=representation',
+      body: {
+        company_id: ACC_COMPANY_MSI, quotation_no: `ZZZTEST-E2E-K1D-A-${nonce}`,
+        status: 'SENT', created_by: salesUserId, inquiry_id: inquiryAId, prospect_id: prospectId,
+      },
+    });
+    const quoAId = Array.isArray(quoAResp.json) ? quoAResp.json[0]?.id : null;
+    check('[ACC] Fixture A -- quotation SENT dibuat via REST, tertaut inquiry A', quoAResp.ok && !!quoAId, quoAResp.ok ? quoAId : JSON.stringify(quoAResp.json));
+
+    // ── Fixture B: quotation SENT TANPA inquiry (jalur Reject, regresi). ────
+    const quoBResp = await pgrest('quotations', {
+      method: 'POST', token: salesToken, prefer: 'return=representation',
+      body: { company_id: ACC_COMPANY_MSI, quotation_no: `ZZZTEST-E2E-K1D-B-${nonce}`, status: 'SENT', created_by: salesUserId, prospect_id: prospectId },
+    });
+    const quoBId = Array.isArray(quoBResp.json) ? quoBResp.json[0]?.id : null;
+    check('[ACC] Fixture B -- quotation SENT dibuat via REST (jalur Reject)', quoBResp.ok && !!quoBId, quoBResp.ok ? quoBId : JSON.stringify(quoBResp.json));
+
+    // ── Fixture C: quotation SENT lain (jalur guard UPDATE langsung). ───────
+    const quoCResp = await pgrest('quotations', {
+      method: 'POST', token: salesToken, prefer: 'return=representation',
+      body: { company_id: ACC_COMPANY_MSI, quotation_no: `ZZZTEST-E2E-K1D-C-${nonce}`, status: 'SENT', created_by: salesUserId, prospect_id: prospectId },
+    });
+    const quoCId = Array.isArray(quoCResp.json) ? quoCResp.json[0]?.id : null;
+    check('[ACC] Fixture C -- quotation SENT dibuat via REST (jalur guard)', quoCResp.ok && !!quoCId, quoCResp.ok ? quoCId : JSON.stringify(quoCResp.json));
+
+    if (!quoAId || !quoBId || !quoCId) {
+      console.log('  ⚠ Satu atau lebih fixture gagal dibuat -- sisa Flow 4 yang bergantung padanya akan gagal dengan jelas, dilaporkan apa adanya lewat check() di atas.');
+    }
+
+    // ── Konteks browser BARU, akun sales@msi.com (pola identik ctx2/page2
+    // Flow 3 -- localStorage per-konteks, tidak menimpa sesi akun lain). ─────
+    const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+    await ctx3.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(salesSession)]);
+    const page3 = await ctx3.newPage();
+    page3.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
+
+    // ── Berkas fixture di temp OS (os.tmpdir(), BUKAN disk repo, dihapus di
+    // akhir flow ini) -- .txt kecil (jenis ditolak) + "PDF" minimal (header
+    // %PDF- cukup supaya Playwright mengirim Content-Type application/pdf
+    // lewat setInputFiles; FE hanya membaca file.type/file.size, tidak
+    // pernah membaca ISI berkas). ────────────────────────────────────────────
+    const tmpDir = mkdtempSync(join(tmpdir(), 'e2e-k1d-'));
+    const txtPath = join(tmpDir, 'bukti-tidak-valid.txt');
+    const pdfPath = join(tmpDir, 'bukti-valid.pdf');
+    writeFileSync(txtPath, 'Bukti uji e2e K1d -- bukan berkas sungguhan.\n');
+    writeFileSync(pdfPath, '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+
+    if (quoAId) {
+      // ── (1) Detail Quotation A -- klik "Mark Accepted": modal terbuka. ────
+      await page3.goto(`${BASE}${QUOTATION_DETAIL_PATH}/${quoAId}`, { waitUntil: 'domcontentloaded' });
+      await settle(page3);
+      const markAcceptedBtn = page3.locator('button:has-text("Mark Accepted")');
+      check('[ACC] (1) Tombol "Mark Accepted" terlihat di Detail Quotation A', await markAcceptedBtn.isVisible().catch(() => false));
+      await markAcceptedBtn.click();
+      await settle(page3, 300);
+      check('[ACC] (1) Modal "Record customer acceptance" terbuka', (await page3.locator('text="Record customer acceptance"').count()) > 0);
+      check('[ACC] (1) Tombol submit "Yes, Mark Accepted" terlihat di modal', await page3.locator('button:has-text("Yes, Mark Accepted")').isVisible().catch(() => false));
+
+      // ── (2) Submit TANPA file -- pesan inline, modal tetap terbuka, DB SENT. ──
+      await page3.locator('button:has-text("Yes, Mark Accepted")').click();
+      await settle(page3, 300);
+      check('[ACC] (2) Pesan inline "Proof is required." tampil', (await page3.locator('text="Proof is required."').count()) > 0);
+      check('[ACC] (2) Modal tetap terbuka setelah submit tanpa file', (await page3.locator('text="Record customer acceptance"').count()) > 0);
+      let quoACheck = await pgrest(`quotations?id=eq.${quoAId}&select=status`, { token: salesToken });
+      check('[ACC] (2) Quotation A di DB tetap SENT (nol file)', quoACheck.json?.[0]?.status === 'SENT', JSON.stringify(quoACheck.json));
+
+      // ── (3) File .txt (jenis ditolak) -- dilaporkan APA ADANYA, bukan ditambal. ──
+      await page3.locator('input[type="file"]').first().setInputFiles(txtPath);
+      await settle(page3, 300);
+      await waitForToastGone(page3);
+      await page3.locator('button:has-text("Yes, Mark Accepted")').click();
+      await settle(page3, 800);
+      const toastAfterTxt = (await toastLocator(page3).allInnerTexts().catch(() => [])).filter(Boolean);
+      const inlineAfterTxt = (await page3.locator('text=/tidak diterima/i').count()) > 0;
+      const modalStillOpenAfterTxt = (await page3.locator('text="Record customer acceptance"').count()) > 0;
+      check('[ACC] (3) Pesan penolakan jenis berkas muncul (toast ATAU inline, dilaporkan apa adanya)',
+        inlineAfterTxt || toastAfterTxt.some((t) => /tidak diterima/i.test(t)),
+        `toast terlihat: ${JSON.stringify(toastAfterTxt)} · inline "tidak diterima": ${inlineAfterTxt} · modal masih terbuka: ${modalStillOpenAfterTxt}`);
+      quoACheck = await pgrest(`quotations?id=eq.${quoAId}&select=status`, { token: salesToken });
+      check('[ACC] (3) Quotation A di DB tetap SENT (file .txt ditolak)', quoACheck.json?.[0]?.status === 'SENT', JSON.stringify(quoACheck.json));
+
+      // ── (4) PDF valid + Notes -- sukses, toast, kembali ke daftar. Buka
+      // ulang modal secara eksplisit kalau langkah (3) kebetulan menutupnya
+      // (temuan, bukan diasumsikan) -- supaya langkah ini tidak bergantung
+      // pada state modal yang ditinggalkan langkah sebelumnya. ─────────────
+      if (!modalStillOpenAfterTxt) {
+        await page3.goto(`${BASE}${QUOTATION_DETAIL_PATH}/${quoAId}`, { waitUntil: 'domcontentloaded' });
+        await settle(page3);
+        await page3.locator('button:has-text("Mark Accepted")').click();
+        await settle(page3, 300);
+      }
+      await page3.locator('input[type="file"]').first().setInputFiles(pdfPath);
+      await settle(page3, 300);
+      await page3.locator('#quo-accept-notes').fill('ZZZTEST e2e catatan');
+      await waitForToastGone(page3);
+      await page3.locator('button:has-text("Yes, Mark Accepted")').click();
+      await checkToastExact(page3, '[ACC] (4) Toast "Quotation marked as accepted" tampil', 'Quotation marked as accepted', 8000);
+      await settle(page3, 500);
+      const urlAfterAccept = page3.url();
+      check('[ACC] (4) Kembali ke daftar Quotation setelah sukses', new URL(urlAfterAccept).pathname === QUOTATION_DETAIL_PATH, urlAfterAccept);
+
+      // ── (5) Verifikasi DB (sesi sales@msi.com). ──────────────────────────
+      const quoAFinal = await pgrest(`quotations?id=eq.${quoAId}&select=status,accepted_evidence_path,accepted_by`, { token: salesToken });
+      const rowA = quoAFinal.json?.[0] || {};
+      check('[ACC] (5) Quotation A status ACCEPTED', rowA.status === 'ACCEPTED', JSON.stringify(rowA));
+      check('[ACC] (5) accepted_evidence_path berawalan "<company_id>/<quotation_id>/"', typeof rowA.accepted_evidence_path === 'string' && rowA.accepted_evidence_path.startsWith(`${ACC_COMPANY_MSI}/${quoAId}/`), rowA.accepted_evidence_path);
+      check('[ACC] (5) accepted_by = user uji (sales@msi.com)', rowA.accepted_by === salesUserId, rowA.accepted_by);
+
+      const inqAFinal = await pgrest(`inquiries?id=eq.${inquiryAId}&select=status,won_reason`, { token: salesToken });
+      const rowInqA = inqAFinal.json?.[0] || {};
+      check('[ACC] (5) Inquiry A terkait jadi WON', rowInqA.status === 'WON', JSON.stringify(rowInqA));
+      check('[ACC] (5) Inquiry A won_reason = "Accepted quotation"', rowInqA.won_reason === 'Accepted quotation', rowInqA.won_reason);
+
+      const auditResp = await pgrest(`audit_logs?action=eq.ACCEPT_QUOTATION&entity_id=eq.${quoAId}&select=notes`, { token: salesToken });
+      if (auditResp.ok && Array.isArray(auditResp.json) && auditResp.json.length > 0) {
+        check('[ACC] (5) audit_logs.notes = "ZZZTEST e2e catatan"', auditResp.json[0]?.notes === 'ZZZTEST e2e catatan', JSON.stringify(auditResp.json));
+      } else {
+        console.log('  ⊘ SKIPPED [ACC] (5) audit_logs.notes -- sales@msi.com tidak lolos audit_logs_read (is_admin_or_above() wajib); tidak dipaksa pakai sesi lain.');
+      }
+
+      // ── (6) Reopen Detail A -- "Acceptance Evidence" + "View proof", klik. ──
+      await page3.goto(`${BASE}${QUOTATION_DETAIL_PATH}/${quoAId}`, { waitUntil: 'domcontentloaded' });
+      await settle(page3);
+      check('[ACC] (6) Baris "Acceptance Evidence" tampil', (await page3.locator('text="Acceptance Evidence"').count()) > 0);
+      const viewProofBtn = page3.locator('button:has-text("View proof")');
+      check('[ACC] (6) Tombol "View proof" terlihat', await viewProofBtn.isVisible().catch(() => false));
+      try {
+        const [popup] = await Promise.all([
+          page3.context().waitForEvent('page', { timeout: 15000 }),
+          viewProofBtn.click(),
+        ]);
+        await popup.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+        const popupUrl = popup.url();
+        const fileResp = await fetch(popupUrl).catch((e) => ({ ok: false, status: 0, headers: new Map(), _err: e.message }));
+        check('[ACC] (6) Tab baru terbuka ke URL signed Storage (bucket quotation-acceptance-evidence)', /quotation-acceptance-evidence/.test(popupUrl), popupUrl);
+        check('[ACC] (6) Respons file HTTP 200', fileResp.ok === true, fileResp.ok === false ? `status ${fileResp.status}${fileResp._err ? ' -- ' + fileResp._err : ''}` : `status ${fileResp.status}`);
+        const ct = fileResp.headers?.get?.('content-type') || '';
+        check('[ACC] (6) Content-Type respons memuat "pdf"', /pdf/i.test(ct), ct);
+        await popup.close().catch(() => {});
+      } catch (e) {
+        check('[ACC] (6) Klik "View proof" membuka tab baru ke berkas (fetch ulang di sisi Node)', false, `exception: ${e.message}`);
+      }
+    } else {
+      console.log('  ⚠ Fixture A gagal dibuat -- langkah (1)-(6) dilewati sama sekali (bukan dicoba lalu gagal), lihat check() fixture di atas utk akarnya.');
+    }
+
+    // ── (7) Regresi Reject -- Detail Quotation B, "Mark Rejected" (tombol
+    // + RejectReasonModal SUDAH ADA sebelum K1d, TIDAK disentuh K1d). ───────
+    if (quoBId) {
+      await page3.goto(`${BASE}${QUOTATION_DETAIL_PATH}/${quoBId}`, { waitUntil: 'domcontentloaded' });
+      await settle(page3);
+      const markRejectedBtn = page3.locator('button:has-text("Mark Rejected")');
+      check('[ACC] (7) Tombol "Mark Rejected" terlihat di Detail Quotation B', await markRejectedBtn.isVisible().catch(() => false));
+      await markRejectedBtn.click();
+      await settle(page3, 300);
+      await page3.locator('#quo-reject-reason').fill('ZZZTEST e2e alasan tolak (regresi)');
+      await waitForToastGone(page3);
+      // Trigger "Mark Rejected" (action bar) DAN submit modal "Mark Rejected"
+      // sama-sama cocok selector teks ini -- modal dirender TERAKHIR di JSX
+      // (sesudah action bar), jadi .last() = submit modal (bukan trigger).
+      await page3.locator('button:has-text("Mark Rejected")').last().click();
+      await settle(page3, 800);
+      const quoBFinal = await pgrest(`quotations?id=eq.${quoBId}&select=status,rejection_reason,accepted_evidence_path`, { token: salesToken });
+      const rowB = quoBFinal.json?.[0] || {};
+      check('[ACC] (7) Quotation B status REJECTED', rowB.status === 'REJECTED', JSON.stringify(rowB));
+      check('[ACC] (7) Quotation B rejection_reason terisi', !!rowB.rejection_reason, rowB.rejection_reason);
+      check('[ACC] (7) Quotation B accepted_evidence_path NULL', rowB.accepted_evidence_path == null, rowB.accepted_evidence_path);
+    }
+
+    // ── (8) Guard lewat REST langsung (sesi sales@msi.com, BUKAN service_role). ──
+    if (quoCId) {
+      const directUpdate = await pgrest(`quotations?id=eq.${quoCId}`, { method: 'PATCH', token: salesToken, body: { status: 'ACCEPTED' } });
+      check('[ACC] (8) UPDATE langsung status=ACCEPTED DITOLAK', !directUpdate.ok, `status ${directUpdate.status}`);
+      const msg1 = typeof directUpdate.json === 'object' ? directUpdate.json?.message : String(directUpdate.json);
+      check('[ACC] (8) Pesan error memuat "tidak bisa diubah langsung ke ACCEPTED"', /tidak bisa diubah langsung ke ACCEPTED/.test(msg1 || ''), msg1);
+      const quoCAfterPatch = await pgrest(`quotations?id=eq.${quoCId}&select=status`, { token: salesToken });
+      check('[ACC] (8) Quotation C di DB tetap SENT setelah UPDATE langsung ditolak', quoCAfterPatch.json?.[0]?.status === 'SENT', JSON.stringify(quoCAfterPatch.json));
+
+      const rpcNoEvidence = await pgrest('rpc/set_quotation_outcome', {
+        method: 'POST', token: salesToken,
+        body: { p_quotation_id: quoCId, p_outcome: 'ACCEPTED', p_reason: null, p_evidence_path: null },
+      });
+      check('[ACC] (8) RPC set_quotation_outcome ACCEPTED tanpa p_evidence_path DITOLAK', !rpcNoEvidence.ok, `status ${rpcNoEvidence.status}`);
+      const msg2 = typeof rpcNoEvidence.json === 'object' ? rpcNoEvidence.json?.message : String(rpcNoEvidence.json);
+      check('[ACC] (8) Pesan error memuat "Bukti wajib dilampirkan"', /Bukti wajib dilampirkan/.test(msg2 || ''), msg2);
+    }
+
+    rmSync(tmpDir, { recursive: true, force: true });
+    await ctx3.close().catch(() => {});
+
+    console.log('\n  → [ACC] Fixture tertinggal di staging (ZZZTEST, utk pembersihan nanti):');
+    console.log(`      inquiry A  : ${inquiryAId || '(gagal dibuat)'}  nomor server: ${inquiryANo || '(tidak tertangkap)'}  (notes = penanda ZZZTEST)`);
+    console.log(`      quotation A: ${quoAId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-A-${nonce})`);
+    console.log(`      quotation B: ${quoBId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-B-${nonce})`);
+    console.log(`      quotation C: ${quoCId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-C-${nonce})`);
+  } catch (e) {
+    console.log(`\n  ✖ FLOW KEEMPAT berhenti karena exception tak tertangkap -- dilaporkan, flow 1-3 TIDAK terdampak (sudah selesai sebelum blok ini jalan): ${e.message}`);
+    check('[ACC] Flow 4 selesai tanpa exception fatal', false, (e.stack || '').split('\n').slice(0, 3).join(' | '));
+  }
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();

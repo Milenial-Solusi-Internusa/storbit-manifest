@@ -9,6 +9,8 @@ import { isManagerOrAbove as isManagerOrAboveRole } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
 import QuotationPDF from './QuotationPDF';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
+import { setQuotationOutcomeWithEvidence, signQuotationAcceptanceEvidence } from '../../lib/db';
+import { MarkAcceptedModal } from './QuotationOutcomeModals';
 
 /* Gate FE untuk revisi & pencatatan hasil — cermin RLS quotations_update
    (is_manager_or_above_in(company_id) ATAU pemilik); RPC di DB yang menegakkan
@@ -243,6 +245,12 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const [siblings,   setSiblings]   = useState([]);
   const [actionSaving, setActionSaving] = useState(false);
   const [rejectOpen,   setRejectOpen]   = useState(false);
+  // Mark Accepted — modal terpisah, BUKAN ConfirmModal polos: Keputusan Den
+  // 25 Okt 2026 mewajibkan bukti (RPC menolak ACCEPTED tanpa itu), jadi
+  // layarnya butuh pilih-berkas + pesan unggah gagal yang bisa dicoba lagi
+  // tanpa menutup modal — pola sama MarkWonModal (DealWonModals.jsx).
+  const [acceptOpen,   setAcceptOpen]   = useState(false);
+  const [uploadError,  setUploadError]  = useState('');
 
   // ── Effect 1: fetch quotation + items (only re-runs when quotationId changes) ──
   useEffect(() => {
@@ -255,7 +263,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .from('quotations')
         .select(`
           id, quotation_no, revision, status, company_id, service_type, route,
-          created_by, accepted_at, accepted_by, rejection_reason,
+          created_by, accepted_at, accepted_by, accepted_evidence_path, rejection_reason,
           valid_until, created_at, notes, terms, usd_rate,
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
@@ -417,16 +425,29 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   };
 
   // ── Catat jawaban customer (ACCEPTED / REJECTED) ─────────────────────────
-  const handleOutcome = async (outcome, reason = null) => {
+  // ACCEPTED WAJIB bukti (Keputusan Den 25 Okt 2026, migrasi
+  // 20261026000004) — setQuotationOutcomeWithEvidence mengunggah `file` ke
+  // bucket quotation-acceptance-evidence dulu (hanya untuk ACCEPTED; REJECTED
+  // melewati unggahan) baru memanggil set_quotation_outcome 4-argumen.
+  // uploadError TIDAK menutup modal Mark Accepted — pola sama Mark Won
+  // manual (DealDetailPage.jsx): user bisa klik submit lagi dengan berkas
+  // yang sama tanpa mengisi ulang field lain.
+  const handleOutcome = async (outcome, reason = null, file = null) => {
     setActionSaving(true);
+    if (outcome === 'ACCEPTED') setUploadError('');
     try {
-      const { error } = await supabase.rpc('set_quotation_outcome', {
-        p_quotation_id: quotationId,
-        p_outcome:      outcome,
-        p_reason:       reason,
+      const { error, isUploadError } = await setQuotationOutcomeWithEvidence({
+        quotationId, companyId: quot.company_id, outcome, reason, file,
       });
-      if (error) throw error;
+      if (error) {
+        if (outcome === 'ACCEPTED' && isUploadError) {
+          setUploadError('Failed to upload the proof file: ' + error.message);
+          return;
+        }
+        throw error;
+      }
       setRejectOpen(false);
+      setAcceptOpen(false);
       showToast?.(outcome === 'ACCEPTED' ? 'Quotation marked as accepted' : 'Quotation marked as rejected');
       onBack();
     } catch (err) {
@@ -536,7 +557,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           {canRecordOutcome && (
             <>
               <button
-                onClick={() => handleOutcome('ACCEPTED')}
+                onClick={() => setAcceptOpen(true)}
                 disabled={actionSaving}
                 style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: C.ok, color: '#fff', fontSize: 13, fontWeight: 700, cursor: actionSaving ? 'not-allowed' : 'pointer', opacity: actionSaving ? .7 : 1 }}
               >
@@ -626,6 +647,26 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               )}
               {quot.accepted_at && (
                 <InfoRow label="Recorded By" value={quot.accepted_by_profile?.full_name} />
+              )}
+              {/* Bukti penerimaan — hanya ada untuk quotation yang ACCEPTED
+                  SESUDAH migrasi 20261026000004 (baris ACCEPTED lama tetap
+                  valid dengan path NULL, lihat uji (i) skrip verifikasi —
+                  jadi baris ini SENGAJA tidak tampil untuk mereka). URL
+                  ditanda-tangani saat diklik, tidak disimpan — pola sama
+                  lampiran invoice. */}
+              {quot.accepted_evidence_path && (
+                <InfoRow label="Acceptance Evidence" value={
+                  <button
+                    onClick={async () => {
+                      const { data: url, error } = await signQuotationAcceptanceEvidence(quot.accepted_evidence_path);
+                      if (error || !url) { showToast?.('Failed to open the evidence file: ' + (error?.message || 'unknown error'), 'error'); return; }
+                      window.open(url, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{ padding: 0, border: 'none', background: 'none', color: C.info, fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    View proof
+                  </button>
+                } />
               )}
               {quot.rejection_reason && (
                 <div style={{ gridColumn: '1 / -1' }}>
@@ -1043,6 +1084,20 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         saving={actionSaving}
         onSave={(reason) => handleOutcome('REJECTED', reason)}
         onCancel={() => setRejectOpen(false)}
+      />
+
+      {/* `key` mengikutkan `acceptOpen` supaya state lokal modal (berkas +
+          pesan error) lahir bersih tiap kali dibuka — pola sama RejectReasonModal
+          di atas / MarkWonModal (DealWonModals.jsx). */}
+      <MarkAcceptedModal
+        key={`accept-${quotationId}-${acceptOpen}`}
+        open={acceptOpen}
+        quotationNo={formatQuotationNo(quot.quotation_no, quot.revision)}
+        saving={actionSaving}
+        uploadError={uploadError}
+        tokens={C}
+        onSave={({ notes, file }) => handleOutcome('ACCEPTED', notes, file)}
+        onCancel={() => { setAcceptOpen(false); setUploadError(''); }}
       />
     </div>
   );
