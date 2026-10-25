@@ -304,11 +304,17 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // kondisi yang masing-masing membuat tabel lane tampil: isRS (RS SELALU
   // tabel lane, nol transisi "Add route option") ATAU f.laneMode (Single
   // Shipment, multi-route lewat "Add route option" -- TIDAK disentuh).
-  // selectedLanes = lane yang checkbox "Use"-nya TIDAK di-uncheck (Single
-  // Shipment: `l.on` selalu undefined, filter ini jadi no-op transparan).
+  // selectedLanes = lane yang checkbox "Use"-nya TIDAK di-uncheck, HANYA
+  // disaring saat isRS (Perbaikan 1, review Vir) -- filter ini BUKAN no-op
+  // transparan untuk Single Shipment seperti diasumsikan sebelumnya: kolom
+  // "Use" tidak pernah ada di UI Single Shipment, tapi `lane.on` bisa
+  // tertinggal `false` dari toggle RS->Single Shipment sebelumnya (nilai
+  // TIDAK dikosongkan saat toggle, supaya bolak-balik tidak kehilangan
+  // pilihan) -- tanpa guard `isRS`, lane itu diam-diam tidak terkirim ke
+  // RPC walau nol cara bagi user Single Shipment untuk melihat/mengubahnya.
   const isRS = f.inquiry_type === 'Rate Sheet Request';
   const laneTbl = isRS || f.laneMode;
-  const selectedLanes = f.lanes.filter((l) => l.on !== false);
+  const selectedLanes = isRS ? f.lanes.filter((l) => l.on !== false) : f.lanes;
 
   const dgSelected = f.cargo_types.includes('dg');
   // mockup req.nCont (baris 759): wajib bila ADA tipe kontainer "/^FCL/",
@@ -1221,8 +1227,14 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, i
   // Putaran 4 Tahap 4C -- laneTbl/selectedLanes dihitung lokal dari props
   // (pola sama showUndernameReview di bawah, dihitung lokal dari isDoorToDoor
   // + f), bukan dioper sebagai prop terpisah -- isRS saja cukup.
+  // Perbaikan 1 (review Vir) -- filter "Use" HANYA berlaku isRS, pola SAMA
+  // dengan body komponen utama: `lane.on` bisa tertinggal `false` dari
+  // toggle RS->Single Shipment sebelumnya, dan Single Shipment nol UI utk
+  // melihat/mengubahnya -- filter di sini sebelumnya diam-diam ikut
+  // menyaringnya juga, tidak konsisten dgn label "Route options (N)" yang
+  // masih memakai f.lanes.length (menghitung SEMUA).
   const laneTbl = isRS || f.laneMode;
-  const selectedLanes = f.lanes.filter((l) => l.on !== false);
+  const selectedLanes = isRS ? f.lanes.filter((l) => l.on !== false) : f.lanes;
   const lanesText = laneTbl
     ? selectedLanes.map((l) => `${l.pol || '…'} → ${l.pod || '…'}`).join('; ')
     : `${f.pol || '…'} → ${f.pod || '…'}`;
@@ -1252,7 +1264,7 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, i
       <div>
         <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Route &amp; Terms</div>
         <div style={grid3}>
-          <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? f.lanes.length : 1})`} value={lanesText} required />
+          <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? selectedLanes.length : 1})`} value={lanesText} required />
           {isRS ? (
             <>
               <ReviewRow label="Validity Requested" value={f.validity_from && f.validity_to ? `${f.validity_from} to ${f.validity_to}` : ''} required />
