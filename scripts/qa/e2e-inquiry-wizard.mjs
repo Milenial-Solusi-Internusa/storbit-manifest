@@ -1307,20 +1307,44 @@ function dealFieldValue(page, label) {
 
     const nonce = Date.now();
 
-    // ── Fixture A: inquiry QUOTED (inquiry_no SERVER-GENERATED, lihat temuan
-    // di atas -- notes = penanda ZZZTEST) + quotation SENT tertaut. ─────────
-    const inqAResp = await pgrest('inquiries', {
-      method: 'POST', token: salesToken, prefer: 'return=representation',
+    // ── Fixture A: inquiry (via RPC create_inquiry_with_lanes, BUKAN REST
+    // INSERT langsung -- K1c mencabut INSERT authenticated pada inquiries,
+    // persis jalur lama yang dipakai fixture ini; lihat run sebelumnya
+    // [ACC Fixture A gagal "permission denied for table inquiries"], temuan
+    // Den: perilaku K1c yang disengaja, perbaikannya di skrip ini) +
+    // quotation SENT tertaut.
+    //
+    // Status TIDAK dipaksa QUOTED lewat UPDATE -- create_inquiry_with_lanes
+    // SELALU membuat baris berstatus OPEN (hardcode di badan RPC, nol
+    // parameter p_status); trigger set_inquiry_quoted_on_quotation_sent
+    // (AFTER INSERT ON quotations, SECURITY DEFINER) menaikkannya ke QUOTED
+    // begitu quotation SENT tertaut dibuat di bawah -- status dibaca balik
+    // SESUDAHNYA dan dicetak sebagai baris INFO, bukan diasumsikan.
+    //
+    // p_notes RPC ini ADA (dikonfirmasi di tanda tangan fungsi) -- penanda
+    // ZZZTEST tetap tersimpan di inquiries.notes, pola sama REST lama.
+    // Lane minimal: pol_location_id/pod_location_id WAJIB uuid lokasi NYATA
+    // (FK ke public.locations) -- locations_insert kini super_admin-only
+    // (K1c, migrasi 20261026000003) sehingga sales@msi.com tidak bisa
+    // membuat lokasi throwaway lagi; locations_select tetap USING(true),
+    // jadi dua lokasi EXISTING diambil lewat GET biasa.
+    const locResp = await pgrest('locations?select=id,code&limit=2', { token: salesToken });
+    const locPol = Array.isArray(locResp.json) ? locResp.json[0]?.id : null;
+    const locPod = Array.isArray(locResp.json) ? locResp.json[1]?.id : null;
+    check('[ACC] Dua lokasi existing terbaca lewat REST (utk lane fixture A)', !!locPol && !!locPod, JSON.stringify(locResp.json));
+
+    const inqAResp = await pgrest('rpc/create_inquiry_with_lanes', {
+      method: 'POST', token: salesToken,
       body: {
-        company_id: ACC_COMPANY_MSI, prospect_id: prospectId, service_type: 'freight_forwarding',
-        direction: 'Export', customer_role: 'Shipper', status: 'QUOTED',
-        created_by: salesUserId, owner_id: salesUserId,
-        notes: 'ZZZTEST-E2E-K1D fixture -- aman dihapus',
+        p_company_id: ACC_COMPANY_MSI, p_prospect_id: prospectId, p_service_type: 'freight_forwarding',
+        p_direction: 'Export', p_customer_role: 'Shipper',
+        p_notes: 'ZZZTEST-E2E-K1D fixture -- aman dihapus',
+        p_lanes: [{ pol_location_id: locPol, pod_location_id: locPod, pol: 'ZZZTEST POL', pod: 'ZZZTEST POD' }],
       },
     });
     const inquiryAId = Array.isArray(inqAResp.json) ? inqAResp.json[0]?.id : null;
     const inquiryANo = Array.isArray(inqAResp.json) ? inqAResp.json[0]?.inquiry_no : null;
-    check('[ACC] Fixture A -- inquiry QUOTED dibuat via REST (sesi sales@msi.com)', inqAResp.ok && !!inquiryAId, inqAResp.ok ? `${inquiryAId} (${inquiryANo})` : JSON.stringify(inqAResp.json));
+    check('[ACC] Fixture A -- inquiry dibuat via RPC create_inquiry_with_lanes (sesi sales@msi.com)', inqAResp.ok && !!inquiryAId, inqAResp.ok ? `${inquiryAId} (${inquiryANo})` : JSON.stringify(inqAResp.json));
 
     const quoAResp = await pgrest('quotations', {
       method: 'POST', token: salesToken, prefer: 'return=representation',
@@ -1331,6 +1355,12 @@ function dealFieldValue(page, label) {
     });
     const quoAId = Array.isArray(quoAResp.json) ? quoAResp.json[0]?.id : null;
     check('[ACC] Fixture A -- quotation SENT dibuat via REST, tertaut inquiry A', quoAResp.ok && !!quoAId, quoAResp.ok ? quoAId : JSON.stringify(quoAResp.json));
+
+    if (inquiryAId) {
+      const inqAStatusResp = await pgrest(`inquiries?id=eq.${inquiryAId}&select=status`, { token: salesToken });
+      const inqAStatusBefore = inqAStatusResp.json?.[0]?.status;
+      console.log(`  ℹ [ACC] Inquiry A status SEBELUM quotation diterima: ${inqAStatusBefore} (OPEN dari create_inquiry_with_lanes, atau QUOTED kalau trigger quotation-SENT sudah menaikkannya)`);
+    }
 
     // ── Fixture B: quotation SENT TANPA inquiry (jalur Reject, regresi). ────
     const quoBResp = await pgrest('quotations', {
