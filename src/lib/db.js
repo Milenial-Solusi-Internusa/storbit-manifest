@@ -2186,6 +2186,12 @@ export const QUOTATION_ACCEPTANCE_EVIDENCE_MIME = ['application/pdf', 'image/jpe
  * Urutan byte-dulu sama alasannya dengan markInquiryWonWithEvidence/
  * uploadInvoiceAttachment: metadata yang menunjuk berkas tak ada lebih
  * buruk daripada berkas yatim yang tak terlihat siapa pun.
+ *
+ * `reason` untuk ACCEPTED = Notes opsional dari modal (bukan alasan
+ * penolakan) -- diteruskan ke RPC sebagai p_reason, yang HANYA menyimpannya
+ * ke audit_logs.notes lewat INSERT audit (lihat set_quotation_outcome).
+ * TIDAK ditulis ke kolom quotations mana pun (rejection_reason tetap NULL
+ * untuk ACCEPTED) dan TIDAK ditampilkan di Detail Quotation.
  */
 export async function setQuotationOutcomeWithEvidence({ quotationId, companyId, outcome, reason = null, file = null }) {
   if (outcome === 'REJECTED') {
@@ -2211,7 +2217,7 @@ export async function setQuotationOutcomeWithEvidence({ quotationId, companyId, 
   if (upErr) return { error: upErr, isUploadError: true };
 
   const { error } = await supabase.rpc('set_quotation_outcome', {
-    p_quotation_id: quotationId, p_outcome: 'ACCEPTED', p_reason: null, p_evidence_path: path,
+    p_quotation_id: quotationId, p_outcome: 'ACCEPTED', p_reason: reason, p_evidence_path: path,
   });
   return { error };
 }
