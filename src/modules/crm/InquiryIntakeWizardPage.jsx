@@ -238,6 +238,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     pricing_basis: '',
     pol_location_id: null, pod_location_id: null, pol: '', pod: '',
     laneMode: false, lanes: [],
+    inquiry_type: 'Single Shipment', validity_from: '', validity_to: '', monthly_volume_cbm: '',
     incoterms: [], container_types: [], n_containers: '', cargo_ready_date: '',
     pickup_address: '', delivery_address: '',
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
@@ -256,6 +257,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const [weightUnrecognized, setWeightUnrecognized] = useState(false);
   const [volumeUnrecognized, setVolumeUnrecognized] = useState(false);
   const [estValUnrecognized, setEstValUnrecognized] = useState(false);
+  // Putaran 4 Tahap 4C -- Estimated Volume per Month (CBM), mode Rate Sheet
+  // Request. Pola IDENTIK weight_kg/volume_cbm/estimated_value di atas
+  // (TD-285) -- type="text", format ulang hanya saat blur, blokir Create
+  // kalau tak terbaca.
+  const [monthlyVolumeUnrecognized, setMonthlyVolumeUnrecognized] = useState(false);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const toggleArr = (k, v) => setF((x) => ({ ...x, [k]: x[k].includes(v) ? x[k].filter((y) => y !== v) : [...x[k], v] }));
@@ -280,6 +286,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   };
   // n_containers -- integer (p_n_containers RPC), digit saja, nol titik/koma.
   const handleNContainersChange = (e) => setF((x) => ({ ...x, n_containers: e.target.value.replace(/\D/g, '') }));
+  const handleMonthlyVolumeChange = (v) => { setF((x) => ({ ...x, monthly_volume_cbm: v })); setMonthlyVolumeUnrecognized(readMoneyInput(v).unrecognized); };
+  const handleMonthlyVolumeBlur = () => {
+    const { value, unrecognized } = readMoneyInput(f.monthly_volume_cbm);
+    if (unrecognized) return;
+    setF((x) => ({ ...x, monthly_volume_cbm: x.monthly_volume_cbm.trim() === '' ? '' : formatIdNumber(value) }));
+  };
 
   const isDoorToDoor = f.service_type === 'door_to_door';
   const SK = isDoorToDoor ? STEPS_DOOR_TO_DOOR : STEPS_DEFAULT;
@@ -288,12 +300,26 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const stepIdx = Math.min(step, SK.length);
   const stepKey = SK[stepIdx - 1];
 
+  // Putaran 4 Tahap 4C -- "Rate Sheet Request". laneTbl menyatukan DUA
+  // kondisi yang masing-masing membuat tabel lane tampil: isRS (RS SELALU
+  // tabel lane, nol transisi "Add route option") ATAU f.laneMode (Single
+  // Shipment, multi-route lewat "Add route option" -- TIDAK disentuh).
+  // selectedLanes = lane yang checkbox "Use"-nya TIDAK di-uncheck (Single
+  // Shipment: `l.on` selalu undefined, filter ini jadi no-op transparan).
+  const isRS = f.inquiry_type === 'Rate Sheet Request';
+  const laneTbl = isRS || f.laneMode;
+  const selectedLanes = f.lanes.filter((l) => l.on !== false);
+
   const dgSelected = f.cargo_types.includes('dg');
   // mockup req.nCont (baris 759): wajib bila ADA tipe kontainer "/^FCL/",
   // BUKAN bila ada lane bermode "Sea FCL" (dua field berbeda — lane.mode vs
   // container_types — ikut mockup, bukan bacaan literal instruksi; dicatat
   // sebagai klarifikasi di laporan, bukan dibangun dua kali).
-  const needsNContainers = f.container_types.some((c) => /^FCL/.test(c));
+  // REVISI 1 -- `!isRS` DI SUMBER: container_types state TETAP tersimpan
+  // (toggle balik ke Single Shipment tidak kehilangan isian), tapi field-nya
+  // disembunyikan untuk RS sehingga syarat Number of containers tidak boleh
+  // ikut memblokir Create lewat sisa isian yang tak lagi terlihat user.
+  const needsNContainers = !isRS && f.container_types.some((c) => /^FCL/.test(c));
 
   // ── Akun: prospect/customer — pola diwarisi InquiryFormPage.jsx apa adanya
   // (dua daftar ber-lifecycle-stage berbeda, is_in_lead_pool=false) — mockup
@@ -395,8 +421,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // ── Direction auto-suggest (lane pertama yang terkirim — mockup PLAN
   // addendum §B.5): trim+lowercase dibanding 'indonesia'. Berhenti menimpa
   // begitu user menyentuh Direction manual (directionTouched). ─────────────
-  const primaryPolLoc = f.laneMode ? f.lanes[0]?.pol_location_id : f.pol_location_id;
-  const primaryPodLoc = f.laneMode ? f.lanes[0]?.pod_location_id : f.pod_location_id;
+  // C3.3 -- "lane pertama" untuk Rate Sheet Request = lane pertama yang
+  // checkbox "Use"-nya TETAP tercentang (selectedLanes[0]), bukan f.lanes[0]
+  // mentah. Untuk Single Shipment (laneMode, l.on selalu undefined) hasilnya
+  // identik f.lanes[0] -- nol perubahan perilaku di sana.
+  const primaryPolLoc = laneTbl ? selectedLanes[0]?.pol_location_id : f.pol_location_id;
+  const primaryPodLoc = laneTbl ? selectedLanes[0]?.pod_location_id : f.pod_location_id;
   useEffect(() => {
     if (directionTouched) return undefined;
     const pol = locations.find((l) => l.id === primaryPolLoc);
@@ -432,7 +462,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const clearStaleDupReason = () => setF((x) => (x.duplicate_warning_reason ? { ...x, duplicate_warning_reason: '' } : x));
   useEffect(() => {
     let cancelled = false;
-    if (!profile?.company_id || !resolvedAccountId || !primaryPolLoc || !primaryPodLoc || !f.container_types.length) {
+    // REVISI 1 -- `isRS` ikut gerbang bailout: Rate Sheet Request tidak
+    // pernah memanggil cek duplikat sama sekali (Keputusan Q1), termasuk
+    // kalau container_types masih berisi sisa dari sebelum toggle (state
+    // TIDAK dikosongkan saat toggle, hanya field-nya yang disembunyikan).
+    if (isRS || !profile?.company_id || !resolvedAccountId || !primaryPolLoc || !primaryPodLoc || !f.container_types.length) {
       const t = setTimeout(() => { if (!cancelled) { setPossibleDuplicates([]); clearStaleDupReason(); } }, 0);
       return () => { cancelled = true; clearTimeout(t); };
     }
@@ -454,7 +488,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     }, 500);
     return () => { cancelled = true; clearTimeout(loadingTimer); clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.company_id, resolvedAccountId, primaryPolLoc, primaryPodLoc, containerTypesKey]);
+  }, [isRS, profile?.company_id, resolvedAccountId, primaryPolLoc, primaryPodLoc, containerTypesKey]);
 
   // ── Owner — manager-ke-atas lihat roster + "Leave unassigned"; sales tidak
   // lihat kontrolnya sama sekali (default diri sendiri, ditegakkan RPC). ────
@@ -501,6 +535,19 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   });
   const updateLane = (i, patch) => setF((x) => ({ ...x, lanes: x.lanes.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
   const removeLane = (i) => setF((x) => ({ ...x, lanes: x.lanes.filter((_, j) => j !== i) }));
+  // Putaran 4 Tahap 4C -- toggle Inquiry Type. HANYA mengubah `inquiry_type`
+  // + seed 1 lane kosong kalau Rate Sheet Request dipilih dan `lanes` masih
+  // kosong (mockup typeOpts[...].go, baris 946) -- TIDAK menyentuh
+  // `laneMode` sama sekali (laneTbl sudah benar lewat `isRS` saja; `laneMode`
+  // tetap murni konsep "Add route option" Single Shipment).
+  const switchInquiryType = (type) => setF((x) => ({
+    ...x,
+    inquiry_type: type,
+    lanes: type === 'Rate Sheet Request' && !x.lanes.length
+      ? [blankLane({ pol_location_id: x.pol_location_id, pol: x.pol, pod_location_id: x.pod_location_id, pod: x.pod, mode: 'Sea LCL' })]
+      : x.lanes,
+  }));
+  const toggleLaneUse = (i) => updateLane(i, { on: f.lanes[i]?.on === false });
 
   // ── Validasi — Direction WAJIB tapi TIDAK memblokir Next (deviasi kecil
   // dari mockup: mockup sendiri juga tidak pernah memblokir Next untuk ini,
@@ -523,13 +570,38 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       if (!f.duties_and_taxes) e.under_duties = 'Duties & Taxes is required';
       if (!f.supporting_docs_received) e.under_docs = 'Supporting documents must be confirmed received';
     }
-    const laneRows = f.laneMode ? f.lanes : [{ pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id }];
-    if (!laneRows.length || laneRows.some((l) => !l.pol_location_id || !l.pod_location_id)) {
+    // C2/R2 -- laneTbl menyatukan Single Shipment multi-route DAN Rate Sheet
+    // Request; selectedLanes (filter "Use") dipakai utk laneTbl, lane
+    // tunggal apa adanya utk mode biasa. REVISI 2 -- pesan "0 lane terpilih"
+    // dibedakan dari "lane terpilih tapi POL/POD belum lengkap": kasus
+    // pertama HANYA bisa terjadi utk Rate Sheet Request (Single Shipment
+    // laneMode tak pernah bisa 0 lane -- tombol Remove LaneTable disabled
+    // di lanes.length<=1), tapi cabang fallback tetap disediakan, bukan
+    // dibiarkan unguarded.
+    if (laneTbl) {
+      if (!selectedLanes.length) {
+        e.route_lanes = isRS ? 'Select at least one lane to include.' : 'Every lane needs a Port of Loading and Port of Discharge';
+      } else if (selectedLanes.some((l) => !l.pol_location_id || !l.pod_location_id)) {
+        e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
+      }
+    } else if (!f.pol_location_id || !f.pod_location_id) {
       e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
     }
     if (needsNContainers && !(Number(f.n_containers) > 0)) e.route_ncont = 'Number of containers is required for FCL';
     if (possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
       e.route_dup = 'Required when a possible duplicate is shown';
+    }
+    // Putaran 4 Tahap 4C -- Validity Requested + Estimated Volume per Month,
+    // HANYA Rate Sheet Request (mencerminkan inquiries_rate_sheet_fields_check).
+    if (isRS) {
+      if (!f.validity_from || !f.validity_to || f.validity_to < f.validity_from) {
+        e.route_validity = 'Enter the requested validity, with Until on or after From.';
+      }
+      if (monthlyVolumeUnrecognized) {
+        e.route_volume = 'Angka tidak dikenali';
+      } else if (!(readMoneyInput(f.monthly_volume_cbm).value > 0)) {
+        e.route_volume = 'Estimated Volume per Month is required and must be greater than 0.';
+      }
     }
     // Review fix 2 (TD-285) -- angka tak terbaca MEMBLOKIR Create (pola
     // CaptureLeadModal.jsx), bukan diam-diam terkirim null.
@@ -568,7 +640,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       // PERSIS modeOf() mockup baris 743) -- SATU sumber dengan blankLane/
       // startLanes (5c), bukan dua salinan logika yang sama.
       const singleLaneMode = deriveLaneMode(f.container_types);
-      const laneRows = (f.laneMode ? f.lanes : [{
+      // C2/C3.2 -- laneTbl + selectedLanes (bukan f.laneMode/f.lanes mentah):
+      // utk Rate Sheet Request, baris yang "Use"-nya di-uncheck TIDAK PERNAH
+      // masuk p_lanes. `.map()` di bawah whitelist 8 key eksplisit -- `on`
+      // TIDAK ikut tersalin, jadi field itu tidak mungkin terkirim ke RPC.
+      const laneRows = (laneTbl ? selectedLanes : [{
         pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id,
         via_location_id: null, pol: f.pol, pod: f.pod, via: null,
         mode: singleLaneMode, load_unit: unitForMode(singleLaneMode),
@@ -586,6 +662,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       const weightVal = f.weight_kg.trim() === '' ? null : readMoneyInput(f.weight_kg).value;
       const volumeVal = f.volume_cbm.trim() === '' ? null : readMoneyInput(f.volume_cbm).value;
 
+      // Putaran 4 Tahap 4C -- monthly_volume_cbm lewat readMoneyInput (C1),
+      // BUKAN Number(...) -- angka tak terbaca sudah diblokir stepErrors,
+      // jadi string yang tersisa di sini sudah pasti kosong ATAU terbaca.
+      const monthlyVolumeVal = isRS && f.monthly_volume_cbm.trim() !== '' ? readMoneyInput(f.monthly_volume_cbm).value : null;
+
       const params = {
         p_company_id: profile.company_id,
         p_prospect_id: sourceType === 'prospect' ? f.prospect_id : f.customer_id,
@@ -596,8 +677,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_deadline_quote: f.deadline_quote || null,
         p_estimated_value: estVal,
         p_notes: f.notes || null,
-        p_incoterms: f.incoterms.length ? f.incoterms : null,
-        p_container_types: f.container_types.length ? f.container_types : null,
+        // Putaran 4 Tahap 4C -- enam field Single-Shipment-only DIPAKSA null
+        // eksplisit saat Rate Sheet Request ("Jangan dikirim ke RPC"),
+        // bukan hanya mengandalkan RPC menormalisasinya server-side (yang
+        // juga tetap jadi pengaman kedua, nol perubahan di sana).
+        p_incoterms: isRS ? null : (f.incoterms.length ? f.incoterms : null),
+        p_container_types: isRS ? null : (f.container_types.length ? f.container_types : null),
         p_goods_name: f.goods_name || null,
         p_hs_code: f.hs_code || null,
         p_weight_kg: weightVal,
@@ -608,21 +693,25 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_imo_class: f.imo_class || null,
         p_has_msds: f.has_msds || null,
         p_additional_services: f.additional_services.length ? f.additional_services : null,
-        p_pickup_address: f.pickup_address || null,
-        p_delivery_address: f.delivery_address || null,
+        p_pickup_address: isRS ? null : (f.pickup_address || null),
+        p_delivery_address: isRS ? null : (f.delivery_address || null),
         // Review fix 4 -- hanya dikirim saat kartu duplikat BENAR-BENAR
         // tampil saat ini (possibleDuplicates.length > 0), bukan apa pun
         // yang kebetulan masih ada di field teksnya (bisa basi dari rute
         // sebelumnya -- lihat juga efek yang mengosongkannya di atas).
         p_duplicate_warning_reason: possibleDuplicates.length > 0 ? (f.duplicate_warning_reason || null) : null,
-        p_n_containers: f.n_containers !== '' ? Number(f.n_containers) : null,
-        p_cargo_ready_date: f.cargo_ready_date || null,
+        p_n_containers: isRS ? null : (f.n_containers !== '' ? Number(f.n_containers) : null),
+        p_cargo_ready_date: isRS ? null : (f.cargo_ready_date || null),
         p_undername_import: undernameActive,
         p_importer_of_record: undernameActive ? (f.importer_of_record || null) : null,
         p_duties_and_taxes: undernameActive ? (f.duties_and_taxes || null) : null,
         p_supporting_docs_received: undernameActive ? !!f.supporting_docs_received : false,
         p_pricing_basis: isDoorToDoor ? (f.pricing_basis || null) : null,
         p_owner_id: canPickOwner ? (f.owner_id || null) : null,
+        p_inquiry_type: f.inquiry_type,
+        p_validity_from: isRS ? (f.validity_from || null) : null,
+        p_validity_to: isRS ? (f.validity_to || null) : null,
+        p_monthly_volume_cbm: monthlyVolumeVal,
         p_lanes: laneRows,
       };
 
@@ -677,6 +766,30 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
             {stepKey === 'cust' && (
               <div style={{ display: 'grid', gap: 18 }}>
+                {/* Putaran 4 Tahap 4C -- toggle "Inquiry Type", posisi step 1
+                    SEBELUM field lain (mockup Inquiry Management.dc.html
+                    baris 51). Style tombol IDENTIK toggle "Sumber" di bawah
+                    (navy aktif/putih tak aktif) -- bukan komponen baru.
+                    switchInquiryType HANYA mengubah inquiry_type + men-seed
+                    1 lane kosong kalau Rate Sheet Request dipilih dan lanes
+                    masih kosong -- field Single Shipment lain (incoterms,
+                    container_types, dst.) TIDAK dikosongkan (toggle balik
+                    tidak kehilangan isian, R1). */}
+                <Field label="Inquiry Type" span>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {['Single Shipment', 'Rate Sheet Request'].map((t) => (
+                      <button key={t} type="button" onClick={() => switchInquiryType(t)}
+                        style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (f.inquiry_type === t ? C.navy : C.border), background: f.inquiry_type === t ? C.navy : '#fff', color: f.inquiry_type === t ? '#fff' : C.sub }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: 12, color: C.sub, marginTop: 6, display: 'block' }}>
+                    {isRS
+                      ? 'The customer asks for rates on many lanes for a period. One Rate Sheet quotation follows, and shipments are created later under it.'
+                      : 'One shipment, priced once. Add a route option if the customer wants to compare routes.'}
+                  </span>
+                </Field>
                 <Field label="Sumber" span>
                   <div style={{ display: 'flex', gap: 10 }}>
                     {['prospect', 'customer'].map((t) => (
@@ -766,7 +879,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
             {stepKey === 'route' && (
               <div style={{ display: 'grid', gap: 20 }}>
-                {!f.laneMode ? (
+                {!laneTbl ? (
                   <>
                     <div style={grid2}>
                       <div style={{ minWidth: 0 }}>
@@ -796,40 +909,78 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     lanes={f.lanes} locations={locations} laneModeOpts={laneModeOpts} laneUnitOpts={laneUnitOpts} tokens={LOCATION_PICKER_TOKENS}
                     canManageLocations={canManageLocations} openLocationMaster={openLocationMaster} requestNewLocation={requestNewLocation}
                     onUpdate={updateLane} onRemove={removeLane} onAdd={addLane}
+                    showUseColumn={isRS} onToggleUse={isRS ? toggleLaneUse : undefined}
                   />
                 )}
                 <FieldError>{errors.route_lanes}</FieldError>
 
-                <div style={grid2}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={S.label}>Pickup Address</div>
-                    <textarea value={f.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
+                {/* Putaran 4 Tahap 4C -- Validity Requested + Estimated Volume
+                    per Month, HANYA Rate Sheet Request (mockup baris 119-126,
+                    label persis). Volume lewat pola TD-285 (handleMonthlyVolumeChange/
+                    Blur) -- type="text", bukan type="number". */}
+                {isRS && (
+                  <div style={grid3}>
+                    <Field label="Validity Requested From" required>
+                      <input type="date" value={f.validity_from} onChange={set('validity_from')} style={S.input} />
+                    </Field>
+                    <Field label="Validity Requested Until" required>
+                      <input type="date" value={f.validity_to} onChange={set('validity_to')} style={S.input} />
+                      <FieldError>{errors.route_validity}</FieldError>
+                    </Field>
+                    <Field label="Estimated Volume per Month (CBM)" required>
+                      <input value={f.monthly_volume_cbm} onChange={(e) => handleMonthlyVolumeChange(e.target.value)} onBlur={handleMonthlyVolumeBlur}
+                        inputMode="decimal" style={S.input} placeholder="e.g. 20" />
+                      <FieldError>{errors.route_volume}</FieldError>
+                    </Field>
                   </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={S.label}>Delivery Address</div>
-                    <textarea value={f.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
-                  </div>
-                </div>
+                )}
 
-                <div>
-                  <div style={S.label}>Incoterm</div>
-                  <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
-                </div>
-                <div>
-                  <div style={S.label}>Container Type</div>
-                  <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
-                </div>
-                <div style={grid2}>
-                  <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>
-                    <input value={f.n_containers} onChange={handleNContainersChange} inputMode="numeric" style={S.input} placeholder="0" />
-                    <FieldError>{errors.route_ncont}</FieldError>
-                  </Field>
-                  <Field label="Cargo ready date">
-                    <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
-                  </Field>
-                </div>
+                {/* Putaran 4 Tahap 4C -- enam field ini SEBELUMNYA dirender
+                    TANPA SYARAT (sibling dari ternary POL/POD-vs-LaneTable di
+                    atas, bukan bagian darinya) -- `laneTbl` TIDAK pernah
+                    menyembunyikannya utk Single Shipment multi-route, jadi
+                    guard `!isRS` di sini BARU, bukan penyesuaian laneMode→
+                    laneTbl. State-nya TETAP (R1) -- hanya tampilannya
+                    disembunyikan. */}
+                {!isRS && (
+                  <>
+                    <div style={grid2}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={S.label}>Pickup Address</div>
+                        <textarea value={f.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={S.label}>Delivery Address</div>
+                        <textarea value={f.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
+                      </div>
+                    </div>
 
-                {!dupCheckLoading && possibleDuplicates.length > 0 && (
+                    <div>
+                      <div style={S.label}>Incoterm</div>
+                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
+                    </div>
+                    <div>
+                      <div style={S.label}>Container Type</div>
+                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
+                    </div>
+                    <div style={grid2}>
+                      <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>
+                        <input value={f.n_containers} onChange={handleNContainersChange} inputMode="numeric" style={S.input} placeholder="0" />
+                        <FieldError>{errors.route_ncont}</FieldError>
+                      </Field>
+                      <Field label="Cargo ready date">
+                        <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
+                      </Field>
+                    </div>
+                  </>
+                )}
+
+                {/* REVISI 1 -- cek duplikat TIDAK PERNAH jalan untuk Rate
+                    Sheet Request (Keputusan Q1); effect pemicunya sudah
+                    bailout duluan (isRS di dependency), guard `!isRS` di sini
+                    adalah lapis kedua supaya banner tak mungkin tampil kalau
+                    state possibleDuplicates kebetulan basi dari toggle. */}
+                {!isRS && !dupCheckLoading && possibleDuplicates.length > 0 && (
                   <div style={{ background: '#FEF9E7', border: '1px solid #F2D675', borderRadius: 10, padding: '16px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       <AlertTriangle size={18} color="#92700A" style={{ flex: '0 0 18px', marginTop: 1 }} />
@@ -856,7 +1007,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     </div>
                   </div>
                 )}
-                {dupCheckLoading && (
+                {!isRS && dupCheckLoading && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.muted, fontSize: 12.5 }}><Loader2 size={14} className="animate-spin" />Checking for possible duplicates…</div>
                 )}
               </div>
@@ -968,7 +1119,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             )}
 
             {stepKey === 'review' && (
-              <ReviewStep f={f} sourceType={sourceType} prospectText={prospectText} customerText={customerText} isDoorToDoor={isDoorToDoor}
+              <ReviewStep f={f} sourceType={sourceType} prospectText={prospectText} customerText={customerText} isDoorToDoor={isDoorToDoor} isRS={isRS}
                 serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} needsNContainers={needsNContainers} />
             )}
 
@@ -1064,11 +1215,16 @@ function ReviewRow({ label, value, required }) {
     </div>
   );
 }
-function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, serviceTypeOpts, roster, accountSource, needsNContainers }) {
+function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, needsNContainers }) {
   const serviceLabel = serviceTypeOpts.find((o) => o.value === f.service_type)?.label || f.service_type;
   const ownerLabel = f.owner_id ? (roster.find((r) => r.id === f.owner_id)?.full_name || f.owner_id) : 'Unassigned (or yourself)';
-  const lanesText = f.laneMode
-    ? f.lanes.map((l) => `${l.pol || '…'} → ${l.pod || '…'}`).join('; ')
+  // Putaran 4 Tahap 4C -- laneTbl/selectedLanes dihitung lokal dari props
+  // (pola sama showUndernameReview di bawah, dihitung lokal dari isDoorToDoor
+  // + f), bukan dioper sebagai prop terpisah -- isRS saja cukup.
+  const laneTbl = isRS || f.laneMode;
+  const selectedLanes = f.lanes.filter((l) => l.on !== false);
+  const lanesText = laneTbl
+    ? selectedLanes.map((l) => `${l.pol || '…'} → ${l.pod || '…'}`).join('; ')
     : `${f.pol || '…'} → ${f.pod || '…'}`;
   // 5a -- gate SAMA dengan kedua tempat Undername inline muncul di
   // langkah-langkah sebelumnya: Door-to-Door (langkah "customs") ATAU
@@ -1096,10 +1252,19 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, s
       <div>
         <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Route &amp; Terms</div>
         <div style={grid3}>
-          <ReviewRow label={`Route options (${f.laneMode ? f.lanes.length : 1})`} value={lanesText} required />
-          <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
-          <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
-          <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
+          <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? f.lanes.length : 1})`} value={lanesText} required />
+          {isRS ? (
+            <>
+              <ReviewRow label="Validity Requested" value={f.validity_from && f.validity_to ? `${f.validity_from} to ${f.validity_to}` : ''} required />
+              <ReviewRow label="Estimated Volume per Month" value={f.monthly_volume_cbm ? `${f.monthly_volume_cbm} CBM` : ''} required />
+            </>
+          ) : (
+            <>
+              <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
+              <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
+              <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
+            </>
+          )}
         </div>
       </div>
       {/* 5a -- sebelumnya ABSEN dari Review sama sekali (Cargo/Additional
