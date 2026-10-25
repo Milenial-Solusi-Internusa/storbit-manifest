@@ -1912,3 +1912,485 @@ BEGIN
 
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (ll)';
 END $$;
+
+
+-- =============================================================================
+-- PUTARAN 4 TAHAP 4C -- mode "Rate Sheet Request" di Intake Form wizard.
+-- Blok (mm)-(uu), 9 skenario. TAHAP A SAJA (verifikasi perilaku yang SUDAH
+-- LIVE -- kolom inquiries.inquiry_type/validity_from/validity_to/
+-- monthly_volume_cbm + parameter RPC create_inquiry_with_lanes yang sama
+-- SUDAH dibangun lengkap sejak Tahap 4A, migrasi 20261025000002/000005.
+-- NOL migrasi baru ditulis untuk 4C -- blok di bawah membuktikan perilaku
+-- yang sudah ada, bukan perilaku baru). Pola/konvensi IDENTIK blok-blok di
+-- atas (DO-block self-rollback, SET LOCAL ROLE authenticated + set_config
+-- request.jwt.claim.sub, RAISE EXCEPTION 'UJI LULUS/GAGAL (<label>)').
+-- Dijalankan Vir di staging; TAHAP B (kode FE wizard + DealDetailPage +
+-- src/kit/LaneTable.jsx) menunggu lampu hijau dari hasil ini.
+-- =============================================================================
+
+
+-- ===== (mm) [4C] inquiry_type='Rate Sheet Request' valid -- validity_from/
+--            to + monthly_volume_cbm tersimpan, 2 lane tersimpan, mirror
+--            pol/pod = lane pertama =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid;
+  v_loc1 uuid; v_loc2 uuid; v_loc3 uuid; v_loc4 uuid;
+  v_new_id uuid; v_new_no text;
+  v_lane_count int;
+  v_itype text; v_vfrom date; v_vto date; v_volm numeric;
+  v_inq_pol text; v_inq_pod text;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- nol akun fixture'; END IF;
+
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-MM-1', 'Uji MM 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-MM-2', 'Uji MM 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-MM-3', 'Uji MM 3', 'Malaysia', 'Seaport') RETURNING id INTO v_loc3;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-MM-4', 'Uji MM 4', 'Indonesia', 'Seaport') RETURNING id INTO v_loc4;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id, t.inquiry_no INTO v_new_id, v_new_no FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_lanes := jsonb_build_array(
+      jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji MM 1', 'pod', 'Uji MM 2', 'mode', 'Sea LCL', 'load_unit', 'CBM'),
+      jsonb_build_object('pol_location_id', v_loc3, 'pod_location_id', v_loc4, 'pol', 'Uji MM 3', 'pod', 'Uji MM 4', 'mode', 'Sea LCL', 'load_unit', 'CBM')
+    )
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+
+  SELECT count(*) INTO v_lane_count FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
+  SELECT inquiry_type, validity_from, validity_to, monthly_volume_cbm, pol, pod
+    INTO v_itype, v_vfrom, v_vto, v_volm, v_inq_pol, v_inq_pod
+    FROM public.inquiries WHERE id = v_new_id;
+
+  RAISE NOTICE '(mm) inquiry %, inquiry_type=%, validity=%..%  monthly_volume_cbm=%, lane_count=%, mirror pol=%/pod=%',
+    v_new_no, v_itype, v_vfrom, v_vto, v_volm, v_lane_count, v_inq_pol, v_inq_pod;
+
+  IF v_itype <> 'Rate Sheet Request' THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- inquiry_type seharusnya Rate Sheet Request, dapat %', v_itype; END IF;
+  IF v_vfrom <> '2026-12-01'::date OR v_vto <> '2027-02-28'::date THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- validity_from/to tidak cocok'; END IF;
+  IF v_volm <> 15 THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- monthly_volume_cbm tidak cocok, dapat %', v_volm; END IF;
+  IF v_lane_count <> 2 THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- seharusnya TEPAT 2 baris inquiry_lanes, dapat %', v_lane_count; END IF;
+  IF v_inq_pol <> 'Uji MM 1' OR v_inq_pod <> 'Uji MM 2' THEN RAISE EXCEPTION 'UJI GAGAL (mm) -- mirror pol/pod harus dari lane pertama'; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (mm)';
+END $$;
+
+
+-- ===== (nn) [4C] Rate Sheet Request -- HANYA validity_from NULL (validity_to
+--            dan monthly_volume_cbm terisi valid) -- exception. Melengkapi
+--            blok (l) yang menguji ketiganya NULL sekaligus; ini mengisolasi
+--            syarat validity_from sendirian =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_caught boolean := false;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (nn) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-NN-1', 'Uji NN 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-NN-2', 'Uji NN 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM t.id FROM public.create_inquiry_with_lanes(
+      p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+      p_direction := 'Export', p_customer_role := 'Shipper',
+      p_inquiry_type := 'Rate Sheet Request',
+      p_validity_from := NULL, -- SENGAJA hanya ini yang NULL
+      p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+      p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji NN 1', 'pod', 'Uji NN 2'))
+    ) AS t;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    RAISE NOTICE '(nn) ditolak sesuai ekspektasi: %', SQLERRM;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL (nn) -- seharusnya ditolak (validity_from NULL)'; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (nn)';
+END $$;
+
+
+-- ===== (oo) [4C] Rate Sheet Request -- validity_to < validity_from (keduanya
+--            terisi, urutan terbalik) -- exception =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_caught boolean := false;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (oo) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-OO-1', 'Uji OO 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-OO-2', 'Uji OO 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM t.id FROM public.create_inquiry_with_lanes(
+      p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+      p_direction := 'Export', p_customer_role := 'Shipper',
+      p_inquiry_type := 'Rate Sheet Request',
+      p_validity_from := '2027-02-28'::date, p_validity_to := '2026-12-01'::date, -- SENGAJA terbalik
+      p_monthly_volume_cbm := 15,
+      p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji OO 1', 'pod', 'Uji OO 2'))
+    ) AS t;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    RAISE NOTICE '(oo) ditolak sesuai ekspektasi: %', SQLERRM;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL (oo) -- seharusnya ditolak (validity_to < validity_from)'; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (oo)';
+END $$;
+
+
+-- ===== (pp) [4C] Rate Sheet Request -- monthly_volume_cbm = 0 (validity
+--            terisi valid) -- exception. NULL murni sudah tercakup blok (l);
+--            ini mengisolasi syarat "> 0" =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_caught boolean := false;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (pp) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-PP-1', 'Uji PP 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-PP-2', 'Uji PP 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM t.id FROM public.create_inquiry_with_lanes(
+      p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+      p_direction := 'Export', p_customer_role := 'Shipper',
+      p_inquiry_type := 'Rate Sheet Request',
+      p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date,
+      p_monthly_volume_cbm := 0, -- SENGAJA 0, bukan NULL (NULL murni sudah blok (l))
+      p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji PP 1', 'pod', 'Uji PP 2'))
+    ) AS t;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    RAISE NOTICE '(pp) ditolak sesuai ekspektasi: %', SQLERRM;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN RAISE EXCEPTION 'UJI GAGAL (pp) -- seharusnya ditolak (monthly_volume_cbm <= 0)'; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (pp)';
+END $$;
+
+
+-- ===== (qq) [4C] Rate Sheet Request -- p_lanes dikirim SUDAH pra-disaring
+--            jadi 1 elemen (simulasi FE memfilter lane ber-checkbox "Use"
+--            yang TIDAK dicentang SEBELUM memanggil RPC, lihat rencana
+--            src/kit/LaneTable.jsx prop showUseColumn di TAHAP B) -- sukses,
+--            tepat 1 baris lane. RPC TIDAK punya dan TIDAK PERLU kolom/
+--            parameter "Use" apa pun -- yang dilihatnya hanya array final
+--            yang sudah bersih, persis seperti inquiry 1-lane biasa =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_new_id uuid; v_lane_count int;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (qq) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-QQ-1', 'Uji QQ 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-QQ-2', 'Uji QQ 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_lanes := jsonb_build_array(
+      jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji QQ 1', 'pod', 'Uji QQ 2', 'mode', 'Sea LCL', 'load_unit', 'CBM')
+    ) -- array sudah 1 elemen -- seolah FE awalnya punya 2 lane lalu 1 di-uncheck
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+
+  SELECT count(*) INTO v_lane_count FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
+  RAISE NOTICE '(qq) lane_count=% (harus 1 -- RPC menerima array yang sudah difilter FE apa adanya)', v_lane_count;
+  IF v_lane_count <> 1 THEN RAISE EXCEPTION 'UJI GAGAL (qq) -- seharusnya TEPAT 1 baris, dapat %', v_lane_count; END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (qq)';
+END $$;
+
+
+-- ===== (rr) [4C] Edit langsung (simulasi saveInquirySection, BUKAN RPC) --
+--            UPDATE inquiries SET validity_from = NULL pada inquiry Rate
+--            Sheet Request yang sudah ada -- DITOLAK oleh constraint
+--            inquiries_rate_sheet_fields_check (pengaman DB, dipakai Detail
+--            Inquiry TANPA RPC baru -- Keputusan Vir Q3). Caller = sales_a =
+--            owner inquiry, LOLOS RLS inquiries_update (owner boleh UPDATE
+--            barisnya sendiri -- pola sama 6 section lain DealDetailPage),
+--            jadi satu-satunya yang menolak WAJIB constraint CHECK level
+--            tabel, bukan RLS -- diverifikasi via SQLSTATE 23514
+--            (check_violation), bukan hanya "tertangkap exception apa pun" =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_new_id uuid;
+  v_caught boolean := false;
+  v_sqlstate text;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (rr) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-RR-1', 'Uji RR 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-RR-2', 'Uji RR 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji RR 1', 'pod', 'Uji RR 2'))
+  ) AS t;
+
+  BEGIN
+    UPDATE public.inquiries SET validity_from = NULL WHERE id = v_new_id;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    v_sqlstate := SQLSTATE;
+    RAISE NOTICE '(rr) UPDATE langsung ditolak -- SQLSTATE=%, pesan: %', SQLSTATE, SQLERRM;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'UJI GAGAL (rr) -- UPDATE langsung yang mengosongkan validity_from pada inquiry Rate Sheet Request seharusnya DITOLAK';
+  END IF;
+  IF v_sqlstate <> '23514' THEN
+    RAISE EXCEPTION 'UJI GAGAL (rr) -- ditolak TAPI BUKAN oleh CHECK constraint (SQLSTATE seharusnya 23514 check_violation, dapat %)', v_sqlstate;
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (rr)';
+END $$;
+
+
+-- ===== (ss) [4C] update_inquiry_lanes pada inquiry Rate Sheet Request yang
+--            sudah ada -- tambah lane ke-3, sukses, GENERIK (fungsi ini
+--            tidak menyentuh inquiry_type/validity_from/validity_to/
+--            monthly_volume_cbm sama sekali, dan tidak perlu -- Keputusan
+--            Vir Q4: kolom "Use" HANYA di wizard, Lane Editor Detail Inquiry
+--            tidak disentuh) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid; v_loc3 uuid; v_loc4 uuid; v_loc5 uuid; v_loc6 uuid;
+  v_new_id uuid; v_lane_count int;
+  v_itype text; v_vfrom date; v_vto date; v_volm numeric;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (ss) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-1', 'Uji SS 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-2', 'Uji SS 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-3', 'Uji SS 3', 'Malaysia', 'Seaport') RETURNING id INTO v_loc3;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-4', 'Uji SS 4', 'Indonesia', 'Seaport') RETURNING id INTO v_loc4;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-5', 'Uji SS 5', 'Thailand', 'Seaport') RETURNING id INTO v_loc5;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-SS-6', 'Uji SS 6', 'Indonesia', 'Seaport') RETURNING id INTO v_loc6;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_lanes := jsonb_build_array(
+      jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji SS 1', 'pod', 'Uji SS 2'),
+      jsonb_build_object('pol_location_id', v_loc3, 'pod_location_id', v_loc4, 'pol', 'Uji SS 3', 'pod', 'Uji SS 4')
+    )
+  ) AS t;
+
+  PERFORM t.id FROM public.update_inquiry_lanes(
+    p_inquiry_id := v_new_id,
+    p_lanes := jsonb_build_array(
+      jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji SS 1', 'pod', 'Uji SS 2'),
+      jsonb_build_object('pol_location_id', v_loc3, 'pod_location_id', v_loc4, 'pol', 'Uji SS 3', 'pod', 'Uji SS 4'),
+      jsonb_build_object('pol_location_id', v_loc5, 'pod_location_id', v_loc6, 'pol', 'Uji SS 5', 'pod', 'Uji SS 6')
+    )
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+
+  SELECT count(*) INTO v_lane_count FROM public.inquiry_lanes WHERE inquiry_id = v_new_id;
+  SELECT inquiry_type, validity_from, validity_to, monthly_volume_cbm INTO v_itype, v_vfrom, v_vto, v_volm
+    FROM public.inquiries WHERE id = v_new_id;
+
+  RAISE NOTICE '(ss) sesudah update_inquiry_lanes -- lane_count=% (harus 3), inquiry_type=% validity=%..% monthly_volume_cbm=% (keempatnya harus TIDAK BERUBAH)',
+    v_lane_count, v_itype, v_vfrom, v_vto, v_volm;
+
+  IF v_lane_count <> 3 THEN RAISE EXCEPTION 'UJI GAGAL (ss) -- seharusnya TEPAT 3 baris sesudah tambah lane, dapat %', v_lane_count; END IF;
+  IF v_itype <> 'Rate Sheet Request' OR v_vfrom <> '2026-12-01'::date OR v_vto <> '2027-02-28'::date OR v_volm <> 15 THEN
+    RAISE EXCEPTION 'UJI GAGAL (ss) -- update_inquiry_lanes TIDAK BOLEH mengubah inquiry_type/validity/volume, tapi berubah';
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (ss)';
+END $$;
+
+
+-- ===== (tt) [4C] Dua inquiry Rate Sheet Request, pelanggan+lane pertama
+--            SAMA, dalam 30 hari -- find_possible_duplicate_inquiries
+--            MENEMUKAN yang pertama saat dipanggil utk yang kedua. Ini
+--            MEMBUKTIKAN PERILAKU DB APA ADANYA (Keputusan Vir Q1: terima
+--            apa adanya, TIDAK ADA perubahan perilaku) -- BUKAN klaim
+--            bahwa ini "benar" atau "salah" secara produk.
+--            CATATAN PENTING, diverifikasi langsung ke kode (BUKAN hanya
+--            dikutip): InquiryIntakeWizardPage.jsx, useEffect baris 433-438
+--            -- cek duplikat HANYA berjalan kalau f.container_types.length
+--            > 0. Untuk Rate Sheet Request, container_types SELALU kosong
+--            (field itu disembunyikan total di mode ini, lihat PLAN §1/§5)
+--            -- jadi wizard TIDAK PERNAH menjalankan cek duplikat untuk
+--            Rate Sheet Request sama sekali hari ini, dan TAHAP 4C TIDAK
+--            mengubah ini. Blok ini menguji FUNGSI DB-nya langsung (bukan
+--            lewat alur wizard) semata-mata untuk mendokumentasikan
+--            perilaku fungsi itu sendiri kalau suatu saat dipanggil.
+--            Fungsi `find_possible_duplicate_inquiries` (migrasi
+--            20261023000003, signature 6 argumen: p_company_id uuid,
+--            p_customer_id uuid, p_pol_location_id uuid, p_pod_location_id
+--            uuid, p_container_types text[], p_exclude_id uuid) belum
+--            pernah live di production (nol hit schema_snapshot.sql) --
+--            diasumsikan sudah live di STAGING sesuai keterangan Vir =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_id1 uuid; v_no1 text; v_id2 uuid; v_no2 text;
+  v_found_id uuid; v_found_count int;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (tt) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-TT-1', 'Uji TT 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-TT-2', 'Uji TT 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id, t.inquiry_no INTO v_id1, v_no1 FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji TT 1', 'pod', 'Uji TT 2'))
+  ) AS t;
+
+  -- Lane pertama SAMA PERSIS dgn v_id1 (v_loc1/v_loc2); validity/volume
+  -- SENGAJA beda supaya jelas ini "dua permintaan RS beda periode", bukan
+  -- INSERT ganda yang identik.
+  SELECT t.id, t.inquiry_no INTO v_id2, v_no2 FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2027-03-01'::date, p_validity_to := '2027-05-31'::date, p_monthly_volume_cbm := 20,
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji TT 1', 'pod', 'Uji TT 2'))
+  ) AS t;
+
+  SELECT id INTO v_found_id FROM public.find_possible_duplicate_inquiries(
+    p_company_id := v_company, p_customer_id := v_account,
+    p_pol_location_id := v_loc1, p_pod_location_id := v_loc2,
+    p_container_types := NULL, -- NULL, bukan '{}' -- cermin create_inquiry_with_lanes yang memaksa container_types NULL utk Rate Sheet
+    p_exclude_id := v_id2
+  ) LIMIT 1;
+  SELECT count(*) INTO v_found_count FROM public.find_possible_duplicate_inquiries(
+    p_company_id := v_company, p_customer_id := v_account,
+    p_pol_location_id := v_loc1, p_pod_location_id := v_loc2,
+    p_container_types := NULL, p_exclude_id := v_id2
+  );
+  EXECUTE 'RESET ROLE';
+
+  RAISE NOTICE '(tt) inquiry pertama % ditemukan sbg possible-duplicate saat mencari utk inquiry kedua %: found_id=%, total_found=% (harus id1 %, 1)',
+    v_no1, v_no2, v_found_id, v_found_count, v_id1;
+
+  IF v_found_id IS DISTINCT FROM v_id1 OR v_found_count <> 1 THEN
+    RAISE EXCEPTION 'UJI GAGAL (tt) -- find_possible_duplicate_inquiries seharusnya menemukan PERSIS inquiry pertama (lane sama, pelanggan sama, 30 hari, status OPEN), dapat found_id=% count=%', v_found_id, v_found_count;
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (tt)';
+END $$;
+
+
+-- ===== (uu) [4C] Rate Sheet Request dengan p_incoterms/p_container_types/
+--            p_n_containers/p_cargo_ready_date/p_pickup_address/
+--            p_delivery_address SEMUA SENGAJA diisi -- assert SEMUA
+--            dinormalisasi NULL di baris inquiries tersimpan.
+--            CATATAN PENTING -- INI MENDUPLIKASI BLOK (r) YANG SUDAH ADA
+--            (baris ~793 berkas ini, Tahap 4A): kedua blok menguji hal
+--            yang SAMA dengan nilai yang hampir sama. Ditulis ulang di sini
+--            ATAS INSTRUKSI EKSPLISIT VIR (nomor terpisah utk cakupan 4C,
+--            bisa dicek tersendiri tanpa menggulir ke blok 4A lama) --
+--            dilaporkan transparan, BUKAN diam-diam dianggap cakupan baru.
+--            Kalau dianggap berlebihan, blok ini aman DIHAPUS tanpa
+--            mengurangi cakupan sama sekali (perilaku sudah terbukti (r)) =====
+DO $$
+DECLARE
+  v_company uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
+  v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
+  v_account uuid; v_loc1 uuid; v_loc2 uuid;
+  v_new_id uuid;
+  v_cont text[]; v_inco text[]; v_ncont int; v_cargo date; v_pickup text; v_delivery text;
+BEGIN
+  SELECT id INTO v_account FROM public.accounts
+   WHERE company_id = v_company AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  IF v_account IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (uu) -- nol akun fixture'; END IF;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-UU-1', 'Uji UU 1', 'Singapore', 'Seaport') RETURNING id INTO v_loc1;
+  INSERT INTO public.locations (code, name, country, type) VALUES ('ZZZTEST-UU-2', 'Uji UU 2', 'Indonesia', 'Seaport') RETURNING id INTO v_loc2;
+
+  PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT t.id INTO v_new_id FROM public.create_inquiry_with_lanes(
+    p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
+    p_direction := 'Export', p_customer_role := 'Shipper',
+    p_inquiry_type := 'Rate Sheet Request',
+    p_validity_from := '2026-12-01'::date, p_validity_to := '2027-02-28'::date, p_monthly_volume_cbm := 15,
+    p_incoterms := ARRAY['CIF'], p_container_types := ARRAY['FCL 20'], p_n_containers := 5,
+    p_cargo_ready_date := '2026-11-20'::date,
+    p_pickup_address := 'Jl. Uji UU Asal', p_delivery_address := 'Jl. Uji UU Tujuan',
+    p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc1, 'pod_location_id', v_loc2, 'pol', 'Uji UU 1', 'pod', 'Uji UU 2'))
+  ) AS t;
+  EXECUTE 'RESET ROLE';
+
+  SELECT container_types, incoterms, n_containers, cargo_ready_date, pickup_address, delivery_address
+    INTO v_cont, v_inco, v_ncont, v_cargo, v_pickup, v_delivery
+    FROM public.inquiries WHERE id = v_new_id;
+  RAISE NOTICE '(uu) container_types=% incoterms=% n_containers=% cargo_ready_date=% pickup=% delivery=% (SEMUA harus NULL -- duplikat blok (r), lihat catatan di atas)',
+    v_cont, v_inco, v_ncont, v_cargo, v_pickup, v_delivery;
+
+  IF v_cont IS NOT NULL OR v_inco IS NOT NULL OR v_ncont IS NOT NULL OR v_cargo IS NOT NULL
+     OR v_pickup IS NOT NULL OR v_delivery IS NOT NULL THEN
+    RAISE EXCEPTION 'UJI GAGAL (uu) -- field Single-Shipment-only seharusnya dinormalisasi NULL untuk Rate Sheet Request';
+  END IF;
+
+  RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (uu)';
+END $$;
