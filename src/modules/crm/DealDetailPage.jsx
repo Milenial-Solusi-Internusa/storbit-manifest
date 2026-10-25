@@ -620,7 +620,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -888,6 +888,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     || isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id })
     || isAllEntities(erpRoles)
   ) && LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  // Putaran 4 Tahap 4C -- "Rate Sheet Request" write-once (ditulis hanya
+  // oleh create_inquiry_with_lanes saat Create) -- nol jalur edit untuk
+  // inquiry_type itu sendiri dari Detail Inquiry, hanya field turunannya
+  // (Validity/Volume) yang bisa diedit lewat section "Route & Terms" di bawah.
+  const isInquiryRS = inquiry?.inquiry_type === 'Rate Sheet Request';
   // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
   // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
   // "Create Quotation"). Status QUOTED/NEGOTIATION primary-nya "Mark as
@@ -1642,6 +1647,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
             <DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />
             <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Putaran 4 Tahap 4C -- badge "Rate Sheet Request", posisi
+                  SEBELUM chip Status (diverifikasi langsung ke mockup
+                  Inquiry Management.dc.html: urutan markup D.migTag -> isRS
+                  "Rate Sheet" -> D.st Status -> D.ent Entity -> D.svc Service
+                  -> D.under Undername -- chip "Rate Sheet" mockup ada SEBELUM
+                  Status, bukan sesudah Service seperti draft awal). Style
+                  SAMA dengan chip Entity/Service (border/bg/color netral,
+                  bukan warna status). */}
+              {isInquiryRS && (
+                <TintBadge meta={{ label: 'Rate Sheet Request', bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
+              )}
               <TintBadge meta={{
                 label: STATUS_LABEL[dealStatus] || dealStatus,
                 bg: DEAL_STATUS[dealStatus]?.bg, color: DEAL_STATUS[dealStatus]?.fg, bd: DEAL_STATUS[dealStatus]?.bd,
@@ -1894,26 +1910,54 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol_location_id: inquiry.pol_location_id || null, pod_location_id: inquiry.pod_location_id || null,
               pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
               incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
+              // Putaran 4 Tahap 4C -- diseed TANPA SYARAT (harmless utk
+              // Single Shipment, tak pernah dirender/dikirim di cabang itu).
+              validity_from: inquiry.validity_from || '', validity_to: inquiry.validity_to || '',
+              monthly_volume_cbm: inquiry.monthly_volume_cbm != null ? formatIdNumber(inquiry.monthly_volume_cbm) : '',
             });
             setEditingSection('Route');
           }}
           onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
-          onSave={() => saveInquirySection({
-            // Putaran 4 Tahap 4B, review fix 5 -- pol/pod/*_location_id TIDAK
-            // disertakan sama sekali saat inquiry ini punya baris inquiry_lanes
-            // (lanes.length > 0): lane utama adalah sumber kebenaran untuk
-            // field-field itu (RPC create_inquiry_with_lanes yang menulisnya),
-            // menyertakannya di sini bisa menimpa lane utama dengan nilai yang
-            // tidak pernah diedit lewat alur lane. Field lain di section ini
-            // tetap dikirim seperti biasa.
-            ...(lanes.length > 0 ? {} : {
-              pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
-              pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
-            }),
-            pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
-            incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
-            container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
-          }, 'Route & Terms')}
+          onSave={() => {
+            // Putaran 4 Tahap 4C, REVISI 3 -- cabang Rate Sheet Request:
+            // validasi klien MENCERMINKAN constraint DB
+            // inquiries_rate_sheet_fields_check, SEBELUM saveInquirySection
+            // dipanggil sama sekali (nol panggilan DB kalau gagal).
+            if (isInquiryRS) {
+              if (!sectionDraft.validity_from || !sectionDraft.validity_to) {
+                showToast?.('Validity Requested From and Until are required.', 'error'); return;
+              }
+              if (sectionDraft.validity_to < sectionDraft.validity_from) {
+                showToast?.('Validity Requested Until must be on or after From.', 'error'); return;
+              }
+              const vol = readMoneyInput(sectionDraft.monthly_volume_cbm);
+              if (vol.unrecognized) { showToast?.('Angka tidak dikenali', 'error'); return; }
+              if (!(vol.value > 0)) { showToast?.('Estimated Volume per Month is required and must be greater than 0.', 'error'); return; }
+              saveInquirySection({
+                validity_from: sectionDraft.validity_from,
+                validity_to: sectionDraft.validity_to,
+                monthly_volume_cbm: vol.value,
+              }, 'Route & Terms');
+              return;
+            }
+            // Single Shipment -- byte-identik kode SEBELUM Tahap 4C.
+            saveInquirySection({
+              // Putaran 4 Tahap 4B, review fix 5 -- pol/pod/*_location_id TIDAK
+              // disertakan sama sekali saat inquiry ini punya baris inquiry_lanes
+              // (lanes.length > 0): lane utama adalah sumber kebenaran untuk
+              // field-field itu (RPC create_inquiry_with_lanes yang menulisnya),
+              // menyertakannya di sini bisa menimpa lane utama dengan nilai yang
+              // tidak pernah diedit lewat alur lane. Field lain di section ini
+              // tetap dikirim seperti biasa.
+              ...(lanes.length > 0 ? {} : {
+                pol: sectionDraft.pol || null, pod: sectionDraft.pod || null,
+                pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
+              }),
+              pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
+              incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
+              container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
+            }, 'Route & Terms');
+          }}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
           {/* Irisan 6 -- POL/POD pakai LocationPicker HANYA saat editing (rule
@@ -1960,16 +2004,34 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               )}
             </>
           )}
-          <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}
-            draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
-          <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
-            draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
-          <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
-            values={inquiry.incoterms} draft={sectionDraft.incoterms}
-            onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
-          <ChipToggleField label="Container Type" editing={editingSection === 'Route'}
-            values={inquiry.container_types} draft={sectionDraft.container_types}
-            onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
+          {/* Putaran 4 Tahap 4C -- Pickup/Delivery/Incoterms/Container Type
+              hanya bermakna utk Single Shipment (RPC memaksa keempatnya NULL
+              utk Rate Sheet Request, §2 plan) -- disembunyikan, BUKAN
+              dihapus, saat isInquiryRS. Validity/Volume menggantikannya. */}
+          {isInquiryRS ? (
+            <>
+              <TextField label="Validity Requested From" type="date" editing={editingSection === 'Route'} value={inquiry.validity_from}
+                draft={sectionDraft.validity_from} onDraft={(v) => setSectionDraft((d) => ({ ...d, validity_from: v }))} />
+              <TextField label="Validity Requested Until" type="date" editing={editingSection === 'Route'} value={inquiry.validity_to}
+                draft={sectionDraft.validity_to} onDraft={(v) => setSectionDraft((d) => ({ ...d, validity_to: v }))} />
+              <TextField label="Estimated Volume per Month (CBM)" mono editing={editingSection === 'Route'}
+                value={inquiry.monthly_volume_cbm != null ? formatIdNumber(inquiry.monthly_volume_cbm) : ''}
+                draft={sectionDraft.monthly_volume_cbm} onDraft={(v) => setSectionDraft((d) => ({ ...d, monthly_volume_cbm: v }))} />
+            </>
+          ) : (
+            <>
+              <TextField label="Pickup Address" editing={editingSection === 'Route'} value={inquiry.pickup_address}
+                draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
+              <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
+                draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
+              <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
+                values={inquiry.incoterms} draft={sectionDraft.incoterms}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
+              <ChipToggleField label="Container Type" editing={editingSection === 'Route'}
+                values={inquiry.container_types} draft={sectionDraft.container_types}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, container_types: v }))} options={CONTAINER_TYPES} />
+            </>
+          )}
         </div>
 
         {/* Ronde "Lane Editor" -- "Route Options" SEKARANG section penuh
