@@ -561,60 +561,47 @@ END $$;
 
 -- ===== (o) Manager entitas MSI yang JUGA punya peran NON-manager di SOA --
 --           TIDAK LAGI bisa membaca atau mengubah inquiry SOA sebagai
---           "manager" (dicari DINAMIS -- pola sama blok (h)
---           verify-inquiry-putaran-4.sql; RAISE EXCEPTION jelas kalau nol
---           kandidat ditemukan, bukan silent-skip) =====
+--           "manager". KOREKSI VIR (dibuktikan di staging): bentuk semula
+--           mencari kandidat lewat query dinamis (pola blok (h)
+--           verify-inquiry-putaran-4.sql), tapi staging punya NOL user yang
+--           sekaligus manager-ke-atas di MSI DAN berperan non-manager aktif
+--           di SOA -- blok itu SELALU gagal di pencarian, bukan di
+--           substansi yang diuji. Perbaikan: peran SOA SEMENTARA dibuat DI
+--           DALAM blok ini (bukan dicari) -- ZZZ Test Sales Supervisor
+--           (manager L6 di MSI) diberi SATU baris user_roles tambahan
+--           (peran sales L7, global) di SOA. Blok ini membatalkan dirinya
+--           sendiri (RAISE EXCEPTION di akhir), jadi baris user_roles
+--           sementara itu TIDAK PERNAH tersisa -- aman dibuat berulang.
+--           Sebelum migrasi 20261026000002 (RLS entity-scoped) berlaku,
+--           hasilnya 1/1 (manager MSI ini BISA membaca dan mengubah inquiry
+--           SOA lewat klausa is_manager_or_above() yang tidak di-scope
+--           entitas -- bug nyata, bukan hipotetis); sesudah migrasi ini
+--           seharusnya 0/0. =====
 DO $$
 DECLARE
-  v_company_msi uuid := '0e1840d8-e6fb-4190-bd09-88338e68b492';
-  v_company_soa uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
-  v_cross_user uuid;
-  v_account_soa uuid;
-  v_inq_id uuid;
-  v_read_count integer;
-  v_update_count integer;
+  v_soa uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_cross uuid := '7f218c76-196e-4580-baf1-6bdf17c6a35a';        -- ZZZ Test Sales Supervisor, manager L6 di MSI
+  v_role_sales uuid := '669dd21c-037c-476b-8945-322eb37ff3c5';   -- peran sales L7 (global)
+  v_account_soa uuid; v_inq_id uuid; v_read int; v_upd int;
 BEGIN
-  SELECT ur_a.user_id INTO v_cross_user
-  FROM public.user_roles ur_a
-  JOIN public.roles r_a ON r_a.id = ur_a.role_id
-  WHERE ur_a.company_id = v_company_msi AND ur_a.is_active = true AND r_a.level <= 6
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles ur_b JOIN public.roles r_b ON r_b.id = ur_b.role_id
-       WHERE ur_b.user_id = ur_a.user_id AND ur_b.company_id = v_company_soa AND ur_b.is_active = true AND r_b.level > 6
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM public.user_roles ur_sa JOIN public.roles r_sa ON r_sa.id = ur_sa.role_id
-       WHERE ur_sa.user_id = ur_a.user_id AND ur_sa.is_active = true AND r_sa.code = 'super_admin'
-    )
-  ORDER BY ur_a.user_id
-  LIMIT 1;
-
-  IF v_cross_user IS NULL THEN
-    RAISE EXCEPTION 'UJI GAGAL (o) -- nol user fixture yang manager-ke-atas di MSI DAN punya peran non-manager aktif di SOA (dan bukan super_admin) -- cari/buat akun uji semacam ini di staging sebelum lanjut';
-  END IF;
-
-  SELECT id INTO v_account_soa FROM public.accounts
-   WHERE company_id = v_company_soa AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
+  -- peran sementara: user ini juga sales (non-manager) di SOA
+  INSERT INTO public.user_roles (user_id, role_id, company_id, is_active) VALUES (v_cross, v_role_sales, v_soa, true);
+  SELECT id INTO v_account_soa FROM public.accounts WHERE company_id = v_soa AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
   IF v_account_soa IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (o) -- nol akun fixture SOA'; END IF;
-
-  -- owner_id/created_by SENGAJA NULL -- satu-satunya cara v_cross_user bisa
-  -- lihat/ubah baris ini adalah lewat klausa manager, yang sedang diuji.
   INSERT INTO public.inquiries (company_id, prospect_id, service_type, direction, customer_role, status)
-  VALUES (v_company_soa, v_account_soa, 'freight_forwarding', 'Export', 'Shipper', 'OPEN')
-  RETURNING id INTO v_inq_id;
+  VALUES (v_soa, v_account_soa, 'freight_forwarding', 'Export', 'Shipper', 'OPEN') RETURNING id INTO v_inq_id;
 
-  PERFORM set_config('request.jwt.claim.sub', v_cross_user::text, true);
+  PERFORM set_config('request.jwt.claim.sub', v_cross::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
-  SELECT count(*) INTO v_read_count FROM public.inquiries WHERE id = v_inq_id;
-  UPDATE public.inquiries SET notes = 'harus tidak pernah tersimpan' WHERE id = v_inq_id;
-  GET DIAGNOSTICS v_update_count = ROW_COUNT;
+  SELECT count(*) INTO v_read FROM public.inquiries WHERE id = v_inq_id;
+  UPDATE public.inquiries SET notes = 'tidak boleh tersimpan' WHERE id = v_inq_id;
+  GET DIAGNOSTICS v_upd = ROW_COUNT;
   EXECUTE 'RESET ROLE';
 
-  RAISE NOTICE '(o) user % (manager MSI, non-manager SOA) atas inquiry SOA % -- baris terbaca=% (harus 0), baris terubah=% (harus 0)', v_cross_user, v_inq_id, v_read_count, v_update_count;
-  IF v_read_count <> 0 OR v_update_count <> 0 THEN
-    RAISE EXCEPTION 'UJI GAGAL (o) -- seharusnya 0/0, user ini TIDAK manager di entitas SOA';
+  RAISE NOTICE '(o) manager MSI + sales SOA atas inquiry SOA -- terbaca=% (harus 0), terubah=% (harus 0)', v_read, v_upd;
+  IF v_read <> 0 OR v_upd <> 0 THEN
+    RAISE EXCEPTION 'UJI GAGAL (o) -- seharusnya 0/0, dapat terbaca=%, terubah=%', v_read, v_upd;
   END IF;
-
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (o)';
 END $$;
 
@@ -624,13 +611,21 @@ END $$;
 -- =============================================================================
 
 -- ===== (p) Manager (non-super-admin) -- INSERT dan UPDATE locations --
---           KEDUANYA DITOLAK =====
+--           KEDUANYA DITOLAK. KOREKSI VIR (dibuktikan di staging): bentuk
+--           semula mengharapkan UPDATE yang ditolak JUGA melempar error,
+--           sama seperti INSERT -- SELALU gagal palsu, karena RLS UPDATE
+--           yang gagal (klausa USING tidak cocok) TIDAK melempar exception
+--           sama sekali, ia hanya membuat statement itu mencocokkan 0
+--           baris (perilaku baku RLS, bukan bug). INSERT yang ditolak
+--           WITH CHECK TETAP melempar error (ditangkap EXCEPTION, tidak
+--           berubah). UPDATE sekarang diperiksa lewat GET DIAGNOSTICS
+--           ROW_COUNT = 0, bukan ditangkap sebagai exception. =====
 DO $$
 DECLARE
   v_manager uuid := '7f218c76-196e-4580-baf1-6bdf17c6a35a';
   v_existing_loc uuid;
   v_caught_insert boolean := false; v_msg_insert text;
-  v_caught_update boolean := false; v_msg_update text;
+  v_upd int;
 BEGIN
   SELECT id INTO v_existing_loc FROM public.locations LIMIT 1;
   IF v_existing_loc IS NULL THEN RAISE EXCEPTION 'UJI GAGAL (p) -- nol baris locations existing utk uji UPDATE'; END IF;
@@ -642,18 +637,14 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     v_caught_insert := true; v_msg_insert := SQLERRM;
   END;
-  BEGIN
-    UPDATE public.locations SET name = 'harus tidak pernah tersimpan' WHERE id = v_existing_loc;
-  EXCEPTION WHEN OTHERS THEN
-    v_caught_update := true; v_msg_update := SQLERRM;
-  END;
+  UPDATE public.locations SET name = 'harus tidak pernah tersimpan' WHERE id = v_existing_loc;
+  GET DIAGNOSTICS v_upd = ROW_COUNT;
   EXECUTE 'RESET ROLE';
 
-  RAISE NOTICE '(p) Manager non-super-admin -- INSERT ditolak=% (%), UPDATE ditolak=% (%)', v_caught_insert, v_msg_insert, v_caught_update, v_msg_update;
-  IF NOT v_caught_insert OR NOT v_caught_update THEN
-    RAISE EXCEPTION 'UJI GAGAL (p) -- manager non-super-admin seharusnya ditolak KEDUA aksi (insert & update)';
+  RAISE NOTICE '(p) Manager non-super-admin -- INSERT ditolak=% (%), UPDATE baris terubah=% (harus 0)', v_caught_insert, v_msg_insert, v_upd;
+  IF NOT v_caught_insert OR v_upd <> 0 THEN
+    RAISE EXCEPTION 'UJI GAGAL (p) -- INSERT harus ditolak (dapat %) dan UPDATE harus mengubah 0 baris (dapat %)', v_caught_insert, v_upd;
   END IF;
-
   RAISE EXCEPTION 'UJI LULUS (dibatalkan sengaja) (p)';
 END $$;
 
