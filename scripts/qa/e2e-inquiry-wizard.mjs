@@ -696,6 +696,209 @@ function dealFieldValue(page, label) {
   }
   if (!laneEditorOk) console.log('  ⚠ Editor Route Options tidak sampai Save sukses -- lihat hasil check() di atas untuk titik gagalnya.');
 
+  // =========================================================================
+  // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
+  // login SAMA (satu proses skrip), dimulai SESUDAH flow Single Shipment di
+  // atas selesai -- flow pertama TIDAK disentuh sama sekali (byte-identik).
+  // =========================================================================
+  console.log('\n— FLOW KEDUA: Rate Sheet Request —\n');
+
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  check('[RS] Wizard Intake Form terbuka (flow kedua)', await page.locator('h1:text-is("New Inquiry")').count() > 0);
+
+  // ── Langkah 1 — akun (reuse "PT Agro Sawit Kalimantan", rute BERBEDA dari
+  // flow pertama -- POL/POD dibalik, Export bukan Import -- nol risiko
+  // beririsan dengan inquiry flow pertama). ──────────────────────────────
+  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await settle(page);
+  await page.locator('button:text-is("Prospect")').click();
+  const rsProspectInput = page.locator('input[placeholder="Search prospects…"]');
+  await rsProspectInput.fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  const rsAccountBtn = page.locator('button:has-text("PT Agro Sawit Kalimantan")').first();
+  if (await rsAccountBtn.count() > 0) await rsAccountBtn.click();
+  await settle(page);
+
+  // ── Langkah 2 — Service Type "Freight Forwarding" + Customer Role
+  // "Shipper" (hindari Customs/Undername -- sudah teruji flow pertama,
+  // fokus RS saja; Customer Role WAJIB kecuali service_type='trading'). ───
+  await page.locator('button:text-is("2. Service & Direction")').click();
+  await settle(page);
+  await page.locator('button:has-text("Freight Forwarding")').first().click();
+  await settle(page, 300);
+  await page.locator('button:text-is("Shipper")').click();
+  await settle(page);
+
+  // ── Langkah 3, MASIH Single Shipment (isRS belum true) — isi POL/POD
+  // sebagai field TUNGGAL (bukan lane), lalu pilih Container Type "FCL 20'".
+  // REVISI 1 -- ini SENGAJA dilakukan SEBELUM toggle ke Rate Sheet Request,
+  // supaya state container_types TERISI saat toggle terjadi (state TIDAK
+  // dikosongkan oleh toggle -- hanya field-nya yang disembunyikan). ───────
+  await page.locator('button:text-is("3. Route & Terms")').click();
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Singapore', 'Singapore');
+  await settle(page);
+  await page.locator('button:text-is("FCL 20\'")').click();
+  await settle(page, 600);
+
+  // ── Toggle ke "Rate Sheet Request" (langkah 1). ──────────────────────────
+  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await settle(page);
+  await page.locator('button:text-is("Rate Sheet Request")').click();
+  await settle(page, 400);
+
+  // ── REVISI 1, item (e): nol banner duplikat, nol error route_ncont,
+  // sepanjang SISA alur RS -- dicek di sini (sesaat sesudah toggle, sebelum
+  // field lain diisi) dan diulang lagi sesudah Create (lihat di bawah). ────
+  check('[RS] Nol banner "Possible duplicate" sesaat sesudah toggle ke Rate Sheet Request (meski container_types FCL 20\' masih tersimpan)',
+    (await page.locator('text=/Possible duplicate/i').count()) === 0);
+
+  // ── Langkah 3 sesudah toggle — assert field Single-Shipment-only TIDAK
+  // ADA, LaneTable tampil dgn 1 lane PRA-ISI dari POL/POD yang sudah diisi
+  // sebelum toggle (switchInquiryType seed dari f.pol_location_id/pod). ────
+  await page.locator('button:text-is("3. Route & Terms")').click();
+  await settle(page);
+  for (const label of ['Pickup Address', 'Delivery Address', 'Incoterm', 'Container Type', 'Number of containers', 'Cargo ready date']) {
+    check(`[RS] Field Single-Shipment-only "${label}" TIDAK ADA di step Route & Terms`, (await page.locator(`text="${label}"`).count()) === 0);
+  }
+  check('[RS] Tombol "Add route option" TIDAK ADA (laneTbl sudah true sejak toggle, nol transisi diperlukan)',
+    (await page.locator('button:has-text("Add route option")').count()) === 0);
+  const rsLaneCountAfterToggle = await laneRowCount(page);
+  check('[RS] LaneTable tampil dgn 1 lane pra-isi segera sesudah toggle', rsLaneCountAfterToggle === 1, `dapat: ${rsLaneCountAfterToggle}`);
+  check('[RS] Kolom pertama LaneTable berjudul "Use" (bukan "#")', (await page.locator('div:text-is("Use")').count()) > 0);
+  const rsLane0Pol = (await laneRow(page, 0).locator('> div').nth(1).innerText().catch(() => '')).trim();
+  const rsLane0Pod = (await laneRow(page, 0).locator('> div').nth(2).innerText().catch(() => '')).trim();
+  check('[RS] Lane 1 pra-isi POL "Jakarta (Tanjung Priok)" (carry-over dari field tunggal sebelum toggle)', rsLane0Pol.includes('Jakarta (Tanjung Priok)'), `dapat: "${rsLane0Pol}"`);
+  check('[RS] Lane 1 pra-isi POD "Singapore" (carry-over dari field tunggal sebelum toggle)', rsLane0Pod.includes('Singapore'), `dapat: "${rsLane0Pod}"`);
+
+  // ── Tambah lane 2 via "Add lane" (BUKAN "Add route option" -- tombol itu
+  // tidak pernah muncul untuk RS), isi rute DIBALIK (beda jelas dari lane 1),
+  // lalu UNCHECK "Use"-nya (C3.2 -- lane ini TIDAK boleh ikut tersimpan). ──
+  await page.locator('button:has-text("Add lane")').click();
+  await settle(page, 300);
+  const rsLaneCountAfterAdd = await laneRowCount(page);
+  check('[RS] Lane ke-2 bertambah setelah "Add lane"', rsLaneCountAfterAdd === 2, `dapat: ${rsLaneCountAfterAdd}`);
+  const rsLane1Pol = laneRow(page, 1).locator('> div').nth(1).locator('button').first();
+  await pickLocation(page, rsLane1Pol, 'Singapore', 'Singapore');
+  await settle(page, 300);
+  const rsLane1Pod = laneRow(page, 1).locator('> div').nth(2).locator('button').first();
+  await pickLocation(page, rsLane1Pod, 'Jakarta', 'Jakarta (Tanjung Priok)');
+  await settle(page, 300);
+  await laneRow(page, 1).locator('> div').nth(0).locator('input[type="checkbox"]').click();
+  await settle(page, 300);
+  const rsLane1Checked = await laneRow(page, 1).locator('> div').nth(0).locator('input[type="checkbox"]').isChecked();
+  check('[RS] Checkbox "Use" lane 2 TERLIHAT tidak tercentang setelah diklik', rsLane1Checked === false, `checked=${rsLane1Checked}`);
+
+  // ── REVISI 2 — uncheck SEMUA lane (termasuk lane 1) -- coba lanjut/Create
+  // harus tertahan di step Route dengan pesan spesifik "0 lane terpilih". ──
+  await laneRow(page, 0).locator('> div').nth(0).locator('input[type="checkbox"]').click();
+  await settle(page, 300);
+  let rsUrlBeforeAttempt = page.url();
+  let rsReachedReview = await goToReviewViaNext(page);
+  check('[RS] Step Review tercapai via "Next" (Next tidak pernah blokir -- validasi terjadi di Create)', rsReachedReview);
+  const rsCreateBtn = page.locator('button:text-is("Create Inquiry")');
+  if (await rsCreateBtn.isVisible().catch(() => false)) await rsCreateBtn.click();
+  await settle(page, 500);
+  check('[RS] Create DITOLAK saat nol lane terpilih (URL tidak pindah ke Detail Inquiry)', page.url() === rsUrlBeforeAttempt, page.url());
+  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat nol lane terpilih', await isStepActive(page, '3. Route & Terms'));
+  check('[RS] Pesan "Select at least one lane to include." tampil saat nol lane terpilih',
+    (await page.locator('text="Select at least one lane to include."').count()) > 0);
+
+  // Centang lagi lane 1 (lane 2 TETAP tidak tercentang, sesuai skenario akhir
+  // yang dimaksud: hanya lane 1 yang disimpan).
+  await laneRow(page, 0).locator('> div').nth(0).locator('input[type="checkbox"]').click();
+  await settle(page, 300);
+
+  // ── Validity From/To + Estimated Volume per Month. Uji validasi validity
+  // terbalik DULU (coba Create harus tertahan lagi di step Route), baru
+  // perbaiki -- lalu isi volume bergaya TD-285. ────────────────────────────
+  const rsValidityFrom = fieldLocator(page, 'Validity Requested From', 'input');
+  const rsValidityTo = fieldLocator(page, 'Validity Requested Until', 'input');
+  await rsValidityFrom.fill('2026-12-01');
+  await rsValidityTo.fill('2026-11-01'); // SENGAJA terbalik
+  await settle(page, 300);
+
+  rsUrlBeforeAttempt = page.url();
+  rsReachedReview = await goToReviewViaNext(page);
+  if (await rsCreateBtn.isVisible().catch(() => false)) await rsCreateBtn.click();
+  await settle(page, 500);
+  check('[RS] Create DITOLAK saat validity_to < validity_from (URL tidak pindah)', page.url() === rsUrlBeforeAttempt, page.url());
+  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat validity terbalik', await isStepActive(page, '3. Route & Terms'));
+  check('[RS] Pesan validity error tampil saat validity_to < validity_from',
+    (await page.locator('text=/Enter the requested validity/i').count()) > 0);
+
+  await page.locator('button:text-is("3. Route & Terms")').click();
+  await settle(page);
+  await rsValidityTo.fill('2027-02-28'); // perbaiki
+  await settle(page, 300);
+
+  // TD-285 -- "1.250,5" harus tersimpan 1250.5 (bukan 1.25 kalau titik dibaca
+  // desimal ala type="number"). type="text"+inputMode="decimal", format
+  // ulang HANYA saat blur.
+  const rsVolumeInput = fieldLocator(page, 'Estimated Volume per Month (CBM)', 'input');
+  await rsVolumeInput.fill('1.250,5');
+  await rsVolumeInput.blur();
+  await settle(page, 300);
+  const rsVolumeAfterBlur = await rsVolumeInput.inputValue();
+  check('[RS] Estimated Volume "1.250,5" diformat ulang id-ID saat blur (bukan 1,25/NaN)', rsVolumeAfterBlur === '1.250,5', `dapat: "${rsVolumeAfterBlur}"`);
+
+  // ── Review step — Lanes(1) (lane 2 ter-uncheck TIDAK dihitung), Validity
+  // Requested, Estimated Volume per Month ADA; Incoterms/Container Type
+  // TIDAK ADA; HANYA SATU baris "Estimated" (Commercial, kosong -- C4). ────
+  rsReachedReview = await goToReviewViaNext(page);
+  check('[RS] Step Review tercapai (sesudah validity+volume diperbaiki)', rsReachedReview);
+  const rsLanesReviewText = (await fieldLocator(page, 'Lanes (1)', 'span').innerText().catch(() => '')).trim();
+  check('[RS] Review menunjukkan "Lanes (1)" (hanya lane terpilih dihitung)', rsLanesReviewText.length > 0, `dapat label ada: ${rsLanesReviewText.length > 0}`);
+  const rsValidityReviewText = (await fieldLocator(page, 'Validity Requested', 'span').innerText().catch(() => '')).trim();
+  check('[RS] Review "Validity Requested" = "2026-12-01 to 2027-02-28"', rsValidityReviewText === '2026-12-01 to 2027-02-28', `dapat: "${rsValidityReviewText}"`);
+  const rsVolumeReviewText = (await fieldLocator(page, 'Estimated Volume per Month', 'span').innerText().catch(() => '')).trim();
+  check('[RS] Review "Estimated Volume per Month" = "1.250,5 CBM"', rsVolumeReviewText === '1.250,5 CBM', `dapat: "${rsVolumeReviewText}"`);
+  check('[RS] Review TIDAK memuat "Incoterms"', (await page.locator('text="Incoterms"').count()) === 0);
+  check('[RS] Review TIDAK memuat "Container Type"', (await page.locator('text="Container Type"').count()) === 0);
+  const rsEstimatedRowCount = await page.locator('text="Estimated (intake)"').count();
+  check('[RS] Review HANYA SATU baris "Estimated" (Commercial, C4 -- nol baris Estimated Value ganda)', rsEstimatedRowCount === 1, `dapat: ${rsEstimatedRowCount}`);
+
+  // ── Create sungguhan. ─────────────────────────────────────────────────
+  const rsRpcRespPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  if (await rsCreateBtn.isVisible().catch(() => false)) await rsCreateBtn.click();
+  const rsRpcResp = await rsRpcRespPromise;
+  let rsInquiryNo = null, rsInquiryId = null;
+  if (rsRpcResp && rsRpcResp.ok()) {
+    const body = await rsRpcResp.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    rsInquiryNo = row?.inquiry_no || null;
+    rsInquiryId = row?.id || null;
+  }
+  check('[RS] RPC create_inquiry_with_lanes merespon sukses', !!rsRpcResp && rsRpcResp.ok(), rsRpcResp ? `HTTP ${rsRpcResp.status()}` : 'nol respon tertangkap');
+  await settle(page, 800);
+  check('[RS] Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page.url()), page.url());
+  console.log(`\n  → [RS] Nomor inquiry yang dibuat: ${rsInquiryNo || '(tidak tertangkap)'}  ${rsInquiryId ? `(id: ${rsInquiryId})` : ''}`);
+
+  // ── Detail Inquiry — badge, 1 lane TERSIMPAN (lane 2 TIDAK ikut), Route &
+  // Terms menampilkan Validity/Volume (bukan Incoterms/dll). ───────────────
+  await settle(page, 800);
+  check('[RS] Badge "Rate Sheet Request" tampil di header Detail Inquiry', (await page.locator('text="Rate Sheet Request"').count()) > 0);
+  const rsDetailLaneCount = await laneRowCount(page);
+  check('[RS] Route Options Detail Inquiry HANYA 1 baris (lane ter-uncheck tidak ikut tersimpan)', rsDetailLaneCount === 1, `dapat: ${rsDetailLaneCount}`);
+  if (rsDetailLaneCount === 1) {
+    const rsDetailPol = (await laneRow(page, 0).locator('> div').nth(1).innerText().catch(() => '')).trim();
+    const rsDetailPod = (await laneRow(page, 0).locator('> div').nth(2).innerText().catch(() => '')).trim();
+    check('[RS] Lane tersimpan POL "Jakarta (Tanjung Priok)"', rsDetailPol.includes('Jakarta (Tanjung Priok)'), `dapat: "${rsDetailPol}"`);
+    check('[RS] Lane tersimpan POD "Singapore"', rsDetailPod.includes('Singapore'), `dapat: "${rsDetailPod}"`);
+  }
+  for (const label of ['Pickup Address', 'Delivery Address', 'Incoterms', 'Container Type']) {
+    check(`[RS] Field Single-Shipment-only "${label}" TIDAK ADA di Detail Inquiry`, (await page.locator(`text="${label}"`).count()) === 0);
+  }
+  const rsDetailValidityFrom = (await dealFieldValue(page, 'Validity Requested From').innerText().catch(() => '')).trim();
+  const rsDetailValidityTo = (await dealFieldValue(page, 'Validity Requested Until').innerText().catch(() => '')).trim();
+  const rsDetailVolume = (await dealFieldValue(page, 'Estimated Volume per Month (CBM)').innerText().catch(() => '')).trim();
+  check('[RS] Detail Inquiry Validity From persisten "2026-12-01"', rsDetailValidityFrom.includes('2026-12-01'), `dapat: "${rsDetailValidityFrom}"`);
+  check('[RS] Detail Inquiry Validity Until persisten "2027-02-28"', rsDetailValidityTo.includes('2027-02-28'), `dapat: "${rsDetailValidityTo}"`);
+  check('[RS] Detail Inquiry Estimated Volume per Month persisten "1.250,5" (TD-285 round-trip DB, bukan 1,25)', rsDetailVolume.includes('1.250,5'), `dapat: "${rsDetailVolume}"`);
+
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
 
