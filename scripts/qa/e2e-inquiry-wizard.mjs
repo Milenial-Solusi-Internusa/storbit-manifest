@@ -141,6 +141,47 @@ async function settle(page, extra = 0) {
   await page.waitForTimeout(SETTLE + extra);
 }
 
+// Selector toast generik (pola SAMA dgn captureRejectionDiagnostics/laneToastText
+// di bawah -- TIDAK diganti exact/substring di sini, hanya dipakai utk
+// menunggu/mendiagnosis, bukan utk assert lulus/gagal).
+const toastLocator = (page) => page.locator('[class*="toast" i], [role="alert" i], [role="status" i]');
+
+// Akar bug (Vir, verifikasi kode App.jsx ~baris 2412): showToast memanggil
+// setTimeout(() => setToast(null), 2800) TANPA membatalkan timer toast
+// SEBELUMNYA -- toast baru yang muncul <2,8 detik sesudah toast lain akan
+// dihapus lebih awal oleh timer toast LAMA, sehingga umurnya jauh lebih
+// pendek dari 2800ms (kadang <1 detik) dan terlewat oleh cek instan. Bug
+// pre-existing di shell global, BUKAN bagian Tahap 4C -- App.jsx TIDAK
+// disentuh di sini (dicatat Vir utk audit Putaran 5); mitigasinya di SISI
+// TES: pastikan toast SEBELUMNYA sudah benar-benar hilang (timer lamanya
+// sudah habis) sebelum memicu aksi yang menampilkan toast BARU, supaya
+// toast baru mendapat umur penuh 2800ms miliknya sendiri.
+async function waitForToastGone(page, timeout = 6000) {
+  const loc = toastLocator(page);
+  if (await loc.count() === 0) return;
+  await loc.first().waitFor({ state: 'hidden', timeout }).catch(() => {});
+}
+
+// Cek toast teks PERSIS (selector TETAP exact text="..." -- TIDAK diganti
+// substring/regex) dgn POLLING sampai timeout (default 3 detik, minimum
+// instruksi Vir), bukan snapshot instan -- toast yang umurnya dipersingkat
+// oleh bug di atas tetap SUNGGUH tampil sesaat, waitFor({state:'visible'})
+// menangkapnya selama ia masih ada di jendela waktu itu. Kalau TETAP gagal
+// sesudah ini, JANGAN ubah selector diam-diam -- cetak teks SEMUA elemen
+// toast yang terlihat saat itu (pola sama captureRejectionDiagnostics) dan
+// laporkan apa adanya lewat detail check().
+async function checkToastExact(page, name, text, timeoutMs = 3000) {
+  const exact = page.locator(`text="${text}"`);
+  let ok = false;
+  try {
+    await exact.first().waitFor({ state: 'visible', timeout: timeoutMs });
+    ok = true;
+  } catch { ok = false; }
+  if (ok) return check(name, true);
+  const visibleToasts = (await toastLocator(page).allInnerTexts().catch(() => [])).filter(Boolean);
+  return check(name, false, `toast terlihat saat timeout: ${JSON.stringify(visibleToasts)}`);
+}
+
 // Pill aktif (InquiryIntakeWizardPage.jsx) berwarna solid navy `#1B4D8A` =
 // rgb(27, 77, 138) -- IDENTIK pola assert Direction "Import" di bawah.
 // Dipakai utk memastikan handleCreate BENAR melempar wizard balik ke step
@@ -589,7 +630,16 @@ function dealFieldValue(page, label) {
   // berisi 2 baris, keduanya Sea FCL/Container (verifikasi fix 5c end-to-end,
   // item a), + POL/POD read-only saat edit section Route & Terms (FIX 5). ──
   await settle(page, 800);
-  check('Section "Route Options" (SectionHeader) tampil di Detail Inquiry', await page.locator('h3:text-is("Route Options")').count() > 0);
+  // waitFor({state:'visible'}) -- bukan cek instan -- supaya timing render
+  // Detail Inquiry sesaat sesudah Create (kemungkinan flaky, dicurigai dari
+  // run sebelumnya: setiap check LAIN yang terkait blok ini lulus normal
+  // tepat sesudahnya) punya jendela wajar sampai 10 detik sebelum dianggap
+  // benar-benar gagal. Assertion lain di flow ini TIDAK disentuh.
+  let routeOptionsHeaderVisible = true;
+  try {
+    await page.locator('h3:text-is("Route Options")').first().waitFor({ state: 'visible', timeout: 10000 });
+  } catch { routeOptionsHeaderVisible = false; }
+  check('Section "Route Options" (SectionHeader) tampil di Detail Inquiry', routeOptionsHeaderVisible);
   const routeOptionsHeading = await page.locator('h4:has-text("Route options")').innerText().catch(() => '');
   check('Heading LaneTable menunjukkan 2 lane (sanity teks)', routeOptionsHeading.includes('(2)'), routeOptionsHeading);
   const detailLaneCount = await laneRowCount(page);
@@ -898,6 +948,89 @@ function dealFieldValue(page, label) {
   check('[RS] Detail Inquiry Validity From persisten "2026-12-01"', rsDetailValidityFrom.includes('2026-12-01'), `dapat: "${rsDetailValidityFrom}"`);
   check('[RS] Detail Inquiry Validity Until persisten "2027-02-28"', rsDetailValidityTo.includes('2027-02-28'), `dapat: "${rsDetailValidityTo}"`);
   check('[RS] Detail Inquiry Estimated Volume per Month persisten "1.250,5" (TD-285 round-trip DB, bukan 1,25)', rsDetailVolume.includes('1.250,5'), `dapat: "${rsDetailVolume}"`);
+
+  // ── Perbaikan 2 (review Vir) -- edit Validity/Volume dari Detail Inquiry
+  // section "Route & Terms", pakai inquiry RS yang baru dibuat di atas.
+  // Pemantau PATCH /rest/v1/inquiries (satu-satunya jalur saveInquirySection,
+  // DealDetailPage.jsx:1287-1291) -- dipasang SEKALI, dibaca sebagai hitungan
+  // sebelum/sesudah tiap percobaan Save supaya "nol panggilan DB saat
+  // validasi klien gagal" bisa dibuktikan dari jaringan, bukan ditebak dari
+  // UI saja. ──────────────────────────────────────────────────────────────
+  const patchRequests = [];
+  page.on('request', (req) => {
+    if (req.method() === 'PATCH' && req.url().includes('/rest/v1/inquiries')) patchRequests.push(req.url());
+  });
+
+  const rsRouteEditBtn = sectionButton(page, 'Route & Terms', 'Edit');
+  check('[RS] Tombol Edit "Route & Terms" ditemukan di Detail Inquiry', await rsRouteEditBtn.count() > 0);
+  await rsRouteEditBtn.click();
+  await settle(page, 300);
+
+  const rsEditValidityFrom = dealFieldValue(page, 'Validity Requested From');
+  const rsEditValidityTo = dealFieldValue(page, 'Validity Requested Until');
+  const rsEditVolume = dealFieldValue(page, 'Estimated Volume per Month (CBM)');
+  check('[RS] Input Validity Requested From BISA diedit (tag <input>)', (await rsEditValidityFrom.evaluate((el) => el.tagName).catch(() => '')) === 'INPUT');
+  check('[RS] Input Validity Requested Until BISA diedit (tag <input>)', (await rsEditValidityTo.evaluate((el) => el.tagName).catch(() => '')) === 'INPUT');
+  check('[RS] Input Estimated Volume per Month BISA diedit (tag <input>)', (await rsEditVolume.evaluate((el) => el.tagName).catch(() => '')) === 'INPUT');
+  check('[RS] "Pickup Address" TIDAK ADA saat edit Route & Terms (Detail Inquiry)', (await page.locator('text="Pickup Address"').count()) === 0);
+  check('[RS] "Incoterms" TIDAK ADA saat edit Route & Terms (Detail Inquiry)', (await page.locator('text="Incoterms"').count()) === 0);
+
+  const rsRouteSaveBtn = sectionButton(page, 'Route & Terms', 'Save');
+
+  // (2) Until lebih awal dari From ("2026-12-01") -- ditolak klien-side,
+  // nol PATCH, section tetap mode edit. waitForToastGone DULU (slate bersih
+  // -- lihat komentar helper di atas) supaya toast ini mendapat umur penuh
+  // 2800ms miliknya sendiri, lalu checkToastExact POLLING (bukan instan).
+  await waitForToastGone(page);
+  let rsPatchCountBefore = patchRequests.length;
+  await rsEditValidityTo.fill('2026-11-01');
+  await rsRouteSaveBtn.click();
+  await checkToastExact(page, '[RS] Toast "Validity Requested Until must be on or after From." tampil', 'Validity Requested Until must be on or after From.');
+  check('[RS] Nol PATCH /rest/v1/inquiries saat validity terbalik', patchRequests.length === rsPatchCountBefore, `before=${rsPatchCountBefore} after=${patchRequests.length}`);
+  check('[RS] Section "Route & Terms" TETAP mode edit setelah Save ditolak (validity)', await rsRouteSaveBtn.isVisible().catch(() => false));
+
+  // (3) Perbaiki Until, Volume="abc" -- ditolak "Angka tidak dikenali", nol PATCH.
+  await waitForToastGone(page);
+  await rsEditValidityTo.fill('2027-02-28');
+  await rsEditVolume.fill('abc');
+  rsPatchCountBefore = patchRequests.length;
+  await rsRouteSaveBtn.click();
+  await checkToastExact(page, '[RS] Toast "Angka tidak dikenali" tampil saat Volume "abc"', 'Angka tidak dikenali');
+  check('[RS] Nol PATCH /rest/v1/inquiries saat Volume "abc"', patchRequests.length === rsPatchCountBefore, `before=${rsPatchCountBefore} after=${patchRequests.length}`);
+  check('[RS] Section "Route & Terms" TETAP mode edit setelah Save ditolak (volume tak dikenali)', await rsRouteSaveBtn.isVisible().catch(() => false));
+
+  // (4) Volume="0" -- ditolak "harus > 0", nol PATCH.
+  await waitForToastGone(page);
+  await rsEditVolume.fill('0');
+  rsPatchCountBefore = patchRequests.length;
+  await rsRouteSaveBtn.click();
+  await checkToastExact(page, '[RS] Toast "Estimated Volume per Month is required and must be greater than 0." tampil saat Volume "0"', 'Estimated Volume per Month is required and must be greater than 0.');
+  check('[RS] Nol PATCH /rest/v1/inquiries saat Volume "0"', patchRequests.length === rsPatchCountBefore, `before=${rsPatchCountBefore} after=${patchRequests.length}`);
+  check('[RS] Section "Route & Terms" TETAP mode edit setelah Save ditolak (volume 0)', await rsRouteSaveBtn.isVisible().catch(() => false));
+
+  // (5) Volume="2.000" (format id-ID = 2000, BUKAN 2), Until="2027-03-31" --
+  // sukses, SATU PATCH, toast "Changes saved".
+  await waitForToastGone(page);
+  await rsEditVolume.fill('2.000');
+  await rsEditValidityTo.fill('2027-03-31');
+  rsPatchCountBefore = patchRequests.length;
+  const rsPatchRespPromise = page.waitForResponse((resp) => resp.request().method() === 'PATCH' && resp.url().includes('/rest/v1/inquiries'), { timeout: 20000 }).catch(() => null);
+  await rsRouteSaveBtn.click();
+  const rsPatchResp = await rsPatchRespPromise;
+  check('[RS] SATU PATCH /rest/v1/inquiries terjadi saat Save valid', patchRequests.length === rsPatchCountBefore + 1, `before=${rsPatchCountBefore} after=${patchRequests.length}`);
+  check('[RS] PATCH merespon sukses', !!rsPatchResp && rsPatchResp.ok(), rsPatchResp ? `HTTP ${rsPatchResp.status()}` : 'nol respon tertangkap');
+  await checkToastExact(page, '[RS] Toast "Changes saved" tampil', 'Changes saved');
+  await settle(page, 400);
+
+  // (6) Reload -- Until/Volume persisten dari DB, bukan hanya state klien.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle(page, 800);
+  const rsEditValidityToAfter = (await dealFieldValue(page, 'Validity Requested Until').innerText().catch(() => '')).trim();
+  const rsEditVolumeAfter = (await dealFieldValue(page, 'Estimated Volume per Month (CBM)').innerText().catch(() => '')).trim();
+  check('[RS] Pasca-reload: Validity Requested Until = "2027-03-31"', rsEditValidityToAfter.includes('2027-03-31'), `dapat: "${rsEditValidityToAfter}"`);
+  check('[RS] Pasca-reload: Estimated Volume per Month = "2.000" (bukan "2")', rsEditVolumeAfter.includes('2.000'), `dapat: "${rsEditVolumeAfter}"`);
+
+  console.log(`\n  → [RS] Inquiry yang dipakai uji edit Detail: ${rsInquiryNo || '(tidak tertangkap)'}  ${rsInquiryId ? `(id: ${rsInquiryId})` : ''} -- cek monthly_volume_cbm = 2000 di database.`);
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
