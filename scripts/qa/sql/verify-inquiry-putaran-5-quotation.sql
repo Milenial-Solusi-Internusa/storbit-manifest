@@ -277,7 +277,7 @@ DECLARE
   v_sales_a uuid := 'a3eea21f-dcbc-47d3-897b-ad68e4e35989';
   v_quo_draft uuid; v_quo_submitted uuid; v_quo_rejected uuid; v_quo_no text := 'ZZZTEST-K1D-F';
   v_notes text; v_sent_status text; v_sent_at timestamptz;
-  v_rev_id uuid; v_rev_no int; v_rev_count int;
+  v_rev_id uuid; v_rev_no int; v_rev_count int; v_rev_status text;
 BEGIN
   -- (f1) save_quotation -- edit DRAFT (notes), nol perubahan status.
   INSERT INTO public.quotations (company_id, quotation_no, status, created_by)
@@ -314,18 +314,23 @@ BEGIN
   END IF;
 
   -- (f3) create_quotation_revision -- dari REJECTED (salah satu status FROM
-  -- yang diterima fungsi itu).
+  -- yang diterima fungsi itu). Fungsi ini mengembalikan SATU uuid (bukan
+  -- tabel) -- bentuk "SELECT t.id FROM fungsi(...) AS t" gagal "column
+  -- t.id does not exist" (dibuktikan Vir di staging). Tangkap balikannya
+  -- langsung ke variabel skalar, baru baca kolom lain lewat SELECT terpisah
+  -- SESUDAH RESET ROLE.
   INSERT INTO public.quotations (company_id, quotation_no, status, created_by, rejection_reason)
   VALUES (v_company, v_quo_no || '-3', 'REJECTED', v_sales_a, 'Uji K1d f3')
   RETURNING id INTO v_quo_rejected;
 
   PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
   EXECUTE 'SET LOCAL ROLE authenticated';
-  SELECT t.id, t.revision INTO v_rev_id, v_rev_no FROM public.create_quotation_revision(v_quo_rejected) AS t;
+  v_rev_id := public.create_quotation_revision(v_quo_rejected);
   EXECUTE 'RESET ROLE';
 
+  SELECT revision, status INTO v_rev_no, v_rev_status FROM public.quotations WHERE id = v_rev_id;
   SELECT count(*) INTO v_rev_count FROM public.quotations WHERE quotation_no = v_quo_no || '-3';
-  RAISE NOTICE '(f3) create_quotation_revision dari REJECTED -- revisi baru id=%, revision=%, total baris quotation_no ini=%', v_rev_id, v_rev_no, v_rev_count;
+  RAISE NOTICE '(f3) create_quotation_revision dari REJECTED -- revisi baru id=%, revision=%, status=%, total baris quotation_no ini=%', v_rev_id, v_rev_no, v_rev_status, v_rev_count;
   IF v_rev_id IS NULL OR v_rev_no <> 2 OR v_rev_count <> 2 THEN
     RAISE EXCEPTION 'UJI GAGAL (f3) -- create_quotation_revision seharusnya tetap sukses dari REJECTED';
   END IF;
