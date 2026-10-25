@@ -2167,6 +2167,64 @@ export async function markInquiryWonWithEvidence({ inquiryId, companyId, reason,
   return { error };
 }
 
+// Putaran 5 K1d -- bucket bukti penerimaan quotation, pola IDENTIK
+// inquiry-won-evidence (migrasi 20261026000004): privat, path
+// <company_id>/<quotation_id>/<uuid>.<ext>, FE memvalidasi lebih dulu supaya
+// pesan bisa dibaca, bucket+RPC tetap batas sesungguhnya. Bucket BARU,
+// SENGAJA bukan reuse inquiry-won-evidence -- segmen kedua path berarti hal
+// berbeda (quotation_id, bukan inquiry_id) di dua bucket itu.
+export const QUOTATION_ACCEPTANCE_EVIDENCE_BUCKET = 'quotation-acceptance-evidence';
+export const QUOTATION_ACCEPTANCE_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+export const QUOTATION_ACCEPTANCE_EVIDENCE_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
+
+/**
+ * Catat jawaban customer (Accepted/Rejected). Untuk ACCEPTED: byte ke
+ * Storage dulu, lalu set_quotation_outcome (4 argumen) yang menegakkan gate
+ * RLS + bukti wajib + path harus diawali <company_id>/<quotation_id>/ DAN
+ * benar-benar ada di storage.objects. Untuk REJECTED: nol unggahan, RPC
+ * dipanggil langsung dengan p_evidence_path NULL (pola sama RPC lama).
+ * Urutan byte-dulu sama alasannya dengan markInquiryWonWithEvidence/
+ * uploadInvoiceAttachment: metadata yang menunjuk berkas tak ada lebih
+ * buruk daripada berkas yatim yang tak terlihat siapa pun.
+ */
+export async function setQuotationOutcomeWithEvidence({ quotationId, companyId, outcome, reason = null, file = null }) {
+  if (outcome === 'REJECTED') {
+    const { error } = await supabase.rpc('set_quotation_outcome', {
+      p_quotation_id: quotationId, p_outcome: 'REJECTED', p_reason: reason, p_evidence_path: null,
+    });
+    return { error };
+  }
+
+  if (!file) return { error: { message: 'Bukti wajib dilampirkan untuk Accepted.' } };
+  if (file.size > QUOTATION_ACCEPTANCE_EVIDENCE_MAX_BYTES) {
+    return { error: { message: `Berkas ${file.name} lebih dari 10 MB.` } };
+  }
+  if (!QUOTATION_ACCEPTANCE_EVIDENCE_MIME.includes(file.type)) {
+    return { error: { message: `Jenis berkas ${file.type || '(tidak dikenali)'} tidak diterima. Hanya PDF, JPG, dan PNG.` } };
+  }
+  const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const path = `${companyId}/${quotationId}/${crypto.randomUUID()}.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from(QUOTATION_ACCEPTANCE_EVIDENCE_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (upErr) return { error: upErr, isUploadError: true };
+
+  const { error } = await supabase.rpc('set_quotation_outcome', {
+    p_quotation_id: quotationId, p_outcome: 'ACCEPTED', p_reason: null, p_evidence_path: path,
+  });
+  return { error };
+}
+
+/** URL bertanda tangan untuk melihat bukti penerimaan quotation (bucket
+ *  PRIVAT). Berlaku 60 menit dan dibuat saat diklik, bukan disimpan --
+ *  pola identik signInvoiceAttachment. */
+export async function signQuotationAcceptanceEvidence(storagePath) {
+  const { data, error } = await supabase.storage
+    .from(QUOTATION_ACCEPTANCE_EVIDENCE_BUCKET).createSignedUrl(storagePath, 3600);
+  return { data: data?.signedUrl || null, error };
+}
+
 /** Isi nomor Faktur Pajak dan/atau kode transaksi Coretax. Isi SEKALI;
  *  mengubah yang sudah terisi hanya super_admin. Berjejak di audit_logs. */
 export async function setInvoiceTaxInfo({ invoiceId, fakturNo = null, coretaxTxCode = null }) {
