@@ -2,7 +2,15 @@
 -- Migration: 20261024000004_crm_reassign_inquiry_owner
 -- Inquiry Management Putaran 3 -- Tahap 3B, Lingkup C/F
 --
--- Status: BELUM DIJALANKAN -- Vir menjalankan manual di staging.
+-- Status: LIVE STAGING (dikonfirmasi Vir, query baca-saja, 26 Okt 2026) --
+-- BELUM DIJALANKAN di production. [Koreksi 26 Okt 2026, Putaran 8: baris
+-- status di atas sudah basi utk staging -- dulu tertulis "BELUM
+-- DIJALANKAN -- Vir menjalankan manual di staging", kini terverifikasi
+-- sudah jalan.] ⚠️ Fungsi 2-argumen di berkas ini akan di-DROP &
+-- diganti signature 3-argumen oleh 20261027000003_crm_reassign_inquiry_
+-- owner_v2.sql (Putaran 8, L-13 -- menambah p_reason) -- jangan jalankan
+-- berkas ini lagi di production tanpa menjalankan 20261027000001/02/03
+-- bersamaan, supaya production tidak berhenti di signature lama.
 -- Dependensi: inquiries.owner_id (sudah ada) · is_manager_or_above_in(uuid)
 -- LIVE (20261001000001_td301_lapis_b_inactive_user_db_guard.sql, join
 -- profiles.active=true) · trg_z_lock_inquiry_owner (BEFORE UPDATE OF
