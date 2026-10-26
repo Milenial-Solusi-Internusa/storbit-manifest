@@ -1270,9 +1270,25 @@ function dealFieldValue(page, label) {
       const headers = { apikey: ANON_KEY, Authorization: `Bearer ${token}` };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
       if (prefer) headers['Prefer'] = prefer;
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      const doFetch = () => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
         method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
       });
+      let r;
+      try {
+        r = await doFetch();
+      } catch (e) {
+        // Jaringan putus sesaat (TypeError fetch failed, dua kali terjadi di
+        // sesi staging ini -- bukan respons server, lihat laporan Vir) --
+        // GET murni baca-saja AMAN diulang. POST/PATCH/RPC TIDAK PERNAH
+        // diulang di sini: idempotensinya tidak terjamin (mis. fixture
+        // POST yang sudah sukses tersimpan server tapi responsnya hilang
+        // di jaringan -- mengulang bisa membuat baris dobel), jadi
+        // dilempar apa adanya seperti sebelumnya.
+        if (method !== 'GET' || !(e instanceof TypeError)) throw e;
+        console.log(`  ℹ [ACC] pgrest GET diulang 1x karena fetch failed: ${path}`);
+        await new Promise((res) => setTimeout(res, 1500));
+        r = await doFetch();
+      }
       const text = await r.text();
       let json = null;
       try { json = text ? JSON.parse(text) : null; } catch { json = text; }
@@ -1549,8 +1565,14 @@ function dealFieldValue(page, label) {
     console.log(`      quotation B: ${quoBId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-B-${nonce})`);
     console.log(`      quotation C: ${quoCId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-C-${nonce})`);
   } catch (e) {
-    console.log(`\n  ✖ FLOW KEEMPAT berhenti karena exception tak tertangkap -- dilaporkan, flow 1-3 TIDAK terdampak (sudah selesai sebelum blok ini jalan): ${e.message}`);
-    check('[ACC] Flow 4 selesai tanpa exception fatal', false, (e.stack || '').split('\n').slice(0, 3).join(' | '));
+    // e.cause -- undici (fetch Node) membungkus error jaringan NYATA di sini
+    // (mis. ECONNRESET/ETIMEDOUT/ENOTFOUND); e.message sendiri SELALU cuma
+    // "fetch failed" generik, nol info penyebab. Dicetak eksplisit supaya
+    // kalau ini muncul lagi, penyebab sebenarnya kelihatan tanpa menebak.
+    const causeCode = e.cause?.code || e.cause?.errors?.[0]?.code || null;
+    const causeText = e.cause ? `${causeCode ? causeCode + ' -- ' : ''}${e.cause.message || e.cause}` : '(tidak ada e.cause)';
+    console.log(`\n  ✖ FLOW KEEMPAT berhenti karena exception tak tertangkap -- dilaporkan, flow 1-3 TIDAK terdampak (sudah selesai sebelum blok ini jalan): ${e.message} | cause: ${causeText}`);
+    check('[ACC] Flow 4 selesai tanpa exception fatal', false, `${(e.stack || '').split('\n').slice(0, 3).join(' | ')} | cause: ${causeText}`);
   }
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
