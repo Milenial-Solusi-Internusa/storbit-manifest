@@ -12,7 +12,7 @@
 // sendiri TIDAK disentuh, 3 pemakai lain (PipelineKanbanPage/DealDetailPage/
 // demo) nol dampak.
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, FileText, Download, ChevronDown, ArrowUpRight, ArrowDownLeft, Truck } from 'lucide-react';
+import { Plus, FileText, FileCheck, Download, ChevronDown, ArrowUpRight, ArrowDownLeft, Truck } from 'lucide-react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
@@ -21,6 +21,7 @@ import { isAllEntities as isAllEntitiesRole, isManagerOrAbove } from '../../lib/
 import InquiryPDF from './InquiryPDF';
 import { STATUS_LABEL, RADIUS } from './v3/tokens';
 import { fetchOperationalRoster } from './salesRoster';
+import { isWonAwaitingSalesOrder, WON_MANUAL_REASONS } from './inquiryOptions';
 
 const C = {
   bg:        '#F6EFE3',
@@ -387,58 +388,117 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   // baris yang cocok filter lain (preChip mockup), BUKAN dibatasi 1000 (lihat
   // effect-nya di bawah -- RENCANA PUTARAN 7 koreksi #5).
   const [statusCounts, setStatusCounts] = useState({});
+  // Toggle "Won, awaiting Sales Order" -- MENGGANTIKAN filter stSel saat
+  // aktif (mockup renderVals(): `s.wasF ? awaitSo : stSel.includes(...)`),
+  // bukan ditambahkan di atasnya. wasN = count atas preChip (lihat effect-nya).
+  const [wasF, setWasF] = useState(false);
+  const [wasN, setWasN] = useState(0);
+  // Peta id lokasi -> type, utk badge Free Trade Zone (koreksi #4). Diisi
+  // SATU KALI per fetch (bukan per baris) dari id yang dikumpulkan lintas
+  // inquiries.pol_location_id/pod_location_id + SELURUH inquiry_lanes
+  // (pol/pod/via) halaman yang sedang tampil.
+  const [locationTypeById, setLocationTypeById] = useState({});
 
   const todayWIB = getTodayWIB();
+
+  // Select bersama -- embed badge (koreksi #2/#3/#4/#C.5) + kolom dasar.
+  // sales_orders/quotations: FK TUNGGAL ke inquiries, nol alias perlu.
+  // pol_loc/pod_loc: DUA FK berbeda ke `locations` dari inquiries sendiri --
+  // WAJIB alias (lihat verifikasi skema: inquiries_pol_location_id_fkey vs
+  // inquiries_pod_location_id_fkey). inquiry_lanes dibawa MENTAH (hanya tiga
+  // kolom id lokasi) -- peta id->type-nya diambil terpisah SATU KALI di
+  // bawah, BUKAN nested embed per lane (pola "dua langkah" yang sudah
+  // dipakai file ini utk nama Owner, menghindari kelas kejutan embed
+  // PostgREST yang sudah pernah terjadi di PipelineKanbanPage.jsx).
+  const INQUIRY_SELECT = `
+    id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
+    pol, pod, pol_location_id, pod_location_id, direction, inquiry_type, estimated_value,
+    incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
+    cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
+    won_reason, closed_at,
+    prospect:accounts!inquiries_prospect_id_fkey(name, lifecycle_stage),
+    customer:accounts!inquiries_customer_id_fkey(name, lifecycle_stage),
+    owner_id,
+    created_by_profile:profiles!inquiries_created_by_fkey(full_name),
+    sales_orders(status, deleted_at),
+    quotations(status, valid_until),
+    pol_loc:locations!inquiries_pol_location_id_fkey(type),
+    pod_loc:locations!inquiries_pod_location_id_fkey(type),
+    inquiry_lanes(pol_location_id, pod_location_id, via_location_id)
+  `;
 
   const fetchInquiries = useCallback(async () => {
     if (!profile?.id) return;
     if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
-      let query = supabase
-        .from('inquiries')
-        .select(`
-          id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
-          pol, pod, pol_location_id, pod_location_id, direction, inquiry_type, estimated_value,
-          incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
-          cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
-          prospect:accounts!inquiries_prospect_id_fkey(name, lifecycle_stage),
-          customer:accounts!inquiries_customer_id_fkey(name, lifecycle_stage),
-          owner_id,
-          created_by_profile:profiles!inquiries_created_by_fkey(full_name)
-        `, { count: 'exact' })
-        .is('deleted_at', null);
+      function applyOtherFilters(q) {
+        if (!isAllEntities) q = q.eq('company_id', profile.company_id);
+        if (filterService !== 'all') q = q.eq('service_type', filterService);
+        q = applyInquiryTypeFilter(q, filterInquiryType);
+        // 'unassigned' -> IS NULL (mockup <option>Unassigned</option> = !r.ow),
+        // bukan .eq, yang tidak pernah match NULL.
+        if (filterOwner === 'unassigned') q = q.is('owner_id', null);
+        else if (filterOwner !== 'all') q = q.eq('owner_id', filterOwner);
+        if (filterEntity !== 'all') q = q.eq('company_id', filterEntity);
+        if (filterDeadline !== 'all') q = applyDeadlineFilter(q, filterDeadline, todayWIB);
+        q = applyCreatedDateFilter(q, filterCreatedDate, todayWIB);
+        // Direction: 'not_set' -> IS NULL (bukan .eq, yang tidak pernah match NULL).
+        if (filterDirection === 'not_set') q = q.is('direction', null);
+        else if (filterDirection !== 'all') q = q.eq('direction', filterDirection);
+        if (scopeMine && profile?.id) q = q.eq('owner_id', profile.id);
+        return applySearchFilter(q, search.trim(), searchAccountIds);
+      }
 
-      // Role-aware scope (see flags above)
-      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      let rows;
+      let totalCount;
 
-      if (stSel.length) query = query.in('status', stSel);
-      if (filterService !== 'all') query = query.eq('service_type', filterService);
-      query = applyInquiryTypeFilter(query, filterInquiryType);
-      // 'unassigned' -> IS NULL (mockup <option>Unassigned</option> = !r.ow),
-      // bukan .eq, yang tidak pernah match NULL.
-      if (filterOwner === 'unassigned') query = query.is('owner_id', null);
-      else if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
-      if (filterEntity !== 'all') query = query.eq('company_id', filterEntity);
-      if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, todayWIB);
-      query = applyCreatedDateFilter(query, filterCreatedDate, todayWIB);
-      // Direction: 'not_set' -> IS NULL (bukan .eq, yang tidak pernah match NULL).
-      if (filterDirection === 'not_set') query = query.is('direction', null);
-      else if (filterDirection !== 'all') query = query.eq('direction', filterDirection);
-      if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
-      query = applySearchFilter(query, search.trim(), searchAccountIds);
+      if (wasF) {
+        /* Toggle "Won, awaiting Sales Order" aktif -- MENGGANTIKAN filter
+           stSel (mockup renderVals(): `s.wasF ? awaitSo : stSel.includes`),
+           bukan ditambahkan di atasnya. Narrow server-side dulu (status=WON
+           + bukan Rate Sheet Request + closed_at > 7 hari lalu) supaya
+           himpunan yang perlu diperiksa client-side jauh lebih kecil dari
+           total inquiry -- "tak ada Sales Order hidup berstatus SENT" adalah
+           NOT EXISTS yang tak bisa diekspresikan bersih lewat filter
+           PostgREST tanpa RPC baru (dilarang putaran ini). Range-loop
+           (BUKAN `.limit(1000)` tunggal) supaya BENAR pada skala berapa pun
+           (koreksi #5); paginasi dilakukan CLIENT-SIDE (slice) di atas hasil
+           LENGKAP yang sudah disaring -- bukan di-cap. */
+        const cutoffISO = new Date(Date.now() - 7 * 86400000).toISOString();
+        const RANGE_PAGE = 1000;
+        let list = [];
+        let from = 0;
+        let more = true;
+        while (more) {
+          let q = supabase.from('inquiries').select(INQUIRY_SELECT).is('deleted_at', null)
+            .eq('status', 'WON').neq('inquiry_type', 'Rate Sheet Request').lt('closed_at', cutoffISO);
+          q = applyOtherFilters(q);
+          q = q.order('created_at', { ascending: false }).range(from, from + RANGE_PAGE - 1);
+          const { data, error } = await q;
+          if (error) throw error;
+          const pageRows = data || [];
+          list = list.concat(pageRows);
+          more = pageRows.length === RANGE_PAGE;
+          from += RANGE_PAGE;
+        }
+        const filtered = list.filter((r) => isWonAwaitingSalesOrder(r, r.sales_orders));
+        totalCount = filtered.length;
+        rows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+      } else {
+        if (stSel.length === 0) { setInquiries([]); setTotal(0); setOwnerNames({}); setLocationTypeById({}); return; }
+        let q = supabase.from('inquiries').select(INQUIRY_SELECT, { count: 'exact' })
+          .is('deleted_at', null).in('status', stSel);
+        q = applyOtherFilters(q);
+        q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+        const { data, error, count } = await q;
+        if (error) throw error;
+        rows = data || [];
+        totalCount = count || 0;
+      }
 
-      query = query
-        .order('created_at', { ascending: false })
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-
-      if (stSel.length === 0) { setInquiries([]); setTotal(0); setOwnerNames({}); return; }
-
-      const { data, error, count } = await query;
-      if (error) throw error;
-      const rows = data || [];
       setInquiries(rows);
-      setTotal(count || 0);
+      setTotal(totalCount);
 
       /* Langkah 2 pola dua-langkah: SATU query per pemuatan halaman, bukan satu per
          baris. Nama yang tak ketemu sengaja dibiarkan kosong — kolom Owner sendiri
@@ -453,15 +513,32 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       } else {
         setOwnerNames({});
       }
+
+      /* Langkah 2 pola dua-langkah utk badge FTZ (koreksi #4): kumpulkan
+         SELURUH id lokasi yang relevan utk baris yang TAMPIL (pol/pod
+         inquiry sendiri -- fallback saat nol lane -- + pol/pod/via SETIAP
+         baris inquiry_lanes), ambil peta id->type dari `locations` SATU
+         KALI, bukan per baris/per lane. */
+      const laneLocIds = rows.flatMap((r) => (r.inquiry_lanes || []).flatMap((l) => [l.pol_location_id, l.pod_location_id, l.via_location_id]));
+      const ownLocIds = rows.flatMap((r) => [r.pol_location_id, r.pod_location_id]);
+      const allLocIds = [...new Set([...laneLocIds, ...ownLocIds].filter(Boolean))];
+      if (allLocIds.length) {
+        const { data: locs } = await supabase.from('locations').select('id, type').in('id', allLocIds);
+        const locMap = {};
+        (locs || []).forEach((l) => { locMap[l.id] = l.type; });
+        setLocationTypeById(locMap);
+      } else {
+        setLocationTypeById({});
+      }
     } catch (err) {
       showToast?.('Failed to load inquiries: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, page, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, page, wasF, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast, INQUIRY_SELECT]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
+  useEffect(() => { setPage(0); }, [wasF, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
 
   // Pencarian dua-langkah (koreksi #6): resolve dulu id akun yang NAMANYA cocok,
   // baru dipakai fetchInquiries & effect hitungan di bawah lewat `.or()`.
@@ -529,6 +606,56 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     })();
     return () => { cancelled = true; };
   }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterCreatedDate, filterDirection, scopeMine, search, searchAccountIds, todayWIB]);
+
+  /* Count tombol toggle "Won, awaiting Sales Order" -- atas preChip yang
+     SAMA dgn checklist Status di atas (service/type/direction/owner/entity/
+     deadline/created/scope/search), TAPI dinarrow status=WON + bukan Rate
+     Sheet Request + closed_at > 7 hari (mockup wasN: `preChip.filter(r =>
+     r.st==='Won' && !r.so && r.type!=='Rate Sheet' && !!r.wonOn &&
+     days(r.wonOn,TODAY)>7).length`). Embed sales_orders SAJA (bukan
+     quotations/locations/inquiry_lanes -- tak relevan utk hitungan ini).
+     Range-loop (koreksi #5) atas subset WON yang sudah dipersempit server
+     -- bukan `.limit(1000)` tunggal. */
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    if (!isAllEntities && !profile?.company_id) return undefined;
+    let cancelled = false;
+    (async () => {
+      const cutoffISO = new Date(Date.now() - 7 * 86400000).toISOString();
+      const RANGE_PAGE = 1000;
+      let list = [];
+      let from = 0;
+      let more = true;
+      while (more) {
+        let query = supabase.from('inquiries')
+          .select('status, inquiry_type, closed_at, sales_orders(status, deleted_at)')
+          .is('deleted_at', null)
+          .eq('status', 'WON').neq('inquiry_type', 'Rate Sheet Request').lt('closed_at', cutoffISO);
+        if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+        if (filterService !== 'all') query = query.eq('service_type', filterService);
+        if (filterOwner === 'unassigned') query = query.is('owner_id', null);
+        else if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
+        if (filterEntity !== 'all') query = query.eq('company_id', filterEntity);
+        if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, todayWIB);
+        query = applyCreatedDateFilter(query, filterCreatedDate, todayWIB);
+        if (filterDirection === 'not_set') query = query.is('direction', null);
+        else if (filterDirection !== 'all') query = query.eq('direction', filterDirection);
+        if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
+        query = applySearchFilter(query, search.trim(), searchAccountIds);
+        query = query.range(from, from + RANGE_PAGE - 1);
+        const { data, error } = await query;
+        if (cancelled) return;
+        if (error) { setWasN(0); return; }
+        const pageRows = data || [];
+        list = list.concat(pageRows);
+        more = pageRows.length === RANGE_PAGE;
+        from += RANGE_PAGE;
+      }
+      if (cancelled) return;
+      setWasN(list.filter((r) => isWonAwaitingSalesOrder(r, r.sales_orders)).length);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterEntity, filterDeadline, filterCreatedDate, filterDirection, scopeMine, search, searchAccountIds, todayWIB]);
 
   /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
      CRMDashboardPage, bukan query distinct owner_id sendiri. */
@@ -656,20 +783,71 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     </span>
   );
 
-  // Estimated Value (kolom BARU, mockup) -- versi DASAR putaran ini:
-  // inquiries.estimated_value apa adanya. Fallback "dari quotation aktif"
-  // (mockup D.fromQuote/isEst) menyusul commit badge (embed quotations
-  // ditambahkan di sana, nol alasan mengambilnya dua kali).
+  /* Estimated Value -- "dari quotation aktif" diutamakan (mockup D.fromQuote:
+     quotation TERBARU yang BUKAN SUPERSEDED, ditandai icon kecil), fallback
+     ke inquiries.estimated_value apa adanya ("Not set" bila nol dua-duanya).
+     "Aktif" = status BUKAN SUPERSEDED (ACCEPTED/DRAFT/REJECTED/SENT semua
+     terhitung -- hanya SUPERSEDED yang dikeluarkan, sama definisinya dgn
+     isQuotationExpired di bawah). */
+  function activeQuotation(inq) {
+    return (inq.quotations || []).find((q) => q.status !== 'SUPERSEDED') || null;
+  }
   const estimatedValueCell = (inq) => {
+    const aq = activeQuotation(inq);
+    if (aq && Number(aq.total_amount) > 0) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+          <span title="From quotation" style={{ color: C.inkSoft, display: 'flex' }}>
+            <FileCheck size={13} />
+          </span>
+          {`Rp ${Math.round(Number(aq.total_amount)).toLocaleString('id-ID')}`}
+        </span>
+      );
+    }
     if (!inq.estimated_value) return <span style={{ color: C.inkFaint }}>Not set</span>;
-    return `Rp ${Math.round(Number(inq.estimated_value)).toLocaleString('id-ID')}`;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft }}>Est.</span>
+        {`Rp ${Math.round(Number(inq.estimated_value)).toLocaleString('id-ID')}`}
+      </span>
+    );
   };
+
+  /* Badge Free Trade Zone (koreksi #4) -- FTZ bila POL, POD, ATAU Via pada
+     SALAH SATU lane (inquiry_lanes) bertipe FTZ; tanpa lane -> fallback
+     pol_location_id/pod_location_id milik inquiry sendiri (TANPA via --
+     inquiries tak punya kolom via/via_location_id sama sekali, dikonfirmasi
+     ke skema staging langsung). `locationTypeById` = peta SATU KALI (lihat
+     fetchInquiries), bukan query per baris. */
+  function isFTZ(inq) {
+    const ids = (inq.inquiry_lanes || []).length
+      ? inq.inquiry_lanes.flatMap((l) => [l.pol_location_id, l.pod_location_id, l.via_location_id])
+      : [inq.pol_location_id, inq.pod_location_id];
+    return ids.filter(Boolean).some((id) => locationTypeById[id] === 'FTZ');
+  }
+
+  /* Quotation expired (koreksi #3) -- quotation AKTIF (bukan ACCEPTED/
+     REJECTED/SUPERSEDED) dengan valid_until < hari ini, DAN status inquiry
+     masih QUOTED atau NEGOTIATION (supaya inquiry yang sudah tertutup --
+     Won/Lost/Cancelled -- tidak ikut berbadge). */
+  function isQuotationExpired(inq) {
+    if (!['QUOTED', 'NEGOTIATION'].includes(inq.status)) return false;
+    const active = (inq.quotations || []).find((q) => !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(q.status));
+    return !!active && !!active.valid_until && active.valid_until < todayWIB;
+  }
+
+  // Manual win (koreksi: SATU sumber WON_MANUAL_REASONS, pola sama
+  // DealDetailPage.jsx -- lihat inquiryOptions.js).
+  const isManualWin = (inq) => inq.status === 'WON' && WON_MANUAL_REASONS.includes(inq.won_reason);
 
   const columns = [
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
-        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>
-          {inq.inquiry_no || '—'}
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>
+            {inq.inquiry_no || '—'}
+          </span>
+          {inq.inquiry_type === 'Rate Sheet Request' && <SubBadge tone="neutral">Rate Sheet</SubBadge>}
         </span>
       ) },
     { key: 'account', label: 'Customer',
@@ -687,10 +865,26 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         );
       } },
     { key: 'service_type', label: 'Service Type',
-      render: (inq) => SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—' },
+      render: (inq) => (
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+          {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
+          {isFTZ(inq) && <SubBadge>Free Trade Zone</SubBadge>}
+          {(inq.additional_services || []).includes('undername') && (
+            <SubBadge><FileText size={11} />Undername</SubBadge>
+          )}
+        </span>
+      ) },
     { key: 'direction', label: 'Direction', render: directionCell },
     { key: 'route', label: 'Route', render: routeCell },
-    { key: 'status', label: 'Status', render: (inq) => <StatusBadge status={inq.status} /> },
+    { key: 'status', label: 'Status',
+      render: (inq) => (
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+          <StatusBadge status={inq.status} />
+          {isWonAwaitingSalesOrder(inq, inq.sales_orders) && <SubBadge>Won, awaiting Sales Order</SubBadge>}
+          {isQuotationExpired(inq) && <SubBadge>Quotation expired</SubBadge>}
+          {isManualWin(inq) && <SubBadge tone="neutral">Manual win</SubBadge>}
+        </span>
+      ) },
     { key: 'owner', label: 'Owner', render: ownerCell },
     { key: 'deadline_quote', label: 'Deadline Quote', render: deadlineCell },
     { key: 'estimated_value', label: 'Estimated Value', align: 'right', render: estimatedValueCell },
@@ -782,6 +976,25 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             })}
           </div>
         )}
+
+        {/* Toggle "Won, awaiting Sales Order" -- MENGGANTIKAN filter Status
+            saat aktif (bukan ditambahkan di atasnya), lihat fetchInquiries.
+            Count wasN dihitung atas preChip LENGKAP (koreksi #5). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button" onClick={() => setWasF((f) => !f)}
+            style={{
+              height: 32, padding: '0 12px', borderRadius: 16,
+              border: `1px solid ${wasF ? C.inkSoft : C.line}`,
+              background: wasF ? C.surface2 : C.surface,
+              color: C.ink, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            Won, awaiting Sales Order
+            <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: C.inkSoft }}>{wasN}</span>
+          </button>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(176px,1fr))', gap: 12, alignItems: 'end' }}>
           {/* Status -- multi-select checklist (bukan single-select ListView lama). */}
