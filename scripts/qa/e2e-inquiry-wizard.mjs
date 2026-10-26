@@ -992,27 +992,18 @@ function dealFieldValue(page, label) {
   check('[P13b/W-14] Customer Role TIDAK tampil sebelum Service Type dipilih',
     (await page.locator('text="Customer Role"').count()) === 0);
 
-  // ── W-16 -- pilih "Customs Clearance" lalu klik "Next": kalau akun ini
-  // (sales@msi.com) memang tanpa akses JCI di staging hari ini, step TIDAK
-  // BOLEH pindah dan banner "Request Access" tetap terlihat (penolakan
-  // tidak diam-diam). Dibungkus `if` -- kalau akun KEBETULAN punya akses
-  // JCI (data staging bisa berubah), svcJciBlocked tidak pernah menyala dan
-  // dua check di bawah DILEWATI apa adanya (dicatat, bukan dipaksa lulus). ──
+  // ── W-14 (sanity) -- Customer Role tampil begitu Service Type dipilih
+  // (pasangan negatif dari check sebelum ini). Dipilih "Customs Clearance"
+  // di sini SEKEDAR utk variasi kartu -- W-16 (Next diblok saat JCI
+  // terblokir) DIPINDAH ke Flow 4 (sesi sales@msi.com, akun single-entity
+  // tanpa akses JCI -- sesi akun INI (test@msi.com) super_admin, SELALU
+  // punya akses JCI lewat `isSuperAdmin()`, jadi svcJciBlocked TIDAK PERNAH
+  // menyala di sini apa pun yang dilakukan -- menguji W-16 di sesi ini
+  // hanya akan selalu "lewat diam-diam", persis yang Mas minta dihindari). ──
   await page.locator('button:has-text("Customs Clearance")').first().click();
   await settle(page, 300);
   check('[P13b/W-14] Customer Role tampil setelah Service Type dipilih',
     (await page.locator('button:text-is("Shipper")').count()) > 0);
-  const p13bJciBannerVisible = (await page.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0;
-  if (p13bJciBannerVisible) {
-    await page.locator('button:has-text("Next")').first().click();
-    await settle(page, 300);
-    check('[P13b/W-16] Next di "Service & Direction" TIDAK memindahkan step saat JCI terblokir',
-      await isStepActive(page, 'Service & Direction'));
-    check('[P13b/W-16] Banner blokir JCI TETAP terlihat setelah Next ditolak (penolakan tidak diam-diam)',
-      (await page.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0);
-  } else {
-    console.log('  i [P13b/W-16] akun sales@msi.com punya akses JCI di staging hari ini -- svcJciBlocked tidak menyala, dua check W-16 DILEWATI (bukan gagal; akar: data akses staging, bukan kode).');
-  }
 
   // ── W-14 -- ganti ke "Door to Door" (nol JCI block utk DtD), lalu uji
   // auto-fill Customer Role dari Direction (Export->Shipper, Import->
@@ -1811,6 +1802,55 @@ function dealFieldValue(page, label) {
     await ctx3.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(salesSession)]);
     page3 = await ctx3.newPage();
     page3.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
+
+    // =======================================================================
+    // Putaran 13b (W-16, DIPINDAH dari skenario [P13b] -- lihat komentar di
+    // sana, dekat "ganti ke Door to Door") -- sesi SATU-SATUNYA di skrip ini
+    // yang BUKAN super_admin/manager (sales@msi.com, level 7 @ MSI, single-
+    // entity): tempat yang benar utk membuktikan Next diblok saat JCI
+    // terblokir, karena super_admin (test@msi.com, Flow 1-3/D2D/[P13b])
+    // SELALU lolos `isSuperAdmin()` sehingga svcJciBlocked tidak pernah
+    // menyala di sana. Ground truth akses JCI diukur LANGSUNG lewat REST
+    // (bukan ditebak dari tampilan banner, company JCI UUID tetap -- lihat
+    // CLAUDE.md §Entity UUID "ref TIDAK berubah pasca-migrasi"): kalau ground
+    // truth bilang akun ini TANPA akses JCI tapi banner tidak muncul, itu
+    // GAGAL (check() di bawah, BUKAN dilewati diam-diam) -- skip HANYA
+    // terjadi kalau ground truth membuktikan akun BENAR punya akses, dan itu
+    // dicetak sebagai PERINGATAN KERAS, bukan disembunyikan. Pemilihan akun
+    // SENGAJA DILEWATI (bukan "pilih lalu abaikan hasilnya" yang berisiko
+    // salah klik) -- RLS `prospects_read` membuat akun Flow 1-3 ("PT Agro
+    // Sawit Kalimantan") TIDAK TERLIHAT oleh sesi ini (sudah didokumentasikan
+    // di komentar `prospectId` di atas), dan akun BUKAN prasyarat W-16 sama
+    // sekali: Service Type/Direction/svcJciBlocked murni fungsi dari
+    // role+entitas sesi, nol ketergantungan pada akun mana pun terpilih.
+    // Create TIDAK PERNAH ditekan di skenario ini.
+    // =======================================================================
+    const jciRoleResp = await pgrest(
+      `user_roles?select=id&user_id=eq.${salesUserId}&company_id=eq.42569e7c-531b-4d2b-832a-d5a7268c455b&is_active=eq.true&valid_until=is.null&limit=1`,
+      { token: salesToken },
+    );
+    const salesHasJciRoleGroundTruth = jciRoleResp.ok && Array.isArray(jciRoleResp.json) && jciRoleResp.json.length > 0;
+    console.log(`  i [ACC/W-16] Ground truth REST -- baris user_roles aktif sales@msi.com di company JCI: ${salesHasJciRoleGroundTruth ? 'ADA (akun ini PUNYA akses JCI hari ini -- data staging berubah)' : 'NOL (akun ini TANPA akses JCI -- svcJciBlocked HARUS menyala)'}`);
+
+    await page3.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+    await settle(page3);
+    await stepPill(page3, 'Service & Direction').click();
+    await settle(page3, 300);
+    await page3.locator('button:has-text("Customs Clearance")').first().click();
+    await settle(page3, 300);
+    const w16BannerVisible = (await page3.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0;
+    if (salesHasJciRoleGroundTruth) {
+      console.log('  ⚠⚠ [ACC/W-16] PERINGATAN KERAS: ground truth REST membuktikan sales@msi.com PUNYA role aktif JCI hari ini -- svcJciBlocked tidak akan menyala. DUA pengecekan W-16 di bawah DILEWATI dengan alasan eksplisit (bukan gagal diam-diam, bukan dipaksa lulus).');
+    } else {
+      check('[ACC/W-16] Banner blokir akses JCI tampil (ground truth REST: akun TANPA role aktif di JCI)', w16BannerVisible);
+      await page3.locator('button:has-text("Next")').first().click();
+      await settle(page3, 300);
+      check('[ACC/W-16] Next di "Service & Direction" TIDAK memindahkan step saat JCI terblokir',
+        await isStepActive(page3, 'Service & Direction'));
+      check('[ACC/W-16] Banner blokir JCI TETAP terlihat setelah Next ditolak (penolakan tidak diam-diam)',
+        (await page3.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0);
+    }
+    console.log('  i [ACC/W-16] Create TIDAK ditekan pada skenario ini -- nol inquiry baru tercipta dari sesi sales@msi.com.');
 
     // ── Berkas fixture di temp OS (os.tmpdir(), BUKAN disk repo, dihapus di
     // akhir flow ini) -- .txt kecil (jenis ditolak) + "PDF" minimal (header
