@@ -126,6 +126,17 @@ function ageDays(iso) {
   return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
+// Dipakai ratesInfo() (Rates badge, koreksi C.6/#12) -- "Requested {N}d".
+// Fungsi level-modul (seperti ageDays di atas), BUKAN dipanggil Date.now()
+// langsung dari dalam komponen -- React Compiler menolak "impure function"
+// (Date.now/new Date) yang dipanggil LANGSUNG di badan komponen/closure
+// bersarang di dalamnya; fungsi level-modul terpisah tidak ditelusuri.
+function daysSince(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+
 /* ── Preset filter Deadline Quote ──────────────────────────────────────────
    `deadline_quote` bertipe `date` (bukan timestamptz), jadi pembandingnya cukup
    string 'YYYY-MM-DD' — tak ada konversi zona di sisi query. Yang TETAP wajib
@@ -398,6 +409,13 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   // inquiries.pol_location_id/pod_location_id + SELURUH inquiry_lanes
   // (pol/pod/via) halaman yang sedang tampil.
   const [locationTypeById, setLocationTypeById] = useState({});
+  // Rates (koreksi C.6/#12) -- select All/Waiting for rates, diturunkan dari
+  // PRF tanpa migrasi (lihat resolveWaitingForRatesIds). offerCountByPrfId
+  // HANYA dihitung utk halaman yang TAMPIL (PAGE-scoped, bukan global) --
+  // dipakai display, beda dari resolveWaitingForRatesIds yang global (utk
+  // filter, tak butuh hitungan offer sama sekali -- lihat komentarnya).
+  const [filterRates, setFilterRates] = useState('all');
+  const [offerCountByPrfId, setOfferCountByPrfId] = useState({});
 
   const todayWIB = getTodayWIB();
 
@@ -424,14 +442,69 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     quotations(status, valid_until),
     pol_loc:locations!inquiries_pol_location_id_fkey(type),
     pod_loc:locations!inquiries_pod_location_id_fkey(type),
-    inquiry_lanes(pol_location_id, pod_location_id, via_location_id)
+    inquiry_lanes(pol_location_id, pod_location_id, via_location_id),
+    prf(id, status, created_at, selected_offer_id, suggested_rate)
   `;
+
+  /* Filter "Waiting for rates" (koreksi C.6/#12) -- GLOBAL (bukan di-page),
+     karena ia menyaring HIMPUNAN baris yang dikembalikan, bukan sekadar
+     men-tag yang sudah tampil. `prf.inquiry_id` FK TUNGGAL ke inquiries,
+     nol alias perlu (verifikasi skema staging).
+
+     Menentukan "waiting" TIDAK butuh hitung prf_vendor_offers sama sekali --
+     mockup rtF: `!!r.rates && r.rates !== 'Offer selected' && r.rates !==
+     'From rate library'`, dan KEDUA pengecualian itu ('Offer selected' =
+     selected_offer_id ADA, 'From rate library' = suggested_rate>0) sudah
+     bisa dijawab dari tabel `prf` SENDIRI -- jumlah offer hanya menentukan
+     TEKS badge ("3 offers" vs "Requested 2d"), bukan keanggotaan filter.
+     Range-loop (koreksi #5): jumlah PRF jauh di bawah jumlah inquiry, tapi
+     prinsip "jangan `.limit(1000)` tunggal" diterapkan konsisten. */
+  async function resolveWaitingForRatesIds() {
+    const RANGE_PAGE = 1000;
+    let list = [];
+    let from = 0;
+    let more = true;
+    while (more) {
+      let q = supabase.from('prf').select('id, inquiry_id, created_at, selected_offer_id, suggested_rate').is('deleted_at', null);
+      if (!isAllEntities) q = q.eq('company_id', profile.company_id);
+      q = q.range(from, from + RANGE_PAGE - 1);
+      const { data, error } = await q;
+      if (error) throw error;
+      const pageRows = data || [];
+      list = list.concat(pageRows);
+      more = pageRows.length === RANGE_PAGE;
+      from += RANGE_PAGE;
+    }
+    // Hanya PRF TERBARU per inquiry yang menentukan (mockup: satu `rates`
+    // per baris, bukan riwayat PRF lama yang sudah ditinggalkan).
+    const latestByInquiry = {};
+    list.forEach((p) => {
+      const cur = latestByInquiry[p.inquiry_id];
+      if (!cur || p.created_at > cur.created_at) latestByInquiry[p.inquiry_id] = p;
+    });
+    return Object.values(latestByInquiry)
+      .filter((p) => !p.selected_offer_id && !(Number(p.suggested_rate) > 0))
+      .map((p) => p.inquiry_id);
+  }
 
   const fetchInquiries = useCallback(async () => {
     if (!profile?.id) return;
     if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
+      // Rates (koreksi C.6/#12) -- resolve DULU (query terpisah, domain PRF
+      // yang jauh lebih kecil dari inquiries), baru disisipkan ke query
+      // utama lewat .in('id', ...). Kosong -> short-circuit, .in([]) pada
+      // PostgREST rawan ditafsirkan beda-beda, jadi diputus eksplisit di sini.
+      let waitingIds = null;
+      if (filterRates === 'waiting') {
+        waitingIds = await resolveWaitingForRatesIds();
+        if (waitingIds.length === 0) {
+          setInquiries([]); setTotal(0); setOwnerNames({}); setLocationTypeById({}); setOfferCountByPrfId({});
+          return;
+        }
+      }
+
       function applyOtherFilters(q) {
         if (!isAllEntities) q = q.eq('company_id', profile.company_id);
         if (filterService !== 'all') q = q.eq('service_type', filterService);
@@ -447,6 +520,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         if (filterDirection === 'not_set') q = q.is('direction', null);
         else if (filterDirection !== 'all') q = q.eq('direction', filterDirection);
         if (scopeMine && profile?.id) q = q.eq('owner_id', profile.id);
+        if (waitingIds) q = q.in('id', waitingIds);
         return applySearchFilter(q, search.trim(), searchAccountIds);
       }
 
@@ -486,7 +560,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         totalCount = filtered.length;
         rows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
       } else {
-        if (stSel.length === 0) { setInquiries([]); setTotal(0); setOwnerNames({}); setLocationTypeById({}); return; }
+        if (stSel.length === 0) { setInquiries([]); setTotal(0); setOwnerNames({}); setLocationTypeById({}); setOfferCountByPrfId({}); return; }
         let q = supabase.from('inquiries').select(INQUIRY_SELECT, { count: 'exact' })
           .is('deleted_at', null).in('status', stSel);
         q = applyOtherFilters(q);
@@ -530,15 +604,38 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       } else {
         setLocationTypeById({});
       }
+
+      /* Hitungan offer PER BARIS YANG TAMPIL (PAGE-scoped, BUKAN global --
+         beda dari resolveWaitingForRatesIds di atas yang global utk filter).
+         Display-only: menentukan teks "{N} offers" vs "Requested {N}d",
+         bukan keanggotaan filter. Hanya utk PRF TERBARU per baris yang
+         BELUM selected & BELUM suggested_rate (candidate "waiting" --
+         prf.selected_offer_id ADA atau suggested_rate>0 tak perlu hitungan
+         offer, teksnya sudah pasti "Offer selected"/"From rate library"). */
+      const latestPrfByRow = rows.map((r) => (r.prf || []).reduce((best, p) => (!best || p.created_at > best.created_at ? p : best), null));
+      const needCountPrfIds = latestPrfByRow.filter((p) => p && !p.selected_offer_id && !(Number(p.suggested_rate) > 0)).map((p) => p.id);
+      if (needCountPrfIds.length) {
+        const { data: offers } = await supabase.from('prf_vendor_offers').select('prf_id').in('prf_id', needCountPrfIds).is('deleted_at', null);
+        const counts = {};
+        (offers || []).forEach((o) => { counts[o.prf_id] = (counts[o.prf_id] || 0) + 1; });
+        setOfferCountByPrfId(counts);
+      } else {
+        setOfferCountByPrfId({});
+      }
     } catch (err) {
       showToast?.('Failed to load inquiries: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, page, wasF, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast, INQUIRY_SELECT]);
+    // resolveWaitingForRatesIds sengaja TIDAK di deps: plain function (bukan
+    // useCallback) supaya tidak menambah beban "Compilation Skipped" baru di
+    // atas yang sudah ada (fetchInquiries sendiri, baseline) -- perilakunya
+    // sudah mengikuti isAllEntities/profile?.company_id yang SUDAH ada di deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, profile?.company_id, isAllEntities, page, wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast, INQUIRY_SELECT]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [wasF, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
+  useEffect(() => { setPage(0); }, [wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
 
   // Pencarian dua-langkah (koreksi #6): resolve dulu id akun yang NAMANYA cocok,
   // baru dipakai fetchInquiries & effect hitungan di bawah lewat `.or()`.
@@ -840,6 +937,23 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   // DealDetailPage.jsx -- lihat inquiryOptions.js).
   const isManualWin = (inq) => inq.status === 'WON' && WON_MANUAL_REASONS.includes(inq.won_reason);
 
+  /* Rates (koreksi C.6/#12) -- teks badge & definisi "Waiting for rates"
+     SAMA PERSIS mockup, nol state turunan baru (mockup `r.rates`):
+       selected_offer_id ADA   -> "Offer selected"
+       suggested_rate > 0      -> "From rate library"
+       count(offer) > 0        -> "{N} offers"
+       selain itu              -> "Requested {N}d" (N = hari sejak prf.created_at)
+     null kalau nol PRF sama sekali -- nol badge, excluded dari filter. */
+  function ratesInfo(inq) {
+    const latest = (inq.prf || []).reduce((best, p) => (!best || p.created_at > best.created_at ? p : best), null);
+    if (!latest) return null;
+    if (latest.selected_offer_id) return { text: 'Offer selected', waiting: false };
+    if (Number(latest.suggested_rate) > 0) return { text: 'From rate library', waiting: false };
+    const n = offerCountByPrfId[latest.id] || 0;
+    if (n > 0) return { text: `${n} offer${n === 1 ? '' : 's'}`, waiting: true };
+    return { text: `Requested ${daysSince(latest.created_at)}d`, waiting: true };
+  }
+
   const columns = [
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
@@ -890,6 +1004,11 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     { key: 'estimated_value', label: 'Estimated Value', align: 'right', render: estimatedValueCell },
     { key: 'age', label: 'Inquiry Age',
       render: (inq) => (ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} days`) },
+    { key: 'rates', label: 'Rates',
+      render: (inq) => {
+        const r = ratesInfo(inq);
+        return r ? <SubBadge tone="neutral">{r.text}</SubBadge> : null;
+      } },
     // Chevron DICABUT (koreksi #8) -- klik baris sendiri sudah membuka Detail,
     // tombol PDF DIPERTAHANKAN (pengecualian disengaja: satu-satunya jalan
     // download PDF inquiry, nol analog mockup).
@@ -924,7 +1043,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   };
   const fieldLabel = { display: 'block', fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 };
 
-  const gridCols = '150px minmax(170px,1.3fr) 130px 100px minmax(170px,1.2fr) 150px minmax(140px,1fr) 130px 130px 90px 48px';
+  const gridCols = '150px minmax(170px,1.3fr) 130px 100px minmax(170px,1.2fr) 150px minmax(140px,1fr) 130px 130px 90px 130px 48px';
   const cellBase = { padding: '12px', minWidth: 0 };
   const headCell = { ...cellBase, fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft, whiteSpace: 'nowrap' };
 
@@ -1077,6 +1196,14 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           </label>
 
           <label style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={fieldLabel}>Rates</span>
+            <select value={filterRates} onChange={e => setFilterRates(e.target.value)} style={selStyle}>
+              <option value="all">All</option>
+              <option value="waiting">Waiting for rates</option>
+            </select>
+          </label>
+
+          <label style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             <span style={fieldLabel}>Created Date</span>
             <select value={filterCreatedDate} onChange={e => setFilterCreatedDate(e.target.value)} style={selStyle}>
               {CREATED_DATE_PRESETS.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
@@ -1107,7 +1234,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       {/* ── Table (mockup "Status/Table") ── */}
       <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: gridCols, minWidth: 1400, background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, minWidth: 1530, background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
             {columns.map(col => (
               <div key={col.key} style={{ ...headCell, textAlign: col.align === 'right' ? 'right' : 'left' }}>{col.label}</div>
             ))}
@@ -1124,7 +1251,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             <div
               key={inq.id}
               onClick={() => (onSelectInquiry ? onSelectInquiry(inq) : setDetailInquiry(inq))}
-              style={{ display: 'grid', gridTemplateColumns: gridCols, minWidth: 1400, borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer' }}
+              style={{ display: 'grid', gridTemplateColumns: gridCols, minWidth: 1530, borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#F3EEE1'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
