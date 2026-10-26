@@ -27,15 +27,45 @@
 // butuh perubahan terpisah di ketiganya (giliran berikutnya kalau
 // diperlukan), bukan dibangun diam-diam di sini.
 //
+// [Putaran 8] "TANPA bulk assign" TETAP BERLAKU -- mockup menaruh bulk
+// assign di jendela ("Jendela assign dan bulk assign", Grand Design Sync
+// Report.md:42) yang SAMA dengan single-assign (`{{ mAssign }}`, mockup
+// baris 461-475) -- jendela itu sendiri eksplisit Putaran 11. Membangun
+// checkbox+bulk sekarang berarti membangun separuh jendela lebih awal.
+// Dua gap kosmetik lain pada tab Unassigned DITUTUP Putaran 8 (BUKAN
+// ditunda, lihat DirectionCell + undernameBadgeStyle di bawah): ikon
+// Direction (Export/Import/Domestic, pola identik InquiryListPage.jsx
+// directionCell) dan badge "Undername" pada kolom Service Type -- sumber
+// field PERSIS InquiryListPage.jsx:986 --
+// `(inq.additional_services || []).includes('undername')`.
+//
 // Sales (non-manager) HANYA melihat "Assigned to Me" -- RLS inquiries_read
 // sudah menyaring ke owner_id=auth.uid(), NOL filter owner tambahan di FE.
-// Kolom mockup "Assigned By"/"Assigned On"/"Reason" (baris 232/236) TIDAK
-// dibangun -- bukan keterbatasan scope, tapi ketidakcocokan ARSITEKTUR:
-// satu-satunya sumber datanya (audit_logs, action REASSIGN_INQUIRY_OWNER)
-// RLS-nya `read = is_admin_or_above()` (auditLogger.js header) -- Sales,
-// satu-satunya penonton tab ini, TIDAK AKAN PERNAH bisa membacanya sendiri.
-// Kolom yang dibangun: Inquiry No/Customer/Service Type/Direction/
-// Status/Created On.
+//
+// [Putaran 8, L-13] KOREKSI atas paragraf di atas (versi Tahap 3B):
+// ketidakcocokan arsitektur yang dicatat dulu (audit_logs RLS
+// `read = is_admin_or_above()`, Sales tak akan pernah bisa membacanya)
+// DITUTUP, bukan diterima selamanya -- jalan keluarnya BUKAN membuka akses
+// audit_logs, melainkan menaruh datanya di inquiries sendiri: 3 kolom baru
+// `assigned_by`/`assigned_at`/`assign_reason` (migrasi
+// 20261027000001_crm_inquiry_owner_assignment_columns.sql), diisi oleh
+// reassign_inquiry_owner v2 (20261027000003), di bawah RLS
+// `inquiries_read` yang SUDAH membolehkan Sales membaca baris miliknya.
+// Riwayat lengkap (banyak baris, from/to/reason) masuk tabel BARU terpisah
+// `inquiry_owner_history` (20261027000002) -- tampilannya di tab Status
+// History Detail Inquiry DITUNDA ke Putaran 11 (keputusan Mas), tabel ini
+// baru dibaca balik mulai putaran itu.
+// Kolom mockup "Assigned By"/"Assigned On"/"Reason" (baris 232/236) KINI
+// DIBANGUN -- menggantikan Service Type/Direction yang dulu jadi pengganti
+// sementara (lihat ME_GRID). Fallback kalau NULL (baris lama, SENGAJA
+// TIDAK dibackfill -- keputusan Mas): "Not set", sama seperti fallback
+// `assignReason || 'Not set'` mockup sendiri -- BUKAN nama dummy mockup
+// `'Dewi Lestari'`, itu placeholder desain bukan default produk. Badge
+// "New" (Inquiry No cell) kalau `assigned_at` <=3 hari dari getTodayWIB(),
+// persis `isNewAssign` mockup baris 979.
+// Kolom yang dibangun sekarang: Inquiry No/Customer/Assigned By/Assigned
+// On/Reason/Status (persis mockup, Service Type & Direction DICABUT dari
+// tab ini -- tidak ada di mockup).
 //
 // Avatar owner: SATU warna solid untuk SEMUA nama (bukan AV{} per-nama
 // mockup) -- yang berubah HANYA garis putus saat owner kosong (instruksi
@@ -50,13 +80,17 @@
 // datang dari roster (fetchOperationalRoster), BUKAN pola dua-langkah
 // profiles -- roster ITU SENDIRI adalah himpunan nama yang dibutuhkan
 // (satu baris per kandidat owner), jadi tak perlu query nama terpisah.
+// [Putaran 8] select diperluas: `additional_services` (badge Undername,
+// T-3) + `assigned_by`/`assigned_at`/`assign_reason` (kolom baru, L-13) +
+// embed `profiles!inquiries_assigned_by_fkey` (nama "Assigned By", pola
+// embed FK yang sama dgn `created_by_profile`).
 //
 // Tab "Possible duplicates" (mockup baris 207/913-922): RPC
 // list_possible_duplicate_inquiry_pairs (migrasi 20261024000005) + aksi
 // "Close as Duplicate" -> RPC EXISTING close_inquiry_as_duplicate
 // (Irisan 4, TIDAK ditulis ulang logikanya di sini -- instruksi eksplisit).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Users } from 'lucide-react';
+import { Users, ArrowUpRight, ArrowDownLeft, Truck, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove } from '../../lib/roles';
@@ -116,6 +150,37 @@ function fmtDate(iso) {
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// Direction icon -- pola identik InquiryListPage.jsx:858-868 (directionCell):
+// Export naik-kanan, Import turun-kiri, Domestic truk. Putaran 8, tab
+// Unassigned SAJA (T-2) -- tab Assigned to Me tidak lagi punya kolom
+// Direction (dicabut, lihat ME_GRID/L-13).
+const DIRECTION_ICON = { Export: ArrowUpRight, Import: ArrowDownLeft, Domestic: Truck };
+function DirectionCell({ direction }) {
+  if (!direction) return 'Not set';
+  const Icon = DIRECTION_ICON[direction];
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {Icon && <Icon size={13} />}
+      {direction}
+    </span>
+  );
+}
+
+// Badge "New" (Assigned to Me) -- mockup baris 979 `isNewAssign:
+// days(...) <= 3`. WIB, metode SAMA dgn getTodayWIB() (bukan Date.now()
+// mentah) supaya batas hari konsisten dgn overdue Team Workload di file
+// ini. Fungsi level-modul, BUKAN dipanggil Date.now()/new Date() langsung
+// di badan komponen -- React Compiler menolak impure function di situ;
+// fungsi terpisah tak ditelusuri (pola identik ageDays/daysSince
+// InquiryListPage.jsx:122-138).
+function daysSinceAssignedWIB(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const dateWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
+  return Math.round((new Date(getTodayWIB()) - new Date(dateWIB)) / 86400000);
+}
+
 // Paginasi berhalaman sampai habis -- JANGAN .limit(1000) tunggal
 // (instruksi eksplisit, pola identik InquiryClassificationPage.jsx pasca
 // koreksi review Vir). Order WAJIB deterministik lintas halaman.
@@ -128,9 +193,11 @@ async function fetchAllInquiries(companyId) {
       .from('inquiries')
       .select(`
         id, inquiry_no, service_type, direction, status, estimated_value, deadline_quote, created_at, owner_id,
+        additional_services, assigned_by, assigned_at, assign_reason,
         prospect:accounts!inquiries_prospect_id_fkey(name),
         customer:accounts!inquiries_customer_id_fkey(name),
-        created_by_profile:profiles!inquiries_created_by_fkey(full_name)
+        created_by_profile:profiles!inquiries_created_by_fkey(full_name),
+        assigned_by_profile:profiles!inquiries_assigned_by_fkey(full_name)
       `)
       .eq('company_id', companyId)
       .is('deleted_at', null)
@@ -162,6 +229,22 @@ const countBadgeStyle = {
   border: `1px solid ${C.warnBd}`, background: C.warnBg, color: C.warn,
   fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
 };
+// T-3 (Unassigned, Putaran 8) -- pola badge identik SubBadge
+// InquiryListPage.jsx:267-280 tapi dgn style lokal file ini (bukan impor,
+// pola per-file sudah mapan di file ini).
+const undernameBadgeStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 6,
+  border: `1px solid ${C.line}`, background: C.lineSoft, color: C.inkSoft,
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+};
+// Badge "New" (Assigned to Me, L-13) -- warna ok/hijau, SENGAJA beda dari
+// countBadgeStyle (warn/amber, dipakai utk count & overdue) supaya "baru
+// ditugaskan" tidak campur maknanya dgn "butuh perhatian".
+const newAssignBadgeStyle = {
+  display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
+  border: `1px solid ${C.okBd}`, background: C.okBg, color: C.ok,
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+};
 
 // Avatar owner -- SATU warna solid utk semua nama; garis putus HANYA saat
 // kosong (instruksi eksplisit, BUKAN AV{} per-nama ala mockup).
@@ -183,10 +266,10 @@ function OwnerAvatar({ name }) {
 /**
  * @param {(msg:string, type?:string)=>void} [showToast]
  * @param {(ownerId:string)=>void} [onViewSalesInquiries] -- Team Workload
- *   row click (mockup baris 829), navigasi ke Inquiry List terfilter owner
- *   itu + status Open. Deviasi sementara: tujuan AKHIR mockup adalah
- *   halaman 1.2.4 tersendiri yang belum dibangun -- lihat komentar
- *   InquiryListPage.jsx/crm.routes.jsx.
+ *   row click (mockup baris 829), navigasi ke halaman 1.2.4 "Inquiry Status
+ *   & History" (ada sejak Putaran 7) terfilter OWNER SAJA -- status jatuh
+ *   ke default 4-status OPEN_STATUSES milik halaman tujuan, bukan lagi
+ *   dikunci 'OPEN' tunggal (L-12, Putaran 8 -- lihat crm.routes.jsx).
  */
 export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInquiries }) {
   const { profile, erpRoles } = useAuth();
@@ -421,8 +504,15 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                     <div key={r.id} style={{ display: 'grid', gridTemplateColumns: UNASSIGNED_GRID, alignItems: 'center', minWidth: 1180, borderBottom: `1px solid ${C.lineSoft}` }}>
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap' }}>{r.inquiry_no}</div>
                       <div style={{ ...cellBase, fontWeight: 500, color: C.ink }}>{custName}</div>
-                      <div style={{ ...cellBase, color: C.ink }}>{svcLabel}</div>
-                      <div style={{ ...cellBase, color: C.inkSoft }}>{r.direction || 'Not set'}</div>
+                      <div style={{ ...cellBase, color: C.ink }}>
+                        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          {svcLabel}
+                          {(r.additional_services || []).includes('undername') && (
+                            <span style={undernameBadgeStyle}><FileText size={11} />Undername</span>
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ ...cellBase, color: C.inkSoft }}><DirectionCell direction={r.direction} /></div>
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.inkSoft, whiteSpace: 'nowrap' }}>{fmtDate(r.deadline_quote)}</div>
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.ink, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtRp(r.estimated_value)}</div>
                       <div style={{ ...cellBase, color: C.inkSoft }}>{r.created_by_profile?.full_name || '—'}</div>
@@ -528,9 +618,9 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
               <div style={{ display: 'grid', gridTemplateColumns: ME_GRID, alignItems: 'center', minWidth: 900, background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
                 <div style={headCell}>Inquiry No</div>
                 <div style={headCell}>Customer</div>
-                <div style={headCell}>Service Type</div>
-                <div style={headCell}>Direction</div>
-                <div style={headCell}>Created On</div>
+                <div style={headCell}>Assigned By</div>
+                <div style={headCell}>Assigned On</div>
+                <div style={headCell}>Reason</div>
                 <div style={headCell}>Status</div>
               </div>
               {!loading && rows.length === 0 && (
@@ -540,15 +630,19 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
               )}
               {!loading && rows.map((r) => {
                 const custName = r.prospect?.name || r.customer?.name || '—';
-                const svcLabel = serviceTypeOpts.find((o) => o.value === r.service_type)?.label || r.service_type || '—';
                 const meta = STATUS_META[r.status] || STATUS_META.OPEN;
+                const newDays = daysSinceAssignedWIB(r.assigned_at);
+                const isNewAssign = newDays != null && newDays <= 3;
                 return (
                   <div key={r.id} style={{ display: 'grid', gridTemplateColumns: ME_GRID, alignItems: 'center', minWidth: 900, borderBottom: `1px solid ${C.lineSoft}` }}>
-                    <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap' }}>{r.inquiry_no}</div>
+                    <div style={{ ...cellBase, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap' }}>{r.inquiry_no}</span>
+                      {isNewAssign && <span style={newAssignBadgeStyle}>New</span>}
+                    </div>
                     <div style={{ ...cellBase, fontWeight: 500, color: C.ink }}>{custName}</div>
-                    <div style={{ ...cellBase, color: C.ink }}>{svcLabel}</div>
-                    <div style={{ ...cellBase, color: C.inkSoft }}>{r.direction || 'Not set'}</div>
-                    <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.inkSoft, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</div>
+                    <div style={{ ...cellBase, color: C.inkSoft }}>{r.assigned_by_profile?.full_name || 'Not set'}</div>
+                    <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.inkSoft, whiteSpace: 'nowrap' }}>{r.assigned_at ? fmtDate(r.assigned_at) : 'Not set'}</div>
+                    <div style={{ ...cellBase, color: C.inkSoft }}>{r.assign_reason || 'Not set'}</div>
                     <div style={cellBase}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
@@ -584,4 +678,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
 
 const UNASSIGNED_GRID = '160px minmax(170px,1.3fr) 150px 110px 130px 140px minmax(130px,1fr) 120px 260px';
 const WORKLOAD_GRID = 'minmax(180px,1.4fr) 80px 96px 80px 104px minmax(220px,1.6fr) 150px';
-const ME_GRID = '160px minmax(180px,1.4fr) 160px 120px 130px 130px';
+// L-13 (Putaran 8) -- 6 kolom persis mockup: Inquiry No/Customer/Assigned
+// By/Assigned On/Reason/Status (Service Type/Direction DICABUT, tidak ada
+// di mockup).
+const ME_GRID = '160px minmax(170px,1.2fr) 150px 130px minmax(160px,1fr) 120px';
