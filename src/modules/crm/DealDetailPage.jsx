@@ -985,6 +985,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // balik belum diputuskan Mas). Section "Service & Status".
   const accountSourceLabel = account?.source ? (SOURCE_LABEL[account.source] || account.source) : '';
 
+  // "Number of containers" (Cargo) -- mockup :960 `showNcont:
+  // (cur.cont||[]).some(c => /^FCL/.test(c))`. Baca-saja TOTAL, mockup
+  // sendiri nol varian edit untuk field ini (tidak ada di whitelist saveSec).
+  const showNcont = (inquiry?.container_types || []).some((c) => /^FCL/.test(c));
+
+  // Blok "Shipments" (Delivery, khusus Rate Sheet) -- mockup :402, data-
+  // screen-label="Detail/Shipments". Daftar urut TERLAMA-DULU (kebalikan
+  // query yang mengurutkan terbaru-dulu untuk kebutuhan node DocumentFlow).
+  const shipmentRows = isInquiryRS ? salesOrders.slice().reverse() : [];
+
   // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
   // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
   // "Create Quotation"). Status QUOTED/NEGOTIATION primary-nya "Mark as
@@ -2312,6 +2322,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <ChipToggleField label="Cargo Type" editing={editingSection === 'Cargo'}
             values={inquiry.cargo_types} draft={sectionDraft.cargo_types}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_types: v }))} options={CARGO_TYPES} />
+          {/* Putaran 9 -- "Number of containers". Mockup :357, gated
+              `showNcont` (ADA container type FCL-apa pun) -- baca-saja
+              TOTAL, mockup sendiri nol varian edit field ini (tidak di
+              whitelist saveSec). `mono` memberi font IBM Plex Mono saat
+              terisi + italic/muted saat "Not set" -- persis ncontFont/
+              ncontClr mockup, nol styling kustom perlu ditulis di sini. */}
+          {showNcont && (
+            <TextField label="Number of containers" editing={false} mono
+              value={inquiry.n_containers != null ? String(inquiry.n_containers) : ''}
+              placeholder="Container count not recorded" />
+          )}
           <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
             draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
           <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
@@ -2348,6 +2369,39 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Blok "Shipments" (Putaran 9, khusus Rate Sheet) -- mockup
+            data-screen-label="Detail/Shipments" (:402), sibling SESUDAH
+            section "Delivery" (section itu sendiri TIDAK dibangun di sini
+            -- kelima fieldnya [Order Category/Requested Delivery Date/
+            Estimated Shipping Cost/Customer Reference/Delivery
+            Destinations] nol kolom `inquiries`, dicek ulang grep seluruh
+            migrations/, tetap pengecualian/ditunda). Daftar penuh
+            sales_orders inquiry ini -- so_no + tanggal ADA kolomnya;
+            kolom "note" mockup TIDAK ADA sumbernya (nol kolom naratif di
+            sales_orders) -- dikosongkan, pengecualian tingkat field.
+            Baca-saja TOTAL, mockup sendiri nol tombol Edit untuk blok ini. */}
+        {isInquiryRS && (
+          <>
+            <h3 style={{ margin: 0, marginBottom: 12, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text }}>Shipments</h3>
+            {shipmentRows.length > 0 ? (
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
+                {shipmentRows.map((so) => (
+                  <div key={so.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 140px 1fr', gap: 8, padding: '10px 12px', borderBottom: `1px solid ${C.surfaceAlt}`, fontFamily: BODY, fontSize: 13 }}>
+                    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{so.so_no}</span>
+                    <span>{fmtDate(so.created_at)}</span>
+                    <span style={{ color: C.textFaint }}>—</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '12px 16px', border: `1px dashed ${C.border}`, borderRadius: 10, color: C.textMute, fontFamily: BODY, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+                No shipment yet. Shipments are created from the active Rate Sheet quotation, in the Sales Order stage that comes next. Once a shipment exists, this inquiry can no longer be cancelled.
+              </div>
+            )}
+            <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+          </>
+        )}
 
         {/* ===== Section "Timeline & Ownership" (Irisan 2 Inquiry, lanjutan
             audit mockup, Pekerjaan B commit 9) -- mockup SECS[4]. Deadline
