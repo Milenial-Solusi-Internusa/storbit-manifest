@@ -965,6 +965,199 @@ function dealFieldValue(page, label) {
     await recordFlowFailure('D2D', 'Skenario D2D (Pickup/Delivery wajib untuk Door to Door)', e, page);
   }
 
+  // =========================================================================
+  // Putaran 13b -- skenario tambahan utk 8 butir W-14/W-16/W-21/W-33/W-34/
+  // W-40/W-44/W-64, dibungkus try/catch SENDIRI (pola sama D2D), terpisah
+  // dari Flow 1/D2D di atas dan Flow 2 (RS)/Flow 3 (MGR)/Flow 4 (ACC) di
+  // bawah. `page`/`browser` SAMA (akun sales@msi.com, sesi login yang sudah
+  // ada). Create TIDAK PERNAH ditekan sepanjang skenario ini -- murni
+  // verifikasi UI/state, nol inquiry baru tercipta.
+  // =========================================================================
+  try {
+  console.log('\n— Skenario tambahan (Putaran 13b): W-14/W-16/W-21/W-33/W-34/W-40/W-44/W-64 —\n');
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+  await settle(page);
+  const p13bContactResult = await ensureContactSelected(page);
+  check('[P13b] Contact terisi', !!p13bContactResult, p13bContactResult || 'nol contact terpilih/ditambahkan');
+
+  // ── W-14 (crShow) -- Customer Role TIDAK ADA sebelum Service Type dipilih. ──
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  check('[P13b/W-14] Customer Role TIDAK tampil sebelum Service Type dipilih',
+    (await page.locator('text="Customer Role"').count()) === 0);
+
+  // ── W-16 -- pilih "Customs Clearance" lalu klik "Next": kalau akun ini
+  // (sales@msi.com) memang tanpa akses JCI di staging hari ini, step TIDAK
+  // BOLEH pindah dan banner "Request Access" tetap terlihat (penolakan
+  // tidak diam-diam). Dibungkus `if` -- kalau akun KEBETULAN punya akses
+  // JCI (data staging bisa berubah), svcJciBlocked tidak pernah menyala dan
+  // dua check di bawah DILEWATI apa adanya (dicatat, bukan dipaksa lulus). ──
+  await page.locator('button:has-text("Customs Clearance")').first().click();
+  await settle(page, 300);
+  check('[P13b/W-14] Customer Role tampil setelah Service Type dipilih',
+    (await page.locator('button:text-is("Shipper")').count()) > 0);
+  const p13bJciBannerVisible = (await page.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0;
+  if (p13bJciBannerVisible) {
+    await page.locator('button:has-text("Next")').first().click();
+    await settle(page, 300);
+    check('[P13b/W-16] Next di "Service & Direction" TIDAK memindahkan step saat JCI terblokir',
+      await isStepActive(page, 'Service & Direction'));
+    check('[P13b/W-16] Banner blokir JCI TETAP terlihat setelah Next ditolak (penolakan tidak diam-diam)',
+      (await page.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0);
+  } else {
+    console.log('  i [P13b/W-16] akun sales@msi.com punya akses JCI di staging hari ini -- svcJciBlocked tidak menyala, dua check W-16 DILEWATI (bukan gagal; akar: data akses staging, bukan kode).');
+  }
+
+  // ── W-14 -- ganti ke "Door to Door" (nol JCI block utk DtD), lalu uji
+  // auto-fill Customer Role dari Direction (Export->Shipper, Import->
+  // Consignee, SELALU menimpa -- keputusan Den: ikut mockup apa adanya,
+  // nol guard "touched"). ──────────────────────────────────────────────────
+  await page.locator('button:has-text("Door to Door")').first().click();
+  await settle(page, 300);
+  await page.locator('button:text-is("Export")').click();
+  await settle(page, 200);
+  check('[P13b/W-14] Direction "Export" -> Customer Role otomatis "Shipper"',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  await page.locator('button:text-is("Import")').click();
+  await settle(page, 200);
+  check('[P13b/W-14] Direction "Import" -> Customer Role otomatis "Consignee"',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Consignee")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  // Bonus -- pilihan manual TIDAK dihormati lintas klik Direction berikutnya
+  // (mockup sendiri tidak punya guard "touched" utk custRole; keputusan Den
+  // "ikuti mockup apa adanya" dibuktikan lewat skenario ini, bukan ditebak).
+  await page.locator('button:text-is("Third Party")').click();
+  await settle(page, 200);
+  await page.locator('button:text-is("Export")').click();
+  await settle(page, 200);
+  check('[P13b/W-14] Pilihan manual "Third Party" ditimpa lagi begitu Direction diklik ulang (Export -> Shipper, bukti nol guard "touched")',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+
+  // ── W-21 -- isi Route & Terms (POL/POD/Pickup/Delivery/Cargo ready date),
+  // lalu "Add route option": utk Door-to-Door, Pickup/Delivery TETAP tampil
+  // (+ tetap wajib, keputusan Den); Cargo ready date HILANG (nol pengecualian
+  // DtD, beda dari Pickup/Delivery). ──────────────────────────────────────
+  await stepPill(page, 'Route & Terms').click();
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
+  await settle(page, 300);
+  const p13bPickupText = 'Jl. Uji P13b Pickup No. 1, Jakarta';
+  await fieldLocator(page, 'Pickup Address', 'textarea').fill(p13bPickupText);
+  await fieldLocator(page, 'Delivery Address', 'textarea').fill('Jl. Uji P13b Delivery No. 2, Singapore');
+  await fieldLocator(page, 'Cargo ready date', 'input').fill('2027-01-15');
+  await settle(page, 200);
+  await page.locator('button:has-text("Add route option")').click();
+  await settle(page, 300);
+  check('[P13b/W-21] Door-to-Door + "Add route option": Pickup Address TETAP tampil',
+    (await page.locator('text="Pickup Address"').count()) > 0);
+  check('[P13b/W-21] Door-to-Door + "Add route option": Cargo ready date HILANG',
+    (await page.locator('text="Cargo ready date"').count()) === 0);
+
+  // ── W-21 -- ganti Service Type ke non-DtD ("Freight Forwarding") TANPA
+  // menyentuh laneMode (sudah aktif dari langkah di atas, laneMode bukan
+  // konsep per-service-type): Pickup/Delivery kini HARUS hilang (pengecualian
+  // DtD tidak lagi berlaku). ──────────────────────────────────────────────
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:has-text("Freight Forwarding")').first().click();
+  await settle(page, 300);
+  await stepPill(page, 'Route & Terms').click();
+  await settle(page);
+  check('[P13b/W-21] Non-DtD + "Add route option" (laneMode tak berubah): Pickup Address HILANG',
+    (await page.locator('text="Pickup Address"').count()) === 0);
+  check('[P13b/W-21] Non-DtD + "Add route option": Cargo ready date tetap HILANG',
+    (await page.locator('text="Cargo ready date"').count()) === 0);
+
+  // ── W-21 -- balik ke Door-to-Door: Pickup Address harus MUNCUL LAGI
+  // dengan nilai yang SAMA (state tidak pernah dikosongkan saat disembunyikan,
+  // pola sama container_types RS) -- "pembatalan" di sini TIDAK lewat tombol
+  // khusus (laneMode Single Shipment TIDAK PERNAH bisa dimatikan lagi lewat
+  // UI begitu "Add route option" ditekan -- nol tombol "batalkan" di produk)
+  // melainkan lewat ganti Service Type kembali ke Door-to-Door, satu-satunya
+  // jalan UI nyata yang membuat `pickupDeliveryVisible` balik jadi true. ───
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:has-text("Door to Door")').first().click();
+  await settle(page, 300);
+  await stepPill(page, 'Route & Terms').click();
+  await settle(page);
+  const p13bPickupAfterRoundTrip = await fieldLocator(page, 'Pickup Address', 'textarea').inputValue().catch(() => null);
+  check('[P13b/W-21] Door-to-Door lagi: Pickup Address MUNCUL LAGI dengan nilai yang sama (nilai tidak hilang saat disembunyikan)',
+    p13bPickupAfterRoundTrip === p13bPickupText, `dapat: "${p13bPickupAfterRoundTrip}"`);
+
+  // ── W-33/W-34/W-64 -- step "Customs & Undername" (Door-to-Door), Direction
+  // masih "Export" (lihat bonus check di atas). Kunjungan PERTAMA ke step ini
+  // di sesi ini -- pas utk menguji default lazy W-64 (nol kesempatan
+  // sebelumnya utk pricing_basis/duties_and_taxes terisi). ─────────────────
+  const p13bCustomsPill = stepPill(page, 'Customs & Undername');
+  await p13bCustomsPill.click();
+  await settle(page, 300);
+  check('[P13b/W-64] Pricing Basis SUDAH "Itemized charges" sejak step Customs pertama kali dibuka (default lazy, bukan kosong)',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  const p13bDutiesDefault = await fieldLocator(page, 'Duties & Taxes', 'select').inputValue();
+  check('[P13b/W-64] Duties & Taxes SUDAH "Included in price" sejak step Customs pertama kali dibuka (default lazy, bukan kosong)',
+    p13bDutiesDefault === 'Included in price', `dapat: "${p13bDutiesDefault}"`);
+  check('[P13b/W-33] Direction "Export": Duties & Taxes MANDIRI tetap tampil tanpa centang Undername (SATU instance, tak terkunci di dalam panel)',
+    (await page.locator('text="Duties & Taxes"').count()) === 1);
+  check('[P13b/W-34] Direction "Export": pesan "Undername applies to import shipments only." tampil',
+    (await page.locator('text="Undername applies to import shipments only."').count()) > 0);
+  check('[P13b/W-34] Direction "Export": checkbox "Undername import" TIDAK ADA',
+    (await page.locator('label:has-text("Undername import") input[type="checkbox"]').count()) === 0);
+
+  // ── balik Direction ke "Import": Duties & Taxes TETAP tampil (standalone,
+  // belum dicentang apa pun), checkbox Undername kembali ada, dan Duties &
+  // Taxes TIDAK dirender dua kali setelah dicentang (bug prototipe mockup
+  // yang sengaja tidak ditiru -- lihat komentar UndernamePanel/hideDuties). ──
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:text-is("Import")').click();
+  await settle(page, 200);
+  await p13bCustomsPill.click();
+  await settle(page, 300);
+  check('[P13b/W-33] Direction "Import", Undername belum dicentang: Duties & Taxes MANDIRI tetap tampil (default "Included in price")',
+    (await fieldLocator(page, 'Duties & Taxes', 'select').inputValue()) === 'Included in price');
+  await page.locator('label:has-text("Undername import") input[type="checkbox"]').check();
+  await settle(page, 300);
+  check('[P13b/W-33] Direction "Import" + Undername dicentang: Duties & Taxes TIDAK dirender dua kali',
+    (await page.locator('text="Duties & Taxes"').count()) === 1);
+
+  // ── W-40 -- blok statis "Latest quoted value" di step Commercial. ───────
+  await stepPill(page, 'Commercial').click();
+  await settle(page);
+  check('[P13b/W-40] Blok "Latest quoted value" tampil',
+    (await page.locator('text="Latest quoted value"').count()) > 0);
+  check('[P13b/W-40] Teks "No quotation yet. It shows here and on the inquiry once a quotation exists." tampil',
+    (await page.locator('text="No quotation yet. It shows here and on the inquiry once a quotation exists."').count()) > 0);
+
+  // ── W-44 -- link "Edit" per grup di Review, lompat ke step terkait.
+  // GroupHeader (InquiryIntakeWizardPage.jsx): <div><span>{title}</span>
+  // <button>Edit</button></div> -- SIBLING, bukan h3 (beda dari
+  // sectionButton() yang sudah ada, pola DealDetailPage.jsx, tidak dipakai
+  // di sini). "Service & Direction" sebagai teks SATU-SATUNYA di dalam
+  // <span> (label pill step tidak dibungkus span terpisah) -- aman tanpa
+  // scoping tambahan. ──────────────────────────────────────────────────────
+  await stepPill(page, 'Review').click();
+  await settle(page);
+  check('[P13b/W-44] Tombol "Create Inquiry" terlihat di Review (sanity, Create TIDAK ditekan sepanjang skenario ini)',
+    await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false));
+  const p13bReviewEditSvcBtn = page.locator('xpath=//span[normalize-space(text())="Service & Direction"]/following-sibling::button[normalize-space(text())="Edit"]');
+  check('[P13b/W-44] Tombol "Edit" grup "Service & Direction" di Review ditemukan', (await p13bReviewEditSvcBtn.count()) > 0);
+  await p13bReviewEditSvcBtn.click();
+  await settle(page, 300);
+  check('[P13b/W-44] Klik "Edit" grup "Service & Direction" melompat ke step itu (pill aktif)',
+    await isStepActive(page, 'Service & Direction'));
+  console.log('  i [P13b] Create TIDAK ditekan sepanjang skenario ini -- nol inquiry baru tercipta.');
+  } catch (e) {
+    await recordFlowFailure('P13B', 'Skenario tambahan Putaran 13b (W-14/16/21/33/34/40/44/64)', e, page);
+  }
+
   // Putaran 13a Task 3 -- Flow 2 (Rate Sheet Request) dibungkus try/catch
   // sendiri, terpisah dari Flow 1/D2D di atas dan Flow 3 di bawah.
   try {
@@ -1820,6 +2013,10 @@ function dealFieldValue(page, label) {
   // ke bucket Flow yang sama lewat pencocokan prefix yang sama.
   function classifyFlow(name) {
     if (name.startsWith('[D2D')) return 'D2D (Pickup/Delivery wajib — Door to Door)';
+    // Putaran 13b -- prefix `[P13b/...]` (check biasa) DAN `[P13B-FATAL]`
+    // (recordFlowFailure, tag huruf besar) sama-sama diawali "[P13" --
+    // satu cabang mencakup keduanya, bukan dua cabang case-sensitive.
+    if (name.startsWith('[P13')) return 'Putaran 13b (W-14/16/21/33/34/40/44/64)';
     if (name.startsWith('[RS')) return 'Flow 2 (Rate Sheet Request)';
     if (name.startsWith('[MGR')) return 'Flow 3 (Owner default manager)';
     if (name.startsWith('[ACC')) return 'Flow 4 (Mark Accepted dengan bukti)';
@@ -1828,6 +2025,7 @@ function dealFieldValue(page, label) {
   const flowOrder = [
     'Flow 1 (Single Shipment)',
     'D2D (Pickup/Delivery wajib — Door to Door)',
+    'Putaran 13b (W-14/16/21/33/34/40/44/64)',
     'Flow 2 (Rate Sheet Request)',
     'Flow 3 (Owner default manager)',
     'Flow 4 (Mark Accepted dengan bukti)',
