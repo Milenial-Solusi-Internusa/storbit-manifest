@@ -13,11 +13,15 @@
 // terdekat, bukan hex mockup disalin literal. Pola yang sama sudah dipakai
 // Part A InquiryListPage.jsx (badge "Not recorded" baris Route).
 //
-// Scope sengaja DIPERSEMPIT dari mockup penuh (instruksi eksplisit Putaran 3
-// Tahap 3A -- "JANGAN query locations tambahan", tiga filter dropdown mockup
-// baris 175-182 di LUAR rentang baris yang dirujuk tugas): TANPA filter
-// Created Date/Entity/Owner -- base data = seluruh inquiry ber-company_id
-// milik user, nol tanggal/entitas/owner dipersempit lagi di FE. TANPA Owner
+// Putaran 7: GAP Tahap 3A ditutup -- filter Created Date/Entity/Owner/Status
+// + icon arah di label baris Matrix + pagination tabel drill-down (20
+// baris/halaman) ditambahkan, dibaca dari blok filter TEPAT SEBELUM
+// data-screen-label="Classification/Matrix" di mockup (nol data-screen-label
+// sendiri -- <section> polos, ditemukan lewat scan byte-offset). Status
+// multi-select TIDAK disebut eksplisit di instruksi tugas Putaran 7 (hanya
+// "Created Date, Entity, Owner") tapi ADA di mockup -- dibangun juga (rule
+// "mockup adalah kontrak"), nol count per-opsi (mockup Classification lebih
+// sederhana dari checklist Status page: checkbox+label polos). TANPA Owner
 // Assignment / Possible Duplicates (bagian LAIN mockup ini, giliran Tahap 3B).
 //
 // Dua sumbu izin yang TIDAK saling menggantikan:
@@ -45,14 +49,16 @@
 // inquiries.owner_id->profiles juga terbukti ditolak PostgREST,
 // PipelineKanbanPage.jsx:111-121).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ClipboardCheck } from 'lucide-react';
+import { ClipboardCheck, ChevronDown, ArrowUpRight, ArrowDownLeft, Truck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
-import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
+import { isAllEntities as isAllEntitiesRole, isManagerOrAbove } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { STATUS_LABEL } from './v3/tokens';
 import { fmtRp } from './DealPanels';
+import { fetchOperationalRoster } from './salesRoster';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
@@ -112,6 +118,54 @@ const DIRECTION_EDIT_OPTIONS = ['Not set', 'Import', 'Export', 'Domestic'];
 const EDITABLE_STATUSES = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 const TOTAL_COL = '__total__';
 
+// Icon arah label baris Matrix (koreksi Putaran 7 "kolom kosmetik matrix") --
+// SAMA semantiknya dgn InquiryListPage.jsx: Export naik-kanan, Import
+// turun-kiri, Domestic truk. 'Not set' nol icon (mockup pun tak punya SVG
+// utk baris itu).
+const DIRECTION_ICON = { Export: ArrowUpRight, Import: ArrowDownLeft, Domestic: Truck };
+
+// Urutan kanonik 7 status utk checklist multi-select Putaran 7 (mockup
+// Classification/Filters -- checkbox+label polos, BEDA dari checklist
+// Status page yang berwarna+count). Default = grup "open" yang sama.
+const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
+const OPEN_STATUSES = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
+
+// Mockup Classification: select Created Date "This month"/"Last 30
+// days"/"All time", default "This month" -- TIGA opsi, BEDA dari Status
+// page (4 opsi, default "Last 30 days"). Jangan disatukan dgn
+// CREATED_DATE_PRESETS InquiryListPage.jsx -- dua halaman, dua kontrak mockup.
+const CREATED_DATE_PRESETS = [
+  { id: 'this_month', label: 'This month'   },
+  { id: 'last_30d',   label: 'Last 30 days' },
+  { id: 'all_time',   label: 'All time'     },
+];
+
+function startOfMonthWIB(ymd) {
+  const [y, m] = ymd.split('-').map(Number);
+  return `${y}-${String(m).padStart(2, '0')}-01`;
+}
+function shiftDay(ymd, n) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+// `created_at` timestamptz -- batas WIB eksplisit +07:00, bukan string
+// tanggal polos (yang di-cast Postgres ke tengah malam UTC, kelas bug yang
+// sama dgn alasan getTodayWIB() ada; pola identik InquiryListPage.jsx).
+function wibMidnightISO(ymd) {
+  return `${ymd}T00:00:00+07:00`;
+}
+function applyCreatedDateFilter(query, preset, today) {
+  if (preset === 'this_month') return query.gte('created_at', wibMidnightISO(startOfMonthWIB(today)));
+  if (preset === 'last_30d') return query.gte('created_at', wibMidnightISO(shiftDay(today, -30)));
+  return query; // 'all_time' -> nol batas.
+}
+// Pagination tabel drill-down (koreksi Putaran 7). Nama SENGAJA beda dari
+// `PAGE_SIZE` lokal di fetchRows() (ukuran batch range-loop, 1000) --
+// dua arti berbeda, jangan disatukan.
+const ROWS_PER_PAGE = 20;
+
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -124,6 +178,13 @@ const headCell = {
   ...cellBase, fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700,
   textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft, whiteSpace: 'nowrap',
 };
+// Filter card Putaran 7 -- pola sama InquiryListPage.jsx (selStyle/fieldLabel).
+const filterSelStyle = {
+  height: 44, borderRadius: 10, border: `1px solid ${C.line}`,
+  background: C.surface2, padding: '0 12px', fontSize: 13.5, color: C.ink,
+  outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
+};
+const fieldLabel = { display: 'block', fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 };
 
 /**
  * @param {(msg:string, type?:string)=>void} [showToast]
@@ -131,6 +192,10 @@ const headCell = {
 export default function InquiryClassificationPage({ showToast }) {
   const { profile, erpRoles, erpRole, user } = useAuth();
   const isAllEntities = isAllEntitiesRole(erpRoles);
+  // Gate filter Owner/Entity (mockup isMgmt/multi) -- pola sama
+  // InquiryListPage.jsx koreksi #11.
+  const isMgmt = isManagerOrAbove(erpRoles);
+  const todayWIB = getTodayWIB();
 
   const { options: serviceTypeOptsRaw } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const serviceTypeOpts = useMemo(
@@ -148,10 +213,22 @@ export default function InquiryClassificationPage({ showToast }) {
   const [bulkValue, setBulkValue] = useState('');
   const [savingBulk, setSavingBulk] = useState(false);
   const [savingRowId, setSavingRowId] = useState(null);
+  // Filter Putaran 7 (koreksi #13) -- menyaring BASE `rows` (server-side),
+  // bukan cuma tabel drill-down -- mockup `cBase` menjadi sumber Matrix
+  // SEKALIGUS tabel, jadi Matrix ikut menyempit saat filter ini berubah.
+  const [cSel, setCSel] = useState(() => [...OPEN_STATUSES]);
+  const [cSelOpen, setCSelOpen] = useState(false);
+  const [filterCreatedDate, setFilterCreatedDate] = useState('this_month');
+  const [filterEntity, setFilterEntity] = useState('all');
+  const [filterOwner, setFilterOwner] = useState('all');
+  const [companyOptions, setCompanyOptions] = useState([]);
+  const [ownerOptions, setOwnerOptions] = useState([]);
+  const [tablePage, setTablePage] = useState(0);
 
   const fetchRows = useCallback(async () => {
     if (!profile?.id) return;
     if (!isAllEntities && !profile?.company_id) return;
+    if (cSel.length === 0) { setRows([]); setOwnerNames({}); return; }
     setLoading(true);
     try {
       // Perbaikan review Vir, Putaran 3 Tahap 3A: production sudah 947
@@ -173,8 +250,13 @@ export default function InquiryClassificationPage({ showToast }) {
             prospect:accounts!inquiries_prospect_id_fkey(name),
             customer:accounts!inquiries_customer_id_fkey(name)
           `)
-          .is('deleted_at', null);
+          .is('deleted_at', null)
+          .in('status', cSel);
         if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+        if (filterEntity !== 'all') query = query.eq('company_id', filterEntity);
+        if (filterOwner === 'unassigned') query = query.is('owner_id', null);
+        else if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
+        query = applyCreatedDateFilter(query, filterCreatedDate, todayWIB);
         query = query
           .order('created_at', { ascending: false })
           .order('id', { ascending: true })
@@ -205,7 +287,36 @@ export default function InquiryClassificationPage({ showToast }) {
     } finally {
       setLoading(false);
     }
-  }, [profile, isAllEntities, showToast]);
+  }, [profile, isAllEntities, cSel, filterEntity, filterOwner, filterCreatedDate, todayWIB, showToast]);
+
+  // Opsi dropdown Entity (3 entitas dari `companies`, bukan hardcode UUID) +
+  // Owner (roster operasional, pola sama InquiryListPage.jsx) -- SEKALI per
+  // pemuatan halaman.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('companies').select('id, code, name').order('code')
+      .then(({ data }) => { if (!cancelled) setCompanyOptions(data || []); })
+      .catch(() => { if (!cancelled) setCompanyOptions([]); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!profile?.company_id) return undefined;
+    let cancelled = false;
+    fetchOperationalRoster(profile.company_id)
+      .then((r) => { if (!cancelled) setOwnerOptions(r || []); })
+      .catch(() => { if (!cancelled) setOwnerOptions([]); });
+    return () => { cancelled = true; };
+  }, [profile?.company_id]);
+
+  function toggleCStatus(st) {
+    setCSel((prev) => (prev.includes(st) ? prev.filter((x) => x !== st) : prev.concat([st])));
+  }
+  const cSelLabel = useMemo(() => {
+    if (cSel.length === 7) return 'All statuses';
+    if (cSel.length === OPEN_STATUSES.length && OPEN_STATUSES.every((s) => cSel.includes(s))) return 'Open statuses';
+    if (cSel.length) return cSel.map((s) => STATUS_META[s]?.label || s).join(', ');
+    return 'No status';
+  }, [cSel]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchRows(); }, [fetchRows]);
@@ -237,6 +348,19 @@ export default function InquiryClassificationPage({ showToast }) {
     () => rows.filter((r) => inCell(r, selectedCell.dir, selectedCell.svc)),
     [rows, selectedCell, inCell]
   );
+
+  // Pagination (koreksi Putaran 7 -- mockup "Page X of Y, 20 rows per
+  // page"). Murni DISPLAY: checkbox/bulk TETAP beroperasi atas SELURUH
+  // `tableRows` (seluruh halaman), bukan hanya baris yang tampil -- "pilih
+  // semua baris bisa-diedit di sel ini" tidak berubah maknanya hanya karena
+  // ditampilkan bertahap.
+  const totalTablePages = Math.max(1, Math.ceil(tableRows.length / ROWS_PER_PAGE));
+  const pagedTableRows = useMemo(
+    () => tableRows.slice(tablePage * ROWS_PER_PAGE, tablePage * ROWS_PER_PAGE + ROWS_PER_PAGE),
+    [tableRows, tablePage]
+  );
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setTablePage(0); }, [selectedCell, cSel, filterEntity, filterOwner, filterCreatedDate]);
 
   const tableTitle = selectedCell.dir === 'Not set' && selectedCell.svc === TOTAL_COL
     ? 'Needs Classification'
@@ -410,6 +534,65 @@ export default function InquiryClassificationPage({ showToast }) {
         be changed — closed inquiries (Won, Lost, Cancelled) are shown read-only.
       </p>
 
+      {/* ── Filter card (Putaran 7, koreksi #13) -- blok <section> polos
+          TEPAT SEBELUM Classification/Matrix di mockup (nol data-screen-label
+          sendiri, ditemukan lewat scan byte-offset). Menyaring `rows` (base
+          Matrix+tabel), bukan cuma tabel drill-down. ── */}
+      <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12, alignItems: 'end' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={fieldLabel}>Created Date</span>
+            <select value={filterCreatedDate} onChange={e => setFilterCreatedDate(e.target.value)} style={filterSelStyle}>
+              {CREATED_DATE_PRESETS.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+          </label>
+
+          <div style={{ position: 'relative', minWidth: 0 }}>
+            <span style={fieldLabel}>Status</span>
+            <button type="button" onClick={() => setCSelOpen((o) => !o)} style={{ ...filterSelStyle, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cSelLabel}</span>
+              <ChevronDown size={16} />
+            </button>
+            {cSelOpen && (
+              <>
+                <div onClick={() => setCSelOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 220, zIndex: 40, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.16)', padding: 4, display: 'flex', flexDirection: 'column' }}>
+                  {STATUS_ORDER.map((st) => (
+                    <label key={st} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink }}>
+                      <input type="checkbox" checked={cSel.includes(st)} onChange={() => toggleCStatus(st)} style={{ width: 16, height: 16 }} />
+                      {STATUS_META[st]?.label || st}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Entity -- hanya multi-entitas (mockup `multi`). */}
+          {isAllEntities && (
+            <label style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <span style={fieldLabel}>Entity</span>
+              <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={filterSelStyle}>
+                <option value="all">All</option>
+                {companyOptions.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
+              </select>
+            </label>
+          )}
+
+          {/* Owner -- hanya manager ke atas (mockup isMgmt). */}
+          {isMgmt && (
+            <label style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <span style={fieldLabel}>Owner</span>
+              <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={filterSelStyle}>
+                <option value="all">All</option>
+                <option value="unassigned">Unassigned</option>
+                {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.full_name || '(unnamed)'}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      </section>
+
       {/* ── Classification Matrix ── */}
       <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 15, fontWeight: 700, color: C.ink }}>
@@ -479,7 +662,7 @@ export default function InquiryClassificationPage({ showToast }) {
               No inquiries in this cell.
             </div>
           )}
-          {!loading && tableRows.map((r) => {
+          {!loading && pagedTableRows.map((r) => {
             const editable = EDITABLE_STATUSES.includes(r.status);
             const meta = STATUS_META[r.status] || STATUS_META.OPEN;
             const custName = r.prospect?.name || r.customer?.name || '—';
@@ -540,6 +723,29 @@ export default function InquiryClassificationPage({ showToast }) {
             );
           })}
         </div>
+
+        {/* Pagination (koreksi Putaran 7) -- format PERSIS Status page:
+            "Page X of Y, 20 rows per page" + tombol angka halaman. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: `1px solid ${C.lineSoft}` }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft }}>
+            Page {tablePage + 1} of {totalTablePages}, 20 rows per page
+          </span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {Array.from({ length: totalTablePages }, (_, i) => i).map((p) => (
+              <button
+                key={p} onClick={() => setTablePage(p)}
+                style={{
+                  minWidth: 32, height: 32, padding: '0 8px', borderRadius: 10,
+                  border: `1px solid ${p === tablePage ? C.line : 'transparent'}`,
+                  background: p === tablePage ? C.surface2 : C.surface,
+                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {p + 1}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* ── Modal bulk Set Direction / Set Service Type ── */}
@@ -571,9 +777,12 @@ const bulkBtnStyle = {
 };
 
 function MatrixRow({ row, selectedCell, onSelectCell }) {
+  // Icon arah (koreksi Putaran 7 "kolom kosmetik matrix") -- 'Not set' nol icon.
+  const Icon = DIRECTION_ICON[row.dir];
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, borderRadius: 10, background: row.dir === 'Not set' ? C.warnBg : C.surface2, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink }}>
+        {Icon && <Icon size={14} />}
         {row.dir}
       </div>
       {row.cells.map((c) => (
