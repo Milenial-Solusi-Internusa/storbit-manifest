@@ -7,7 +7,15 @@
 -- revert_manual_win/reassign_inquiry_owner) yang menegakkan alasan wajib,
 -- bukti wajib, gate manager, dan audit_logs.
 --
--- Status: DITULIS UNTUK REVIEW. BELUM DIJALANKAN di staging maupun production.
+-- Status: LIVE STAGING (dikonfirmasi Vir, query baca-saja, 26 Okt 2026) --
+-- BELUM DIJALANKAN di production. [Koreksi 26 Okt 2026, Putaran 8: baris
+-- status di atas sudah basi utk staging -- badan
+-- trg_fn_guard_inquiries_protected_columns di staging dikonfirmasi SAMA
+-- PERSIS dgn definisi di berkas ini, nol versi lebih baru.] Fungsi &
+-- trigger ini DIPERLUAS (bukan diganti) oleh
+-- 20261027000004_crm_inquiry_owner_assignment_guard_extend.sql (Putaran 8)
+-- -- berkas itu WAJIB jalan SESUDAH berkas ini (atau SESUDAH 20261027000001
+-- kalau berkas ini sendiri belum pernah jalan di suatu environment).
 --
 -- ⛔⛔ BERKAS INI MEMUAT DROP TRIGGER -- WAJIB DIJALANKAN DEN LANGSUNG DI SQL
 -- EDITOR, BUKAN lewat connector Vir (connector menolak/membatalkan statement

@@ -344,10 +344,16 @@ function LeadAssignmentApprovalRoute() {
 // ============================================================================
 // Inquiry / Deal — 4 rute
 // ============================================================================
-// `location.state.presetOwnerId`/`presetStatus` -- Putaran 3 Tahap 3B,
-// deviasi sementara (lihat komentar di InquiryListPage.jsx): Team Workload
-// (InquiryOwnerAssignmentPage.jsx) menavigasi ke sini dengan preset filter
-// owner+status, menggantikan tujuan mockup "halaman 1.2.4" yang belum ada.
+// `location.state.presetOwnerId` -- dikirim Team Workload
+// (InquiryOwnerAssignmentPage.jsx) saat baris salesperson diklik. P_INQUIRY
+// sejak Putaran 7 SUDAH menunjuk ke halaman 1.2.4 "Inquiry Status & History"
+// (bukan lagi "belum ada" seperti komentar lama -- lihat menu-skeleton.js
+// mount 'crm-inquiry'). `presetStatus` DICABUT dari pemanggil ini Putaran 8
+// (L-12) -- InquiryListPage.jsx sendiri sudah jatuh ke default OPEN_STATUSES
+// (4 status) begitu presetStatus tidak dikirim, persis `stSel: OPEN` mockup
+// baris 829. Prop `presetStatus` di bawah TETAP ada (generik, dipakai
+// pemanggil lain yang mungkin muncul kelak) -- yang berubah hanya pemanggil
+// InquiryOwnerAssignmentRoute, lihat komentarnya.
 function InquiryListRoute() {
   const { showToast, setInquiryPrefill } = useAppShell();
   const navigate = useNavigate();
@@ -382,11 +388,14 @@ function InquiryClassificationRoute() {
   );
 }
 
-// Inquiry Owner Assignment (Putaran 3 Tahap 3B) -- onViewSalesInquiries =
-// Team Workload row click (mockup baris 829), navigasi ke Inquiry List
-// dgn location.state preset owner+status (deviasi sementara, lihat
-// komentar InquiryListPage.jsx/InquiryListRoute di atas -- tujuan akhir
-// mockup = halaman 1.2.4 tersendiri yang belum ada).
+// Inquiry Owner Assignment (Putaran 3 Tahap 3B; L-12 Putaran 8) --
+// onViewSalesInquiries = Team Workload row click (mockup baris 829),
+// navigasi ke Inquiry Status & History (P_INQUIRY, sudah ada sejak
+// Putaran 7) dgn location.state preset OWNER SAJA -- `presetStatus`
+// DICABUT (lihat komentar InquiryListRoute di atas): InquiryListPage.jsx
+// jatuh ke default OPEN_STATUSES (4 status: Open/In Review/Quoted/
+// Negotiation) begitu presetStatus undefined, persis `stSel: OPEN` mockup
+// -- BUKAN lagi satu status 'OPEN' terkunci seperti versi Tahap 3B.
 function InquiryOwnerAssignmentRoute() {
   const { showToast } = useAppShell();
   const navigate = useNavigate();
@@ -394,7 +403,7 @@ function InquiryOwnerAssignmentRoute() {
     <Boundary title="Inquiry Owner Assignment temporarily unavailable">
       <InquiryOwnerAssignmentPage
         showToast={showToast}
-        onViewSalesInquiries={(ownerId) => navigate(P_INQUIRY, { state: { presetOwnerId: ownerId, presetStatus: 'OPEN' } })}
+        onViewSalesInquiries={(ownerId) => navigate(P_INQUIRY, { state: { presetOwnerId: ownerId } })}
       />
     </Boundary>
   );
