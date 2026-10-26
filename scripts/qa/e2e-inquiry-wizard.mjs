@@ -333,6 +333,34 @@ async function pickLocation(page, triggerLocator, searchText, resultText) {
   await result.click();
 }
 
+// Putaran 13a -- Contact kini WAJIB di Langkah 1 (KEDUA mode). Akun fixture
+// "PT Agro Sawit Kalimantan" dipakai ulang di Flow 1 DAN Flow 2 -- begitu
+// salah satu flow memilih/menambah contact, flow berikutnya akan menemukan
+// akun itu SUDAH punya contact (select terisi, bukan tombol "Add new
+// contact" lagi). Fungsi ini menangani KEDUA keadaan, dipanggil identik di
+// kedua flow. Mengembalikan string ringkas (dicetak lewat `check` pemanggil)
+// supaya record uji yang dibuat (nama contact baru) bisa dilaporkan utk
+// pembersihan manual -- skrip ini TIDAK PERNAH menghapus data sendiri (pola
+// sama inquiry/quotation fixture, lihat komentar header berkas).
+async function ensureContactSelected(page) {
+  const addBtn = page.locator('button:has-text("Add new contact")').first();
+  if (await addBtn.isVisible().catch(() => false)) {
+    await addBtn.click();
+    await settle(page, 200);
+    await fieldLocator(page, 'Name', 'input').fill('QA E2E Test Contact');
+    await page.locator('button:has-text("Add Contact")').first().click();
+    await settle(page, 500);
+    return 'contact BARU dibuat: "QA E2E Test Contact"';
+  }
+  const contactSelect = fieldLocator(page, 'Contact', 'select');
+  if (await contactSelect.count() === 0) return null;
+  const options = await contactSelect.locator('option').allTextContents();
+  const firstReal = options.find((t) => t.trim() && t.trim() !== '— Select contact —' && t.trim() !== 'Add new contact');
+  if (!firstReal) return null;
+  await contactSelect.selectOption({ label: firstReal });
+  return `contact LAMA dipilih: "${firstReal.trim()}"`;
+}
+
 // Login GoTrue password-grant -- diekstrak (Putaran 5 K1a, Task 2) dari kode
 // IIFE utama supaya bisa dipakai LAGI utk re-login akun KEDUA (flow ketiga,
 // akun manager) tanpa menduplikasi parsing respons. Perilaku utk login
@@ -407,7 +435,9 @@ function dealFieldValue(page, label) {
   // tidak disentuh di sini) ──────────────────────────────────────────────
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
   await settle(page);
-  check('Wizard Intake Form terbuka', await page.locator('h1:text-is("New Inquiry")').count() > 0,
+  // Putaran 13a -- H1 diganti "Inquiry Intake Form" (mockup baris 43, nol
+  // subtitle di bawahnya -- lihat PROGRESS.md/laporan putaran ini).
+  check('Wizard Intake Form terbuka', await page.locator('h1:text-is("Inquiry Intake Form")').count() > 0,
     (await page.title()));
 
   // ── negatif (FIX 6): Warehousing/General Trading TIDAK ADA di kartu
@@ -421,21 +451,26 @@ function dealFieldValue(page, label) {
   check('Kartu "Door to Door" ADA', await page.locator('button:has-text("Door to Door")').count() > 0);
 
   // ── Langkah 1 — Customer & Contact ─────────────────────────────────────
+  // Putaran 13a (D1) -- toggle "Sumber" (Prospect/Customer) DICABUT, SATU
+  // kolom "Customer" gabungan menggantikannya (placeholder mockup persis).
   await page.locator('button:text-is("1. Customer & Contact")').click();
   await settle(page);
-  // sourceType default 'prospect' -- tab eksplisit sesuai instruksi tugas.
-  await page.locator('button:text-is("Prospect")').click();
-  const prospectInput = page.locator('input[placeholder="Search prospects…"]');
-  await prospectInput.fill('PT Agro Sawit Kalimantan');
+  const accountInput = page.locator('input[placeholder="Search account name or account code…"]');
+  await accountInput.fill('PT Agro Sawit Kalimantan');
   await page.waitForTimeout(400);
   const accountBtn = page.locator('button:has-text("PT Agro Sawit Kalimantan")').first();
   const accountFound = await accountBtn.count() > 0;
-  check('Akun "PT Agro Sawit Kalimantan" ditemukan di pencarian Prospect', accountFound,
-    accountFound ? '' : 'akun tidak ada di daftar prospect staging hari ini -- cek data, bukan skrip');
+  check('Akun "PT Agro Sawit Kalimantan" ditemukan di pencarian Customer', accountFound,
+    accountFound ? '' : 'akun tidak ada di daftar staging hari ini -- cek data, bukan skrip');
   if (accountFound) await accountBtn.click();
   await settle(page);
   const sourceText = (await fieldLocator(page, 'Source', 'div').innerText().catch(() => '')).trim();
   check('Source akun tampil "referral" (read-only)', sourceText === 'referral', `dapat: "${sourceText}"`);
+  // Putaran 13a -- Contact kini WAJIB (D3). Pilih/tambah SEBELUM lanjut,
+  // supaya Create di akhir flow ini tidak ditolak validasi baru.
+  const contactResult1 = await ensureContactSelected(page);
+  check('Contact terisi (Langkah 1, Flow 1)', !!contactResult1, contactResult1 || 'nol contact terpilih/ditambahkan');
+  if (contactResult1) console.log(`    i Contact — ${contactResult1}`);
 
   // ── Langkah 2 — Service & Direction: pilih Customs Clearance ───────────
   await page.locator('button:text-is("2. Service & Direction")').click();
@@ -789,6 +824,67 @@ function dealFieldValue(page, label) {
   if (!laneEditorOk) console.log('  ⚠ Editor Route Options tidak sampai Save sukses -- lihat hasil check() di atas untuk titik gagalnya.');
 
   // =========================================================================
+  // Putaran 13a (D8) -- skenario NEGATIF SAJA utk Pickup/Delivery Address
+  // wajib Door to Door: Create DITOLAK saat kosong (menekan Create di sini
+  // AMAN -- validasi memblokir SEBELUM RPC dipanggil sama sekali, nol data
+  // tercipta); wizard harus lolos ke Review begitu keduanya terisi, TANPA
+  // menekan Create lagi (instruksi eksplisit, menghindari data uji baru).
+  // Wizard BARU, akun yang sama ("PT Agro Sawit Kalimantan", sudah punya
+  // contact dari Flow 1 di atas).
+  // =========================================================================
+  console.log('\n— Skenario tambahan: Pickup/Delivery Address wajib untuk Door to Door (D8) —\n');
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+  await settle(page);
+  const d2dContactResult = await ensureContactSelected(page);
+  check('[D2D] Contact terisi', !!d2dContactResult, d2dContactResult || 'nol contact terpilih/ditambahkan');
+  await page.locator('button:text-is("2. Service & Direction")').click();
+  await settle(page);
+  await page.locator('button:has-text("Door to Door")').first().click();
+  await settle(page, 300);
+  await page.locator('button:text-is("Shipper")').click();
+  await settle(page);
+  await page.locator('button:text-is("3. Route & Terms")').click();
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
+  await settle(page, 300);
+
+  // -- NEGATIF: Pickup/Delivery KOSONG, tekan Create.
+  await page.locator('button:text-is("7. Review")').click();
+  await settle(page);
+  check('[D2D] Tombol "Create Inquiry" terlihat (sebelum ditekan, Pickup/Delivery masih kosong)',
+    await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false));
+  let d2dRpcSeen = false;
+  const d2dNoRpc = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 3000 })
+    .then(() => { d2dRpcSeen = true; }).catch(() => {});
+  await page.locator('button:text-is("Create Inquiry")').click();
+  await d2dNoRpc;
+  check('[D2D] Create DITOLAK saat Pickup/Delivery Address kosong (nol panggilan RPC create_inquiry_with_lanes)', !d2dRpcSeen);
+  await settle(page, 300);
+  check('[D2D] Wizard melompat balik ke "3. Route & Terms" setelah Create ditolak', await isStepActive(page, '3. Route & Terms'));
+  check('[D2D] Pesan error Pickup Address tampil', (await page.locator('text="Pickup Address is required for Door to Door."').count()) > 0);
+  check('[D2D] Pesan error Delivery Address tampil', (await page.locator('text="Delivery Address is required for Door to Door."').count()) > 0);
+
+  // -- POSITIF: isi keduanya, pastikan lolos sampai Review. Create TIDAK
+  // ditekan di sini (instruksi eksplisit D8).
+  await fieldLocator(page, 'Pickup Address', 'textarea').fill('Jl. Contoh Pickup No. 1, Jakarta');
+  await fieldLocator(page, 'Delivery Address', 'textarea').fill('Jl. Contoh Delivery No. 2, Singapore');
+  await settle(page, 200);
+  await page.locator('button:text-is("7. Review")').click();
+  await settle(page);
+  check('[D2D] Lolos ke Review setelah Pickup/Delivery Address terisi (tombol "Create Inquiry" terlihat)',
+    await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false));
+  check('[D2D] Nol pesan error Pickup/Delivery tersisa', (await page.locator('text=/Address is required for Door to Door/i').count()) === 0);
+  console.log('  i [D2D] Create TIDAK ditekan pada kasus positif -- nol inquiry baru tercipta dari skenario ini.');
+
+  // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
   // login SAMA (satu proses skrip), dimulai SESUDAH flow Single Shipment di
   // atas selesai -- flow pertama TIDAK disentuh sama sekali (byte-identik).
@@ -797,20 +893,26 @@ function dealFieldValue(page, label) {
 
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
   await settle(page);
-  check('[RS] Wizard Intake Form terbuka (flow kedua)', await page.locator('h1:text-is("New Inquiry")').count() > 0);
+  check('[RS] Wizard Intake Form terbuka (flow kedua)', await page.locator('h1:text-is("Inquiry Intake Form")').count() > 0);
 
   // ── Langkah 1 — akun (reuse "PT Agro Sawit Kalimantan", rute BERBEDA dari
   // flow pertama -- POL/POD dibalik, Export bukan Import -- nol risiko
   // beririsan dengan inquiry flow pertama). ──────────────────────────────
   await page.locator('button:text-is("1. Customer & Contact")').click();
   await settle(page);
-  await page.locator('button:text-is("Prospect")').click();
-  const rsProspectInput = page.locator('input[placeholder="Search prospects…"]');
-  await rsProspectInput.fill('PT Agro Sawit Kalimantan');
+  // D1 -- satu kolom "Customer" gabungan (lihat Flow 1).
+  const rsAccountInput = page.locator('input[placeholder="Search account name or account code…"]');
+  await rsAccountInput.fill('PT Agro Sawit Kalimantan');
   await page.waitForTimeout(400);
   const rsAccountBtn = page.locator('button:has-text("PT Agro Sawit Kalimantan")').first();
   if (await rsAccountBtn.count() > 0) await rsAccountBtn.click();
   await settle(page);
+  // D3 -- Contact WAJIB di mode Rate Sheet Request JUGA (korekis Den #2).
+  // Akun ini sudah tersentuh Flow 1 -- kemungkinan besar sudah punya contact
+  // (dipilih lewat select), tapi fungsi ini aman di kedua keadaan.
+  const contactResult2 = await ensureContactSelected(page);
+  check('[RS] Contact terisi (Langkah 1, Flow 2)', !!contactResult2, contactResult2 || 'nol contact terpilih/ditambahkan');
+  if (contactResult2) console.log(`    i Contact — ${contactResult2}`);
 
   // ── Langkah 2 — Service Type "Freight Forwarding" + Customer Role
   // "Shipper" (hindari Customs/Undername -- sudah teruji flow pertama,
@@ -1131,14 +1233,18 @@ function dealFieldValue(page, label) {
   async function openWizardAndFillToCommercial(pg, checkLabel) {
     await pg.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
     await settle(pg);
-    check(`[MGR] Wizard Intake Form terbuka (${checkLabel})`, await pg.locator('h1:text-is("New Inquiry")').count() > 0);
+    check(`[MGR] Wizard Intake Form terbuka (${checkLabel})`, await pg.locator('h1:text-is("Inquiry Intake Form")').count() > 0);
     await pg.locator('button:text-is("1. Customer & Contact")').click();
     await settle(pg);
-    await pg.locator('button:text-is("Prospect")').click();
-    await pg.locator('input[placeholder="Search prospects…"]').fill('PT Agro Sawit Kalimantan');
+    // D1 -- satu kolom "Customer" gabungan (lihat Flow 1/2).
+    await pg.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
     await pg.waitForTimeout(400);
     await pg.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
     await settle(pg);
+    // D3 -- Contact WAJIB; akun ini sudah tersentuh Flow 1/2 sebelumnya di
+    // skrip yang sama, jadi biasanya tinggal pilih dari select.
+    const mgrContactResult = await ensureContactSelected(pg);
+    check(`[MGR] Contact terisi (${checkLabel})`, !!mgrContactResult, mgrContactResult || 'nol contact terpilih/ditambahkan');
     await pg.locator('button:text-is("2. Service & Direction")').click();
     await settle(pg);
     await pg.locator('button:has-text("Freight Forwarding")').first().click();

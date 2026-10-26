@@ -265,7 +265,7 @@ function LeadDetailRoute() {
         quickEditOnMount={!!location.state?.quickEdit}
         openNoteOnMount={!!location.state?.openNote}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (account) => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
+          ? (account) => { setInquiryPrefill({ accountId: id }); navigate(MENU_PATHS['crm-inquiry-intake'], { state: { leadAccount: account } }); }
           : undefined}
         onOpenInquiry={(inquiryId) => navigate(`${P_INQUIRY}/${inquiryId}`)}
         onOpenQuotation={(quotationId) => navigate(`${P_QUOTATION}/${quotationId}`)}
@@ -288,7 +288,7 @@ function LeadQualificationRoute() {
         showToast={showToast}
         onSelectLead={(account) => navigate(`${P_LEAD}/${account.id}`, { state: { row: account } })}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (account) => { setInquiryPrefill({ accountId: account.id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
+          ? (account) => { setInquiryPrefill({ accountId: account.id }); navigate(MENU_PATHS['crm-inquiry-intake'], { state: { leadAccount: account } }); }
           : undefined}
       />
     </Boundary>
@@ -357,7 +357,7 @@ function InquiryListRoute() {
       {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
           sisa dari jalur Detail Account tak pernah bocor ke form kosong ini. */}
       <InquiryListPage
-        onAddInquiry={() => { setInquiryPrefill(null); navigate(`${P_INQUIRY}/new`); }}
+        onAddInquiry={() => { setInquiryPrefill(null); navigate(MENU_PATHS['crm-inquiry-intake']); }}
         onSelectInquiry={(inq) => navigate(`${P_INQUIRY}/${inq.id}`)}
         showToast={showToast}
         presetOwnerId={location.state?.presetOwnerId}
@@ -603,7 +603,7 @@ function CustomerDetailRoute() {
         // "+ New Inquiry" — bawa akun (+ kontak utamanya) ke form create di menu
         // Inquiry. Digerbangi izin yang SAMA dengan Edit Inquiry (crm_inquiry.view).
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); navigate(`${P_INQUIRY}/new`); }
+          ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); navigate(MENU_PATHS['crm-inquiry-intake']); }
           : undefined}
         onEditInquiry={hasMenuPermission('crm_inquiry', 'view')
           ? (inq) => navigate(`${P_CUSTOMER}/${id}/inquiry/${inq.id}/edit`)

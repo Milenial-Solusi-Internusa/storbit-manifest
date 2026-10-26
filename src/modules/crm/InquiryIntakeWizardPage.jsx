@@ -21,7 +21,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  ChevronLeft, ChevronRight, X, Check, Anchor, MapPin,
+  ChevronLeft, ChevronRight, X, Check, Lock,
   AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -36,6 +36,8 @@ import { LaneTable } from '../../kit/LaneTable';
 import { deriveLaneMode, unitForMode } from '../../kit/laneUtils';
 import { fetchOperationalRoster } from './salesRoster';
 import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
+import { MENU_PATHS } from '../../routes/menu-paths';
+import { entityCodeOf, entityByCode } from '../../lib/entities';
 
 // ── Token (duplikasi sadar dari InquiryFormPage.jsx — CRM belum migrasi kit) ──
 const C = {
@@ -70,6 +72,19 @@ const SERVICE_TYPES_FALLBACK = [
 const SERVICE_ICON = {
   freight_forwarding: Ship, customs: Shield, door_to_door: Home, trucking: Truck,
 };
+// Badge status aside "Your recent inquiries" -- 7 nilai inquiries_status_check
+// (schema_snapshot.sql:8412). Palet lokal (bukan STATUS_META DealDetailPage.jsx
+// -- di luar scope 3 file, "jangan refactor file lain").
+const STATUS_LABEL = { OPEN: 'Open', IN_REVIEW: 'In Review', QUOTED: 'Quoted', NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost', CANCELLED: 'Cancelled' };
+const STATUS_BADGE = {
+  OPEN: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
+  IN_REVIEW: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
+  QUOTED: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
+  NEGOTIATION: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
+  WON: { bg: '#E7F4EA', border: '#BEE3C8', fg: '#16A34A' },
+  LOST: { bg: '#FBEAEA', border: '#F0C6C6', fg: '#DC2626' },
+  CANCELLED: { bg: '#F1F5F9', border: '#E2E8F0', fg: '#64748B' },
+};
 const LANE_MODE_FALLBACK = [{ value: 'Sea LCL', label: 'Sea LCL' }, { value: 'Sea FCL', label: 'Sea FCL' }, { value: 'Air', label: 'Air' }];
 const LANE_UNIT_FALLBACK = [{ value: 'CBM', label: 'CBM' }, { value: 'Container', label: 'Container' }, { value: 'KG', label: 'KG' }, { value: 'Ton', label: 'Ton' }];
 const IMPORTER_OF_RECORD_FALLBACK = [
@@ -85,6 +100,13 @@ const DUTIES_AND_TAXES_OPTS = ['Included in price', 'Billed separately as per re
 const PRICING_BASIS_OPTS = ['Itemized charges', 'All in per CBM', 'All in per KG'];
 const CUSTOMER_ROLE_OPTS = ['Shipper', 'Consignee', 'Third Party'];
 const DIRECTION_OPTS = ['Import', 'Export', 'Domestic'];
+
+// Putaran 13a — JCI (mockup svcJciBlocked/fEnt baris 57/62/1136): "Customs
+// Clearance" standalone (BUKAN Door-to-Door) adalah lini JCI. `JCI_ID` dipakai
+// gerbang akses lintas-entitas (D2) — bukan dipakai utk menimpa Entity field
+// (lihat komentar di dekat `entityCode` di bawah -- deviasi disengaja,
+// dilaporkan di chat, bukan ditebak).
+const JCI_ID = entityByCode('JCI')?.id;
 
 const PRA_CUSTOMER_STATUS = ['lead', 'mql', 'sql', 'prospect', 'lead_pool'];
 const CUSTOMER_SIDE_STATUS = ['customer', 'free_agent'];
@@ -103,10 +125,12 @@ const S = {
   page: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
   headerCard: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', padding: '22px 26px', marginBottom: 18 },
   hTitle: { fontFamily: "'Montserrat',sans-serif", fontSize: 25, fontWeight: 800, letterSpacing: -0.6, color: C.text, margin: 0, lineHeight: 1.1 },
-  hSub: { fontSize: 14, color: C.sub, marginTop: 7 },
-  pillBar: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 },
+  pillBar: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18, overflowX: 'auto' },
   card: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', marginBottom: 18, overflow: 'hidden' },
   secBody: { padding: 28 },
+  // Judul step di body card (mockup baris 49, h3 "{{stepN}}. {{SNAME[sKey]}}"
+  // -- di atas isi tiap langkah, berdampingan dgn label yg sudah tampil di pill).
+  stepHeading: { margin: '0 0 4px', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 15, color: C.text },
   label: { fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#64748B', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
   req: { color: C.orange, fontWeight: 800 },
   input: { height: 44, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff', padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box' },
@@ -184,6 +208,33 @@ function RadioPill({ value, current, onClick, children }) {
 }
 function Chevron() { return <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></span>; }
 
+// Aside "Your recent inquiries" (mockup Intake/Recent, baris 170-173).
+function RecentInquiriesAside({ items, onOpen }) {
+  return (
+    <aside style={{ flex: '1 1 280px', minWidth: 280, background: C.card, border: '1px solid ' + C.border, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <h3 style={{ margin: '0 0 8px', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 15, color: C.text }}>Your recent inquiries</h3>
+      {items.length === 0 && <span style={{ fontSize: 12.5, color: C.muted }}>No inquiries yet.</span>}
+      {items.map((r) => {
+        const badge = STATUS_BADGE[r.status] || STATUS_BADGE.OPEN;
+        return (
+          <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 0', borderBottom: '1px solid #ECF0E9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <button type="button" onClick={() => onOpen(r.id)}
+                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap' }}>
+                {r.inquiry_no}
+              </button>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, border: '1px solid ' + badge.border, background: badge.bg, color: badge.fg, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                {STATUS_LABEL[r.status] || r.status}
+              </span>
+            </div>
+            <span style={{ fontSize: 13, color: C.sub }}>{r.prospect?.name || '—'}</span>
+          </div>
+        );
+      })}
+    </aside>
+  );
+}
+
 // Ronde "Lane Editor" (5c, bug nyata dikonfirmasi data staging
 // MSI-INQ-X-2026-0024 -- kontainer FCL 20' tapi kedua lane tetap Sea
 // LCL/CBM): `blankLane` SEBELUMNYA hardcode mode:'Sea LCL' tanpa syarat --
@@ -195,6 +246,26 @@ function Chevron() { return <span style={{ position: 'absolute', right: 13, top:
 // yang diseed; `addLane` TETAP mewarisi dari baris terakhir (tidak
 // diubah -- itu perilaku yang sudah benar: user mungkin sengaja mengubah
 // mode baris sebelumnya).
+// Form kosong -- diekstrak jadi fungsi (bukan literal inline di useState)
+// supaya bisa dipanggil ulang dari "Clear" banner prefill (D6, mockup
+// clearPrefill baris 941: `set({ f: this.blankF, ... })`).
+const blankF = () => ({
+  account_id: '', contact_id: '',
+  service_type: '', direction: '', customer_role: '',
+  undername_import: false, importer_of_record: '', duties_and_taxes: '', supporting_docs_received: false,
+  pricing_basis: '',
+  pol_location_id: null, pod_location_id: null, pol: '', pod: '', via_location_id: null, via: '',
+  laneMode: false, lanes: [],
+  inquiry_type: 'Single Shipment', validity_from: '', validity_to: '', monthly_volume_cbm: '',
+  incoterms: [], container_types: [], n_containers: '', cargo_ready_date: '',
+  pickup_address: '', delivery_address: '',
+  goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
+  cargo_types: [], un_number: '', imo_class: '', has_msds: '',
+  additional_services: [],
+  deadline_quote: '', estimated_value: '', owner_id: null, notes: '',
+  duplicate_warning_reason: '',
+});
+
 const blankLane = (seed = {}) => {
   const mode = seed.mode ?? 'Sea LCL';
   return {
@@ -205,7 +276,7 @@ const blankLane = (seed = {}) => {
 };
 
 export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefillContactId = null, onBack, onCreated, showToast }) {
-  const { profile, erpRole, erpRoles, user } = useAuth();
+  const { profile, erpRole, erpRoles, user, myCompanyIds } = useAuth();
   const navigate = useNavigate();
   const { options: serviceTypeOptsRaw } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   // Kartu 'trading' (General Trading) DISEMBUNYIKAN di wizard ini — GT tetap
@@ -223,30 +294,21 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const [sourceType, setSourceType] = useState('prospect');
-  const [prospects, setProspects] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [prospectText, setProspectText] = useState('');
-  const [customerText, setCustomerText] = useState('');
+  // Putaran 13a (D1) — toggle "Sumber" (Prospect/Customer) DICABUT: mockup
+  // cuma punya SATU pencarian "Customer" gabungan, hasilnya ditandai stage
+  // badge (AccountPicker.jsx sudah mendukung ini apa adanya, nol komponen
+  // baru). `accounts` = union PRA_CUSTOMER_STATUS ∪ CUSTOMER_SIDE_STATUS.
+  const [accounts, setAccounts] = useState([]);
+  const [accountText, setAccountText] = useState('');
+  // Banner prefill generik (D6, mockup `prefilled`/`prefTxt`/`clearPrefill`
+  // baris 47/941) — HANYA jalur yg reachable hari ini (`prefillAccountId`
+  // dari "+ New Inquiry" Account/Lead Detail). "Visit Prefill" (D5) TIDAK
+  // dibangun — pemicunya di modul Sales Activity, di luar 3 file scope ini.
+  const [prefillBanner, setPrefillBanner] = useState(null);
   const [contactsFor, setContactsFor] = useState({ accountId: null, list: [] });
   const [accountSource, setAccountSource] = useState(''); // accounts.source — read-only display
 
-  const [f, setF] = useState({
-    prospect_id: '', customer_id: '', contact_id: '',
-    service_type: '', direction: '', customer_role: '',
-    undername_import: false, importer_of_record: '', duties_and_taxes: '', supporting_docs_received: false,
-    pricing_basis: '',
-    pol_location_id: null, pod_location_id: null, pol: '', pod: '',
-    laneMode: false, lanes: [],
-    inquiry_type: 'Single Shipment', validity_from: '', validity_to: '', monthly_volume_cbm: '',
-    incoterms: [], container_types: [], n_containers: '', cargo_ready_date: '',
-    pickup_address: '', delivery_address: '',
-    goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
-    cargo_types: [], un_number: '', imo_class: '', has_msds: '',
-    additional_services: [],
-    deadline_quote: '', estimated_value: '', owner_id: null, notes: '',
-    duplicate_warning_reason: '',
-  });
+  const [f, setF] = useState(blankF);
   const [directionTouched, setDirectionTouched] = useState(false);
   // Review fix 2 (TD-285) -- Estimated Value/Total Weight/Volume: SATU field
   // dipakai utk tampilan DAN kirim (pola CaptureLeadModal.jsx, bukan buffer
@@ -262,6 +324,20 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // (TD-285) -- type="text", format ulang hanya saat blur, blokir Create
   // kalau tak terbaca.
   const [monthlyVolumeUnrecognized, setMonthlyVolumeUnrecognized] = useState(false);
+
+  // Putaran 13a (D3) — "Add new contact" inline. Jalur simpan SAMA dengan
+  // ContactModal.jsx (src/modules/crm/lead/components/ContactModal.jsx, dibaca
+  // sebelum menulis ini): INSERT langsung ke `contacts` (nol RPC), company_id
+  // = company_id AKUN (bukan profile.company_id — pola sama LeadDetailPage.jsx
+  // `companyId = account.company_id`), nol logAudit (ContactModal.jsx sendiri
+  // tidak memanggilnya utk aksi ini), nol validasi format email (ContactModal
+  // juga tidak — FloatingInput type="email" polos). Field dipersempit ke yang
+  // disetujui Den: Name* + Position/Email/Phone opsional (role_type/whatsapp/
+  // preferred_channel milik Lead Management, di luar scope). Field lokal
+  // (bukan ContactModal.jsx sage — CRM belum migrasi kit; lihat header file).
+  const [addingContact, setAddingContact] = useState(false);
+  const [newContact, setNewContact] = useState({ name: '', position: '', email: '', phone: '' });
+  const [savingContact, setSavingContact] = useState(false);
 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const toggleArr = (k, v) => setF((x) => ({ ...x, [k]: x[k].includes(v) ? x[k].filter((y) => y !== v) : [...x[k], v] }));
@@ -327,18 +403,31 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // ikut memblokir Create lewat sisa isian yang tak lagi terlihat user.
   const needsNContainers = !isRS && f.container_types.some((c) => /^FCL/.test(c));
 
-  // ── Akun: prospect/customer — pola diwarisi InquiryFormPage.jsx apa adanya
-  // (dua daftar ber-lifecycle-stage berbeda, is_in_lead_pool=false) — mockup
-  // hanya punya SATU picker akun generik; dipertahankan karena ini konvensi
-  // app yang sudah ada (RLS/lead-pool), bukan preferensi visual, deviasi
-  // dicatat di laporan. `source` ditambahkan ke select (task 7, read-only). ──
+  // ── Akun: SATU pencarian gabungan prospect+customer (D1, mockup custRes
+  // baris 746: `this.accounts.filter(a => (multi || a.ent==='MSI') && ...)`)
+  // — union PRA_CUSTOMER_STATUS ∪ CUSTOMER_SIDE_STATUS, `is_in_lead_pool=false`
+  // (konvensi RLS/lead-pool yang sudah ada, dipertahankan apa adanya).
+  // `company_id` ikut di-select (D2) — dipakai derivasi Entity field +
+  // `p_company_id` yang DIKIRIM ke RPC saat Create (bukan selalu
+  // profile.company_id lagi — lihat `handleCreate`). Cakupan ENTITAS pencarian
+  // (D2): super_admin TANPA filter company_id sama sekali (RLS `prospects_read`
+  // yang membatasi — `is_super_admin() OR company_id IN (get_user_company_ids())`,
+  // bukan FE); selain itu `.in('company_id', myCompanyIds)` — akun user yang
+  // benar2 cuma punya SATU entitas otomatis hanya melihat entitas itu (RLS
+  // juga tetap gerbang akhir, FE hanya mempersempit query). ──────────────────
+  const scopeCompanyIds = isSuperAdmin(erpRoles) ? null : myCompanyIds;
+  const scopeKey = scopeCompanyIds ? scopeCompanyIds.slice().sort().join(',') : '__all__';
   useEffect(() => {
-    if (!profile?.company_id) return;
-    supabase.from('accounts').select('id, name, lifecycle_stage, source').eq('company_id', profile.company_id).in('lifecycle_stage', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
-      .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name, lifecycle_stage, source').eq('company_id', profile.company_id).in('lifecycle_stage', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
-      .then(({ data }) => setCustomers(data || []));
-  }, [profile?.company_id]);
+    if (!profile?.company_id) return undefined;
+    let cancelled = false;
+    let query = supabase.from('accounts').select('id, name, code, lifecycle_stage, source, company_id')
+      .in('lifecycle_stage', [...PRA_CUSTOMER_STATUS, ...CUSTOMER_SIDE_STATUS])
+      .eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000);
+    if (scopeCompanyIds) query = query.in('company_id', scopeCompanyIds);
+    query.then(({ data }) => { if (!cancelled) setAccounts(data || []); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.company_id, scopeKey]);
 
   const [locations, setLocations] = useState([]);
   useEffect(() => {
@@ -346,6 +435,30 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       .then(({ data }) => setLocations(data || []));
   }, []);
   const canManageLocations = isSuperAdmin(erpRoles);
+  // D4 — Via port kondisional (mode rute tunggal, `!laneTbl`): mockup baris
+  // 131 `loc.pod.inland` (`cur0[3]==='Inland City'`, draft lama BASI sejak
+  // Location Master Irisan 6). Dipetakan ke skema 4-tipe asli: "inland" =
+  // `locations.type==='City'` (lokasi bukan Seaport/Airport/FTZ — butuh via
+  // port untuk transit sebelum tiba inland).
+  const podLocation = locations.find((l) => l.id === f.pod_location_id);
+  const podIsInland = podLocation?.type === 'City';
+
+  // ── Aside "Your recent inquiries" (mockup baris 170-173, Intake/Recent) --
+  // 5 inquiry terakhir MILIK user ini sendiri (owner_id, bukan created_by --
+  // sumbu RLS inquiries_read sejak 18 Sep 2026), lintas status termasuk
+  // terminal (mockup `recent` tidak menyaring status). Nama customer lewat
+  // embed FK prospect_id (customer_id selalu NULL -- create_inquiry_with_lanes
+  // tidak pernah menulisnya, lihat migrasi 20261025000005). ──────────────────
+  const [recentInquiries, setRecentInquiries] = useState([]);
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    let cancelled = false;
+    supabase.from('inquiries').select('id, inquiry_no, status, prospect:accounts!inquiries_prospect_id_fkey(name)')
+      .eq('owner_id', profile.id).is('deleted_at', null)
+      .order('created_at', { ascending: false }).limit(5)
+      .then(({ data }) => { if (!cancelled) setRecentInquiries(data || []); });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
   const openLocationMaster = () => navigate('/admin-settings/locations');
   const requestNewLocation = (name, note) => {
     supabase.rpc('request_new_location', { p_name: name, p_note: note }).then(({ error }) => {
@@ -353,16 +466,30 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     });
   };
 
-  const resolvedAccountId = sourceType === 'prospect' ? f.prospect_id : f.customer_id;
+  const resolvedAccountId = f.account_id;
+  const selectedAccount = accounts.find((a) => a.id === resolvedAccountId) || null;
   const contactsLoaded = contactsFor.accountId === resolvedAccountId;
   const contacts = contactsLoaded ? contactsFor.list : [];
+
+  // ── Entity (read-only, D2) — mockup fEnt baris 57/1136: entitas AKUN
+  // terpilih, atau "Set from customer" sebelum akun dipilih. ⚠️ DEVIASI
+  // DISENGAJA dari mockup, dilaporkan bukan ditebak: mockup menimpa nilai ini
+  // jadi literal "JCI" saat Service Type = Customs Clearance, TANPA mengubah
+  // akun yang sebenarnya dipilih — tapi `p_company_id` yang DIKIRIM ke RPC
+  // (lihat `handleCreate`) tetap company_id AKUN itu sendiri (tidak ada
+  // parameter RPC yang bisa memaksa company_id lain). Menimpa TAMPILAN Entity
+  // tanpa menimpa company_id yang BENAR-BENAR tertulis = field read-only yang
+  // berbohong (persis yang diminta dihindari) — jadi override itu TIDAK
+  // diikuti di sini. Entity SELALU mencerminkan company_id yang akan
+  // benar-benar ditulis. Ditanyakan di laporan chat, bukan diputuskan sendiri.
+  const entityCode = selectedAccount ? (entityCodeOf(selectedAccount.company_id) || '—') : 'Set from customer';
 
   // ── Prefill dari "+ New Inquiry" (Detail Account/Lead) — pola IDENTIK
   // InquiryFormPage.jsx (sama guard is_in_lead_pool, sama injeksi ke daftar). ──
   useEffect(() => {
     if (!prefillAccountId) return undefined;
     let cancelled = false;
-    supabase.from('accounts').select('id, name, lifecycle_stage, is_in_lead_pool, source')
+    supabase.from('accounts').select('id, name, code, lifecycle_stage, is_in_lead_pool, source, company_id')
       .eq('id', prefillAccountId).is('deleted_at', null).maybeSingle()
       .then(({ data: acc }) => {
         if (cancelled || !acc) return;
@@ -370,21 +497,16 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
           showToast?.('This account is in the Lead Pool and must be assigned before an inquiry can be created.', 'error');
           return;
         }
-        const isCustomerSide = CUSTOMER_SIDE_STATUS.includes(acc.lifecycle_stage);
-        const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage, source: acc.source };
-        setSourceType(isCustomerSide ? 'customer' : 'prospect');
-        if (isCustomerSide) {
-          setCustomers((prev) => (prev.some((c) => c.id === acc.id) ? prev : [opt, ...prev]));
-          setCustomerText(acc.name);
-        } else {
-          setProspects((prev) => (prev.some((p) => p.id === acc.id) ? prev : [opt, ...prev]));
-          setProspectText(acc.name);
-        }
+        const opt = { id: acc.id, name: acc.name, code: acc.code, lifecycle_stage: acc.lifecycle_stage, source: acc.source, company_id: acc.company_id };
+        setAccounts((prev) => (prev.some((a) => a.id === acc.id) ? prev : [opt, ...prev]));
+        setAccountText(acc.name);
         setAccountSource(acc.source || '');
+        // D6 — banner prefill generik (bukan "Visit Prefill", D5 ditunda).
+        const kind = acc.lifecycle_stage === 'lead' ? 'lead' : 'account';
+        setPrefillBanner({ text: `Prefilled from ${kind} ${acc.code || '—'}, ${acc.name}.` });
         setF((x) => ({
           ...x,
-          prospect_id: isCustomerSide ? '' : acc.id,
-          customer_id: isCustomerSide ? acc.id : '',
+          account_id: acc.id,
           contact_id: prefillContactId || x.contact_id,
         }));
       });
@@ -411,18 +533,56 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     return () => { cancelled = true; };
   }, [resolvedAccountId]);
 
+  // D3 -- "Add new contact" inline. Jalur simpan SAMA dengan ContactModal.jsx
+  // (INSERT langsung, nol RPC, nol logAudit, nol validasi format email —
+  // dibaca dulu sebelum menulis ini, lihat komentar state `addingContact` di
+  // atas). `company_id` = company_id AKUN (bukan profile.company_id — pola
+  // LeadDetailPage.jsx `companyId = account.company_id`). `is_primary` =
+  // true kalau ini kontak PERTAMA akun ini (sama dgn `makePrimaryDefault`
+  // ContactModal.jsx). Hasil insert DIPERIKSA benar2 ada (`data.length===0`
+  // -- RLS bisa menolak tanpa error, pola "RLS-silent-fail" yang sudah dipakai
+  // berulang di repo ini) sebelum dianggap sukses.
+  const handleSaveNewContact = async () => {
+    if (!newContact.name.trim() || !selectedAccount) return;
+    setSavingContact(true);
+    const { data, error } = await supabase.from('contacts').insert({
+      account_id: selectedAccount.id,
+      company_id: selectedAccount.company_id,
+      name: newContact.name.trim(),
+      position: newContact.position.trim() || null,
+      email: newContact.email.trim() || null,
+      phone: newContact.phone.trim() || null,
+      is_primary: contacts.length === 0,
+    }).select('id, name, position, is_primary, is_active');
+    setSavingContact(false);
+    if (error) {
+      showToast?.('Failed to add contact: ' + error.message, 'error');
+      return;
+    }
+    if (!data || data.length === 0) {
+      showToast?.('Contact was not saved — check your permissions for this account.', 'error');
+      return;
+    }
+    const created = data[0];
+    setContactsFor((prev) => (prev.accountId === selectedAccount.id ? { accountId: selectedAccount.id, list: [...prev.list, created] } : prev));
+    setF((x) => ({ ...x, contact_id: created.id }));
+    setAddingContact(false);
+    setNewContact({ name: '', position: '', email: '', phone: '' });
+    showToast?.('Contact added.');
+  };
+
   // Source read-only (task 7) — ikut akun yang dipilih manual lewat picker
-  // (bukan hanya jalur prefill di atas).
+  // (bukan hanya jalur prefill di atas). D7 — TETAP read-only (Mas belum
+  // memutuskan arah tulisnya), satu daftar `accounts` gabungan (D1).
   useEffect(() => {
     let cancelled = false;
-    const list = sourceType === 'prospect' ? prospects : customers;
-    const acc = list.find((a) => a.id === resolvedAccountId);
+    const acc = accounts.find((a) => a.id === resolvedAccountId);
     // setState dijadwalkan lewat setTimeout (pola sama InquiryFormPage.jsx
     // possible-duplicate effect) — menghindari setState sinkron di badan
     // effect (react-hooks/set-state-in-effect).
     const t = setTimeout(() => { if (!cancelled) setAccountSource(acc?.source || ''); }, 0);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [resolvedAccountId, sourceType, prospects, customers]);
+  }, [resolvedAccountId, accounts]);
 
   // ── Direction auto-suggest (lane pertama yang terkirim — mockup PLAN
   // addendum §B.5): trim+lowercase dibanding 'indonesia'. Berhenti menimpa
@@ -479,7 +639,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     const loadingTimer = setTimeout(() => { if (!cancelled) setDupCheckLoading(true); }, 0);
     const timer = setTimeout(() => {
       supabase.rpc('find_possible_duplicate_inquiries', {
-        p_company_id: profile.company_id,
+        // D2 — company_id AKUN (bukan profile.company_id): cek duplikat harus
+        // di entitas tempat inquiry ini akan benar2 tercipta.
+        p_company_id: selectedAccount?.company_id || profile.company_id,
         p_customer_id: resolvedAccountId,
         p_pol_location_id: primaryPolLoc,
         p_pod_location_id: primaryPodLoc,
@@ -499,6 +661,14 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // ── Owner — manager-ke-atas lihat roster + "Leave unassigned"; sales tidak
   // lihat kontrolnya sama sekali (default diri sendiri, ditegakkan RPC). ────
   const canPickOwner = isManagerOrAbove(erpRoles);
+
+  // ── JCI (D2) — "Customs Clearance" standalone (mockup svcJciBlocked baris
+  // 62) adalah lini JCI; tanpa akses JCI, Service Type ini diblokir + banner
+  // "Request Access". `hasJciAccess` = super_admin ATAU punya baris role
+  // aktif di JCI (myCompanyIds, dari useAuth — sumber sama dgn CompanySwitcher). ──
+  const hasJciAccess = isSuperAdmin(erpRoles) || (JCI_ID && myCompanyIds.includes(JCI_ID));
+  const svcJciBlocked = f.service_type === 'customs' && !hasJciAccess;
+  const requestJciAccess = () => showToast?.('Ask your manager to request JCI sales access for your account.', 'info');
   const [roster, setRoster] = useState([]);
   useEffect(() => {
     if (!canPickOwner || !profile?.company_id) return;
@@ -562,8 +732,15 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // perbaikan UX kecil, dicatat sebagai deviasi). ───────────────────────────
   const stepErrors = () => {
     const e = {};
-    if (sourceType === 'prospect' ? !f.prospect_id : !f.customer_id) e.cust_account = 'Select a customer or prospect';
+    // D1/mockup baris 55 — satu akun gabungan, pesan error persis mockup.
+    if (!f.account_id) e.cust_account = 'Customer is required';
+    // Putaran 13a — Contact WAJIB (perubahan perilaku nyata, berlaku di
+    // KEDUA mode — Single Shipment dan Rate Sheet Request, korekis Den):
+    // field Contact tidak dicabangkan per `isRS` sama sekali, jadi gate-nya
+    // juga tidak perlu dicabangkan.
+    if (!f.contact_id) e.cust_contact = 'Contact is required';
     if (!f.service_type) e.svc_service_type = 'Service Type is required';
+    if (svcJciBlocked) e.svc_jci = 'JCI sales access is required for Customs Clearance.';
     if (!f.direction) e.svc_direction = 'Direction is required';
     if (!f.customer_role) e.svc_customer_role = 'Customer Role is required';
     const undernameActive = f.direction === 'Import' && ['customs', 'door_to_door'].includes(f.service_type) && f.undername_import;
@@ -594,6 +771,13 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
     }
     if (needsNContainers && !(Number(f.n_containers) > 0)) e.route_ncont = 'Number of containers is required for FCL';
+    // Putaran 13a -- Pickup/Delivery Address WAJIB untuk Door-to-Door
+    // (perubahan perilaku nyata). Digerbang `!isRS` SAMA dengan field-nya
+    // sendiri (disembunyikan utk Rate Sheet Request apa pun service_type-nya).
+    if (isDoorToDoor && !isRS) {
+      if (!f.pickup_address.trim()) e.route_pickup = 'Pickup Address is required for Door to Door.';
+      if (!f.delivery_address.trim()) e.route_delivery = 'Delivery Address is required for Door to Door.';
+    }
     if (possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
       e.route_dup = 'Required when a possible duplicate is shown';
     }
@@ -618,7 +802,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   };
   // Pemetaan error -> langkah (urutan SK), untuk "lompat ke step pertama yang error".
   const errorStepKey = (key) => {
-    if (key === 'cust_account') return 'cust';
+    if (key === 'cust_account' || key === 'cust_contact') return 'cust';
     if (key.startsWith('svc_')) return 'svc';
     if (key.startsWith('under_')) return isDoorToDoor ? 'customs' : 'svc';
     if (key.startsWith('route_')) return 'route';
@@ -652,7 +836,10 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       // TIDAK ikut tersalin, jadi field itu tidak mungkin terkirim ke RPC.
       const laneRows = (laneTbl ? selectedLanes : [{
         pol_location_id: f.pol_location_id, pod_location_id: f.pod_location_id,
-        via_location_id: null, pol: f.pol, pod: f.pod, via: null,
+        // D4 -- Via port kondisional (podIsInland) kini ikut terkirim, bukan
+        // hardcode null -- satu-satunya jalur tulis `via_location_id`/`via`
+        // mode rute tunggal.
+        via_location_id: f.via_location_id, pol: f.pol, pod: f.pod, via: f.via,
         mode: singleLaneMode, load_unit: unitForMode(singleLaneMode),
       }]).map((l) => ({
         pol_location_id: l.pol_location_id, pod_location_id: l.pod_location_id,
@@ -674,8 +861,19 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       const monthlyVolumeVal = isRS && f.monthly_volume_cbm.trim() !== '' ? readMoneyInput(f.monthly_volume_cbm).value : null;
 
       const params = {
-        p_company_id: profile.company_id,
-        p_prospect_id: sourceType === 'prospect' ? f.prospect_id : f.customer_id,
+        // D2(a) — company_id AKUN terpilih, BUKAN selalu profile.company_id
+        // lagi: RPC create_inquiry_with_lanes menerima p_company_id APA PUN
+        // yang caller punya akses (is_super_admin() ATAU
+        // p_company_id IN get_user_company_ids(), migrasi 20261025000005),
+        // tidak derive-nya sendiri dari akun — jadi FE wajib mengirim yang
+        // benar supaya Entity field (selalu = entitas akun, lihat `entityCode`
+        // di atas) TIDAK berbohong dibanding yang benar2 tersimpan.
+        p_company_id: selectedAccount.company_id,
+        // D1 — satu akun gabungan: TIDAK ada parameter p_customer_id di
+        // signature RPC ini sama sekali (customer_id inquiries SELALU NULL,
+        // "paritas InquiryFormPage.jsx" -- komentar migrasi) -- apa pun tahap
+        // akunnya, id-nya selalu ke p_prospect_id, persis hari ini.
+        p_prospect_id: f.account_id,
         p_service_type: f.service_type,
         p_direction: f.direction || null,
         p_customer_role: f.customer_role || null,
@@ -741,34 +939,57 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const goNext = () => setStep((s) => Math.min(SK.length, s + 1));
   const goPrev = () => setStep((s) => Math.max(1, s - 1));
 
+  // D6 — "Clear" mengosongkan SELURUH form (mockup clearPrefill baris 941),
+  // bukan hanya menutup banner. Akun/kontak pencarian ikut direset.
+  const clearPrefill = () => {
+    setF(blankF());
+    setPrefillBanner(null);
+    setAccountText('');
+    setStep(1);
+    setErrors({});
+  };
+
   return (
     <div style={{ background: C.pageBg, padding: '8px 8px 40px', borderRadius: 16 }}>
       <div style={S.page}>
         <div style={S.headerCard}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>New Inquiry</h1>
-              <div style={S.hSub}>Intake Form — Single Shipment</div>
+              <h1 style={S.hTitle}>Inquiry Intake Form</h1>
             </div>
           </div>
         </div>
 
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '2 1 560px', minWidth: 0 }}>
         {/* step pills — klik bebas, TANPA validasi (mockup steps[i].go baris
             766 juga tidak memvalidasi navigasi pill). */}
         <div style={S.pillBar}>
           {SK.map((k, i) => (
             <button key={k} type="button" onClick={() => setStep(i + 1)}
               style={{
-                height: 36, padding: '0 14px', borderRadius: 999, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5,
+                display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 999, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5,
                 border: '1px solid ' + (i + 1 === stepIdx ? C.navy : C.border), background: i + 1 === stepIdx ? C.navy : '#fff', color: i + 1 === stepIdx ? '#fff' : C.sub,
               }}>
-              {i + 1}. {STEP_LABEL[k]}
+              <span style={{ width: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i + 1 === stepIdx ? 'rgba(255,255,255,.25)' : '#F1F5F9', color: i + 1 === stepIdx ? '#fff' : C.text, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
+              {STEP_LABEL[k]}
             </button>
           ))}
         </div>
 
+        {/* Banner prefill generik (D6) — "Visit Prefill" (D5) tidak dibangun. */}
+        {prefillBanner && (
+          <div style={{ margin: '0 0 16px', padding: '8px 12px', background: '#EFF3ED', border: '1px solid ' + C.border, borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: C.text }}>
+            <AlertTriangle size={14} color={C.sub} style={{ flex: '0 0 14px' }} />
+            <span style={{ flex: 1 }}>{prefillBanner.text}</span>
+            <button type="button" onClick={clearPrefill} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontWeight: 700, color: C.text }}>Clear</button>
+          </div>
+        )}
+
         <section style={S.card}>
           <div style={S.secBody}>
+
+            <h3 style={S.stepHeading}>{stepIdx}. {STEP_LABEL[stepKey]}</h3>
 
             {stepKey === 'cust' && (
               <div style={{ display: 'grid', gap: 18 }}>
@@ -796,29 +1017,28 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       : 'One shipment, priced once. Add a route option if the customer wants to compare routes.'}
                   </span>
                 </Field>
-                <Field label="Sumber" span>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {['prospect', 'customer'].map((t) => (
-                      <button key={t} type="button" onClick={() => { setSourceType(t); setF((x) => ({ ...x, prospect_id: '', customer_id: '', contact_id: '' })); setProspectText(''); setCustomerText(''); }}
-                        style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (sourceType === t ? C.navy : C.border), background: sourceType === t ? C.navy : '#fff', color: sourceType === t ? '#fff' : C.sub }}>
-                        {t === 'prospect' ? 'Prospect' : 'Customer (Existing)'}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
+                {/* D1 -- toggle "Sumber" (Prospect/Customer) DICABUT. Mockup
+                    (baris 52-56) cuma punya SATU field "Customer" -- hasilnya
+                    gabungan prospect+customer dengan badge stage (AccountPicker
+                    sudah mendukung `lifecycle_stage` apa adanya). */}
                 <div style={grid2}>
-                  <Field label={sourceType === 'prospect' ? 'Prospect' : 'Customer'} required>
-                    {sourceType === 'prospect' ? (
-                      <AccountPicker value={prospectText} accounts={prospects} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search prospects…"
-                        onChangeText={(v) => { setProspectText(v); setF((x) => ({ ...x, prospect_id: '', contact_id: '' })); }}
-                        onPick={(a) => { setProspectText(a.name); setF((x) => ({ ...x, prospect_id: a.id, contact_id: '' })); }} />
-                    ) : (
-                      <AccountPicker value={customerText} accounts={customers} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search customers…"
-                        onChangeText={(v) => { setCustomerText(v); setF((x) => ({ ...x, customer_id: '', contact_id: '' })); }}
-                        onPick={(a) => { setCustomerText(a.name); setF((x) => ({ ...x, customer_id: a.id, contact_id: '' })); }} />
-                    )}
+                  <Field label="Customer" required>
+                    <AccountPicker value={accountText} accounts={accounts} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search account name or account code…"
+                      onChangeText={(v) => { setAccountText(v); setF((x) => ({ ...x, account_id: '', contact_id: '' })); }}
+                      onPick={(a) => { setAccountText(a.name); setF((x) => ({ ...x, account_id: a.id, contact_id: '' })); setAddingContact(false); }} />
                     <FieldError>{errors.cust_account}</FieldError>
                   </Field>
+                  {/* Entity (D2) -- read-only, SELALU entitas AKUN terpilih
+                      (lihat komentar panjang di dekat `entityCode` soal
+                      deviasi dari override mockup utk Customs Clearance). */}
+                  <Field label="Entity" hint="Read-only, from the account's company.">
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#E8ECE4', color: C.muted }}>
+                      <span>{entityCode}</span>
+                      <Lock size={14} />
+                    </div>
+                  </Field>
+                </div>
+                <div style={grid2}>
                   <Field label="Source" hint="Read-only, from the account record.">
                     <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: '#F8FAFC', color: accountSource ? C.text : C.muted, fontStyle: accountSource ? 'normal' : 'italic' }}>
                       {accountSource || 'Not set'}
@@ -827,22 +1047,56 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 </div>
                 {resolvedAccountId && (
                   <div style={grid2}>
-                    <Field label="Contact">
+                    <Field label="Contact" required>
                       {!contactsLoaded ? (
                         <span style={{ fontSize: 12, color: C.muted, display: 'block', paddingTop: 6 }}>Loading contacts…</span>
-                      ) : contacts.length === 0 ? (
-                        <span style={{ fontSize: 12, color: C.sub, display: 'block', paddingTop: 6 }}>This account has no contacts yet. Add one from Account Detail → Contacts tab.</span>
+                      ) : addingContact ? null : contacts.length === 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 12, color: C.sub }}>This account has no contacts yet.</span>
+                          <button type="button" onClick={() => setAddingContact(true)} style={{ ...S.btnGhost, height: 36, alignSelf: 'flex-start' }}><Plus size={14} />Add new contact</button>
+                        </div>
                       ) : (
                         <div style={{ position: 'relative' }}>
-                          <select value={f.contact_id} onChange={set('contact_id')} style={selInput}>
+                          <select value={f.contact_id} onChange={(e) => { if (e.target.value === '__add') { setAddingContact(true); return; } setF((x) => ({ ...x, contact_id: e.target.value })); }} style={selInput}>
                             <option value="">— Select contact —</option>
                             {contacts.map((c) => (
                               <option key={c.id} value={c.id}>{c.name}{c.position ? ` — ${c.position}` : ''}{c.is_primary ? ' (Primary)' : ''}{c.is_active === false ? ' (Inactive)' : ''}</option>
                             ))}
+                            <option value="__add">Add new contact</option>
                           </select><Chevron />
                         </div>
                       )}
+                      <FieldError>{errors.cust_contact}</FieldError>
                     </Field>
+                    {/* D3 -- "Add new contact" inline, Name wajib + Position/
+                        Email/Phone opsional. Jalur simpan: handleSaveNewContact. */}
+                    {contactsLoaded && addingContact && (
+                      <div style={{ gridColumn: '1 / -1', border: '1px dashed ' + C.border, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={grid2}>
+                          <Field label="Name" required>
+                            <input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} style={S.input} autoFocus />
+                          </Field>
+                          <Field label="Position">
+                            <input value={newContact.position} onChange={(e) => setNewContact((c) => ({ ...c, position: e.target.value }))} style={S.input} />
+                          </Field>
+                        </div>
+                        <div style={grid2}>
+                          <Field label="Email">
+                            <input type="email" value={newContact.email} onChange={(e) => setNewContact((c) => ({ ...c, email: e.target.value }))} style={S.input} />
+                          </Field>
+                          <Field label="Phone">
+                            <input value={newContact.phone} onChange={(e) => setNewContact((c) => ({ ...c, phone: e.target.value }))} style={S.input} />
+                          </Field>
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                          <button type="button" style={S.btnGhost} onClick={() => { setAddingContact(false); setNewContact({ name: '', position: '', email: '', phone: '' }); }}>Cancel</button>
+                          <button type="button" style={{ ...S.btnPrimary, opacity: savingContact || !newContact.name.trim() ? 0.6 : 1, cursor: savingContact || !newContact.name.trim() ? 'not-allowed' : 'pointer' }}
+                            disabled={savingContact || !newContact.name.trim()} onClick={handleSaveNewContact}>
+                            {savingContact ? 'Saving…' : 'Add Contact'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -857,7 +1111,25 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                         onClick={() => setF((x) => ({ ...x, service_type: o.value }))} />
                     ))}
                   </div>
+                  {/* Hint JCI, Door-to-Door (mockup baris 61) -- customs fulfilled
+                      by JCI dalam paket, TANPA mengubah entitas inquiry. */}
+                  {isDoorToDoor && (
+                    <span style={{ fontSize: 12, color: C.muted, marginTop: 6, display: 'block' }}>Customs clearance in this package is fulfilled by JCI.</span>
+                  )}
+                  {/* Banner blokir akses JCI (D2, mockup baris 62) -- Customs
+                      Clearance STANDALONE adalah lini JCI; tanpa akses JCI,
+                      diblokir + "Request Access" (D2(b): teks JUJUR, BUKAN
+                      klaim "terkirim" seperti mockup -- nol RPC notifikasi
+                      nyata hari ini, dicatat sbg butir terbuka di laporan). */}
+                  {svcJciBlocked && (
+                    <div style={{ marginTop: 10, padding: '12px 16px', background: '#F8ECCF', border: '1px solid #E6CE94', borderRadius: 10, display: 'flex', gap: 12, alignItems: 'center', color: '#8E620D', fontSize: 13 }}>
+                      <AlertTriangle size={16} color="#8E620D" style={{ flex: '0 0 16px' }} />
+                      <span style={{ flex: 1 }}>Customs Clearance is a JCI service line. Ask your manager to request JCI sales access for your account to continue.</span>
+                      <button type="button" onClick={requestJciAccess} style={{ height: 32, padding: '0 12px', borderRadius: 10, background: 'transparent', border: '1px solid #8E620D', color: '#8E620D', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>Request Access</button>
+                    </div>
+                  )}
                   <FieldError>{errors.svc_service_type}</FieldError>
+                  <FieldError>{errors.svc_jci}</FieldError>
                 </Field>
 
                 <Field label="Direction" required span>
@@ -889,7 +1161,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <>
                     <div style={grid2}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={S.label}><Anchor size={13} color={C.navy} /> Port of Loading <span style={S.req}>*</span></div>
+                        <div style={S.label}>Port of Loading <span style={S.req}>*</span></div>
                         <LocationPicker value={f.pol_location_id} textValue={f.pol} options={locations} tokens={LOCATION_PICKER_TOKENS}
                           placeholder="Select port of loading…"
                           onChange={(id, loc) => setF((x) => ({ ...x, pol_location_id: id, pol: loc.name }))}
@@ -897,7 +1169,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                           onRequest={canManageLocations ? undefined : requestNewLocation} />
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={S.label}><MapPin size={13} color={C.orange} /> Port of Discharge <span style={S.req}>*</span></div>
+                        <div style={S.label}>Port of Discharge or City <span style={S.req}>*</span></div>
                         <LocationPicker value={f.pod_location_id} textValue={f.pod} options={locations} tokens={LOCATION_PICKER_TOKENS}
                           placeholder="Select port of discharge or city…"
                           onChange={(id, loc) => setF((x) => ({ ...x, pod_location_id: id, pod: loc.name }))}
@@ -905,6 +1177,17 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                           onRequest={canManageLocations ? undefined : requestNewLocation} />
                       </div>
                     </div>
+                    {/* D4 -- Via port kondisional, HANYA saat POD type='City' (inland). */}
+                    {podIsInland && (
+                      <div style={{ minWidth: 0 }}>
+                        <div style={S.label}>Via port</div>
+                        <LocationPicker value={f.via_location_id} textValue={f.via} options={locations} tokens={LOCATION_PICKER_TOKENS}
+                          placeholder="Optional"
+                          onChange={(id, loc) => setF((x) => ({ ...x, via_location_id: id, via: loc.name }))}
+                          onManage={canManageLocations ? openLocationMaster : undefined}
+                          onRequest={canManageLocations ? undefined : requestNewLocation} />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <button type="button" onClick={startLanes} style={S.btnGhost}><Plus size={15} />Add route option</button>
                       <span style={{ fontSize: 12, color: C.sub }}>Add a second route when the customer wants to compare routes for the same shipment.</span>
@@ -952,17 +1235,19 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <>
                     <div style={grid2}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={S.label}>Pickup Address</div>
+                        <div style={S.label}>Pickup Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
                         <textarea value={f.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
+                        <FieldError>{errors.route_pickup}</FieldError>
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={S.label}>Delivery Address</div>
+                        <div style={S.label}>Delivery Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
                         <textarea value={f.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
+                        <FieldError>{errors.route_delivery}</FieldError>
                       </div>
                     </div>
 
                     <div>
-                      <div style={S.label}>Incoterm</div>
+                      <div style={S.label}>Incoterms</div>
                       <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
                     </div>
                     <div>
@@ -1125,8 +1410,8 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             )}
 
             {stepKey === 'review' && (
-              <ReviewStep f={f} sourceType={sourceType} prospectText={prospectText} customerText={customerText} isDoorToDoor={isDoorToDoor} isRS={isRS}
-                serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} needsNContainers={needsNContainers} />
+              <ReviewStep f={f} accountText={accountText} contacts={contacts} isDoorToDoor={isDoorToDoor} isRS={isRS}
+                serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} entityCode={entityCode} needsNContainers={needsNContainers} />
             )}
 
           </div>
@@ -1142,6 +1427,10 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
               {saving ? 'Creating…' : 'Create Inquiry'}
             </button>
           )}
+        </div>
+        </div>
+
+        <RecentInquiriesAside items={recentInquiries} onOpen={(id) => navigate(`${MENU_PATHS['crm-inquiry']}/${id}`)} />
         </div>
       </div>
     </div>
@@ -1221,9 +1510,10 @@ function ReviewRow({ label, value, required }) {
     </div>
   );
 }
-function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, needsNContainers }) {
+function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, entityCode, needsNContainers }) {
   const serviceLabel = serviceTypeOpts.find((o) => o.value === f.service_type)?.label || f.service_type;
   const ownerLabel = f.owner_id ? (roster.find((r) => r.id === f.owner_id)?.full_name || f.owner_id) : 'Unassigned (or yourself)';
+  const contactLabel = f.contact_id ? (contacts.find((c) => c.id === f.contact_id)?.name || f.contact_id) : '';
   // Putaran 4 Tahap 4C -- laneTbl/selectedLanes dihitung lokal dari props
   // (pola sama showUndernameReview di bawah, dihitung lokal dari isDoorToDoor
   // + f), bukan dioper sebagai prop terpisah -- isRS saja cukup.
@@ -1249,7 +1539,9 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, i
       <div>
         <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Customer &amp; Contact</div>
         <div style={grid3}>
-          <ReviewRow label="Account" value={sourceType === 'prospect' ? prospectText : customerText} required />
+          <ReviewRow label="Account" value={accountText} required />
+          <ReviewRow label="Entity" value={entityCode === 'Set from customer' ? '' : entityCode} />
+          <ReviewRow label="Contact" value={contactLabel} required />
           <ReviewRow label="Source" value={accountSource} />
         </div>
       </div>
@@ -1265,6 +1557,7 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, i
         <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Route &amp; Terms</div>
         <div style={grid3}>
           <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? selectedLanes.length : 1})`} value={lanesText} required />
+          {!laneTbl && f.via && <ReviewRow label="Via port" value={f.via} />}
           {isRS ? (
             <>
               <ReviewRow label="Validity Requested" value={f.validity_from && f.validity_to ? `${f.validity_from} to ${f.validity_to}` : ''} required />
@@ -1272,6 +1565,8 @@ function ReviewStep({ f, sourceType, prospectText, customerText, isDoorToDoor, i
             </>
           ) : (
             <>
+              <ReviewRow label="Pickup Address" value={f.pickup_address} required={isDoorToDoor} />
+              <ReviewRow label="Delivery Address" value={f.delivery_address} required={isDoorToDoor} />
               <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
               <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
               <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
