@@ -22,16 +22,20 @@
 //      20261023000001), jadi badge "Not recorded" di level BARIS memang
 //      tidak pernah bisa terpicu untuk tabel ini.
 //
-// Gate: isManagerOrAbove(erpRoles) — role-level langsung, BUKAN
-// hasMenuPermission key granular (mockup: "A Manager or above adds, edits,
-// and deactivates locations"; kartu AdminHub sendiri digerbang terpisah
-// lewat foundation_master, lihat komentar di AdminHub.jsx).
+// Gate: isSuperAdmin(erpRoles) — role-level langsung, BUKAN hasMenuPermission
+// key granular. Mockup rule 108 ("A Manager or above adds, edits, and
+// deactivates locations") DIPERSEMPIT ke super_admin SAJA oleh keputusan Den
+// (Entri 031 butir 7) dan migrasi 20261026000003_locations_super_admin_only_
+// write.sql (RLS locations_insert/locations_update: is_super_admin() OR
+// is_manager_or_above() → HANYA is_super_admin()). Gate FE di sini cermin
+// RLS itu, BUKAN mockup teks aslinya. Kartu AdminHub sendiri digerbang
+// terpisah lewat foundation_master, lihat komentar di AdminHub.jsx.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, RefreshCw } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/useAuth';
-import { isManagerOrAbove } from '../../../lib/roles';
+import { isSuperAdmin } from '../../../lib/roles';
 import { useDebounce } from '../../../hooks/useDebounce';
 import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
@@ -167,7 +171,7 @@ function ModalSelect({ value, onChange, options, invalid, disabled }) {
 
 export default function LocationMasterPage({ onHome }) {
   const { erpRoles } = useAuth();
-  const canEdit = isManagerOrAbove(erpRoles);
+  const canEdit = isSuperAdmin(erpRoles);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -322,7 +326,7 @@ export default function LocationMasterPage({ onHome }) {
 
       {!canEdit && (
         <div style={{ padding: '10px 14px', background: HEAD_BG, border: '1px solid ' + LINE_SOFT, borderRadius: 10, color: INK_SOFT, fontSize: 13.5, marginBottom: 16 }}>
-          Read only. A Manager or above adds, edits, and deactivates locations.
+          Read only. Only a super admin adds, edits, and deactivates locations.
         </div>
       )}
 
