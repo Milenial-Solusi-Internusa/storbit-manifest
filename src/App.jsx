@@ -427,6 +427,13 @@ const CRM_MENU_ITEMS = [
     ],
   },
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
+  // Putaran 7: menu BARU 1.2.1 (Inquiry Intake Form), sambungan sidebar ke
+  // wizard yang sudah ada (InquiryIntakeWizardPage, via crm.routes.jsx).
+  // Entri registry WAJIB ada -- pola dan alasan PERSIS crm-inquiry-classification
+  // di bawah (lihat komentarnya). Izinnya di MENU_KEY_MAP = 'crm_inquiry' (key
+  // yang SUDAH di-grant, dipakai bareng 'crm-inquiry' -- keputusan Den, nol
+  // migrasi baru putaran ini).
+  { id: 'crm-inquiry-intake', label: 'Inquiry Intake Form', icon: FileText },
   // Putaran 3 Tahap 3A, Lingkup B: menu BARU 1.2.2 (Inquiry Classification).
   // Entri registry ini WAJIB ada supaya isMenuAccessible/navChildGate
   // menggerbang id ini secara SPESIFIK lewat MENU_KEY_MAP di bawah -- tanpa
@@ -1074,6 +1081,10 @@ const MENU_KEY_MAP = {
   // SAMA dengan Capture (nol izin baru, keputusan Den).
   'crm-lead-qualification': 'crm_prospects',
   'crm-inquiry':     'crm_inquiry',
+  // Putaran 7 -- menu BARU 1.2.1, gerbang SAMA dengan crm-inquiry (nol izin
+  // baru, keputusan Den: audiensnya persis siapa saja yang sudah bisa pakai
+  // "+ New Inquiry" hari ini). Pola sama crm-lead-qualification di atas.
+  'crm-inquiry-intake': 'crm_inquiry',
   // Putaran 3 Tahap 3A, Lingkup B — menu BARU, izin disalin dari crm_inquiry
   // (migrasi 20261024000003: module_menus/menu_actions/role_menu_permissions
   // disalin dinamis dari baris crm_inquiry, bukan array role manual).

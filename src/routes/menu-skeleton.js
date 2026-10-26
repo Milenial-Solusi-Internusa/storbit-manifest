@@ -78,9 +78,21 @@ export const SKELETON = [
         code: "1.2", label: "Inquiry Management", slug: "inquiry",
         path: "/crm/inquiry", icon: FileText,
         tabs: [
+          // Putaran 7 -- disambungkan ke wizard Intake Form (InquiryIntakeWizardPage,
+          // sudah ada sejak Putaran 4 Tahap 4B, dirender crm.routes.jsx sbg
+          // InquiryNewRoute utk path lama `${P_INQUIRY}/new`). Id BARU
+          // 'crm-inquiry-intake' -- SENGAJA BUKAN reuse 'crm-inquiry' (mount 1.2.4
+          // di bawah): SKELETON_MENU_PATHS (akhir file ini) menulis
+          // `out[mount.menuId] = mount.path` tanpa cek duplikat; dua mount
+          // ber-menuId sama akan saling menimpa path satu sama lain secara
+          // senyap (yang diproses TERAKHIR menang). Izin: direct map ke key
+          // yang SUDAH di-grant ('crm_inquiry', milik 1.2.4/+New Inquiry) --
+          // keputusan Den, nol migrasi baru (lihat MENU_KEY_MAP di App.jsx).
           { code: "1.2.1", label: "Inquiry Intake Form", slug: "intake", path: "/crm/inquiry/intake",
             desc: "mencatat data awal permintaan customer, termasuk arah shipment dan deskripsi cargo.",
-            id: "ph-1-2-1", menuKey: "skel_1_2_1", mounts: [] },
+            mounts: [
+              { menuId: "crm-inquiry-intake", path: "/crm/inquiry/intake" },
+            ] },
           { code: "1.2.2", label: "Inquiry Classification", slug: "classification", path: "/crm/inquiry/classification",
             desc: "mengelompokkan inquiry berdasarkan jenis (import/export/domestik, freight/trading/customs).",
             mounts: [

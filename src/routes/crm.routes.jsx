@@ -755,7 +755,7 @@ function SalesOrderDocDetailRoute() {
 export const CRM_MENU_IDS = Object.freeze([
   'crm-dashboard', 'indomarco-dashboard', 'crm-pipeline',
   'crm-prospects', 'crm-lead-qualification', 'crm-lead-pool', 'crm-lead-pool-approval',
-  'crm-inquiry', 'crm-inquiry-classification', 'crm-inquiry-owner-assignment', 'quotation-draft', 'crm-customers', 'customer-detail',
+  'crm-inquiry', 'crm-inquiry-intake', 'crm-inquiry-classification', 'crm-inquiry-owner-assignment', 'quotation-draft', 'crm-customers', 'customer-detail',
   'crm-calls', 'crm-activity-log', 'riwayat-visit',
   'reporting-sales', 'crm-rate-list', 'crm-sales-order',
 ]);
@@ -777,6 +777,11 @@ export const crmRoutes = [
 
       { path: P_INQUIRY,                            handle: { menuId: 'crm-inquiry' },            element: <InquiryListRoute /> },
       { path: `${P_INQUIRY}/new`,                   handle: { menuId: 'crm-inquiry' },            element: <InquiryNewRoute /> },
+      // Putaran 7 -- slot sidebar 1.2.1, elemen SAMA dengan "+ New Inquiry"
+      // (${P_INQUIRY}/new di atas) tapi path & menuId sendiri (lihat
+      // menu-skeleton.js: id BARU, bukan reuse 'crm-inquiry', supaya
+      // SKELETON_MENU_PATHS tidak saling menimpa path dua mount).
+      { path: MENU_PATHS['crm-inquiry-intake'],     handle: { menuId: 'crm-inquiry-intake' },     element: <InquiryNewRoute /> },
       { path: `${P_INQUIRY}/:id`,                   handle: { menuId: 'crm-inquiry' },            element: <DealDetailRoute /> },
       { path: `${P_INQUIRY}/:id/edit`,              handle: { menuId: 'crm-inquiry' },            element: <InquiryEditRoute /> },
       { path: MENU_PATHS['crm-inquiry-classification'], handle: { menuId: 'crm-inquiry-classification' }, element: <InquiryClassificationRoute /> },
