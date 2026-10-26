@@ -1435,18 +1435,21 @@ function dealFieldValue(page, label) {
       let quoACheck = await pgrest(`quotations?id=eq.${quoAId}&select=status`, { token: salesToken });
       check('[ACC] (2) Quotation A di DB tetap SENT (nol file)', quoACheck.json?.[0]?.status === 'SENT', JSON.stringify(quoACheck.json));
 
-      // ── (3) File .txt (jenis ditolak) -- dilaporkan APA ADANYA, bukan ditambal. ──
+      // ── (3) File .txt (jenis ditolak) -- pesan diperbaiki Putaran 6 Task 3
+      // (dulu Indonesia, tertelan toast berawalan Inggris "Failed to record
+      // the outcome: " -- campur bahasa; db.js kini "... is not accepted.
+      // Only PDF, JPG, and PNG."). Regex ikut diperbarui ke teks baru. ──────
       await page3.locator('input[type="file"]').first().setInputFiles(txtPath);
       await settle(page3, 300);
       await waitForToastGone(page3);
       await page3.locator('button:has-text("Yes, Mark Accepted")').click();
       await settle(page3, 800);
       const toastAfterTxt = (await toastLocator(page3).allInnerTexts().catch(() => [])).filter(Boolean);
-      const inlineAfterTxt = (await page3.locator('text=/tidak diterima/i').count()) > 0;
+      const inlineAfterTxt = (await page3.locator('text=/not accepted/i').count()) > 0;
       const modalStillOpenAfterTxt = (await page3.locator('text="Record customer acceptance"').count()) > 0;
-      check('[ACC] (3) Pesan penolakan jenis berkas muncul (toast ATAU inline, dilaporkan apa adanya)',
-        inlineAfterTxt || toastAfterTxt.some((t) => /tidak diterima/i.test(t)),
-        `toast terlihat: ${JSON.stringify(toastAfterTxt)} · inline "tidak diterima": ${inlineAfterTxt} · modal masih terbuka: ${modalStillOpenAfterTxt}`);
+      check('[ACC] (3) Pesan penolakan jenis berkas muncul (toast ATAU inline)',
+        inlineAfterTxt || toastAfterTxt.some((t) => /not accepted/i.test(t)),
+        `toast terlihat: ${JSON.stringify(toastAfterTxt)} · inline "not accepted": ${inlineAfterTxt} · modal masih terbuka: ${modalStillOpenAfterTxt}`);
       quoACheck = await pgrest(`quotations?id=eq.${quoAId}&select=status`, { token: salesToken });
       check('[ACC] (3) Quotation A di DB tetap SENT (file .txt ditolak)', quoACheck.json?.[0]?.status === 'SENT', JSON.stringify(quoACheck.json));
 

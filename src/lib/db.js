@@ -2201,12 +2201,19 @@ export async function setQuotationOutcomeWithEvidence({ quotationId, companyId, 
     return { error };
   }
 
-  if (!file) return { error: { message: 'Bukti wajib dilampirkan untuk Accepted.' } };
+  // Ketiga pesan di bawah SENGAJA Inggris (Putaran 6, Task 3) -- sebelumnya
+  // Indonesia, tertelan QuotationDetailPage.jsx ke toast "Failed to record
+  // the outcome: " + error.message, menghasilkan toast campur bahasa.
+  // TIDAK perlu sama persis dengan RAISE EXCEPTION set_quotation_outcome
+  // (DB) -- keduanya menjaga ATURAN yang sama (bukti wajib untuk Accepted),
+  // bukan TEKS yang sama; teks RPC tetap Indonesia (lihat migrasi
+  // 20261026000004), tak disentuh (di luar scope -- itu perubahan DB).
+  if (!file) return { error: { message: 'Proof is required for Accepted.' } };
   if (file.size > QUOTATION_ACCEPTANCE_EVIDENCE_MAX_BYTES) {
-    return { error: { message: `Berkas ${file.name} lebih dari 10 MB.` } };
+    return { error: { message: `${file.name} is larger than 10 MB.` } };
   }
   if (!QUOTATION_ACCEPTANCE_EVIDENCE_MIME.includes(file.type)) {
-    return { error: { message: `Jenis berkas ${file.type || '(tidak dikenali)'} tidak diterima. Hanya PDF, JPG, dan PNG.` } };
+    return { error: { message: `File type ${file.type || '(unrecognized)'} is not accepted. Only PDF, JPG, and PNG.` } };
   }
   const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
   const path = `${companyId}/${quotationId}/${crypto.randomUUID()}.${ext}`;

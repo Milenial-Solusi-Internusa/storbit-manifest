@@ -2102,8 +2102,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           onSave={() => {
             const weight = readMoneyInput(sectionDraft.weight_kg);
             const vol = readMoneyInput(sectionDraft.volume_cbm);
-            if (weight.unrecognized) { showToast?.('Total Weight (kg): angka tidak dikenali.', 'error'); return; }
-            if (vol.unrecognized) { showToast?.('Volume (CBM): angka tidak dikenali.', 'error'); return; }
+            // Putaran 6 Task 3 -- dulu "Total Weight (kg): angka tidak
+            // dikenali." (campur bahasa: label Inggris + isi Indonesia),
+            // SATU-SATUNYA tempat di seluruh src/ yang menggabungkan label
+            // field dengan frasa "angka tidak dikenali" dalam satu toast --
+            // bentuk standalone "Angka tidak dikenali" di file ini (baris
+            // ~1934) dan di banyak modul lain (CaptureLeadModal/
+            // LeadDetailPage/InvoiceDetailPage/SalesOrderDetailPage/
+            // InputSPPage) SENGAJA TIDAK disentuh, itu konvensi mapan
+            // lintas-app, bukan toast campur bahasa.
+            if (weight.unrecognized) { showToast?.('Total Weight (kg): number not recognized.', 'error'); return; }
+            if (vol.unrecognized) { showToast?.('Volume (CBM): number not recognized.', 'error'); return; }
             saveInquirySection({
               goods_name: sectionDraft.goods_name || null, hs_code: sectionDraft.hs_code || null,
               weight_kg: String(sectionDraft.weight_kg || '').trim() === '' ? null : weight.value,
