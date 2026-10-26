@@ -165,6 +165,43 @@ if (REF === 'untmpqceexwxzuhlmyrg') { console.error('⛔ Skrip ini menolak jalan
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`  ${ok ? '✔ LULUS' : '✖ GAGAL'} ${name}${detail ? ' — ' + detail : ''}`); return ok; };
 
+// Putaran 13a Task 3 -- daftar data uji yang tercipta (nomor inquiry/id/
+// kontak), dikumpulkan dari seluruh Flow apa pun hasilnya, dicetak sebagai
+// satu blok di akhir skrip (lihat ringkasan sebelum process.exit). Isinya
+// STRING siap-cetak, bukan objek -- tiap Flow yang sudah mencetak info ini
+// inline (console.log "→ ...") cukup menambah satu `testDataLog.push(...)`
+// senilai, nol perubahan pada check()/assersi.
+const testDataLog = [];
+
+// Putaran 13a Task 3 -- satu Flow (1, D2D, 2, 3, 4) yang throw TIDAK LAGI
+// mematikan proses: tiap Flow dibungkus try/catch sendiri di titik
+// panggilnya (lihat badan (async () => {...})() di bawah). Exception yang
+// lolos sampai sini dicatat sebagai SATU check() GAGAL bertanda
+// "[<TAG>-FATAL]" (supaya ringkasan per-Flow di akhir skrip tetap bisa
+// menghitungnya sebagai Flow yang gagal, bukan Flow yang lenyap tanpa jejak)
+// + percobaan screenshot ke os.tmpdir() kalau `pageForShot` yang dioper
+// masih berupa Page yang terbuka (percobaan terbaik -- kegagalan
+// screenshot itu sendiri TIDAK dicatat sebagai check tambahan, hanya
+// dicetak sebagai catatan baris biasa). Data uji yang SUDAH tercipta
+// sebelum Flow itu berhenti TIDAK dihapus (instruksi eksplisit) -- dicatat
+// apa adanya, siapa pun yang sudah tercetak di log flow tetap tercetak.
+async function recordFlowFailure(tag, label, e, pageForShot) {
+  const causeCode = e?.cause?.code || e?.cause?.errors?.[0]?.code || null;
+  const causeText = e?.cause ? ` | cause: ${causeCode ? causeCode + ' — ' : ''}${e.cause.message || e.cause}` : '';
+  const stepText = String(e?.message || e).split('\n')[0].slice(0, 300);
+  console.log(`\n  ✖ ${label} BERHENTI karena exception tak tertangkap — dicatat, Flow lain TIDAK terdampak: ${stepText}${causeText}`);
+  let shotPath = '';
+  if (pageForShot && typeof pageForShot.isClosed === 'function' && !pageForShot.isClosed()) {
+    try {
+      shotPath = join(tmpdir(), `e2e-inquiry-wizard-${tag}-${Date.now()}.png`);
+      await pageForShot.screenshot({ path: shotPath, fullPage: true });
+      console.log(`    screenshot: ${shotPath}`);
+    } catch { shotPath = ''; }
+  }
+  check(`[${tag}-FATAL] ${label} berhenti karena exception tak tertangkap`, false, `${stepText}${causeText}${shotPath ? ' | screenshot: ' + shotPath : ''}`);
+  testDataLog.push(`${label}: BERHENTI sebelum selesai — data yang sempat tercipta sebelum titik ini TIDAK dihapus, lihat baris log Flow ini di atas untuk nomor/id yang sudah tercetak.`);
+}
+
 async function settle(page, extra = 0) {
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(SETTLE + extra);
@@ -218,7 +255,11 @@ async function checkToastExact(page, name, text, timeoutMs = 3000) {
 // memang TAK PERNAH berubah sampai Create sungguhan sukses -- itu assert
 // yang trivial-benar, bukan bukti jump-on-error jalan).
 async function isStepActive(page, stepLabel) {
-  const btn = page.locator(`button:text-is(${JSON.stringify(stepLabel)})`);
+  // Putaran 13a -- didiscoping lewat stepPill() (dideklarasikan di bawah,
+  // `function` di-hoist) alih-alih text-is("N. Label") yang sudah tidak
+  // pernah cocok sejak badge bundar (lihat komentar stepPill). Pemanggil
+  // mengirim LABEL POLOS saja, tanpa "N. " -- lihat situs panggilan.
+  const btn = stepPill(page, stepLabel);
   if (await btn.count() === 0) return false;
   const bg = await btn.evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
   return /27,\s*77,\s*138/.test(bg || '');
@@ -299,6 +340,27 @@ function fieldLocator(page, label, tag) {
     `xpath=//div[starts-with(normalize-space(.), ${JSON.stringify(label)})][not(.//div[starts-with(normalize-space(.), ${JSON.stringify(label)})])]/following-sibling::*[1]/descendant-or-self::${tag}`
   ).first();
 }
+// Pill langkah wizard (InquiryIntakeWizardPage.jsx, pill bar atas) --
+// Putaran 13a (D9, badge bundar bernomor): <button><span>{{N}}</span>{{Label}}</button>
+// -- DUA children JSX bersebelahan, NOL separator teks (jarak visual
+// "N. Label" lama MURNI dari CSS flex `gap`, bukan karakter). `:text-is("N. Label")`
+// (lama) karena itu TIDAK PERNAH cocok lagi (teks sungguhan "NLabel",
+// digabung tanpa spasi/titik) -- terverifikasi via build output minified
+// (dist/.../InquiryIntakeWizardPage-*.js: `children:[jsx(span,{children:i+1}),STEP_LABEL[k]]`,
+// nol string literal di antaranya). `button:has-text("Label")` SAJA (tanpa
+// scoping) ambigu: "Cargo" juga substring tombol tag "Cargo Insurance"
+// (Langkah 5, TagCard -- SAMA-SAMA <button> berisi <span>). Discoping lewat
+// SAUDARA tombol "Customer & Contact" -- frasa itu unik di SELURUH halaman
+// (nol kartu/label lain memakainya), jadi ia jadi jangkar yang pasti berada
+// di DALAM pill bar; dari situ cari saudara <button> yang mengandung label
+// yang dicari. Berlaku SAMA untuk KEDUA varian SK (Customs & Undername
+// menggantikan Additional Services di jalur Door-to-Door).
+function stepPill(page, label) {
+  return page.locator(
+    `xpath=//button[contains(normalize-space(.), "Customer & Contact")]/parent::div/button[contains(normalize-space(.), ${JSON.stringify(label)})]`
+  ).first();
+}
+
 // SectionHeader (DealDetailPage.jsx): <div><h3>{title}</h3>{button Edit}</div> —
 // title dan tombol SIBLING, parent langsung dari h3.
 function sectionButton(page, title, buttonText) {
@@ -431,6 +493,12 @@ function dealFieldValue(page, label) {
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.waitForTimeout(1500);
 
+  // Putaran 13a Task 3 -- Flow 1 dibungkus try/catch sendiri (lihat
+  // recordFlowFailure di atas): kalau langkah apa pun di bawah throw, D2D/
+  // Flow 2/Flow 3 TETAP lanjut jalan (memakai `page`/`browser` yang sama,
+  // masih valid walau satu aksi gagal) alih-alih proses mati total seperti
+  // sebelum perbaikan ini.
+  try {
   // ── buka wizard baru (CREATE-only; InquiryFormPage.jsx TETAP utk EDIT,
   // tidak disentuh di sini) ──────────────────────────────────────────────
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
@@ -443,7 +511,7 @@ function dealFieldValue(page, label) {
   // ── negatif (FIX 6): Warehousing/General Trading TIDAK ADA di kartu
   // Service Type — dicek di langkah 2 (step pill ke-2, bisa diklik langsung
   // tanpa mengisi langkah 1 dulu, pola navigasi pill bebas mockup). ───────
-  await page.locator('button:text-is("2. Service & Direction")').click();
+  await stepPill(page, 'Service & Direction').click();
   await settle(page);
   check('Kartu "Warehousing" tidak ada di Service Type', await page.locator('button:has-text("Warehousing")').count() === 0);
   check('Kartu "General Trading" tidak ada di Service Type', await page.locator('button:has-text("General Trading")').count() === 0);
@@ -453,7 +521,7 @@ function dealFieldValue(page, label) {
   // ── Langkah 1 — Customer & Contact ─────────────────────────────────────
   // Putaran 13a (D1) -- toggle "Sumber" (Prospect/Customer) DICABUT, SATU
   // kolom "Customer" gabungan menggantikannya (placeholder mockup persis).
-  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await stepPill(page, 'Customer & Contact').click();
   await settle(page);
   const accountInput = page.locator('input[placeholder="Search account name or account code…"]');
   await accountInput.fill('PT Agro Sawit Kalimantan');
@@ -470,16 +538,16 @@ function dealFieldValue(page, label) {
   // supaya Create di akhir flow ini tidak ditolak validasi baru.
   const contactResult1 = await ensureContactSelected(page);
   check('Contact terisi (Langkah 1, Flow 1)', !!contactResult1, contactResult1 || 'nol contact terpilih/ditambahkan');
-  if (contactResult1) console.log(`    i Contact — ${contactResult1}`);
+  if (contactResult1) { console.log(`    i Contact — ${contactResult1}`); testDataLog.push(`Flow 1 — contact: ${contactResult1}`); }
 
   // ── Langkah 2 — Service & Direction: pilih Customs Clearance ───────────
-  await page.locator('button:text-is("2. Service & Direction")').click();
+  await stepPill(page, 'Service & Direction').click();
   await settle(page);
   await page.locator('button:has-text("Customs Clearance")').first().click();
   await settle(page);
 
   // ── Langkah 3 — Route & Terms: POL Singapore / POD Jakarta ─────────────
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
   await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
   await settle(page);
@@ -489,7 +557,7 @@ function dealFieldValue(page, label) {
   // ── balik ke Langkah 2 — assert Direction otomatis Import, isi Customer
   // Role + Undername (Customs Clearance = inline di langkah svc, BUKAN di
   // langkah "customs" — itu khusus Door-to-Door). ─────────────────────────
-  await page.locator('button:text-is("2. Service & Direction")').click();
+  await stepPill(page, 'Service & Direction').click();
   await settle(page, 300);
   const importActive = await page.locator('button:text-is("Import")').evaluate((el) => getComputedStyle(el).backgroundColor);
   // Pill aktif = background navy (#1B4D8A → rgb(27, 77, 138)); pill tak aktif = putih.
@@ -517,7 +585,7 @@ function dealFieldValue(page, label) {
   // sudah lengkap dari POL/POD di atas; lihat komentar FIX 3 di kode wizard:
   // startLanes mewarisi POD HANYA ke lane pertama, lane kedua sengaja kosong
   // supaya pembandingan rute beda tujuan bisa diisi). ─────────────────────
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
   await page.locator('button:text-is("FCL 20\'")').click();
   // Kartu duplikat (jika data staging kebetulan punya pasangan akun+rute+
@@ -559,7 +627,7 @@ function dealFieldValue(page, label) {
   check('Lane 2 (dan lane 1) sama-sama menampilkan "Jakarta (Tanjung Priok)" di kolom POD', jakartaPodCount >= 2, `jumlah tombol ber-"Jakarta (Tanjung Priok)": ${jakartaPodCount}`);
 
   // ── Langkah 4 — Cargo: Weight "1,5" / Volume "2,25" (TD-285, FIX 2) ────
-  await page.locator('button:text-is("4. Cargo")').click();
+  await stepPill(page, 'Cargo').click();
   await settle(page);
   const weightInput = fieldLocator(page, 'Total Weight', 'input');
   await weightInput.fill('1,5');
@@ -579,14 +647,14 @@ function dealFieldValue(page, label) {
   // Services bila diisi" (5a) teruji sungguhan, bukan trivial-kosong.
   // STEPS_DEFAULT (service_type Customs Clearance, bukan Door-to-Door)
   // memuat 'addl' sebagai step kelima -- InquiryIntakeWizardPage.jsx:96. ──
-  await page.locator('button:text-is("5. Additional Services")').click();
+  await stepPill(page, 'Additional Services').click();
   await settle(page);
   await page.locator('button:has-text("Cargo Insurance")').click();
   await settle(page, 300);
 
   // ── Langkah 6 — Commercial: assert negatif "abc" dulu (FIX 2), baru isi
   // Estimated yang benar "1.500.000". ─────────────────────────────────────
-  await page.locator('button:text-is("6. Commercial")').click();
+  await stepPill(page, 'Commercial').click();
   await settle(page);
   const estInput = fieldLocator(page, 'Estimated (intake)', 'input');
   await estInput.fill('abc');
@@ -603,7 +671,7 @@ function dealFieldValue(page, label) {
   // "6. Commercial" (bukti nyata jalur jump-on-error jalan, bukan sekadar
   // klik yang tidak mengenai
   // apa pun).
-  await page.locator('button:text-is("7. Review")').click();
+  await stepPill(page, 'Review').click();
   await settle(page);
   const createBtnLocator = page.locator('button:text-is("Create Inquiry")');
   const createVisibleBeforeBadAttempt = await createBtnLocator.isVisible().catch(() => false);
@@ -614,7 +682,7 @@ function dealFieldValue(page, label) {
   check('Create DITOLAK selama Estimated "abc" tak dikenali (URL tidak pindah ke Detail Inquiry)',
     page.url() === urlBeforeBadCreate, page.url());
   check('Wizard berpindah balik ke step "6. Commercial" setelah Create ditolak (jump-on-error stepErrors)',
-    await isStepActive(page, '6. Commercial'));
+    await isStepActive(page, 'Commercial'));
 
   // handleCreate melompat ke step PERTAMA yang errornya ditemukan
   // stepErrors() (urutan: cust_account, svc_*, under_*, route_*, cargo_*,
@@ -624,7 +692,7 @@ function dealFieldValue(page, label) {
   // itu lebih dulu dan wizard melompat ke step lain; tanpa klik eksplisit
   // ini, fieldLocator('Estimated...') berikutnya menunggu 30 detik lalu
   // timeout).
-  await page.locator('button:text-is("6. Commercial")').click();
+  await stepPill(page, 'Commercial').click();
   await settle(page);
   await estInput.fill('1.500.000');
   await estInput.blur();
@@ -701,6 +769,7 @@ function dealFieldValue(page, label) {
   check('Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page.url()), page.url());
 
   console.log(`\n  → Nomor inquiry yang dibuat: ${inquiryNo || '(tidak tertangkap dari respon RPC — cek manual di Detail Inquiry/DB)'}  ${inquiryId ? `(id: ${inquiryId})` : ''}`);
+  testDataLog.push(`Flow 1 — inquiry: ${inquiryNo || '(tidak tertangkap)'}${inquiryId ? ` (id: ${inquiryId})` : ''}`);
 
   // ── Detail Inquiry: blok "Route Options" (SectionHeader <h3> + LaneTable
   // <h4> bersarang sejak kit extraction -- lihat laneTableContainer di atas)
@@ -822,7 +891,15 @@ function dealFieldValue(page, label) {
     }
   }
   if (!laneEditorOk) console.log('  ⚠ Editor Route Options tidak sampai Save sukses -- lihat hasil check() di atas untuk titik gagalnya.');
+  } catch (e) {
+    await recordFlowFailure('FLOW1', 'Flow 1 (Single Shipment)', e, page);
+  }
 
+  // Putaran 13a Task 3 -- skenario D2D dibungkus try/catch TERPISAH dari
+  // Flow 1 (instruksi eksplisit): kegagalannya tidak boleh ikut menyeret
+  // Flow 2/Flow 3, dan sebaliknya kegagalan Flow 1 di atas tidak menghalangi
+  // D2D tetap dicoba (selama `page` masih berupa Page yang terbuka).
+  try {
   // =========================================================================
   // Putaran 13a (D8) -- skenario NEGATIF SAJA utk Pickup/Delivery Address
   // wajib Door to Door: Create DITOLAK saat kosong (menekan Create di sini
@@ -835,7 +912,7 @@ function dealFieldValue(page, label) {
   console.log('\n— Skenario tambahan: Pickup/Delivery Address wajib untuk Door to Door (D8) —\n');
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
   await settle(page);
-  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await stepPill(page, 'Customer & Contact').click();
   await settle(page);
   await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
   await page.waitForTimeout(400);
@@ -843,13 +920,14 @@ function dealFieldValue(page, label) {
   await settle(page);
   const d2dContactResult = await ensureContactSelected(page);
   check('[D2D] Contact terisi', !!d2dContactResult, d2dContactResult || 'nol contact terpilih/ditambahkan');
-  await page.locator('button:text-is("2. Service & Direction")').click();
+  if (d2dContactResult) testDataLog.push(`D2D — contact: ${d2dContactResult}`);
+  await stepPill(page, 'Service & Direction').click();
   await settle(page);
   await page.locator('button:has-text("Door to Door")').first().click();
   await settle(page, 300);
   await page.locator('button:text-is("Shipper")').click();
   await settle(page);
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
   await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
   await settle(page);
@@ -857,7 +935,7 @@ function dealFieldValue(page, label) {
   await settle(page, 300);
 
   // -- NEGATIF: Pickup/Delivery KOSONG, tekan Create.
-  await page.locator('button:text-is("7. Review")').click();
+  await stepPill(page, 'Review').click();
   await settle(page);
   check('[D2D] Tombol "Create Inquiry" terlihat (sebelum ditekan, Pickup/Delivery masih kosong)',
     await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false));
@@ -868,7 +946,7 @@ function dealFieldValue(page, label) {
   await d2dNoRpc;
   check('[D2D] Create DITOLAK saat Pickup/Delivery Address kosong (nol panggilan RPC create_inquiry_with_lanes)', !d2dRpcSeen);
   await settle(page, 300);
-  check('[D2D] Wizard melompat balik ke "3. Route & Terms" setelah Create ditolak', await isStepActive(page, '3. Route & Terms'));
+  check('[D2D] Wizard melompat balik ke "3. Route & Terms" setelah Create ditolak', await isStepActive(page, 'Route & Terms'));
   check('[D2D] Pesan error Pickup Address tampil', (await page.locator('text="Pickup Address is required for Door to Door."').count()) > 0);
   check('[D2D] Pesan error Delivery Address tampil', (await page.locator('text="Delivery Address is required for Door to Door."').count()) > 0);
 
@@ -877,13 +955,19 @@ function dealFieldValue(page, label) {
   await fieldLocator(page, 'Pickup Address', 'textarea').fill('Jl. Contoh Pickup No. 1, Jakarta');
   await fieldLocator(page, 'Delivery Address', 'textarea').fill('Jl. Contoh Delivery No. 2, Singapore');
   await settle(page, 200);
-  await page.locator('button:text-is("7. Review")').click();
+  await stepPill(page, 'Review').click();
   await settle(page);
   check('[D2D] Lolos ke Review setelah Pickup/Delivery Address terisi (tombol "Create Inquiry" terlihat)',
     await page.locator('button:text-is("Create Inquiry")').isVisible().catch(() => false));
   check('[D2D] Nol pesan error Pickup/Delivery tersisa', (await page.locator('text=/Address is required for Door to Door/i').count()) === 0);
   console.log('  i [D2D] Create TIDAK ditekan pada kasus positif -- nol inquiry baru tercipta dari skenario ini.');
+  } catch (e) {
+    await recordFlowFailure('D2D', 'Skenario D2D (Pickup/Delivery wajib untuk Door to Door)', e, page);
+  }
 
+  // Putaran 13a Task 3 -- Flow 2 (Rate Sheet Request) dibungkus try/catch
+  // sendiri, terpisah dari Flow 1/D2D di atas dan Flow 3 di bawah.
+  try {
   // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
   // login SAMA (satu proses skrip), dimulai SESUDAH flow Single Shipment di
@@ -898,7 +982,7 @@ function dealFieldValue(page, label) {
   // ── Langkah 1 — akun (reuse "PT Agro Sawit Kalimantan", rute BERBEDA dari
   // flow pertama -- POL/POD dibalik, Export bukan Import -- nol risiko
   // beririsan dengan inquiry flow pertama). ──────────────────────────────
-  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await stepPill(page, 'Customer & Contact').click();
   await settle(page);
   // D1 -- satu kolom "Customer" gabungan (lihat Flow 1).
   const rsAccountInput = page.locator('input[placeholder="Search account name or account code…"]');
@@ -912,12 +996,12 @@ function dealFieldValue(page, label) {
   // (dipilih lewat select), tapi fungsi ini aman di kedua keadaan.
   const contactResult2 = await ensureContactSelected(page);
   check('[RS] Contact terisi (Langkah 1, Flow 2)', !!contactResult2, contactResult2 || 'nol contact terpilih/ditambahkan');
-  if (contactResult2) console.log(`    i Contact — ${contactResult2}`);
+  if (contactResult2) { console.log(`    i Contact — ${contactResult2}`); testDataLog.push(`Flow 2 (RS) — contact: ${contactResult2}`); }
 
   // ── Langkah 2 — Service Type "Freight Forwarding" + Customer Role
   // "Shipper" (hindari Customs/Undername -- sudah teruji flow pertama,
   // fokus RS saja; Customer Role WAJIB kecuali service_type='trading'). ───
-  await page.locator('button:text-is("2. Service & Direction")').click();
+  await stepPill(page, 'Service & Direction').click();
   await settle(page);
   await page.locator('button:has-text("Freight Forwarding")').first().click();
   await settle(page, 300);
@@ -929,7 +1013,7 @@ function dealFieldValue(page, label) {
   // REVISI 1 -- ini SENGAJA dilakukan SEBELUM toggle ke Rate Sheet Request,
   // supaya state container_types TERISI saat toggle terjadi (state TIDAK
   // dikosongkan oleh toggle -- hanya field-nya yang disembunyikan). ───────
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
   await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
   await settle(page);
@@ -939,7 +1023,7 @@ function dealFieldValue(page, label) {
   await settle(page, 600);
 
   // ── Toggle ke "Rate Sheet Request" (langkah 1). ──────────────────────────
-  await page.locator('button:text-is("1. Customer & Contact")').click();
+  await stepPill(page, 'Customer & Contact').click();
   await settle(page);
   await page.locator('button:text-is("Rate Sheet Request")').click();
   await settle(page, 400);
@@ -953,9 +1037,13 @@ function dealFieldValue(page, label) {
   // ── Langkah 3 sesudah toggle — assert field Single-Shipment-only TIDAK
   // ADA, LaneTable tampil dgn 1 lane PRA-ISI dari POL/POD yang sudah diisi
   // sebelum toggle (switchInquiryType seed dari f.pol_location_id/pod). ────
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
-  for (const label of ['Pickup Address', 'Delivery Address', 'Incoterm', 'Container Type', 'Number of containers', 'Cargo ready date']) {
+  // Putaran 13a Task 2 -- label field sungguhan adalah "Incoterms" (jamak,
+  // InquiryIntakeWizardPage.jsx), bukan "Incoterm" tunggal; dikoreksi supaya
+  // teks yang dicari cocok label nyata (field ini tersembunyi total di mode
+  // RS, jadi hasil check tidak berubah -- murni ketepatan teks yang diuji).
+  for (const label of ['Pickup Address', 'Delivery Address', 'Incoterms', 'Container Type', 'Number of containers', 'Cargo ready date']) {
     check(`[RS] Field Single-Shipment-only "${label}" TIDAK ADA di step Route & Terms`, (await page.locator(`text="${label}"`).count()) === 0);
   }
   check('[RS] Tombol "Add route option" TIDAK ADA (laneTbl sudah true sejak toggle, nol transisi diperlukan)',
@@ -997,7 +1085,7 @@ function dealFieldValue(page, label) {
   if (await rsCreateBtn.isVisible().catch(() => false)) await rsCreateBtn.click();
   await settle(page, 500);
   check('[RS] Create DITOLAK saat nol lane terpilih (URL tidak pindah ke Detail Inquiry)', page.url() === rsUrlBeforeAttempt, page.url());
-  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat nol lane terpilih', await isStepActive(page, '3. Route & Terms'));
+  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat nol lane terpilih', await isStepActive(page, 'Route & Terms'));
   check('[RS] Pesan "Select at least one lane to include." tampil saat nol lane terpilih',
     (await page.locator('text="Select at least one lane to include."').count()) > 0);
 
@@ -1020,11 +1108,11 @@ function dealFieldValue(page, label) {
   if (await rsCreateBtn.isVisible().catch(() => false)) await rsCreateBtn.click();
   await settle(page, 500);
   check('[RS] Create DITOLAK saat validity_to < validity_from (URL tidak pindah)', page.url() === rsUrlBeforeAttempt, page.url());
-  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat validity terbalik', await isStepActive(page, '3. Route & Terms'));
+  check('[RS] Wizard berpindah balik ke step "3. Route & Terms" saat validity terbalik', await isStepActive(page, 'Route & Terms'));
   check('[RS] Pesan validity error tampil saat validity_to < validity_from',
     (await page.locator('text=/Enter the requested validity/i').count()) > 0);
 
-  await page.locator('button:text-is("3. Route & Terms")').click();
+  await stepPill(page, 'Route & Terms').click();
   await settle(page);
   await rsValidityTo.fill('2027-02-28'); // perbaiki
   await settle(page, 300);
@@ -1070,6 +1158,7 @@ function dealFieldValue(page, label) {
   await settle(page, 800);
   check('[RS] Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page.url()), page.url());
   console.log(`\n  → [RS] Nomor inquiry yang dibuat: ${rsInquiryNo || '(tidak tertangkap)'}  ${rsInquiryId ? `(id: ${rsInquiryId})` : ''}`);
+  testDataLog.push(`Flow 2 (RS) — inquiry: ${rsInquiryNo || '(tidak tertangkap)'}${rsInquiryId ? ` (id: ${rsInquiryId})` : ''}`);
 
   // ── Detail Inquiry — badge, 1 lane TERSIMPAN (lane 2 TIDAK ikut), Route &
   // Terms menampilkan Validity/Volume (bukan Incoterms/dll). ───────────────
@@ -1191,7 +1280,17 @@ function dealFieldValue(page, label) {
   check('[RS] Pasca-reload: Estimated Volume per Month = "2.000" (bukan "2")', rsEditVolumeAfter.includes('2.000'), `dapat: "${rsEditVolumeAfter}"`);
 
   console.log(`\n  → [RS] Inquiry yang dipakai uji edit Detail: ${rsInquiryNo || '(tidak tertangkap)'}  ${rsInquiryId ? `(id: ${rsInquiryId})` : ''} -- cek monthly_volume_cbm = 2000 di database.`);
+  } catch (e) {
+    await recordFlowFailure('RS', 'Flow 2 (Rate Sheet Request)', e, page);
+  }
 
+  // Putaran 13a Task 3 -- Flow 3 (owner default manager) dibungkus try/catch
+  // sendiri. `page2` dideklarasikan dgn `let` DI LUAR try (lihat beberapa
+  // baris di bawah) supaya catch di sini bisa mengambil screenshot-nya kalau
+  // sudah terbuka saat exception terjadi -- `const` di dalam try tidak akan
+  // terlihat dari catch (lexical scoping), jadi dihoist.
+  let ctx2, page2;
+  try {
   // =========================================================================
   // FLOW KETIGA -- Putaran 5 K1a, Task 2. Owner default-ke-diri-sendiri utk
   // role manager-ke-atas (isManagerOrAbove() -> level<=6, src/lib/roles.js)
@@ -1219,9 +1318,9 @@ function dealFieldValue(page, label) {
 
   const managerPassword = await resolvePasswordFor(MANAGER_ACCOUNT, 'QA_PASSWORD_MANAGER');
   const managerSession = await loginSession(MANAGER_ACCOUNT, managerPassword);
-  const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+  ctx2 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   await ctx2.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(managerSession)]);
-  const page2 = await ctx2.newPage();
+  page2 = await ctx2.newPage();
   page2.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
 
   // Field minimum yang WAJIB lolos stepErrors() utk Single Shipment non-FCL
@@ -1234,7 +1333,7 @@ function dealFieldValue(page, label) {
     await pg.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
     await settle(pg);
     check(`[MGR] Wizard Intake Form terbuka (${checkLabel})`, await pg.locator('h1:text-is("Inquiry Intake Form")').count() > 0);
-    await pg.locator('button:text-is("1. Customer & Contact")').click();
+    await stepPill(pg, 'Customer & Contact').click();
     await settle(pg);
     // D1 -- satu kolom "Customer" gabungan (lihat Flow 1/2).
     await pg.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
@@ -1245,19 +1344,19 @@ function dealFieldValue(page, label) {
     // skrip yang sama, jadi biasanya tinggal pilih dari select.
     const mgrContactResult = await ensureContactSelected(pg);
     check(`[MGR] Contact terisi (${checkLabel})`, !!mgrContactResult, mgrContactResult || 'nol contact terpilih/ditambahkan');
-    await pg.locator('button:text-is("2. Service & Direction")').click();
+    await stepPill(pg, 'Service & Direction').click();
     await settle(pg);
     await pg.locator('button:has-text("Freight Forwarding")').first().click();
     await settle(pg, 300);
     await pg.locator('button:text-is("Shipper")').click();
     await settle(pg);
-    await pg.locator('button:text-is("3. Route & Terms")').click();
+    await stepPill(pg, 'Route & Terms').click();
     await settle(pg);
     await pickLocation(pg, pg.locator('button:has-text("Select port of loading…")'), 'Singapore', 'Singapore');
     await settle(pg);
     await pickLocation(pg, pg.locator('button:has-text("Select port of discharge or city…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
     await settle(pg);
-    await pg.locator('button:text-is("6. Commercial")').click();
+    await stepPill(pg, 'Commercial').click();
     // ekstra -- menunggu fetchOperationalRoster (2 query berurutan) + efek
     // auto-fill owner_id (setTimeout(...,0), InquiryIntakeWizardPage.jsx:519)
     // selesai sebelum select Owner dibaca.
@@ -1272,7 +1371,7 @@ function dealFieldValue(page, label) {
   check('[MGR] (a) Select Owner berisi diri sendiri saat wizard dibuka (bukan kosong/"Leave unassigned")',
     ownerSelectedText1 === MANAGER_SELF_NAME, `dapat: "${ownerSelectedText1}"`);
 
-  await page2.locator('button:text-is("7. Review")').click();
+  await stepPill(page2, 'Review').click();
   await settle(page2);
   const createBtn1 = page2.locator('button:text-is("Create Inquiry")');
   check('[MGR] Tombol "Create Inquiry" terlihat (inquiry #1)', await createBtn1.isVisible().catch(() => false));
@@ -1293,6 +1392,7 @@ function dealFieldValue(page, label) {
   check('[MGR] (b) Detail Inquiry Owner = diri sendiri (owner_id tersimpan = pemanggil) (inquiry #1)',
     ownerDetail1.includes(MANAGER_SELF_NAME), `dapat: "${ownerDetail1}"`);
   console.log(`\n  → [MGR] Inquiry #1 (owner diri sendiri): ${mgrInquiryNo1 || '(tidak tertangkap)'}  ${mgrInquiryId1 ? `(id: ${mgrInquiryId1})` : ''}`);
+  testDataLog.push(`Flow 3 (MGR) — inquiry #1 (owner diri sendiri): ${mgrInquiryNo1 || '(tidak tertangkap)'}${mgrInquiryId1 ? ` (id: ${mgrInquiryId1})` : ''}`);
 
   // ── (c): inquiry #2 -- Owner DIGANTI manual ke "ZZZTEST Sales" sebelum
   // Create, owner_id yang tersimpan harus ikut pilihan manual itu. ────────
@@ -1303,7 +1403,7 @@ function dealFieldValue(page, label) {
   const ownerSelectedText2 = await ownerSelect2.evaluate((el) => el.options[el.selectedIndex]?.textContent || '').catch(() => '');
   check('[MGR] Owner berhasil diganti ke "ZZZTEST Sales" sebelum Create', ownerSelectedText2 === SWITCH_OWNER_NAME, `dapat: "${ownerSelectedText2}"`);
 
-  await page2.locator('button:text-is("7. Review")').click();
+  await stepPill(page2, 'Review').click();
   await settle(page2);
   const createBtn2 = page2.locator('button:text-is("Create Inquiry")');
   check('[MGR] Tombol "Create Inquiry" terlihat (inquiry #2)', await createBtn2.isVisible().catch(() => false));
@@ -1329,6 +1429,10 @@ function dealFieldValue(page, label) {
   check('[MGR] (c) Detail Inquiry Owner = "ZZZTEST Sales" (owner_id tersimpan = pilihan manual) (inquiry #2)',
     ownerDetail2.includes(SWITCH_OWNER_NAME), `dapat: "${ownerDetail2}"`);
   console.log(`\n  → [MGR] Inquiry #2 (owner diganti ke ${SWITCH_OWNER_NAME}): ${mgrInquiryNo2 || '(tidak tertangkap)'}  ${mgrInquiryId2 ? `(id: ${mgrInquiryId2})` : ''}`);
+  testDataLog.push(`Flow 3 (MGR) — inquiry #2 (owner diganti ke ${SWITCH_OWNER_NAME}): ${mgrInquiryNo2 || '(tidak tertangkap)'}${mgrInquiryId2 ? ` (id: ${mgrInquiryId2})` : ''}`);
+  } catch (e) {
+    await recordFlowFailure('MGR', 'Flow 3 (Owner default manager, bd_sales_spv_forwarding)', e, page2 || page);
+  }
   } // end if (ONLY !== '4') -- Flow 1-3
 
   if (ONLY === '4') console.log(`e2e-inquiry-wizard -- Flow 4 SAJA (--only 4) -- ${BASE} · project ${REF}\n`);
@@ -1362,6 +1466,10 @@ function dealFieldValue(page, label) {
   // migrations/) -- ketiga fixture quotation di bawah tetap ber-nomor
   // "ZZZTEST-E2E-K1D-*" apa adanya.
   // =========================================================================
+  // Putaran 13a Task 3 -- `page3` dihoist dgn `let` DI LUAR try (sama pola
+  // dgn ctx2/page2 Flow 3) supaya catch di bawah bisa mengambil screenshot
+  // kalau sudah terbuka saat exception terjadi.
+  let ctx3, page3;
   try {
     console.log('\n— FLOW KEEMPAT: Mark Accepted dengan bukti (Quotation) —\n');
 
@@ -1506,9 +1614,9 @@ function dealFieldValue(page, label) {
 
     // ── Konteks browser BARU, akun sales@msi.com (pola identik ctx2/page2
     // Flow 3 -- localStorage per-konteks, tidak menimpa sesi akun lain). ─────
-    const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+    ctx3 = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     await ctx3.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* mode privat */ } }, [`sb-${REF}-auth-token`, JSON.stringify(salesSession)]);
-    const page3 = await ctx3.newPage();
+    page3 = await ctx3.newPage();
     page3.on('pageerror', (e) => consoleErrors.push(String(e.message || e).slice(0, 160)));
 
     // ── Berkas fixture di temp OS (os.tmpdir(), BUKAN disk repo, dihapus di
@@ -1673,6 +1781,10 @@ function dealFieldValue(page, label) {
     console.log(`      quotation A: ${quoAId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-A-${nonce})`);
     console.log(`      quotation B: ${quoBId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-B-${nonce})`);
     console.log(`      quotation C: ${quoCId || '(gagal dibuat)'}  (ZZZTEST-E2E-K1D-C-${nonce})`);
+    testDataLog.push(`Flow 4 (ACC) — inquiry A: ${inquiryAId || '(gagal dibuat)'}, nomor server: ${inquiryANo || '(tidak tertangkap)'}`);
+    testDataLog.push(`Flow 4 (ACC) — quotation A: ${quoAId || '(gagal dibuat)'} (ZZZTEST-E2E-K1D-A-${nonce})`);
+    testDataLog.push(`Flow 4 (ACC) — quotation B: ${quoBId || '(gagal dibuat)'} (ZZZTEST-E2E-K1D-B-${nonce})`);
+    testDataLog.push(`Flow 4 (ACC) — quotation C: ${quoCId || '(gagal dibuat)'} (ZZZTEST-E2E-K1D-C-${nonce})`);
   } catch (e) {
     // e.cause -- undici (fetch Node) membungkus error jaringan NYATA di sini
     // (mis. ECONNRESET/ETIMEDOUT/ENOTFOUND); e.message sendiri SELALU cuma
@@ -1681,14 +1793,65 @@ function dealFieldValue(page, label) {
     const causeCode = e.cause?.code || e.cause?.errors?.[0]?.code || null;
     const causeText = e.cause ? `${causeCode ? causeCode + ' -- ' : ''}${e.cause.message || e.cause}` : '(tidak ada e.cause)';
     console.log(`\n  ✖ FLOW KEEMPAT berhenti karena exception tak tertangkap -- dilaporkan, flow 1-3 TIDAK terdampak (sudah selesai sebelum blok ini jalan): ${e.message} | cause: ${causeText}`);
-    check('[ACC] Flow 4 selesai tanpa exception fatal', false, `${(e.stack || '').split('\n').slice(0, 3).join(' | ')} | cause: ${causeText}`);
+    // Putaran 13a Task 3 -- screenshot percobaan-terbaik (pola sama
+    // recordFlowFailure), ditambahkan di sini DI DALAM catch yang sudah ada
+    // (bukan diganti ke recordFlowFailure) supaya ekstraksi e.cause di atas,
+    // yang khusus utk fetch Node, tetap terpakai apa adanya.
+    let shotPath = '';
+    if (page3 && typeof page3.isClosed === 'function' && !page3.isClosed()) {
+      try {
+        shotPath = join(tmpdir(), `e2e-inquiry-wizard-ACC-${Date.now()}.png`);
+        await page3.screenshot({ path: shotPath, fullPage: true });
+        console.log(`    screenshot: ${shotPath}`);
+      } catch { shotPath = ''; }
+    }
+    check('[ACC] Flow 4 selesai tanpa exception fatal', false, `${(e.stack || '').split('\n').slice(0, 3).join(' | ')} | cause: ${causeText}${shotPath ? ' | screenshot: ' + shotPath : ''}`);
+    testDataLog.push('Flow 4 (ACC): BERHENTI sebelum selesai — data yang sempat tercipta sebelum titik ini TIDAK dihapus, lihat baris log Flow 4 di atas (fixture A/B/C) untuk id/nomor yang sudah tercetak sebelum exception ini.');
   }
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
 
+  // Putaran 13a Task 3.2 -- ringkasan lulus/gagal PER FLOW, dideduksi dari
+  // prefix bracket yang SUDAH ADA di nama tiap check() (`[D2D]`/`[RS]`/
+  // `[MGR]`/`[ACC]`; nol bracket = Flow 1) -- nol perubahan pada check()
+  // itu sendiri, murni klasifikasi di titik cetak. Entri "-FATAL" yang
+  // ditambahkan recordFlowFailure() (mis. "[FLOW1-FATAL] ...") ikut masuk
+  // ke bucket Flow yang sama lewat pencocokan prefix yang sama.
+  function classifyFlow(name) {
+    if (name.startsWith('[D2D')) return 'D2D (Pickup/Delivery wajib — Door to Door)';
+    if (name.startsWith('[RS')) return 'Flow 2 (Rate Sheet Request)';
+    if (name.startsWith('[MGR')) return 'Flow 3 (Owner default manager)';
+    if (name.startsWith('[ACC')) return 'Flow 4 (Mark Accepted dengan bukti)';
+    return 'Flow 1 (Single Shipment)';
+  }
+  const flowOrder = [
+    'Flow 1 (Single Shipment)',
+    'D2D (Pickup/Delivery wajib — Door to Door)',
+    'Flow 2 (Rate Sheet Request)',
+    'Flow 3 (Owner default manager)',
+    'Flow 4 (Mark Accepted dengan bukti)',
+  ];
+  const byFlow = new Map(flowOrder.map((f) => [f, { pass: 0, fail: 0 }]));
+  for (const r of results) {
+    const bucket = byFlow.get(classifyFlow(r.name));
+    if (r.ok) bucket.pass++; else bucket.fail++;
+  }
+  console.log('\n— RINGKASAN PER FLOW —');
+  for (const f of flowOrder) {
+    const b = byFlow.get(f);
+    const total = b.pass + b.fail;
+    if (total === 0) { console.log(`  • ${f}: (dilewati — 0 pengecekan tercatat; kemungkinan --only 4, atau Flow ini berhenti SEBELUM check() pertamanya sempat jalan)`); continue; }
+    console.log(`  ${b.fail ? '✖' : '✔'} ${f}: ${b.pass}/${total} lulus`);
+  }
+
+  if (testDataLog.length) {
+    console.log('\n— DATA UJI YANG TERCIPTA DI STAGING (tidak dihapus skrip ini) —');
+    for (const t of testDataLog) console.log(`  • ${t}`);
+  }
+
   const bad = results.filter((x) => !x.ok).length;
-  console.log(`\n${bad ? '✖' : '✔'} ${results.length - bad}/${results.length} LULUS`);
+  console.log(`\n${bad ? '✖' : '✔'} ${results.length - bad}/${results.length} LULUS (total gabungan seluruh Flow)`);
   if (inquiryNo) console.log(`Nomor inquiry (cek di database): ${inquiryNo}`);
   process.exit(bad ? 1 : 0);
 })();
