@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router';
 import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog, CheckCircle2, MoreVertical,
+  Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { markInquiryWonWithEvidence } from '../../lib/db';
@@ -102,6 +102,12 @@ const SERVICE_LABEL = {
 // TIDAK disentuh di Tahap 4A ("nol perubahan FE" kecuali label map, lihat
 // instruksi eksekusi 4A). Aktifkan di Tahap 4B/4C bersamaan wizard-nya.
 const DOOR_TO_DOOR_SERVICE_TYPES = [];
+
+// Ikon chip header Direction -- path SVG mockup (Inquiry Management.dc.html
+// baris 282, D.dIm/D.dEx/D.dDo) diverifikasi BYTE-SAMA dengan
+// lucide-react PlaneLanding/PlaneTakeoff/Truck (node_modules/lucide-react).
+const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: Truck };
+
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -521,6 +527,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
   // terbaru dari sales_orders.inquiry_id, null kalau belum ada).
   const [salesOrder, setSalesOrder] = useState(null);
+  // Putaran 9 -- SELURUH baris sales_orders inquiry ini (bukan hanya yang
+  // terbaru), dipakai DUA hal: (1) chip header "Won, awaiting Sales
+  // Order" (perlu tahu ADA/TIDAKnya baris berstatus SENT, bukan cuma yang
+  // terbaru), (2) blok "Shipments" khusus Rate Sheet (daftar penuh).
+  const [salesOrders, setSalesOrders] = useState([]);
   // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
   // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
   const [statusHistory, setStatusHistory] = useState([]);
@@ -620,7 +631,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, cargo_ready_date, n_containers, closed_at')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -658,7 +669,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at, source')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -686,15 +697,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .order('created_at', { ascending: false }).limit(1000);
 
       // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order". Baris
-      // terbaru saja (sales_orders.inquiry_id FK langsung, nol deleted_at di
-      // tabel ini — kolomnya memang tidak ada). "Purchase Order" TETAP "Not
-      // yet" permanen: nol tabel di Nexus yang merepresentasikan PO vendor
+      // terbaru dipakai node itu (so). "Purchase Order" TETAP "Not yet"
+      // permanen: nol tabel di Nexus yang merepresentasikan PO vendor
       // (lihat PLAN Irisan 3 §1g/§9.9) — tidak disentuh di sini.
+      // Putaran 9 -- limit dinaikkan 1 -> 50: chip "Won, awaiting Sales
+      // Order" butuh tahu ADA/TIDAKnya baris SENT di ANTARA SEMUA baris
+      // (bukan cuma yang terbaru), dan blok "Shipments" (Rate Sheet) perlu
+      // daftar penuh. sales_orders.inquiry_id FK langsung, nol deleted_at
+      // di tabel ini — kolomnya memang tidak ada.
       const { data: soRows } = await supabase
         .from('sales_orders')
         .select('id, so_no, status, created_at')
         .eq('inquiry_id', inq.id)
-        .order('created_at', { ascending: false }).limit(1);
+        .order('created_at', { ascending: false }).limit(50);
       const so = (soRows || [])[0] || null;
 
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
@@ -788,6 +803,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setAccount(acc);
       setQuotations(quos || []);
       setSalesOrder(so);
+      setSalesOrders(soRows || []);
       setPrfs(prfsAugmented);
       setStatusHistory(historyRows || []);
       setActivities(acts);
@@ -893,6 +909,48 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // inquiry_type itu sendiri dari Detail Inquiry, hanya field turunannya
   // (Validity/Volume) yang bisa diedit lewat section "Route & Terms" di bawah.
   const isInquiryRS = inquiry?.inquiry_type === 'Rate Sheet Request';
+
+  // ---------- Putaran 9 -- chip header turunan data ----------
+  // Lookup lokasi by id (Irisan 6 -- state `locations` sudah memuat kolom
+  // `type`). Dipakai chip "Free Trade Zone" di bawah.
+  const locationById = useMemo(() => {
+    const m = {};
+    locations.forEach((l) => { m[l.id] = l; });
+    return m;
+  }, [locations]);
+  // FTZ -- keputusan Mas (Putaran 9): FTZ bila POL, POD, ATAU Via pada
+  // SALAH SATU lane bertipe FTZ (mockup base() :723, `r.lanes ? ... :
+  // [pol,pod,via]`); kalau inquiry tidak punya lane, pakai pol/pod milik
+  // inquiry. `inquiries` TIDAK punya kolom `via` sendiri (hanya
+  // `inquiry_lanes.via_location_id`) -- untuk kasus nol-lane, via memang
+  // tidak ada yang dicek, konsekuensi alami skema, bukan kelalaian.
+  const isLocationFtz = (id) => !!id && locationById[id]?.type === 'FTZ';
+  const isInquiryFtz = lanes.length > 0
+    ? lanes.some((l) => isLocationFtz(l.pol_location_id) || isLocationFtz(l.pod_location_id) || isLocationFtz(l.via_location_id))
+    : isLocationFtz(inquiry?.pol_location_id) || isLocationFtz(inquiry?.pod_location_id);
+
+  // Won, awaiting Sales Order -- rumus LENGKAP mockup base() :723 (WON,
+  // bukan Rate Sheet, nol sales_orders SENT, >7 hari sejak WON). Tanggal
+  // WON dari `inquiries.closed_at` (trigger stamp, migrasi
+  // 20260828000002) -- BUKAN inquiry_status_history (instruksi eksplisit
+  // Mas, Putaran 9 keputusan 2). FORMULA INI IDENTIK dengan yang dipakai
+  // InquiryListPage.jsx (Putaran 7) -- kalau salah satu berubah, sunting
+  // berdua, komentar di sana merujuk balik ke sini.
+  const hasSentSalesOrder = salesOrders.some((r) => r.status === 'SENT');
+  const isWonAwaitingSo = dealStatus === 'WON' && !isInquiryRS && !hasSentSalesOrder
+    && !!inquiry?.closed_at && daysBetween(inquiry.closed_at, null) > 7;
+
+  // Quotation expired -- Putaran 9 keputusan 3 (BUKAN rumus mockup yang
+  // mengikat ke status inquiry==='Quoted' saja): quotation AKTIF (sumbu
+  // `pickActiveQuotation`, bukan quotation apa pun) dengan valid_until
+  // sudah lewat hari ini, status quotation bukan ACCEPTED/REJECTED/
+  // SUPERSEDED, DAN status inquiry masih QUOTED atau NEGOTIATION.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const isQuotationExpired = !!activeQuotation && !!activeQuotation.valid_until
+    && activeQuotation.valid_until < todayIso
+    && !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(activeQuotation.status || '').toUpperCase())
+    && ['QUOTED', 'NEGOTIATION'].includes(dealStatus);
+
   // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
   // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
   // "Create Quotation"). Status QUOTED/NEGOTIATION primary-nya "Mark as
@@ -1685,6 +1743,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {(inquiry.additional_services || []).includes('undername') && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
+              {/* Putaran 9 -- chip Direction, mockup :282 (`{{ D.dirL }}`) --
+                  TANPA sc-if, selalu dirender (termasuk saat "Not set"),
+                  posisi persis sesudah Undername/sebelum Won-awaiting-SO.
+                  Ikon: lihat DIRECTION_ICON. */}
+              <TintBadge meta={{
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {(() => { const Icon = DIRECTION_ICON[inquiry.direction]; return Icon ? <Icon size={12} /> : null; })()}
+                    {inquiry.direction || 'Not set'}
+                  </span>
+                ),
+                bg: C.surfaceAlt, color: C.textMute, bd: C.border,
+              }} />
+              {/* Putaran 9 -- "Won, awaiting Sales Order" / "Quotation
+                  expired", posisi mockup :282 (sesudah Direction, sebelum
+                  Manual win). Rumus: lihat komentar isWonAwaitingSo/
+                  isQuotationExpired. */}
+              {isWonAwaitingSo && (
+                <TintBadge meta={{ label: 'Won, awaiting Sales Order', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+              {isQuotationExpired && (
+                <TintBadge meta={{ label: 'Quotation expired', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
               {/* TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert
                   Manual Win", posisi mockup :282 (sesudah Quotation-expired,
                   sebelum Free Trade Zone -- keduanya belum dibangun di Nexus,
@@ -1701,6 +1782,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     </button>
                   )}
                 </>
+              )}
+              {/* Putaran 9 -- chip "Free Trade Zone", posisi mockup :282
+                  (sesudah Manual win/Revert). Rumus: lihat komentar
+                  isInquiryFtz. */}
+              {isInquiryFtz && (
+                <TintBadge meta={{ label: 'Free Trade Zone', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
             </div>
             {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
