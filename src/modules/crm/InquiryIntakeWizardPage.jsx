@@ -391,6 +391,16 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const isRS = f.inquiry_type === 'Rate Sheet Request';
   const laneTbl = isRS || f.laneMode;
   const selectedLanes = isRS ? f.lanes.filter((l) => l.on !== false) : f.lanes;
+  // Putaran 13b (W-21) -- mockup `routeStd` (!laneTbl) membungkus Pickup/
+  // Delivery Address + Cargo ready date SEKALIGUS, jadi ketiganya hilang
+  // begitu "Add route option" aktif. Keputusan Den: Door-to-Door PENGECUALIAN
+  // utk Pickup/Delivery saja (tetap tampil+wajib apa pun laneTbl-nya) --
+  // Cargo ready date TETAP ikut mockup apa adanya (hilang utk SEMUA service
+  // type saat laneTbl, termasuk DtD, nol pengecualian). State TIDAK pernah
+  // dikosongkan saat disembunyikan (pola sama container_types RS, R1) --
+  // hanya disembunyikan DI UI dan DINOLKAN di payload (lihat handleCreate),
+  // bukan sekadar disembunyikan tanpa menolkan.
+  const pickupDeliveryVisible = isDoorToDoor || !laneTbl;
 
   const dgSelected = f.cargo_types.includes('dg');
   // mockup req.nCont (baris 759): wajib bila ADA tipe kontainer "/^FCL/",
@@ -609,7 +619,49 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     const t = setTimeout(() => { if (!cancelled) setF((x) => ({ ...x, direction: suggestion })); }, 0);
     return () => { cancelled = true; clearTimeout(t); };
   }, [primaryPolLoc, primaryPodLoc, locations, directionTouched]);
-  const pickDirection = (v) => { setDirectionTouched(true); setF((x) => ({ ...x, direction: v })); };
+  // Putaran 13b (W-14) -- mockup `og.dir.<k>.go` menimpa `custRole` SETIAP
+  // kali Direction diklik (Export->Shipper, Import->Consignee), TANPA guard
+  // "touched" -- Domestic dan kasus lain yang mockup tidak definisikan TIDAK
+  // mengubah customer_role yang sudah ada (keputusan Den, bukan tebakan).
+  // Nol dampak ke General Trading (dikecualikan #2 di bawah, 'trading' tetap
+  // tidak reachable di wizard ini).
+  const pickDirection = (v) => {
+    setDirectionTouched(true);
+    setF((x) => ({
+      ...x,
+      direction: v,
+      customer_role: v === 'Export' ? 'Shipper' : v === 'Import' ? 'Consignee' : x.customer_role,
+    }));
+  };
+
+  // Putaran 13b (W-64) -- default Pricing Basis/Duties & Taxes (mockup
+  // `blankF.pricing='Itemized charges'`/`blankF.duties='Included in price'`)
+  // SENGAJA TIDAK dipasang di `blankF()` langsung -- itu akan mengisi state
+  // utk SEMUA service type sejak form dibuka, termasuk yang tidak pernah
+  // menampilkan ATAU mengirim field ini (Freight Forwarding/Trucking/Customs
+  // Clearance+Export, dst). Diisi LAZY, HANYA begitu step 'customs' benar2
+  // tercapai (yang hanya ada di SK utk Door-to-Door) -- jadi nol inquiry
+  // layanan lain yang pernah menyimpan nilai yang tak pernah dilihat
+  // penggunanya. Payload (`handleCreate`) tetap menolkan keduanya kecuali
+  // `isDoorToDoor` (pricing_basis) / `dutiesVisible` (duties_and_taxes) --
+  // jadi jalur aman INI GANDA: state kosong kalau step tak tercapai, DAN
+  // payload menolak mengirim kalau kondisinya tak terpenuhi, apa pun isi
+  // state. Pola "isi sekali kalau masih kosong" sama dgn `duties_and_taxes`
+  // di checkbox Undername (Review fix 1) -- di sini pemicunya step, bukan
+  // checkbox.
+  useEffect(() => {
+    if (stepKey !== 'customs') return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      setF((x) => (x.pricing_basis && x.duties_and_taxes ? x : {
+        ...x,
+        pricing_basis: x.pricing_basis || PRICING_BASIS_OPTS[0],
+        duties_and_taxes: x.duties_and_taxes || DUTIES_AND_TAXES_OPTS[0],
+      }));
+    }, 0);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [stepKey]);
 
   // ── Possible Duplicate — lane pertama yang dipakai + container_types.
   // Mockup crm-metrics.js baris 82-85 (C.contOf/C.lane): hasil KOSONG bila
@@ -848,6 +900,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         mode: l.mode || null, load_unit: l.load_unit || null,
       }));
       const undernameActive = f.direction === 'Import' && ['customs', 'door_to_door'].includes(f.service_type) && f.undername_import;
+      // Putaran 13b (W-33/W-64) -- Duties & Taxes kini field MANDIRI utk
+      // Door-to-Door (tampil apa pun Direction/checkbox-nya), jadi syarat
+      // kirimnya ikut melebar dari `undernameActive` saja menjadi "field itu
+      // benar2 tampil ke pengguna": DtD (selalu) ATAU undernameActive (jalur
+      // 'svc'/Customs Clearance standalone, tak berubah).
+      const dutiesVisible = isDoorToDoor || undernameActive;
       // Review fix 2 -- nilai ke RPC = readMoneyInput(...).value (angka
       // tak terbaca sudah diblokir di stepErrors di atas, jadi di sini
       // string yang tersisa sudah pasti kosong ATAU benar-benar terbaca).
@@ -897,18 +955,22 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_imo_class: f.imo_class || null,
         p_has_msds: f.has_msds || null,
         p_additional_services: f.additional_services.length ? f.additional_services : null,
-        p_pickup_address: isRS ? null : (f.pickup_address || null),
-        p_delivery_address: isRS ? null : (f.delivery_address || null),
+        // W-21 -- hilang di UI = hilang di payload juga (pola sama
+        // p_container_types RS di atas), bukan sekadar disembunyikan sambil
+        // tetap mengirim nilai basi.
+        p_pickup_address: isRS || !pickupDeliveryVisible ? null : (f.pickup_address || null),
+        p_delivery_address: isRS || !pickupDeliveryVisible ? null : (f.delivery_address || null),
         // Review fix 4 -- hanya dikirim saat kartu duplikat BENAR-BENAR
         // tampil saat ini (possibleDuplicates.length > 0), bukan apa pun
         // yang kebetulan masih ada di field teksnya (bisa basi dari rute
         // sebelumnya -- lihat juga efek yang mengosongkannya di atas).
         p_duplicate_warning_reason: possibleDuplicates.length > 0 ? (f.duplicate_warning_reason || null) : null,
         p_n_containers: isRS ? null : (f.n_containers !== '' ? Number(f.n_containers) : null),
-        p_cargo_ready_date: isRS ? null : (f.cargo_ready_date || null),
+        // W-21 -- nol pengecualian DtD di sini (beda dari pickup/delivery).
+        p_cargo_ready_date: isRS || laneTbl ? null : (f.cargo_ready_date || null),
         p_undername_import: undernameActive,
         p_importer_of_record: undernameActive ? (f.importer_of_record || null) : null,
-        p_duties_and_taxes: undernameActive ? (f.duties_and_taxes || null) : null,
+        p_duties_and_taxes: dutiesVisible ? (f.duties_and_taxes || null) : null,
         p_supporting_docs_received: undernameActive ? !!f.supporting_docs_received : false,
         p_pricing_basis: isDoorToDoor ? (f.pricing_basis || null) : null,
         p_owner_id: canPickOwner ? (f.owner_id || null) : null,
@@ -936,7 +998,17 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     }
   };
 
-  const goNext = () => setStep((s) => Math.min(SK.length, s + 1));
+  // Putaran 13b (W-16) -- mockup `nextStep()` menolak pindah step saat
+  // Customs Clearance dipilih tanpa akses JCI (svcJciBlocked), TANPA toast
+  // baru -- banner "Request Access" yang sudah tampil di step 'svc' itulah
+  // yang membuat penolakannya tidak diam-diam (keputusan Den: ikut mockup
+  // apa adanya, bukan rekomendasi semula). Pengaman Create (stepErrors)
+  // TETAP ada, nol perubahan di sana -- ini cuma menutup jalur "lanjut dulu,
+  // ditolak nanti di Review".
+  const goNext = () => {
+    if (stepKey === 'svc' && svcJciBlocked) return;
+    setStep((s) => Math.min(SK.length, s + 1));
+  };
   const goPrev = () => setStep((s) => Math.max(1, s - 1));
 
   // D6 — "Clear" mengosongkan SELURUH form (mockup clearPrefill baris 941),
@@ -1139,13 +1211,18 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <FieldError>{errors.svc_direction}</FieldError>
                 </Field>
 
-                <Field label="Customer Role" required span
-                  hint="Who is our customer in this shipment? Full shipper and consignee details are filled in the Shipment Instruction or Job Order.">
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {CUSTOMER_ROLE_OPTS.map((r) => <Pill key={r} active={f.customer_role === r} onClick={() => setF((x) => ({ ...x, customer_role: r }))}>{r}</Pill>)}
-                  </div>
-                  <FieldError>{errors.svc_customer_role}</FieldError>
-                </Field>
+                {/* Putaran 13b (W-14) -- mockup `crShow`: tampil HANYA setelah
+                    Service Type dipilih (dan bukan General Trading -- aturan
+                    lama, 'trading' tetap tak reachable di wizard ini). */}
+                {!!f.service_type && f.service_type !== 'trading' && (
+                  <Field label="Customer Role" required span
+                    hint="Who is our customer in this shipment? Full shipper and consignee details are filled in the Shipment Instruction or Job Order.">
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {CUSTOMER_ROLE_OPTS.map((r) => <Pill key={r} active={f.customer_role === r} onClick={() => setF((x) => ({ ...x, customer_role: r }))}>{r}</Pill>)}
+                    </div>
+                    <FieldError>{errors.svc_customer_role}</FieldError>
+                  </Field>
+                )}
 
                 {/* Undername — Customs Clearance, inline (mockup baris 63-67).
                     Door-to-Door punya versi sendiri di langkah "customs" di bawah. */}
@@ -1233,18 +1310,23 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     disembunyikan. */}
                 {!isRS && (
                   <>
-                    <div style={grid2}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={S.label}>Pickup Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
-                        <textarea value={f.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
-                        <FieldError>{errors.route_pickup}</FieldError>
+                    {/* W-21 -- disembunyikan begitu laneTbl aktif, KECUALI
+                        Door-to-Door (pickupDeliveryVisible, lihat komentar
+                        definisinya di atas). */}
+                    {pickupDeliveryVisible && (
+                      <div style={grid2}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={S.label}>Pickup Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
+                          <textarea value={f.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
+                          <FieldError>{errors.route_pickup}</FieldError>
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={S.label}>Delivery Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
+                          <textarea value={f.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
+                          <FieldError>{errors.route_delivery}</FieldError>
+                        </div>
                       </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={S.label}>Delivery Address{isDoorToDoor && <span style={S.req}> *</span>}</div>
-                        <textarea value={f.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
-                        <FieldError>{errors.route_delivery}</FieldError>
-                      </div>
-                    </div>
+                    )}
 
                     <div>
                       <div style={S.label}>Incoterms</div>
@@ -1259,9 +1341,14 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                         <input value={f.n_containers} onChange={handleNContainersChange} inputMode="numeric" style={S.input} placeholder="0" />
                         <FieldError>{errors.route_ncont}</FieldError>
                       </Field>
-                      <Field label="Cargo ready date">
-                        <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
-                      </Field>
+                      {/* W-21 -- Cargo ready date hilang utk SEMUA service type
+                          saat laneTbl aktif, nol pengecualian DtD (beda dari
+                          Pickup/Delivery di atas). */}
+                      {!laneTbl && (
+                        <Field label="Cargo ready date">
+                          <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
+                        </Field>
+                      )}
                     </div>
                   </>
                 )}
@@ -1372,8 +1459,27 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     {PRICING_BASIS_OPTS.map((p) => <Pill key={p} active={f.pricing_basis === p} onClick={() => setF((x) => ({ ...x, pricing_basis: p }))}>{p}</Pill>)}
                   </div>
                 </Field>
-                {f.direction === 'Import' && (
-                  <UndernamePanel f={f} setF={setF} errors={errors} iorOpts={iorOpts} />
+                {/* Putaran 13b (W-33) -- mockup merender Duties & Taxes
+                    MANDIRI di sini, SELALU tampil utk Door-to-Door apa pun
+                    Direction-nya dan terlepas dari checkbox Undername --
+                    bukan hanya di dalam panel Undername (itu sebabnya field
+                    ini sebelumnya absen total utk Export/Domestic DAN utk
+                    Import yang belum mencentang Undername). Dirender SEKALI
+                    di sini (hideDuties pada UndernamePanel di bawah mencegah
+                    duplikat mockup-nya sendiri -- "bug prototipe" yang
+                    sengaja tidak ditiru, lihat komentar UndernamePanel). */}
+                <Field label="Duties & Taxes">
+                  <div style={{ position: 'relative' }}>
+                    <select value={f.duties_and_taxes} onChange={(e) => setF((x) => ({ ...x, duties_and_taxes: e.target.value }))} style={selInput}>
+                      {DUTIES_AND_TAXES_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select><Chevron />
+                  </div>
+                </Field>
+                {f.direction === 'Import' ? (
+                  <UndernamePanel f={f} setF={setF} errors={errors} iorOpts={iorOpts} hideDuties />
+                ) : (
+                  /* W-34 */
+                  <span style={{ fontSize: 12, color: C.muted }}>Undername applies to import shipments only.</span>
                 )}
               </div>
             )}
@@ -1388,6 +1494,15 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   </div>
                   {estValUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
                 </Field>
+                {/* Putaran 13b (W-40) -- blok statis mockup, murni teks (nol
+                    RPC/data -- inquiry ini belum ada sampai Create ditekan,
+                    jadi quotation memang belum mungkin ada). "Suggested
+                    estimate" (W-39, komparabel dari quotation diterima)
+                    SENGAJA TIDAK dibangun -- butuh RPC baru, dilimpahkan. */}
+                <div style={{ gridColumn: '1 / -1', border: '1px solid ' + C.border, borderRadius: 10, background: '#fff', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>Latest quoted value</span>
+                  <span style={{ fontSize: 12.5, color: C.muted }}>No quotation yet. It shows here and on the inquiry once a quotation exists.</span>
+                </div>
                 {canPickOwner ? (
                   <Field label="Owner">
                     <div style={{ position: 'relative' }}>
@@ -1411,7 +1526,8 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
             {stepKey === 'review' && (
               <ReviewStep f={f} accountText={accountText} contacts={contacts} isDoorToDoor={isDoorToDoor} isRS={isRS}
-                serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} entityCode={entityCode} needsNContainers={needsNContainers} />
+                serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} entityCode={entityCode} needsNContainers={needsNContainers}
+                onEditStep={(key) => { const idx = SK.indexOf(key); if (idx >= 0) setStep(idx + 1); }} />
             )}
 
           </div>
@@ -1442,7 +1558,13 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 // merender Duties & Taxes DUA KALI untuk Door-to-Door (binding identik,
 // bug prototipe) — SENGAJA TIDAK ditiru di sini: field ini dirender SEKALI,
 // di dalam panel bersyarat Undername saja (deviasi, dicatat di laporan). ──
-function UndernamePanel({ f, setF, errors, iorOpts }) {
+// `hideDuties` (Putaran 13b, W-33) -- dipakai saat panel ini dipanggil dari
+// step 'customs' (Door-to-Door), yang SUDAH merender Duties & Taxes mandiri
+// di atas panel ini (selalu tampil, lepas dari checkbox) -- mencegah
+// duplikat render field yang sama. Dipanggil TANPA prop ini dari step 'svc'
+// (Customs Clearance standalone), yang sama sekali tidak punya field Duties
+// & Taxes mandiri -- di sana field itu TETAP di dalam panel, gated checkbox.
+function UndernamePanel({ f, setF, errors, iorOpts, hideDuties }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, background: '#FFF8EE', border: '1px solid #F0DCAE', borderRadius: 14 }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text }}>
@@ -1470,14 +1592,16 @@ function UndernamePanel({ f, setF, errors, iorOpts }) {
             </div>
             <FieldError>{errors.under_ior}</FieldError>
           </Field>
-          <Field label="Duties & Taxes">
-            <div style={{ position: 'relative' }}>
-              <select value={f.duties_and_taxes} onChange={(e) => setF((x) => ({ ...x, duties_and_taxes: e.target.value }))} style={selInput}>
-                {DUTIES_AND_TAXES_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select><Chevron />
-            </div>
-            <FieldError>{errors.under_duties}</FieldError>
-          </Field>
+          {!hideDuties && (
+            <Field label="Duties & Taxes">
+              <div style={{ position: 'relative' }}>
+                <select value={f.duties_and_taxes} onChange={(e) => setF((x) => ({ ...x, duties_and_taxes: e.target.value }))} style={selInput}>
+                  {DUTIES_AND_TAXES_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select><Chevron />
+              </div>
+              <FieldError>{errors.under_duties}</FieldError>
+            </Field>
+          )}
           <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input type="checkbox" checked={f.supporting_docs_received} onChange={(e) => setF((x) => ({ ...x, supporting_docs_received: e.target.checked }))} />
             Supporting documents from the customer have been received. <span style={S.req}>*</span>
@@ -1510,7 +1634,19 @@ function ReviewRow({ label, value, required }) {
     </div>
   );
 }
-function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, entityCode, needsNContainers }) {
+// Putaran 13b (W-44) -- mockup: setiap grup Review punya link "Edit" yang
+// lompat ke step terkait (`review.edit`, baris 793 mockup). `onEditStep`
+// menerima stepKey ('cust'/'svc'/dst), komponen induk yang memetakannya ke
+// indeks SK (lihat pemanggilan <ReviewStep onEditStep=... />).
+function GroupHeader({ title, onClick }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text }}>{title}</span>
+      <button type="button" onClick={onClick} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.navy }}>Edit</button>
+    </div>
+  );
+}
+function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, entityCode, needsNContainers, onEditStep }) {
   const serviceLabel = serviceTypeOpts.find((o) => o.value === f.service_type)?.label || f.service_type;
   const ownerLabel = f.owner_id ? (roster.find((r) => r.id === f.owner_id)?.full_name || f.owner_id) : 'Unassigned (or yourself)';
   const contactLabel = f.contact_id ? (contacts.find((c) => c.id === f.contact_id)?.name || f.contact_id) : '';
@@ -1528,16 +1664,29 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
   const lanesText = laneTbl
     ? selectedLanes.map((l) => `${l.pol || '…'} → ${l.pod || '…'}`).join('; ')
     : `${f.pol || '…'} → ${f.pod || '…'}`;
+  // Putaran 13b (W-21) -- cermin gate form-nya sendiri (pickupDeliveryVisible/
+  // laneTbl di komponen utama), BUKAN literal mockup (mockup sendiri
+  // menyembunyikan Pickup/Delivery utk SEMUA service type saat laneTbl --
+  // keputusan Den: Door-to-Door pengecualian).
+  const pickupDeliveryVisible = isDoorToDoor || !laneTbl;
   // 5a -- gate SAMA dengan kedua tempat Undername inline muncul di
   // langkah-langkah sebelumnya: Door-to-Door (langkah "customs") ATAU
   // Customs Clearance + Import (langkah "svc"). Pricing Basis tetap
   // Door-to-Door-only (hanya step itu yang punya field ini).
   const showUndernameReview = isDoorToDoor || (f.service_type === 'customs' && f.direction === 'Import');
+  // Putaran 13b (W-33) -- cermin `dutiesVisible` di handleCreate: Duties &
+  // Taxes kini field mandiri (selalu tampil) utk Door-to-Door, bukan lagi
+  // terkunci di dalam blok "Undername dicentang".
+  const dutiesVisible = isDoorToDoor || (f.service_type === 'customs' && f.direction === 'Import' && f.undername_import);
+  // W-44 -- grup "Customs & Undername" dipetakan ke step 'customs' kalau
+  // Door-to-Door, atau 'svc' kalau Customs Clearance standalone (step
+  // 'customs' tidak ada di SK utk kasus itu).
+  const undernameEditKey = isDoorToDoor ? 'customs' : 'svc';
   const additionalServicesLabel = f.additional_services.map((id) => SERVICES.find((s) => s.id === id)?.label || id).join(', ');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Customer &amp; Contact</div>
+        <GroupHeader title="Customer & Contact" onClick={() => onEditStep('cust')} />
         <div style={grid3}>
           <ReviewRow label="Account" value={accountText} required />
           <ReviewRow label="Entity" value={entityCode === 'Set from customer' ? '' : entityCode} />
@@ -1546,7 +1695,7 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
         </div>
       </div>
       <div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Service &amp; Direction</div>
+        <GroupHeader title="Service & Direction" onClick={() => onEditStep('svc')} />
         <div style={grid3}>
           <ReviewRow label="Service Type" value={serviceLabel} required />
           <ReviewRow label="Direction" value={f.direction} required />
@@ -1554,7 +1703,7 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
         </div>
       </div>
       <div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Route &amp; Terms</div>
+        <GroupHeader title="Route & Terms" onClick={() => onEditStep('route')} />
         <div style={grid3}>
           <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? selectedLanes.length : 1})`} value={lanesText} required />
           {!laneTbl && f.via && <ReviewRow label="Via port" value={f.via} />}
@@ -1565,11 +1714,12 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
             </>
           ) : (
             <>
-              <ReviewRow label="Pickup Address" value={f.pickup_address} required={isDoorToDoor} />
-              <ReviewRow label="Delivery Address" value={f.delivery_address} required={isDoorToDoor} />
+              {pickupDeliveryVisible && <ReviewRow label="Pickup Address" value={f.pickup_address} required={isDoorToDoor} />}
+              {pickupDeliveryVisible && <ReviewRow label="Delivery Address" value={f.delivery_address} required={isDoorToDoor} />}
               <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
               <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
               <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
+              {!laneTbl && <ReviewRow label="Cargo ready date" value={f.cargo_ready_date} />}
             </>
           )}
         </div>
@@ -1579,7 +1729,7 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
           hanya utk Door-to-Door -- jalur Customs Clearance+Import nol
           representasi apa pun). */}
       <div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Cargo</div>
+        <GroupHeader title="Cargo" onClick={() => onEditStep('cargo')} />
         <div style={grid3}>
           <ReviewRow label="Total Weight (KG)" value={f.weight_kg} />
           <ReviewRow label="Volume (CBM)" value={f.volume_cbm} />
@@ -1587,14 +1737,14 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
       </div>
       {showUndernameReview && (
         <div>
-          <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Customs &amp; Undername</div>
+          <GroupHeader title="Customs & Undername" onClick={() => onEditStep(undernameEditKey)} />
           <div style={grid3}>
             {isDoorToDoor && <ReviewRow label="Pricing Basis" value={f.pricing_basis} />}
+            {dutiesVisible && <ReviewRow label="Duties & Taxes" value={f.duties_and_taxes} />}
             <ReviewRow label="Undername import" value={f.undername_import ? 'Yes' : 'No'} />
             {f.undername_import && (
               <>
                 <ReviewRow label="Importer of Record" value={f.importer_of_record} required />
-                <ReviewRow label="Duties & Taxes" value={f.duties_and_taxes} />
                 <ReviewRow label="Supporting Documents Received" value={f.supporting_docs_received ? 'Yes' : 'No'} />
               </>
             )}
@@ -1603,14 +1753,14 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
       )}
       {f.additional_services.length > 0 && (
         <div>
-          <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Additional Services</div>
+          <GroupHeader title="Additional Services" onClick={() => onEditStep('addl')} />
           <div style={grid3}>
             <ReviewRow label="Additional Services" value={additionalServicesLabel} />
           </div>
         </div>
       )}
       <div>
-        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 12 }}>Commercial</div>
+        <GroupHeader title="Commercial" onClick={() => onEditStep('commercial')} />
         <div style={grid3}>
           <ReviewRow label="Deadline Quote" value={f.deadline_quote} />
           <ReviewRow label="Estimated (intake)" value={f.estimated_value} />
