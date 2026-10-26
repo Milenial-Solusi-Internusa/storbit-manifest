@@ -43,6 +43,7 @@ const SERVICE_TYPE_LABELS = {
   freight_forwarding: 'Freight',
   customs:            'Customs',
   trading:            'Trading',
+  door_to_door:       'Door to Door', // dropdown_options seed Putaran 4 (20261025000004) -- label tampilan saja.
 };
 
 const PAGE_SIZE = 20;

@@ -2409,9 +2409,18 @@ export default function StorbitManifest() {
   // identity — if that callback is also the dependency of a mount useEffect
   // and calls showToast again on failure, the result is a render/refetch
   // loop (confirmed root cause of the BNF Fase G 403 incident, 2026-08-05).
+  // toastTimerRef holds the pending setToast(null) timer id — a second
+  // showToast() call within 2800ms used to leave the FIRST timer running,
+  // which then cleared the SECOND toast early (reported Putaran 4 Tahap 4C
+  // E2E, 2026-10-25: a toast shown <2.8s after another vanished in well
+  // under its own duration). useRef is referentially stable across
+  // renders, so including it changes nothing about the empty dependency
+  // array reasoning above — it does not need to be listed as a dependency.
+  const toastTimerRef = useRef(null);
   const showToast = useCallback((msg, type = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 2800);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
   }, []);
 
   // Moved here (below showToast/setActiveModule/setShowInquiryForm/setCrmDealInquiry/

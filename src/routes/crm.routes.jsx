@@ -62,6 +62,10 @@ const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'
 const InquiryClassificationPage = lazy(() => import('@/modules/crm/InquiryClassificationPage'));
 const InquiryOwnerAssignmentPage = lazy(() => import('@/modules/crm/InquiryOwnerAssignmentPage'));
 const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
+// Putaran 4 Tahap 4B -- wizard Intake Form, CREATE-ONLY (Single Shipment).
+// InquiryFormPage TETAP satu-satunya halaman EDIT -- lihat InquiryEditRoute/
+// CustomerInquiryEditRoute di bawah, tidak disentuh.
+const InquiryIntakeWizardPage = lazy(() => import('@/modules/crm/InquiryIntakeWizardPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
 const QuotationListPage      = lazy(() => import('@/modules/crm/QuotationListPage'));
 const QuotationDetailPage    = lazy(() => import('@/modules/crm/QuotationDetailPage'));
@@ -410,10 +414,11 @@ function InquiryNewRoute() {
   const accountId = inquiryPrefill?.accountId || location.state?.leadAccount?.id || null;
   return (
     <Boundary title="Inquiry Form temporarily unavailable">
-      <InquiryFormPage
+      <InquiryIntakeWizardPage
         prefillAccountId={accountId}
         prefillContactId={inquiryPrefill?.contactId || null}
         onBack={() => { setInquiryPrefill(null); navigate(P_INQUIRY); }}
+        onCreated={(id) => { setInquiryPrefill(null); navigate(id ? `${P_INQUIRY}/${id}` : P_INQUIRY); }}
         showToast={showToast}
       />
     </Boundary>

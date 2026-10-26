@@ -181,6 +181,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   const [errors, setErrors] = useState({});
   const [sourceType, setSourceType] = useState('prospect');
   const [editNo, setEditNo] = useState('');   // existing inquiry_no (edit mode header)
+  // Putaran 4 Tahap 4B, Task 3 -- tambalan SEMENTARA: inquiry yang punya baris
+  // inquiry_lanes (dibuat lewat wizard baru/InquiryIntakeWizardPage.jsx)
+  // mengunci POL/POD di SINI jadi read-only, supaya inquiries.pol/pod tidak
+  // bisa diubah lewat form edit lama sampai berbeda dari lane utamanya.
+  // BUKAN editor lane -- itu menyusul lewat PLAN tersendiri.
+  const [hasLanes, setHasLanes] = useState(false);
   // Display text for the searchable account pickers. form.prospect_id/customer_id
   // stay the stored source of truth; these hold only what's shown in the input.
   const [prospectText, setProspectText] = useState('');
@@ -347,6 +353,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     supabase.from('inquiries').select('*').eq('id', inquiryId).maybeSingle()
       .then(async ({ data }) => {
         if (cancelled || !data) return;
+        // Task 3 -- query TERPISAH (bukan embed inquiries->inquiry_lanes di
+        // select utama), nol dampak ke bentuk fetch yang sudah ada.
+        const { data: laneRows } = await supabase
+          .from('inquiry_lanes').select('id').eq('inquiry_id', inquiryId).limit(1);
+        if (cancelled) return;
+        setHasLanes((laneRows || []).length > 0);
         setEditNo(data.inquiry_no || '');
         const linkedId = data.customer_id || data.prospect_id || '';
         setSourceType(data.customer_id ? 'customer' : 'prospect');
@@ -674,6 +686,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     options={locations}
                     tokens={LOCATION_PICKER_TOKENS}
                     placeholder="Select port of loading…"
+                    disabled={hasLanes}
                     onChange={(id, loc) => setForm((f) => ({ ...f, pol_location_id: id, pol: loc.name }))}
                     onManage={canManageLocations ? openLocationMaster : undefined}
                     onRequest={canManageLocations ? undefined : requestNewLocation}
@@ -688,12 +701,21 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     options={locations}
                     tokens={LOCATION_PICKER_TOKENS}
                     placeholder="Select port of discharge or city…"
+                    disabled={hasLanes}
                     onChange={(id, loc) => setForm((f) => ({ ...f, pod_location_id: id, pod: loc.name }))}
                     onManage={canManageLocations ? openLocationMaster : undefined}
                     onRequest={canManageLocations ? undefined : requestNewLocation}
                   />
                 </div>
               </div>
+              {/* Putaran 4 Tahap 4B, Task 3 -- tambalan sementara: mencegah
+                  inquiries.pol/pod berbeda dari lane utama (inquiry_lanes),
+                  bukan editor lane. */}
+              {hasLanes && (
+                <div style={{ fontSize: 12, color: C.sub, marginTop: -8 }}>
+                  Port of Loading and Port of Discharge come from this inquiry&apos;s route options and can&apos;t be edited here yet.
+                </div>
+              )}
 
               <div style={grid2}>
                 <div style={{ minWidth: 0 }}>
