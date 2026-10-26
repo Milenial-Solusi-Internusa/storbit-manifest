@@ -60,7 +60,7 @@ import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS, isWonAwaitingSalesOrder } from './inquiryOptions';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
@@ -728,12 +728,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // Putaran 9 -- limit dinaikkan 1 -> 50: chip "Won, awaiting Sales
       // Order" butuh tahu ADA/TIDAKnya baris SENT di ANTARA SEMUA baris
       // (bukan cuma yang terbaru), dan blok "Shipments" (Rate Sheet) perlu
-      // daftar penuh. sales_orders.inquiry_id FK langsung, nol deleted_at
-      // di tabel ini — kolomnya memang tidak ada.
+      // daftar penuh.
+      // Putaran 9 perbaikan (review merge p7/p13a) -- KOREKSI komentar lama
+      // di baris ini: `sales_orders.deleted_at` TERNYATA ADA (diverifikasi
+      // ulang langsung ke schema_snapshot.sql, bukan dipercaya dari
+      // komentar lama Irisan 3 yang keliru). Difilter di query (pola sama
+      // `quotations`/`prf` di atas) -- bukan cuma dikirim ke
+      // isWonAwaitingSalesOrder (yang juga memeriksa `!so.deleted_at`
+      // sendiri, lihat inquiryOptions.js), supaya SELURUH pemakai `so`/
+      // `salesOrders` di halaman ini (node DocumentFlow, blok Shipments)
+      // ikut tidak pernah melihat baris yang sudah soft-delete.
       const { data: soRows } = await supabase
         .from('sales_orders')
         .select('id, so_no, status, created_at')
-        .eq('inquiry_id', inq.id)
+        .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(50);
       const so = (soRows || [])[0] || null;
 
@@ -949,43 +957,52 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // inquiry. `inquiries` TIDAK punya kolom `via` sendiri (hanya
   // `inquiry_lanes.via_location_id`) -- untuk kasus nol-lane, via memang
   // tidak ada yang dicek, konsekuensi alami skema, bukan kelalaian.
+  // Putaran 9 perbaikan (review merge p7/p13a) -- dibandingkan byte-per-
+  // byte dengan InquiryListPage.jsx isFTZ (Putaran 7): LOGIKANYA SAMA
+  // (OR per lane vs flatMap+some global = setara; fallback nol-lane sama
+  // persis "pol/pod inquiry saja, nol via" dengan alasan skema yang sama).
+  // Nol perubahan perlu di sini -- dicatat supaya perbandingannya
+  // terlihat, bukan diasumsikan.
   const isLocationFtz = (id) => !!id && locationById[id]?.type === 'FTZ';
   const isInquiryFtz = lanes.length > 0
     ? lanes.some((l) => isLocationFtz(l.pol_location_id) || isLocationFtz(l.pod_location_id) || isLocationFtz(l.via_location_id))
     : isLocationFtz(inquiry?.pol_location_id) || isLocationFtz(inquiry?.pod_location_id);
 
-  // Won, awaiting Sales Order -- rumus LENGKAP mockup base() :723 (WON,
-  // bukan Rate Sheet, nol sales_orders SENT, >7 hari sejak WON). Tanggal
-  // WON dari `inquiries.closed_at` (trigger stamp, migrasi
-  // 20260828000002) -- BUKAN inquiry_status_history (instruksi eksplisit
-  // Mas, Putaran 9 keputusan 2). FORMULA INI IDENTIK dengan yang dipakai
-  // InquiryListPage.jsx (Putaran 7) -- kalau salah satu berubah, sunting
-  // berdua, komentar di sana merujuk balik ke sini.
-  // daysBetween() memakai Date.now()/getTime() mentah (milidetik), BUKAN
-  // string tanggal terpotong -- kebal dari bug UTC-vs-WIB (ia tak pernah
-  // memotong ke batas hari kalender sama sekali). Math.floor(ms/86400000)
-  // > 7 -- cermin permintaan review (Putaran 9 perbaikan 1).
-  const hasSentSalesOrder = salesOrders.some((r) => r.status === 'SENT');
-  const isWonAwaitingSo = dealStatus === 'WON' && !isInquiryRS && !hasSentSalesOrder
-    && !!inquiry?.closed_at && daysBetween(inquiry.closed_at, null) > 7;
+  // Won, awaiting Sales Order -- Putaran 9 perbaikan (review merge p7/p13a):
+  // dipindah ke fungsi BERSAMA `isWonAwaitingSalesOrder` (inquiryOptions.js),
+  // persis instruksi komentar di file itu ("WAJIB dipakai ulang oleh
+  // DealDetailPage.jsx"). Rumus lokal sebelumnya (duplikat, bukan lagi
+  // dipakai di sini) sudah byte-cocok dengan fungsi bersama ini -- lihat
+  // inquiryOptions.js untuk definisi lengkap + alasannya. `salesOrders`
+  // sudah difilter `deleted_at IS NULL` di query (lihat fetch di atas),
+  // jadi `!so.deleted_at` di dalam fungsi bersama selalu benar untuk baris
+  // yang sampai ke sini -- bukan redundan yang salah, hanya tidak pernah
+  // menyala karena baris mati sudah tersaring lebih dulu.
+  const isWonAwaitingSo = isWonAwaitingSalesOrder(
+    { status: inquiry?.status, inquiry_type: inquiry?.inquiry_type, closed_at: inquiry?.closed_at },
+    salesOrders,
+  );
 
-  // Quotation expired -- Putaran 9 keputusan 3 (BUKAN rumus mockup yang
-  // mengikat ke status inquiry==='Quoted' saja): quotation AKTIF (sumbu
-  // `pickActiveQuotation`, bukan quotation apa pun) dengan valid_until
-  // sudah lewat hari ini, status quotation bukan ACCEPTED/REJECTED/
-  // SUPERSEDED, DAN status inquiry masih QUOTED atau NEGOTIATION.
-  // Putaran 9 perbaikan 1 -- "hari ini" WAJIB WIB (getTodayWIB(), src/lib/
-  // dateUtils.js -- sudah dipakai InquiryListPage.jsx, bukan file baru).
-  // new Date().toISOString().slice(0,10) adalah UTC: antara 00:00-06:59
-  // WIB ia mengembalikan tanggal KEMARIN, membuat badge terlambat muncul
-  // (quotation yang baru saja valid_until-nya lewat tengah malam WIB belum
-  // dianggap expired sampai jam 7 pagi) dan berbeda dari InquiryListPage.jsx
-  // yang sudah memakai WIB.
+  // Quotation expired -- Putaran 9 perbaikan (review merge p7/p13a): samakan
+  // PERSIS ke InquiryListPage.jsx isQuotationExpired (Putaran 7). Dua bagian:
+  // (a) "hari ini" WIB (getTodayWIB(), src/lib/dateUtils.js -- lib bersama
+  //     existing, sudah dipakai InquiryListPage.jsx juga, bukan file baru).
+  //     new Date().toISOString().slice(0,10) adalah UTC: antara 00:00-06:59
+  //     WIB ia mengembalikan tanggal KEMARIN, badge jadi telat muncul.
+  // (b) pemilihan quotation yang diperiksa -- List memakai quotation
+  //     PERTAMA yang statusnya BUKAN ACCEPTED/REJECTED/SUPERSEDED (urutan
+  //     array, bukan rantai revisi), BUKAN `activeQuotation` (hasil
+  //     `pickActiveQuotation`, dipakai TETAP apa adanya di tempat lain
+  //     halaman ini -- Price Breakdown/tombol Create Revision, TIDAK
+  //     disentuh perbaikan ini). Untuk kasus umum (satu rantai versi per
+  //     inquiry) keduanya mengarah ke baris yang sama; disamakan di sini
+  //     supaya definisinya byte-cocok dengan List untuk kasus legacy
+  //     multi-quotation_no juga, bukan cuma kebetulan sama di kasus umum.
   const todayIso = getTodayWIB();
-  const isQuotationExpired = !!activeQuotation && !!activeQuotation.valid_until
-    && activeQuotation.valid_until < todayIso
-    && !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(activeQuotation.status || '').toUpperCase())
-    && ['QUOTED', 'NEGOTIATION'].includes(dealStatus);
+  const quotationForExpiryCheck = quotations.find((q) => !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(q.status || '').toUpperCase()));
+  const isQuotationExpired = ['QUOTED', 'NEGOTIATION'].includes(dealStatus)
+    && !!quotationForExpiryCheck && !!quotationForExpiryCheck.valid_until
+    && quotationForExpiryCheck.valid_until < todayIso;
 
   // notGT -- mockup Inquiry Management.dc.html :1092 (`notGT: cur.svc !==
   // 'General Trading'`). Menggerbang field "Customer Role" (Service &
