@@ -2068,6 +2068,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol_location_id: inquiry.pol_location_id || null, pod_location_id: inquiry.pod_location_id || null,
               pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
               incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
+              // Putaran 9 -- Cargo ready date, hanya bermakna utk Single
+              // Shipment (sama alasan validity_from/to di bawah -- diseed
+              // tanpa syarat, harmless utk Rate Sheet).
+              cargo_ready_date: inquiry.cargo_ready_date || '',
               // Putaran 4 Tahap 4C -- diseed TANPA SYARAT (harmless utk
               // Single Shipment, tak pernah dirender/dikirim di cabang itu).
               validity_from: inquiry.validity_from || '', validity_to: inquiry.validity_to || '',
@@ -2112,6 +2116,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
               }),
               pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
+              cargo_ready_date: sectionDraft.cargo_ready_date || null,
               incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
               container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
             }, 'Route & Terms');
@@ -2182,6 +2187,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
               <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
                 draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
+              {/* Putaran 9 -- Cargo ready date. Mockup (:346, baris satu
+                  grid dengan Delivery Address) -- kolom cargo_ready_date
+                  (migrasi 20261025000002). Nilai mentah ISO, bukan
+                  fmtDate() -- konvensi lokal section ini (pola persis
+                  Validity Requested From/Until di atas, bukan konvensi
+                  Deadline Quote di section lain). */}
+              <TextField label="Cargo ready date" type="date" editing={editingSection === 'Route'} value={inquiry.cargo_ready_date}
+                draft={sectionDraft.cargo_ready_date} onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_ready_date: v }))}
+                placeholder="Not recorded" />
               <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
                 values={inquiry.incoterms} draft={sectionDraft.incoterms}
                 onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
