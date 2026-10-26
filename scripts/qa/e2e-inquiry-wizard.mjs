@@ -1838,17 +1838,39 @@ function dealFieldValue(page, label) {
     await settle(page3, 300);
     await page3.locator('button:has-text("Customs Clearance")').first().click();
     await settle(page3, 300);
-    const w16BannerVisible = (await page3.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0;
+    // Diagnosis 198/200 (run 735c50d) -- teks banner yang dicek SEBELUMNYA
+    // ("JCI sales access is required for Customs Clearance") TIDAK PERNAH
+    // cocok dengan teks asli di kode (`InquiryIntakeWizardPage.jsx`, span di
+    // dalam blok `svcJciBlocked`): "Customs Clearance is a JCI service
+    // line. Ask your manager to request JCI sales access for your account
+    // to continue." -- dua frasa itu salah tulis skrip, BUKAN kutipan dari
+    // kode. Dikonfirmasi lewat browser nyata (dua kali: alur pengguna
+    // normal dgn Customer dipilih, DAN alur persis skrip tanpa Customer +
+    // lompat pill) -- banner tampil SEKETIKA (nol race data `myCompanyIds`)
+    // dan Next benar menolak pindah step di keduanya. Regex diperbaiki ke
+    // potongan stabil dari kalimat asli.
+    const w16BannerVisible = (await page3.locator('text=/Customs Clearance is a JCI service line/i').count()) > 0;
     if (salesHasJciRoleGroundTruth) {
-      console.log('  ⚠⚠ [ACC/W-16] PERINGATAN KERAS: ground truth REST membuktikan sales@msi.com PUNYA role aktif JCI hari ini -- svcJciBlocked tidak akan menyala. DUA pengecekan W-16 di bawah DILEWATI dengan alasan eksplisit (bukan gagal diam-diam, bukan dipaksa lulus).');
+      console.log('  ⚠⚠ [ACC/W-16] PERINGATAN KERAS: ground truth REST membuktikan sales@msi.com PUNYA role aktif JCI hari ini -- svcJciBlocked tidak akan menyala. Pengecekan W-16 di bawah DILEWATI dengan alasan eksplisit (bukan gagal diam-diam, bukan dipaksa lulus).');
     } else {
+      // Prasyarat eksplisit (diminta Mas) -- buktikan pengecekan Next-block
+      // di bawah TIDAK vakum: step aktif BENAR "Service & Direction" (bukan
+      // kebetulan nyangkut di step lain) DAN kartu Customs Clearance BENAR
+      // terpilih (latar oranye C.orangeSoft '#FDF0E9' = rgb(253,240,233),
+      // pola sama cek Pill aktif di tempat lain skrip ini) SEBELUM Next
+      // diklik -- kalau salah satu prasyarat ini gagal, hasil check
+      // berikutnya tidak bisa dipercaya sebagai bukti W-16.
+      check('[ACC/W-16] Prasyarat: masih di step "Service & Direction" sesaat sebelum Next diklik',
+        await isStepActive(page3, 'Service & Direction'));
+      check('[ACC/W-16] Prasyarat: kartu "Customs Clearance" benar terpilih (latar oranye aktif)',
+        /253,\s*240,\s*233/.test(await page3.locator('button:has-text("Customs Clearance")').first().evaluate((el) => getComputedStyle(el).backgroundColor)));
       check('[ACC/W-16] Banner blokir akses JCI tampil (ground truth REST: akun TANPA role aktif di JCI)', w16BannerVisible);
       await page3.locator('button:has-text("Next")').first().click();
       await settle(page3, 300);
       check('[ACC/W-16] Next di "Service & Direction" TIDAK memindahkan step saat JCI terblokir',
         await isStepActive(page3, 'Service & Direction'));
       check('[ACC/W-16] Banner blokir JCI TETAP terlihat setelah Next ditolak (penolakan tidak diam-diam)',
-        (await page3.locator('text=/JCI sales access is required for Customs Clearance/i').count()) > 0);
+        (await page3.locator('text=/Customs Clearance is a JCI service line/i').count()) > 0);
     }
     console.log('  i [ACC/W-16] Create TIDAK ditekan pada skenario ini -- nol inquiry baru tercipta dari sesi sales@msi.com.');
 
