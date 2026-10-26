@@ -28,6 +28,7 @@ import {
   Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, isSuperAdmin, canCreatePrf, isAllEntities } from '../../lib/roles';
@@ -960,6 +961,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Mas, Putaran 9 keputusan 2). FORMULA INI IDENTIK dengan yang dipakai
   // InquiryListPage.jsx (Putaran 7) -- kalau salah satu berubah, sunting
   // berdua, komentar di sana merujuk balik ke sini.
+  // daysBetween() memakai Date.now()/getTime() mentah (milidetik), BUKAN
+  // string tanggal terpotong -- kebal dari bug UTC-vs-WIB (ia tak pernah
+  // memotong ke batas hari kalender sama sekali). Math.floor(ms/86400000)
+  // > 7 -- cermin permintaan review (Putaran 9 perbaikan 1).
   const hasSentSalesOrder = salesOrders.some((r) => r.status === 'SENT');
   const isWonAwaitingSo = dealStatus === 'WON' && !isInquiryRS && !hasSentSalesOrder
     && !!inquiry?.closed_at && daysBetween(inquiry.closed_at, null) > 7;
@@ -969,7 +974,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // `pickActiveQuotation`, bukan quotation apa pun) dengan valid_until
   // sudah lewat hari ini, status quotation bukan ACCEPTED/REJECTED/
   // SUPERSEDED, DAN status inquiry masih QUOTED atau NEGOTIATION.
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Putaran 9 perbaikan 1 -- "hari ini" WAJIB WIB (getTodayWIB(), src/lib/
+  // dateUtils.js -- sudah dipakai InquiryListPage.jsx, bukan file baru).
+  // new Date().toISOString().slice(0,10) adalah UTC: antara 00:00-06:59
+  // WIB ia mengembalikan tanggal KEMARIN, membuat badge terlambat muncul
+  // (quotation yang baru saja valid_until-nya lewat tengah malam WIB belum
+  // dianggap expired sampai jam 7 pagi) dan berbeda dari InquiryListPage.jsx
+  // yang sudah memakai WIB.
+  const todayIso = getTodayWIB();
   const isQuotationExpired = !!activeQuotation && !!activeQuotation.valid_until
     && activeQuotation.valid_until < todayIso
     && !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(activeQuotation.status || '').toUpperCase())
@@ -2333,14 +2345,38 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               value={inquiry.n_containers != null ? String(inquiry.n_containers) : ''}
               placeholder="Container count not recorded" />
           )}
-          <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
-            draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
-          <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
-            draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
-            options={IMO_CLASSES} includeEmpty />
-          <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
-            draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
-            options={MSDS_OPTS} includeEmpty />
+          {/* Putaran 9 perbaikan 2 -- gating Dangerous Goods (mockup isDG)
+              utk UN Number/IMO Class/MSDS Available, yang sebelumnya
+              SELALU tampil tanpa syarat (temuan audit Langkah 1). Live
+              terhadap DRAFT saat mode edit (bukan nilai komit, beda
+              sengaja dari `notGT`) -- toggle Cargo Type langsung
+              menunjukkan/menyembunyikan ketiganya tanpa perlu Save dulu.
+              Penjaga data lama: tetap tampil (ketiganya, satu kelompok)
+              kalau SALAH SATU dari tiga field sudah berisi nilai, walau
+              Cargo Type tidak/tidak lagi memuat Dangerous Goods --
+              mencegah data lama hilang dari layar. Nilai draft TIDAK
+              pernah direset saat tersembunyi (nol kode yang menyentuhnya)
+              -- Save tetap mengirim nilai draft apa adanya. */}
+          {(() => {
+            const cargoTypesNow = editingSection === 'Cargo' ? (sectionDraft.cargo_types || []) : (inquiry.cargo_types || []);
+            const unNow = editingSection === 'Cargo' ? sectionDraft.un_number : inquiry.un_number;
+            const imoNow = editingSection === 'Cargo' ? sectionDraft.imo_class : inquiry.imo_class;
+            const msdsNow = editingSection === 'Cargo' ? sectionDraft.has_msds : inquiry.has_msds;
+            const showDgFields = cargoTypesNow.includes('dg') || !!unNow || !!imoNow || !!msdsNow;
+            if (!showDgFields) return null;
+            return (
+              <>
+                <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
+                  draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
+                <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
+                  draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
+                  options={IMO_CLASSES} includeEmpty />
+                <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
+                  draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
+                  options={MSDS_OPTS} includeEmpty />
+              </>
+            );
+          })()}
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
