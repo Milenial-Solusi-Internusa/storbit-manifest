@@ -108,6 +108,30 @@ const DOOR_TO_DOOR_SERVICE_TYPES = [];
 // lucide-react PlaneLanding/PlaneTakeoff/Truck (node_modules/lucide-react).
 const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: Truck };
 
+// Putaran 9 -- opsi Direction/Customer Role untuk SelectField section
+// "Service & Status". MIRROR nilai persis InquiryIntakeWizardPage.jsx
+// (DIRECTION_OPTS/CUSTOMER_ROLE_OPTS, baris 86-87) -- bukan impor: file
+// itu dikerjakan sesi paralel, dan rule eksekusi Putaran 9 membatasi
+// perubahan HANYA DealDetailPage.jsx. inquiryOptions.js juga belum punya
+// array ini (dicek, tidak ada). Kalau salah satu sisi berubah nilainya,
+// KEDUANYA wajib disunting bersama -- utang mirror, dicatat di laporan
+// akhir Putaran 9.
+const DIRECTION_OPTIONS = ['Import', 'Export', 'Domestic'];
+const CUSTOMER_ROLE_OPTIONS = ['Shipper', 'Consignee', 'Third Party'];
+
+// Putaran 9 -- label manusiawi accounts.source (field "Source" di Service
+// & Status, read-only). MIRROR CRMDashboardPage.jsx SOURCE_META /
+// src/modules/crm/lead/lib/leadOptions.js (dua file itu milik domain
+// lain, tidak diimpor -- alasan sama DIRECTION_OPTIONS di atas). Cakupan
+// = nilai yang diizinkan CHECK prospects_source_check (schema_snapshot.sql)
+// + 'whatsapp' (migrasi 20260830000004, LIVE).
+const SOURCE_LABEL = {
+  sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
+  existing_network: 'Existing Network', exhibition: 'Exhibition', instagram: 'Instagram',
+  linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website',
+  walk_in: 'Walk In', other: 'Other',
+};
+
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -950,6 +974,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     && activeQuotation.valid_until < todayIso
     && !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(activeQuotation.status || '').toUpperCase())
     && ['QUOTED', 'NEGOTIATION'].includes(dealStatus);
+
+  // notGT -- mockup Inquiry Management.dc.html :1092 (`notGT: cur.svc !==
+  // 'General Trading'`). Menggerbang field "Customer Role" (Service &
+  // Status) persis sama cara mockup menggerbangnya -- berbasis nilai
+  // KOMITMEN inquiry.service_type, bukan draft, pola sama isInquiryRS dkk.
+  const notGT = inquiry?.service_type !== 'trading';
+
+  // Source (accounts.source) -- label manusiawi, read-only (arah tulis
+  // balik belum diputuskan Mas). Section "Service & Status".
+  const accountSourceLabel = account?.source ? (SOURCE_LABEL[account.source] || account.source) : '';
 
   // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
   // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
@@ -1909,24 +1943,35 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         )}
 
         {/* ===== Section "Service & Status" (Irisan 2 Inquiry, lanjutan audit
-            mockup, Pekerjaan B commit 4) -- mockup SECS[0], judul "Service &
-            Status". HANYA Service Type yang benar-benar tersimpan (saveSec
-            whitelist mockup: `svc`) -- Status terkunci di mockup sendiri
-            (kotak abu + ikon gembok, TIDAK ada di whitelist saveSec, sumbu
-            deal yang sah ditulis RPC/trigger lain). Direction/Customer Role/
-            Source DILEWATI SELURUHNYA -- nol kolom `inquiries` utk ketiganya
-            (Source ada tapi di `accounts.source`, tabel lain) -- lihat PLAN
-            §8.1-3. "Route" (field lama, ada di kode tak ada di mockup --
-            keputusan Mas: DIBIARKAN) dipindah ke sini dari grup FIELD_GROUPS
-            lama, tetap read-only, bukan jadi field saveSec. */}
+            mockup, Pekerjaan B commit 4; Direction/Customer Role/Source
+            ditambahkan Putaran 9) -- mockup SECS[0], judul "Service &
+            Status". Kolom `direction`/`customer_role` BELUM ADA saat
+            Irisan 2 ditulis -- komentar lama "DILEWATI, nol kolom" sudah
+            basi, dikoreksi di sini. Urutan field PERSIS urutan DOM mockup
+            (Service Type, Direction, Customer Role[kondisional notGT],
+            Status, Source) -- "Route" (field lama, ada di kode tak ada di
+            mockup, keputusan Mas: DIBIARKAN) ditaruh TERAKHIR, sesudah
+            Source, supaya 5 field asli mockup tetap mengikuti urutan dan
+            pengelompokan barisnya sendiri di grid 3-kolom. */}
         <SectionHeader
           title="Service & Status"
           editing={editingSection === 'Service'}
           canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
           saving={savingSection}
-          onEdit={() => { setSectionDraft({ service_type: inquiry.service_type || '' }); setEditingSection('Service'); }}
+          onEdit={() => {
+            setSectionDraft({
+              service_type: inquiry.service_type || '',
+              direction: inquiry.direction || '',
+              customer_role: inquiry.customer_role || '',
+            });
+            setEditingSection('Service');
+          }}
           onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
-          onSave={() => saveInquirySection({ service_type: sectionDraft.service_type || null }, 'Service & Status')}
+          onSave={() => saveInquirySection({
+            service_type: sectionDraft.service_type || null,
+            direction: sectionDraft.direction || null,
+            customer_role: sectionDraft.customer_role || null,
+          }, 'Service & Status')}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
           <SelectField
@@ -1937,7 +1982,33 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onDraft={(v) => setSectionDraft((d) => ({ ...d, service_type: v }))}
             options={Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label }))}
           />
+          <SelectField
+            label="Direction"
+            editing={editingSection === 'Service'}
+            value={inquiry.direction}
+            draft={sectionDraft.direction}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, direction: v }))}
+            options={DIRECTION_OPTIONS}
+            includeEmpty
+          />
+          {/* Customer Role -- mockup notGT. Nilai yang tersimpan TIDAK
+              diubah saat section ini disembunyikan: draft diseed dari
+              inquiry.customer_role di onEdit (persis seperti field lain),
+              jadi kalau pengguna tak pernah melihat/menyentuhnya, Save
+              mengirim balik nilai yang sama persis (keputusan Mas). */}
+          {notGT && (
+            <SelectField
+              label="Customer Role"
+              editing={editingSection === 'Service'}
+              value={inquiry.customer_role}
+              draft={sectionDraft.customer_role}
+              onDraft={(v) => setSectionDraft((d) => ({ ...d, customer_role: v }))}
+              options={CUSTOMER_ROLE_OPTIONS}
+              includeEmpty
+            />
+          )}
           <LockedField label="Status" value={STATUS_LABEL[dealStatus] || dealStatus} />
+          <TextField label="Source" editing={false} value={accountSourceLabel} placeholder="Source not recorded" />
           <TextField label="Route" editing={false} value={inquiry.route} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
