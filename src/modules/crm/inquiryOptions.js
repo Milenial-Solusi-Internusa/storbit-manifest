@@ -38,7 +38,7 @@ export const CARGO_TYPES = [
 
 /* Layanan tambahan — multi-pilih, tersimpan di `inquiries.additional_services[]`. */
 export const SERVICES = [
-  { id: 'customs', Icon: Shield, label: 'Custom Clearance' },
+  { id: 'customs', Icon: Shield, label: 'Customs Clearance' },
   { id: 'warehouse', Icon: Warehouse, label: 'Warehouse' },
   { id: 'undername', Icon: FileText, label: 'Undername' },
   { id: 'insurance', Icon: Umbrella, label: 'Cargo Insurance' },
