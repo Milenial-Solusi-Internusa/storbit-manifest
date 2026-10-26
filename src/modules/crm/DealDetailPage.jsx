@@ -25,9 +25,10 @@ import { useNavigate } from 'react-router';
 import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog, CheckCircle2, MoreVertical,
+  Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, isSuperAdmin, canCreatePrf, isAllEntities } from '../../lib/roles';
@@ -59,7 +60,7 @@ import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
 // kebenaran kedua yang pasti ketinggalan.
-import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS } from './inquiryOptions';
+import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS, isWonAwaitingSalesOrder } from './inquiryOptions';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
@@ -102,6 +103,36 @@ const SERVICE_LABEL = {
 // TIDAK disentuh di Tahap 4A ("nol perubahan FE" kecuali label map, lihat
 // instruksi eksekusi 4A). Aktifkan di Tahap 4B/4C bersamaan wizard-nya.
 const DOOR_TO_DOOR_SERVICE_TYPES = [];
+
+// Ikon chip header Direction -- path SVG mockup (Inquiry Management.dc.html
+// baris 282, D.dIm/D.dEx/D.dDo) diverifikasi BYTE-SAMA dengan
+// lucide-react PlaneLanding/PlaneTakeoff/Truck (node_modules/lucide-react).
+const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: Truck };
+
+// Putaran 9 -- opsi Direction/Customer Role untuk SelectField section
+// "Service & Status". MIRROR nilai persis InquiryIntakeWizardPage.jsx
+// (DIRECTION_OPTS/CUSTOMER_ROLE_OPTS, baris 86-87) -- bukan impor: file
+// itu dikerjakan sesi paralel, dan rule eksekusi Putaran 9 membatasi
+// perubahan HANYA DealDetailPage.jsx. inquiryOptions.js juga belum punya
+// array ini (dicek, tidak ada). Kalau salah satu sisi berubah nilainya,
+// KEDUANYA wajib disunting bersama -- utang mirror, dicatat di laporan
+// akhir Putaran 9.
+const DIRECTION_OPTIONS = ['Import', 'Export', 'Domestic'];
+const CUSTOMER_ROLE_OPTIONS = ['Shipper', 'Consignee', 'Third Party'];
+
+// Putaran 9 -- label manusiawi accounts.source (field "Source" di Service
+// & Status, read-only). MIRROR CRMDashboardPage.jsx SOURCE_META /
+// src/modules/crm/lead/lib/leadOptions.js (dua file itu milik domain
+// lain, tidak diimpor -- alasan sama DIRECTION_OPTIONS di atas). Cakupan
+// = nilai yang diizinkan CHECK prospects_source_check (schema_snapshot.sql)
+// + 'whatsapp' (migrasi 20260830000004, LIVE).
+const SOURCE_LABEL = {
+  sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
+  existing_network: 'Existing Network', exhibition: 'Exhibition', instagram: 'Instagram',
+  linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website',
+  walk_in: 'Walk In', other: 'Other',
+};
+
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -521,6 +552,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order" (baris
   // terbaru dari sales_orders.inquiry_id, null kalau belum ada).
   const [salesOrder, setSalesOrder] = useState(null);
+  // Putaran 9 -- SELURUH baris sales_orders inquiry ini (bukan hanya yang
+  // terbaru), dipakai DUA hal: (1) chip header "Won, awaiting Sales
+  // Order" (perlu tahu ADA/TIDAKnya baris berstatus SENT, bukan cuma yang
+  // terbaru), (2) blok "Shipments" khusus Rate Sheet (daftar penuh).
+  const [salesOrders, setSalesOrders] = useState([]);
   // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
   // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
   const [statusHistory, setStatusHistory] = useState([]);
@@ -620,7 +656,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, cargo_ready_date, n_containers, closed_at')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -658,7 +694,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date, lifecycle_stage, created_at, source')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -686,15 +722,27 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .order('created_at', { ascending: false }).limit(1000);
 
       // TD-318 Irisan 3, commit 1 — node DocumentFlow "Sales Order". Baris
-      // terbaru saja (sales_orders.inquiry_id FK langsung, nol deleted_at di
-      // tabel ini — kolomnya memang tidak ada). "Purchase Order" TETAP "Not
-      // yet" permanen: nol tabel di Nexus yang merepresentasikan PO vendor
+      // terbaru dipakai node itu (so). "Purchase Order" TETAP "Not yet"
+      // permanen: nol tabel di Nexus yang merepresentasikan PO vendor
       // (lihat PLAN Irisan 3 §1g/§9.9) — tidak disentuh di sini.
+      // Putaran 9 -- limit dinaikkan 1 -> 50: chip "Won, awaiting Sales
+      // Order" butuh tahu ADA/TIDAKnya baris SENT di ANTARA SEMUA baris
+      // (bukan cuma yang terbaru), dan blok "Shipments" (Rate Sheet) perlu
+      // daftar penuh.
+      // Putaran 9 perbaikan (review merge p7/p13a) -- KOREKSI komentar lama
+      // di baris ini: `sales_orders.deleted_at` TERNYATA ADA (diverifikasi
+      // ulang langsung ke schema_snapshot.sql, bukan dipercaya dari
+      // komentar lama Irisan 3 yang keliru). Difilter di query (pola sama
+      // `quotations`/`prf` di atas) -- bukan cuma dikirim ke
+      // isWonAwaitingSalesOrder (yang juga memeriksa `!so.deleted_at`
+      // sendiri, lihat inquiryOptions.js), supaya SELURUH pemakai `so`/
+      // `salesOrders` di halaman ini (node DocumentFlow, blok Shipments)
+      // ikut tidak pernah melihat baris yang sudah soft-delete.
       const { data: soRows } = await supabase
         .from('sales_orders')
         .select('id, so_no, status, created_at')
-        .eq('inquiry_id', inq.id)
-        .order('created_at', { ascending: false }).limit(1);
+        .eq('inquiry_id', inq.id).is('deleted_at', null)
+        .order('created_at', { ascending: false }).limit(50);
       const so = (soRows || [])[0] || null;
 
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
@@ -788,6 +836,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setAccount(acc);
       setQuotations(quos || []);
       setSalesOrder(so);
+      setSalesOrders(soRows || []);
       setPrfs(prfsAugmented);
       setStatusHistory(historyRows || []);
       setActivities(acts);
@@ -893,6 +942,88 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // inquiry_type itu sendiri dari Detail Inquiry, hanya field turunannya
   // (Validity/Volume) yang bisa diedit lewat section "Route & Terms" di bawah.
   const isInquiryRS = inquiry?.inquiry_type === 'Rate Sheet Request';
+
+  // ---------- Putaran 9 -- chip header turunan data ----------
+  // Lookup lokasi by id (Irisan 6 -- state `locations` sudah memuat kolom
+  // `type`). Dipakai chip "Free Trade Zone" di bawah.
+  const locationById = useMemo(() => {
+    const m = {};
+    locations.forEach((l) => { m[l.id] = l; });
+    return m;
+  }, [locations]);
+  // FTZ -- keputusan Mas (Putaran 9): FTZ bila POL, POD, ATAU Via pada
+  // SALAH SATU lane bertipe FTZ (mockup base() :723, `r.lanes ? ... :
+  // [pol,pod,via]`); kalau inquiry tidak punya lane, pakai pol/pod milik
+  // inquiry. `inquiries` TIDAK punya kolom `via` sendiri (hanya
+  // `inquiry_lanes.via_location_id`) -- untuk kasus nol-lane, via memang
+  // tidak ada yang dicek, konsekuensi alami skema, bukan kelalaian.
+  // Putaran 9 perbaikan (review merge p7/p13a) -- dibandingkan byte-per-
+  // byte dengan InquiryListPage.jsx isFTZ (Putaran 7): LOGIKANYA SAMA
+  // (OR per lane vs flatMap+some global = setara; fallback nol-lane sama
+  // persis "pol/pod inquiry saja, nol via" dengan alasan skema yang sama).
+  // Nol perubahan perlu di sini -- dicatat supaya perbandingannya
+  // terlihat, bukan diasumsikan.
+  const isLocationFtz = (id) => !!id && locationById[id]?.type === 'FTZ';
+  const isInquiryFtz = lanes.length > 0
+    ? lanes.some((l) => isLocationFtz(l.pol_location_id) || isLocationFtz(l.pod_location_id) || isLocationFtz(l.via_location_id))
+    : isLocationFtz(inquiry?.pol_location_id) || isLocationFtz(inquiry?.pod_location_id);
+
+  // Won, awaiting Sales Order -- Putaran 9 perbaikan (review merge p7/p13a):
+  // dipindah ke fungsi BERSAMA `isWonAwaitingSalesOrder` (inquiryOptions.js),
+  // persis instruksi komentar di file itu ("WAJIB dipakai ulang oleh
+  // DealDetailPage.jsx"). Rumus lokal sebelumnya (duplikat, bukan lagi
+  // dipakai di sini) sudah byte-cocok dengan fungsi bersama ini -- lihat
+  // inquiryOptions.js untuk definisi lengkap + alasannya. `salesOrders`
+  // sudah difilter `deleted_at IS NULL` di query (lihat fetch di atas),
+  // jadi `!so.deleted_at` di dalam fungsi bersama selalu benar untuk baris
+  // yang sampai ke sini -- bukan redundan yang salah, hanya tidak pernah
+  // menyala karena baris mati sudah tersaring lebih dulu.
+  const isWonAwaitingSo = isWonAwaitingSalesOrder(
+    { status: inquiry?.status, inquiry_type: inquiry?.inquiry_type, closed_at: inquiry?.closed_at },
+    salesOrders,
+  );
+
+  // Quotation expired -- Putaran 9 perbaikan (review merge p7/p13a): samakan
+  // PERSIS ke InquiryListPage.jsx isQuotationExpired (Putaran 7). Dua bagian:
+  // (a) "hari ini" WIB (getTodayWIB(), src/lib/dateUtils.js -- lib bersama
+  //     existing, sudah dipakai InquiryListPage.jsx juga, bukan file baru).
+  //     new Date().toISOString().slice(0,10) adalah UTC: antara 00:00-06:59
+  //     WIB ia mengembalikan tanggal KEMARIN, badge jadi telat muncul.
+  // (b) pemilihan quotation yang diperiksa -- List memakai quotation
+  //     PERTAMA yang statusnya BUKAN ACCEPTED/REJECTED/SUPERSEDED (urutan
+  //     array, bukan rantai revisi), BUKAN `activeQuotation` (hasil
+  //     `pickActiveQuotation`, dipakai TETAP apa adanya di tempat lain
+  //     halaman ini -- Price Breakdown/tombol Create Revision, TIDAK
+  //     disentuh perbaikan ini). Untuk kasus umum (satu rantai versi per
+  //     inquiry) keduanya mengarah ke baris yang sama; disamakan di sini
+  //     supaya definisinya byte-cocok dengan List untuk kasus legacy
+  //     multi-quotation_no juga, bukan cuma kebetulan sama di kasus umum.
+  const todayIso = getTodayWIB();
+  const quotationForExpiryCheck = quotations.find((q) => !['ACCEPTED', 'REJECTED', 'SUPERSEDED'].includes(String(q.status || '').toUpperCase()));
+  const isQuotationExpired = ['QUOTED', 'NEGOTIATION'].includes(dealStatus)
+    && !!quotationForExpiryCheck && !!quotationForExpiryCheck.valid_until
+    && quotationForExpiryCheck.valid_until < todayIso;
+
+  // notGT -- mockup Inquiry Management.dc.html :1092 (`notGT: cur.svc !==
+  // 'General Trading'`). Menggerbang field "Customer Role" (Service &
+  // Status) persis sama cara mockup menggerbangnya -- berbasis nilai
+  // KOMITMEN inquiry.service_type, bukan draft, pola sama isInquiryRS dkk.
+  const notGT = inquiry?.service_type !== 'trading';
+
+  // Source (accounts.source) -- label manusiawi, read-only (arah tulis
+  // balik belum diputuskan Mas). Section "Service & Status".
+  const accountSourceLabel = account?.source ? (SOURCE_LABEL[account.source] || account.source) : '';
+
+  // "Number of containers" (Cargo) -- mockup :960 `showNcont:
+  // (cur.cont||[]).some(c => /^FCL/.test(c))`. Baca-saja TOTAL, mockup
+  // sendiri nol varian edit untuk field ini (tidak ada di whitelist saveSec).
+  const showNcont = (inquiry?.container_types || []).some((c) => /^FCL/.test(c));
+
+  // Blok "Shipments" (Delivery, khusus Rate Sheet) -- mockup :402, data-
+  // screen-label="Detail/Shipments". Daftar urut TERLAMA-DULU (kebalikan
+  // query yang mengurutkan terbaru-dulu untuk kebutuhan node DocumentFlow).
+  const shipmentRows = isInquiryRS ? salesOrders.slice().reverse() : [];
+
   // TD-318 Irisan 3, commit 4: aksi utama dinamis (final decision #9.1 --
   // "Request Rates" di mockup TIDAK dibangun, Open+In Review SAMA-SAMA
   // "Create Quotation"). Status QUOTED/NEGOTIATION primary-nya "Mark as
@@ -1685,6 +1816,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {(inquiry.additional_services || []).includes('undername') && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
+              {/* Putaran 9 -- chip Direction, mockup :282 (`{{ D.dirL }}`) --
+                  TANPA sc-if, selalu dirender (termasuk saat "Not set"),
+                  posisi persis sesudah Undername/sebelum Won-awaiting-SO.
+                  Ikon: lihat DIRECTION_ICON. */}
+              <TintBadge meta={{
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {(() => { const Icon = DIRECTION_ICON[inquiry.direction]; return Icon ? <Icon size={12} /> : null; })()}
+                    {inquiry.direction || 'Not set'}
+                  </span>
+                ),
+                bg: C.surfaceAlt, color: C.textMute, bd: C.border,
+              }} />
+              {/* Putaran 9 -- "Won, awaiting Sales Order" / "Quotation
+                  expired", posisi mockup :282 (sesudah Direction, sebelum
+                  Manual win). Rumus: lihat komentar isWonAwaitingSo/
+                  isQuotationExpired. */}
+              {isWonAwaitingSo && (
+                <TintBadge meta={{ label: 'Won, awaiting Sales Order', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
+              {isQuotationExpired && (
+                <TintBadge meta={{ label: 'Quotation expired', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+              )}
               {/* TD-318 Irisan 3, commit 5 -- chip "Manual win" + link "Revert
                   Manual Win", posisi mockup :282 (sesudah Quotation-expired,
                   sebelum Free Trade Zone -- keduanya belum dibangun di Nexus,
@@ -1701,6 +1855,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     </button>
                   )}
                 </>
+              )}
+              {/* Putaran 9 -- chip "Free Trade Zone", posisi mockup :282
+                  (sesudah Manual win/Revert). Rumus: lihat komentar
+                  isInquiryFtz. */}
+              {isInquiryFtz && (
+                <TintBadge meta={{ label: 'Free Trade Zone', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
             </div>
             {/* TD-318 Irisan 2 Inquiry, commit 4: versi ringkas RouteStrip
@@ -1822,24 +1982,35 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         )}
 
         {/* ===== Section "Service & Status" (Irisan 2 Inquiry, lanjutan audit
-            mockup, Pekerjaan B commit 4) -- mockup SECS[0], judul "Service &
-            Status". HANYA Service Type yang benar-benar tersimpan (saveSec
-            whitelist mockup: `svc`) -- Status terkunci di mockup sendiri
-            (kotak abu + ikon gembok, TIDAK ada di whitelist saveSec, sumbu
-            deal yang sah ditulis RPC/trigger lain). Direction/Customer Role/
-            Source DILEWATI SELURUHNYA -- nol kolom `inquiries` utk ketiganya
-            (Source ada tapi di `accounts.source`, tabel lain) -- lihat PLAN
-            §8.1-3. "Route" (field lama, ada di kode tak ada di mockup --
-            keputusan Mas: DIBIARKAN) dipindah ke sini dari grup FIELD_GROUPS
-            lama, tetap read-only, bukan jadi field saveSec. */}
+            mockup, Pekerjaan B commit 4; Direction/Customer Role/Source
+            ditambahkan Putaran 9) -- mockup SECS[0], judul "Service &
+            Status". Kolom `direction`/`customer_role` BELUM ADA saat
+            Irisan 2 ditulis -- komentar lama "DILEWATI, nol kolom" sudah
+            basi, dikoreksi di sini. Urutan field PERSIS urutan DOM mockup
+            (Service Type, Direction, Customer Role[kondisional notGT],
+            Status, Source) -- "Route" (field lama, ada di kode tak ada di
+            mockup, keputusan Mas: DIBIARKAN) ditaruh TERAKHIR, sesudah
+            Source, supaya 5 field asli mockup tetap mengikuti urutan dan
+            pengelompokan barisnya sendiri di grid 3-kolom. */}
         <SectionHeader
           title="Service & Status"
           editing={editingSection === 'Service'}
           canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
           saving={savingSection}
-          onEdit={() => { setSectionDraft({ service_type: inquiry.service_type || '' }); setEditingSection('Service'); }}
+          onEdit={() => {
+            setSectionDraft({
+              service_type: inquiry.service_type || '',
+              direction: inquiry.direction || '',
+              customer_role: inquiry.customer_role || '',
+            });
+            setEditingSection('Service');
+          }}
           onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
-          onSave={() => saveInquirySection({ service_type: sectionDraft.service_type || null }, 'Service & Status')}
+          onSave={() => saveInquirySection({
+            service_type: sectionDraft.service_type || null,
+            direction: sectionDraft.direction || null,
+            customer_role: sectionDraft.customer_role || null,
+          }, 'Service & Status')}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
           <SelectField
@@ -1850,7 +2021,33 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onDraft={(v) => setSectionDraft((d) => ({ ...d, service_type: v }))}
             options={Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label }))}
           />
+          <SelectField
+            label="Direction"
+            editing={editingSection === 'Service'}
+            value={inquiry.direction}
+            draft={sectionDraft.direction}
+            onDraft={(v) => setSectionDraft((d) => ({ ...d, direction: v }))}
+            options={DIRECTION_OPTIONS}
+            includeEmpty
+          />
+          {/* Customer Role -- mockup notGT. Nilai yang tersimpan TIDAK
+              diubah saat section ini disembunyikan: draft diseed dari
+              inquiry.customer_role di onEdit (persis seperti field lain),
+              jadi kalau pengguna tak pernah melihat/menyentuhnya, Save
+              mengirim balik nilai yang sama persis (keputusan Mas). */}
+          {notGT && (
+            <SelectField
+              label="Customer Role"
+              editing={editingSection === 'Service'}
+              value={inquiry.customer_role}
+              draft={sectionDraft.customer_role}
+              onDraft={(v) => setSectionDraft((d) => ({ ...d, customer_role: v }))}
+              options={CUSTOMER_ROLE_OPTIONS}
+              includeEmpty
+            />
+          )}
           <LockedField label="Status" value={STATUS_LABEL[dealStatus] || dealStatus} />
+          <TextField label="Source" editing={false} value={accountSourceLabel} placeholder="Source not recorded" />
           <TextField label="Route" editing={false} value={inquiry.route} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
@@ -1910,6 +2107,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol_location_id: inquiry.pol_location_id || null, pod_location_id: inquiry.pod_location_id || null,
               pickup_address: inquiry.pickup_address || '', delivery_address: inquiry.delivery_address || '',
               incoterms: inquiry.incoterms || [], container_types: inquiry.container_types || [],
+              // Putaran 9 -- Cargo ready date, hanya bermakna utk Single
+              // Shipment (sama alasan validity_from/to di bawah -- diseed
+              // tanpa syarat, harmless utk Rate Sheet).
+              cargo_ready_date: inquiry.cargo_ready_date || '',
               // Putaran 4 Tahap 4C -- diseed TANPA SYARAT (harmless utk
               // Single Shipment, tak pernah dirender/dikirim di cabang itu).
               validity_from: inquiry.validity_from || '', validity_to: inquiry.validity_to || '',
@@ -1954,6 +2155,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 pol_location_id: sectionDraft.pol_location_id || null, pod_location_id: sectionDraft.pod_location_id || null,
               }),
               pickup_address: sectionDraft.pickup_address || null, delivery_address: sectionDraft.delivery_address || null,
+              cargo_ready_date: sectionDraft.cargo_ready_date || null,
               incoterms: (sectionDraft.incoterms || []).length ? sectionDraft.incoterms : null,
               container_types: (sectionDraft.container_types || []).length ? sectionDraft.container_types : null,
             }, 'Route & Terms');
@@ -2024,6 +2226,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 draft={sectionDraft.pickup_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, pickup_address: v }))} />
               <TextField label="Delivery Address" editing={editingSection === 'Route'} value={inquiry.delivery_address}
                 draft={sectionDraft.delivery_address} onDraft={(v) => setSectionDraft((d) => ({ ...d, delivery_address: v }))} />
+              {/* Putaran 9 -- Cargo ready date. Mockup (:346, baris satu
+                  grid dengan Delivery Address) -- kolom cargo_ready_date
+                  (migrasi 20261025000002). Nilai mentah ISO, bukan
+                  fmtDate() -- konvensi lokal section ini (pola persis
+                  Validity Requested From/Until di atas, bukan konvensi
+                  Deadline Quote di section lain). */}
+              <TextField label="Cargo ready date" type="date" editing={editingSection === 'Route'} value={inquiry.cargo_ready_date}
+                draft={sectionDraft.cargo_ready_date} onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_ready_date: v }))}
+                placeholder="Not recorded" />
               <ChipToggleField label="Incoterms" editing={editingSection === 'Route'}
                 values={inquiry.incoterms} draft={sectionDraft.incoterms}
                 onDraft={(v) => setSectionDraft((d) => ({ ...d, incoterms: v }))} options={INCOTERMS} />
@@ -2140,14 +2351,49 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <ChipToggleField label="Cargo Type" editing={editingSection === 'Cargo'}
             values={inquiry.cargo_types} draft={sectionDraft.cargo_types}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, cargo_types: v }))} options={CARGO_TYPES} />
-          <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
-            draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
-          <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
-            draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
-            options={IMO_CLASSES} includeEmpty />
-          <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
-            draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
-            options={MSDS_OPTS} includeEmpty />
+          {/* Putaran 9 -- "Number of containers". Mockup :357, gated
+              `showNcont` (ADA container type FCL-apa pun) -- baca-saja
+              TOTAL, mockup sendiri nol varian edit field ini (tidak di
+              whitelist saveSec). `mono` memberi font IBM Plex Mono saat
+              terisi + italic/muted saat "Not set" -- persis ncontFont/
+              ncontClr mockup, nol styling kustom perlu ditulis di sini. */}
+          {showNcont && (
+            <TextField label="Number of containers" editing={false} mono
+              value={inquiry.n_containers != null ? String(inquiry.n_containers) : ''}
+              placeholder="Container count not recorded" />
+          )}
+          {/* Putaran 9 perbaikan 2 -- gating Dangerous Goods (mockup isDG)
+              utk UN Number/IMO Class/MSDS Available, yang sebelumnya
+              SELALU tampil tanpa syarat (temuan audit Langkah 1). Live
+              terhadap DRAFT saat mode edit (bukan nilai komit, beda
+              sengaja dari `notGT`) -- toggle Cargo Type langsung
+              menunjukkan/menyembunyikan ketiganya tanpa perlu Save dulu.
+              Penjaga data lama: tetap tampil (ketiganya, satu kelompok)
+              kalau SALAH SATU dari tiga field sudah berisi nilai, walau
+              Cargo Type tidak/tidak lagi memuat Dangerous Goods --
+              mencegah data lama hilang dari layar. Nilai draft TIDAK
+              pernah direset saat tersembunyi (nol kode yang menyentuhnya)
+              -- Save tetap mengirim nilai draft apa adanya. */}
+          {(() => {
+            const cargoTypesNow = editingSection === 'Cargo' ? (sectionDraft.cargo_types || []) : (inquiry.cargo_types || []);
+            const unNow = editingSection === 'Cargo' ? sectionDraft.un_number : inquiry.un_number;
+            const imoNow = editingSection === 'Cargo' ? sectionDraft.imo_class : inquiry.imo_class;
+            const msdsNow = editingSection === 'Cargo' ? sectionDraft.has_msds : inquiry.has_msds;
+            const showDgFields = cargoTypesNow.includes('dg') || !!unNow || !!imoNow || !!msdsNow;
+            if (!showDgFields) return null;
+            return (
+              <>
+                <TextField label="UN Number" editing={editingSection === 'Cargo'} value={inquiry.un_number}
+                  draft={sectionDraft.un_number} onDraft={(v) => setSectionDraft((d) => ({ ...d, un_number: v }))} />
+                <SelectField label="IMO Class" editing={editingSection === 'Cargo'} value={inquiry.imo_class}
+                  draft={sectionDraft.imo_class} onDraft={(v) => setSectionDraft((d) => ({ ...d, imo_class: v }))}
+                  options={IMO_CLASSES} includeEmpty />
+                <SelectField label="MSDS Available" editing={editingSection === 'Cargo'} value={inquiry.has_msds}
+                  draft={sectionDraft.has_msds} onDraft={(v) => setSectionDraft((d) => ({ ...d, has_msds: v }))}
+                  options={MSDS_OPTS} includeEmpty />
+              </>
+            );
+          })()}
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
@@ -2176,6 +2422,39 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+
+        {/* ===== Blok "Shipments" (Putaran 9, khusus Rate Sheet) -- mockup
+            data-screen-label="Detail/Shipments" (:402), sibling SESUDAH
+            section "Delivery" (section itu sendiri TIDAK dibangun di sini
+            -- kelima fieldnya [Order Category/Requested Delivery Date/
+            Estimated Shipping Cost/Customer Reference/Delivery
+            Destinations] nol kolom `inquiries`, dicek ulang grep seluruh
+            migrations/, tetap pengecualian/ditunda). Daftar penuh
+            sales_orders inquiry ini -- so_no + tanggal ADA kolomnya;
+            kolom "note" mockup TIDAK ADA sumbernya (nol kolom naratif di
+            sales_orders) -- dikosongkan, pengecualian tingkat field.
+            Baca-saja TOTAL, mockup sendiri nol tombol Edit untuk blok ini. */}
+        {isInquiryRS && (
+          <>
+            <h3 style={{ margin: 0, marginBottom: 12, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text }}>Shipments</h3>
+            {shipmentRows.length > 0 ? (
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
+                {shipmentRows.map((so) => (
+                  <div key={so.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 140px 1fr', gap: 8, padding: '10px 12px', borderBottom: `1px solid ${C.surfaceAlt}`, fontFamily: BODY, fontSize: 13 }}>
+                    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{so.so_no}</span>
+                    <span>{fmtDate(so.created_at)}</span>
+                    <span style={{ color: C.textFaint }}>—</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '12px 16px', border: `1px dashed ${C.border}`, borderRadius: 10, color: C.textMute, fontFamily: BODY, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+                No shipment yet. Shipments are created from the active Rate Sheet quotation, in the Sales Order stage that comes next. Once a shipment exists, this inquiry can no longer be cancelled.
+              </div>
+            )}
+            <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+          </>
+        )}
 
         {/* ===== Section "Timeline & Ownership" (Irisan 2 Inquiry, lanjutan
             audit mockup, Pekerjaan B commit 9) -- mockup SECS[4]. Deadline
