@@ -91,3 +91,24 @@ export const WON_MANUAL_REASONS = [
   'Verbal confirmation',
   'Legacy data',
 ];
+
+/* Putaran 7 -- badge+filter+count "Won, awaiting Sales Order" di
+   InquiryListPage.jsx (1.2.4). SATU formula, dipakai di SANA dan WAJIB
+   dipakai ulang oleh DealDetailPage.jsx saat Putaran 9 membangun badge yang
+   sama di header Detail Inquiry (mockup renderVals(): `r.st === 'Won' &&
+   !r.so && r.type !== 'Rate Sheet' && !!r.wonOn && days(r.wonOn, TODAY) >
+   7` -- wonOn mockup = inquiries.closed_at Nexus, r.type==='Rate Sheet' =
+   inquiry_type==='Rate Sheet Request'). Kalau rumusnya perlu berubah, ubah
+   DI SINI, bukan menyalin salinan kedua yang bisa melenceng -- pola sama
+   WON_MANUAL_REASONS di atas.
+   `salesOrders` = array hasil embed PostgREST `sales_orders(status,deleted_at)`
+   pada baris inquiry itu (lihat InquiryListPage.jsx fetchInquiries). */
+export function isWonAwaitingSalesOrder({ status, inquiry_type, closed_at }, salesOrders) {
+  if (status !== 'WON') return false;
+  if (inquiry_type === 'Rate Sheet Request') return false;
+  if (!closed_at) return false;
+  const daysSinceClosed = Math.floor((Date.now() - new Date(closed_at).getTime()) / 86400000);
+  if (daysSinceClosed <= 7) return false;
+  const hasLiveSentSalesOrder = (salesOrders || []).some((so) => so.status === 'SENT' && !so.deleted_at);
+  return !hasLiveSentSalesOrder;
+}

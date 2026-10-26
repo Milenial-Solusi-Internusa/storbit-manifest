@@ -265,7 +265,7 @@ function LeadDetailRoute() {
         quickEditOnMount={!!location.state?.quickEdit}
         openNoteOnMount={!!location.state?.openNote}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (account) => { setInquiryPrefill({ accountId: id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
+          ? (account) => { setInquiryPrefill({ accountId: id }); navigate(MENU_PATHS['crm-inquiry-intake'], { state: { leadAccount: account } }); }
           : undefined}
         onOpenInquiry={(inquiryId) => navigate(`${P_INQUIRY}/${inquiryId}`)}
         onOpenQuotation={(quotationId) => navigate(`${P_QUOTATION}/${quotationId}`)}
@@ -288,7 +288,7 @@ function LeadQualificationRoute() {
         showToast={showToast}
         onSelectLead={(account) => navigate(`${P_LEAD}/${account.id}`, { state: { row: account } })}
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (account) => { setInquiryPrefill({ accountId: account.id }); navigate(`${P_INQUIRY}/new`, { state: { leadAccount: account } }); }
+          ? (account) => { setInquiryPrefill({ accountId: account.id }); navigate(MENU_PATHS['crm-inquiry-intake'], { state: { leadAccount: account } }); }
           : undefined}
       />
     </Boundary>
@@ -357,7 +357,7 @@ function InquiryListRoute() {
       {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
           sisa dari jalur Detail Account tak pernah bocor ke form kosong ini. */}
       <InquiryListPage
-        onAddInquiry={() => { setInquiryPrefill(null); navigate(`${P_INQUIRY}/new`); }}
+        onAddInquiry={() => { setInquiryPrefill(null); navigate(MENU_PATHS['crm-inquiry-intake']); }}
         onSelectInquiry={(inq) => navigate(`${P_INQUIRY}/${inq.id}`)}
         showToast={showToast}
         presetOwnerId={location.state?.presetOwnerId}
@@ -603,7 +603,7 @@ function CustomerDetailRoute() {
         // "+ New Inquiry" — bawa akun (+ kontak utamanya) ke form create di menu
         // Inquiry. Digerbangi izin yang SAMA dengan Edit Inquiry (crm_inquiry.view).
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); navigate(`${P_INQUIRY}/new`); }
+          ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); navigate(MENU_PATHS['crm-inquiry-intake']); }
           : undefined}
         onEditInquiry={hasMenuPermission('crm_inquiry', 'view')
           ? (inq) => navigate(`${P_CUSTOMER}/${id}/inquiry/${inq.id}/edit`)
@@ -755,7 +755,7 @@ function SalesOrderDocDetailRoute() {
 export const CRM_MENU_IDS = Object.freeze([
   'crm-dashboard', 'indomarco-dashboard', 'crm-pipeline',
   'crm-prospects', 'crm-lead-qualification', 'crm-lead-pool', 'crm-lead-pool-approval',
-  'crm-inquiry', 'crm-inquiry-classification', 'crm-inquiry-owner-assignment', 'quotation-draft', 'crm-customers', 'customer-detail',
+  'crm-inquiry', 'crm-inquiry-intake', 'crm-inquiry-classification', 'crm-inquiry-owner-assignment', 'quotation-draft', 'crm-customers', 'customer-detail',
   'crm-calls', 'crm-activity-log', 'riwayat-visit',
   'reporting-sales', 'crm-rate-list', 'crm-sales-order',
 ]);
@@ -777,6 +777,11 @@ export const crmRoutes = [
 
       { path: P_INQUIRY,                            handle: { menuId: 'crm-inquiry' },            element: <InquiryListRoute /> },
       { path: `${P_INQUIRY}/new`,                   handle: { menuId: 'crm-inquiry' },            element: <InquiryNewRoute /> },
+      // Putaran 7 -- slot sidebar 1.2.1, elemen SAMA dengan "+ New Inquiry"
+      // (${P_INQUIRY}/new di atas) tapi path & menuId sendiri (lihat
+      // menu-skeleton.js: id BARU, bukan reuse 'crm-inquiry', supaya
+      // SKELETON_MENU_PATHS tidak saling menimpa path dua mount).
+      { path: MENU_PATHS['crm-inquiry-intake'],     handle: { menuId: 'crm-inquiry-intake' },     element: <InquiryNewRoute /> },
       { path: `${P_INQUIRY}/:id`,                   handle: { menuId: 'crm-inquiry' },            element: <DealDetailRoute /> },
       { path: `${P_INQUIRY}/:id/edit`,              handle: { menuId: 'crm-inquiry' },            element: <InquiryEditRoute /> },
       { path: MENU_PATHS['crm-inquiry-classification'], handle: { menuId: 'crm-inquiry-classification' }, element: <InquiryClassificationRoute /> },
