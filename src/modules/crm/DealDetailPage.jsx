@@ -26,6 +26,7 @@ import {
   FileText, ChevronLeft, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
+  Lock, Check,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
@@ -242,24 +243,65 @@ function NextStepHint({ status }) {
 // lanjutan -- kedua grup sudah diganti section inline-edit, yang membaca
 // label langsung dari CARGO_TYPES/SERVICES lewat ChipToggleField.
 
-// PRF service_type = MODA transport, taksonomi BEDA dari inquiry SERVICE_LABEL
-// (TD-108). Dicermin di sini karena PRF_SERVICE_LABEL tidak diekspor DealPanels
-// dan file itu di luar scope batch ini — pola mirror-per-file yang sudah berulang
-// di codebase ini (gate role sudah tidak: lih. isManagerOrAbove di src/lib/roles.js).
-const PRF_SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
+// PRF_SERVICE_LABEL dicabut D-79 (Putaran 10) -- kolom "Service Type" ikut
+// tercabut bersama PRF_COLUMNS (tabel ListView digantikan kartu+stepper;
+// mockup Detail/Procurement rReqs[] tidak menampilkan service_type di kartu).
 
-const PRF_READINESS = {
-  not_active:  { label: 'Not active',           bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' },
-  ready:       { label: 'Ready as source',      bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
-  needs:       { label: 'Needs selection',      bg: '#FDE7DB', color: '#B53F0D', bd: '#EFC5B2' },
-  awaiting:    { label: 'Awaiting procurement', bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
-};
-function prfReadinessKey(p) {
-  const st = String(p?.status || '').toUpperCase();
-  if (st === 'CANCELLED' || st === 'EXPIRED') return 'not_active';
-  if (st === 'QUOTED' && p?.selected_offer_id) return 'ready';
-  if (st === 'QUOTED') return 'needs';
-  return 'awaiting';
+// Keputusan Den (koreksi visual Putaran 10, lanjutan Tahap 2 -- masuk daftar
+// pembaruan Claude Design): badge readiness pada kartu PRF HANYA dipertahankan
+// untuk status CANCELLED/EXPIRED ("Not active") supaya PRF batal tetap
+// terlihat di antara yang masih berjalan -- untuk status lain (SUBMITTED/
+// ACKNOWLEDGED/QUOTED) badge DICABUT karena stepper 5 tahap di bawah sudah
+// menyampaikan progres itu sendiri. PRF_READINESS 4-keadaan lama (ready/
+// needs/awaiting) dan prfReadinessKey() dicabut bersamanya -- sudah tak
+// terpakai begitu badge "Needs selection" (sumber prfNeedsSelectionCount,
+// JUGA dicabut per keputusan Den: mockup `dtabs` baris 1032 nol field
+// badge/count di tab mana pun) ikut hilang.
+const PRF_NOT_ACTIVE_BADGE = { label: 'Not active', bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' };
+function isPrfNotActive(p) {
+  return ['CANCELLED', 'EXPIRED'].includes(String(p?.status || '').toUpperCase());
+}
+
+// D-79 (Putaran 10, dibangun ulang PERSIS mockup atas keputusan Mas) --
+// stepper "Rate Requests" LIMA tahap (mockup Inquiry Management.dc.html:1130,
+// `const st5 = ['Submitted','Acknowledged','Offers Received','Offer
+// Selected','Used in Quotation']`; meta "[nama], [tanggal]"/"Pending" di
+// baris 1144). Pemetaan ke kolom Nexus (nol migrasi, kolom semua SUDAH ADA):
+//   Submitted         -- prf.submitted_at,     nama dari prf.created_by
+//   Acknowledged      -- prf.acknowledged_at,  nama dari prf.acknowledged_by
+//   Offers Received   -- prf.answered_at,      nama dari prf.answered_by
+//   Offer Selected    -- prf.selected_at,      nama dari prf.selected_by
+//   Used in Quotation -- quotations.created_at MILIK quotation ber-prf_id
+//                        = id PRF ini, nama dari quotations.created_by
+//                        (kolom diverifikasi ke schema_snapshot.sql, bukan
+//                        ditebak). TIDAK butuh query .in() terpisah --
+//                        `quotations` (state, sudah di-fetch per inquiry_id
+//                        di titik fetch utama) sudah mencakup SEMUA
+//                        quotation inquiry ini, termasuk punya PRF mana pun
+//                        -- filter client-side cukup, zero query tambahan.
+const PRF_STAGES = [
+  { key: 'submitted', label: 'Submitted', atField: 'submitted_at', byField: 'created_by' },
+  { key: 'acknowledged', label: 'Acknowledged', atField: 'acknowledged_at', byField: 'acknowledged_by' },
+  { key: 'offersReceived', label: 'Offers Received', atField: 'answered_at', byField: 'answered_by' },
+  { key: 'offerSelected', label: 'Offer Selected', atField: 'selected_at', byField: 'selected_by' },
+  { key: 'usedInQuotation', label: 'Used in Quotation', atField: null, byField: null },
+];
+// `quotationsForInquiry` = state `quotations` dioper dari render (bukan
+// closure modul) -- satu-satunya tahap yang butuhnya adalah usedInQuotation.
+function prfStageInfo(p, key, quotationsForInquiry) {
+  if (key === 'usedInQuotation') {
+    const q = (quotationsForInquiry || []).find((x) => x.prf_id === p?.id);
+    return { at: q?.created_at || null, by: q?.created_by || null };
+  }
+  const stage = PRF_STAGES.find((s) => s.key === key);
+  return { at: p?.[stage.atField] || null, by: p?.[stage.byField] || null };
+}
+// q.active mockup (gerbang tombol Remind/Cancel): PRF masih menunggu jawaban
+// Procurement. Dipakai JUGA sebagai gerbang tampilan tombol di FE -- HARUS
+// sinkron dengan cek status di RPC prf_remind_procurement/prf_cancel_request
+// (migrasi 20261027000006), supaya tombol yang terlihat = aksi yang diterima.
+function isPrfRequestActive(p) {
+  return ['SUBMITTED', 'ACKNOWLEDGED'].includes(String(p?.status || '').toUpperCase());
 }
 
 /* Badge tinted rounded-square — pola dan bentuknya menyalin StatusBadge di
@@ -282,11 +324,21 @@ function TintBadge({ meta }) {
    Bentuk `columns` mengikuti kontrak ListView: { key, label, align?, render? }.
    Keduanya konstanta modul karena `render` hanya membaca baris + konstanta —
    tak ada satu pun yang butuh state halaman. */
+// D-74 (Putaran 10, rekonstruksi audit mockup Inquiry Management.dc.html
+// Detail/Quotations -- 5 kolom: Quotation No / Version / Date / Value /
+// Status): keputusan Mas eksplisit -- kolom Version TERPISAH ditambahkan DI
+// SINI SAJA, dan Quotation No di tab ini tampil TANPA sufiks versi
+// (formatQuotationNo tetap dipakai di 5 tempat LAIN di file ini -- header
+// DocumentFlow/RelatedDocuments/audit log/confirm modal/QuotationItemsCard --
+// SENGAJA tidak disentuh, lihat komentar impor). Kolom "No" (index baris) dan
+// "Actions" (tombol View) dicabut -- redundan dengan onRowClick ListView yang
+// sudah membuka Detail Quotation saat baris diklik; mockup juga tidak
+// punya kolom Actions (navigasi lewat link di kolom Quotation No).
 const QUOTATION_COLUMNS = [
-  { key: 'no', label: 'No', render: (r, i) => i + 1 },
   { key: 'quotation_no', label: 'Quotation No', render: (r) => (
-    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{formatQuotationNo(r.quotation_no, r.revision)}</span>
+    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{r.quotation_no || '—'}</span>
   ) },
+  { key: 'revision', label: 'Version', render: (r) => r.revision ?? 1 },
   { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
   { key: 'total_amount', label: 'Value', align: 'right', render: (r) => (
     <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRp(r.total_amount)}</span>
@@ -295,31 +347,6 @@ const QUOTATION_COLUMNS = [
     const m = QUO_STATUS[String(r.status || '').toUpperCase()] || QUO_STATUS.DRAFT;
     return <TintBadge meta={m} />;
   } },
-  /* Ikon Download disabled diganti tombol teks "View". Penanda "pekerjaan belum
-     jadi" yang dulu jadi alasan ikon itu bertahan sudah tidak sepadan harganya:
-     satu-satunya kontrol di kolom Actions berupa tombol mati membuat kolomnya
-     terbaca rusak, bukan terbaca "segera hadir".
-
-     Tak ada onClick sendiri — <tr> ListView sudah memegang onRowClick, dan klik
-     di sini menggelembung ke sana. Menduplikasi handler-nya justru membuka
-     peluang dua jalur navigasi yang bisa melenceng. */
-  { key: 'actions', label: 'Actions', render: () => (
-    <button type="button"
-      style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: 'pointer', color: C.navy, fontFamily: BODY, fontSize: 12, fontWeight: 600, padding: '4px 10px' }}>
-      View
-    </button>
-  ) },
-];
-
-const PRF_COLUMNS = [
-  { key: 'no', label: 'No', render: (r, i) => i + 1 },
-  { key: 'prf_no', label: 'PRF No', render: (r) => (
-    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{r.prf_no}</span>
-  ) },
-  { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
-  { key: 'service_type', label: 'Service Type', render: (r) => PRF_SERVICE_LABEL[r.service_type] || r.service_type || '—' },
-  { key: 'status', label: 'Status', render: (r) => String(r.status || '').toUpperCase() },
-  { key: 'readiness', label: 'Readiness', render: (r) => <TintBadge meta={PRF_READINESS[prfReadinessKey(r)]} /> },
 ];
 
 /* Status quotation yang dipakai sistem ini. Tak ada CHECK constraint di DB,
@@ -607,6 +634,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // langsung jalan tanpa dialog.
   const [offerSwitchConfirm, setOfferSwitchConfirm] = useState({ open: false, prf: null, offer: null });
   const [offerActionBusy, setOfferActionBusy] = useState(false);
+  // D-83/D-84 (Putaran 10) -- Remind Procurement/Cancel Request. Cancel
+  // minta konfirmasi (mengubah status PRF); Remind tidak (satu-kali kirim
+  // notifikasi, nol efek ke tabel prf -- pola sama mockup, tanpa modal).
+  const [prfActionBusy, setPrfActionBusy] = useState(false);
+  const [prfCancelConfirm, setPrfCancelConfirm] = useState({ open: false, prf: null });
   // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan B) -- inline edit per
   // section tab Overview. SATU section aktif sekaligus (string|null, cermin
   // `editSec` mockup) -- mencegah dua section terbuka bersamaan yang bisa
@@ -717,7 +749,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       const { data: quos } = await supabase
         .from('quotations')
-        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
+        // D-79 (Putaran 10, stepper 5 tahap) -- prf_id/created_by ditambah:
+        // tahap "Used in Quotation" dicek dari quotation yang prf_id-nya =
+        // id PRF, "siapa"-nya dari created_by. Query ini SUDAH inquiry-
+        // scoped (bukan query baru per-PRF) -- nol risiko N+1, nol alasan
+        // ganti .limit(1000) jadi .range() (1000 quotation untuk SATU
+        // inquiry bukan kasus nyata; limit sudah ada sebelum Putaran 10).
+        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at, prf_id, created_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
@@ -746,9 +784,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       const so = (soRows || [])[0] || null;
 
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
+      // D-79/D-83/D-84 (Putaran 10): company_id (gerbang Remind/Cancel scoped
+      // ke entitas PRF, pola RPC is_manager_or_above_in) + deadline_quotation/
+      // submitted_at/acknowledged_at/acknowledged_by/answered_at (stepper +
+      // "Needed by"/"Over target", kolom SUDAH ADA di `prf`, sebelumnya tak
+      // ter-select).
       const { data: prfRows } = await supabase
         .from('prf')
-        .select('id, prf_no, service_type, status, created_at, created_by, selected_offer_id, min_offers_waiver_reason')
+        // D-79 (Putaran 10, stepper 5 tahap, keputusan Mas) -- answered_by/
+        // selected_at/selected_by ditambah (kolom SUDAH ADA di `prf`, lihat
+        // komentar PRF_STAGES) -- "siapa"/"kapan" tahap Offers Received dan
+        // Offer Selected.
+        .select('id, prf_no, service_type, status, created_at, created_by, company_id, selected_offer_id, min_offers_waiver_reason, deadline_quotation, submitted_at, acknowledged_at, acknowledged_by, answered_at, answered_by, selected_at, selected_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(200);
 
@@ -756,12 +803,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // RLS prf_vendor_offers_select/prf_cost_items_select sudah mengizinkan sales
       // pembuat PRF membaca lewat EXISTS ke prf.created_by, tak perlu policy baru)
       // + total biaya per penawaran (dari prf_cost_items, dikelompokkan per offer_id).
+      // D-80 (Putaran 10): valid_until/notes ditambah ke select (kolom SUDAH ADA
+      // di prf_vendor_offers) -- dipakai kartu "Vendor Offers" flat (mockup
+      // Detail/Procurement offers[].until/.notes).
       const quotedPrfIds = (prfRows || []).filter((p) => p.status === 'QUOTED').map((p) => p.id);
       const offersByPrf = {};
       if (quotedPrfIds.length) {
         const { data: offerRows } = await supabase
           .from('prf_vendor_offers')
-          .select('id, prf_id, vendor_id, currency, pros, cons, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
+          .select('id, prf_id, vendor_id, currency, valid_until, notes, pros, cons, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
           .in('prf_id', quotedPrfIds).is('deleted_at', null)
           .order('created_at', { ascending: true }).limit(500);
         const offerIds = (offerRows || []).map((o) => o.id);
@@ -784,6 +834,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             id: o.id,
             vendorName: o.vendor?.name || '—',
             currency: o.currency,
+            validUntil: o.valid_until,
+            notes: o.notes,
             totals: totalsByOffer[o.id] || {},
             pros: o.pros,
             cons: o.cons,
@@ -814,7 +866,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       }
 
       // resolve profile names (assigned_to, created_by, owner_id)
-      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id, ...(historyRows || []).map((h) => h.changed_by)].filter(Boolean))];
+      // D-79 (Putaran 10, stepper 5 tahap) -- "siapa" per tahap PRF
+      // (created_by/acknowledged_by/answered_by/selected_by) + pembuat
+      // quotation (tahap Used in Quotation) ditambah ke SATU query profiles
+      // yang sudah ada ini -- bukan query .in() kedua.
+      const pIds = [...new Set([
+        acc?.assigned_to, inq.created_by, inq.owner_id,
+        ...(historyRows || []).map((h) => h.changed_by),
+        ...prfsAugmented.flatMap((p) => [p.created_by, p.acknowledged_by, p.answered_by, p.selected_by]),
+        ...(quos || []).map((q) => q.created_by),
+      ].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -888,15 +949,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render, banner
   // langkah berikutnya, dan gate penutupan membaca nilai yang sama.
   const dealStatus = String(inquiry?.status || 'OPEN').toUpperCase();
-  // Badge angka di label tab PRF = PRF yang MENUNGGU TINDAKAN SALES saja.
-  // "Not active" (CANCELLED/EXPIRED) dan "Awaiting procurement" sengaja tak
-  // dihitung — badge yang menghitung semuanya cuma mengulang jumlah baris.
-  const prfNeedsSelectionCount = prfs.filter((p) => prfReadinessKey(p) === 'needs').length;
   // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role primer).
   // User multi-role (mis. manager+sales) sebelumnya kehilangan tombol ini karena
   // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert
   // (daftar role = PRF_CREATOR_ROLES, helper canCreatePrf di src/lib/roles.js).
   const canCreatePRF = canCreatePrf(erpRoles);
+  // D-83/D-84 (Putaran 10) -- gerbang tampilan tombol Remind/Cancel HARUS
+  // sama dengan gerbang RPC prf_remind_procurement/prf_cancel_request
+  // (migrasi 20261027000006): pembuat PRF, manager ke atas DI ENTITAS PRF
+  // (companyId di-scope ke p.company_id, bukan isManagerOrAbove global),
+  // atau super admin.
+  function canActOnPrf(p) {
+    return p?.created_by === profile?.id
+      || isManagerOrAbove(erpRoles, { companyId: p?.company_id })
+      || isSuperAdmin(erpRoles);
+  }
   const createdByName = profMap[inquiry?.created_by] || null;
   // Orang yang diprioritaskan di dropdown @mention Chatter — SAMA PERSIS logic
   // `pIds` di effect fetch utama (:393), tapi diturunkan ulang di scope render dari
@@ -1003,6 +1070,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const isQuotationExpired = ['QUOTED', 'NEGOTIATION'].includes(dealStatus)
     && !!quotationForExpiryCheck && !!quotationForExpiryCheck.valid_until
     && quotationForExpiryCheck.valid_until < todayIso;
+
+  // D-79 (Putaran 10) -- "Over target" (mockup Detail/Procurement rReqs[].late):
+  // PRF masih aktif (belum dijawab) DAN deadline_quotation sudah lewat hari
+  // ini (WIB, pola sama isQuotationExpired di atas).
+  function isPrfLate(p) {
+    return !!p?.deadline_quotation && p.deadline_quotation < todayIso && isPrfRequestActive(p);
+  }
+
+  // D-80 (Putaran 10) -- "Vendor Offers" mockup = satu section FLAT lintas
+  // seluruh PRF inquiry ini (bukan dikelompokkan per kartu PRF seperti
+  // sebelumnya). min_offers_waiver_reason & prf_no induk disalin ke setiap
+  // offer supaya konteksnya tidak hilang saat diratakan -- "Use This Offer"
+  // tetap butuh tahu PRF mana yang dipilih (prf_select_offer per-PRF).
+  const allVendorOffers = prfs.flatMap((p) => (
+    (p.vendorOffers || []).map((o) => ({ ...o, prf: p }))
+  ));
 
   // notGT -- mockup Inquiry Management.dc.html :1092 (`notGT: cur.svc !==
   // 'General Trading'`). Menggerbang field "Customer Role" (Service &
@@ -1552,6 +1635,42 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setOfferSwitchConfirm({ open: true, prf, offer });
     } else {
       doSelectOffer(prf, offer);
+    }
+  }
+
+  // D-83 (Putaran 10) -- Remind Procurement. RPC prf_remind_procurement
+  // sendiri yang menulis audit_logs (pola mark_inquiry_won) -- TIDAK ada
+  // logAudit() client-side kedua di sini (akan dobel). Nol efek ke tabel
+  // prf/inquiries -- hanya notifications.
+  async function doRemindProcurement(prf) {
+    setPrfActionBusy(true);
+    try {
+      const { error } = await supabase.rpc('prf_remind_procurement', { p_prf_id: prf.id });
+      if (error) throw error;
+      showToast?.('Reminder sent to Procurement.', 'success');
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setPrfActionBusy(false);
+    }
+  }
+
+  // D-84 (Putaran 10) -- Cancel Request. Mengubah prf.status saja -- TIDAK
+  // menyentuh inquiries.status (butir 9, instruksi Mas). refetch() supaya
+  // kartu PRF ini pindah dari daftar "aktif" (tombol Remind/Cancel hilang
+  // begitu status jadi CANCELLED).
+  async function doCancelPrfRequest(prf) {
+    setPrfActionBusy(true);
+    try {
+      const { error } = await supabase.rpc('prf_cancel_request', { p_prf_id: prf.id });
+      if (error) throw error;
+      showToast?.('Request cancelled.', 'success');
+      refetch();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setPrfActionBusy(false);
+      setPrfCancelConfirm({ open: false, prf: null });
     }
   }
 
@@ -2531,43 +2650,34 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           },
           {
             id: 'quotation',
-            label: 'Quotation',
-            render: () => (
+            // Koreksi visual Putaran 10 (Tahap 1/2) -- mockup `const DT`
+            // (Inquiry Management.dc.html:870) menulis "Quotations" (jamak),
+            // bukan "Quotation". `id` tetap 'quotation' (tidak disentuh --
+            // tak ada pemakai lain yang bergantung padanya di file ini).
+            label: 'Quotations',
+            render: () => {
+              // D-72/D-73 (Putaran 10, rekonstruksi audit mockup
+              // Detail/QuotationActions rule 109): mockup SELALU merender
+              // KEDUA tombol ("Create Quotation" + "Create Revision"), masing-
+              // masing `disabled` sendiri, dengan ikon gembok DI DALAM tombol
+              // saat terkunci -- BUKAN ternary tukar-tampil satu tombol
+              // seperti sebelumnya. Chip terkunci tetap tampil BERDAMPINGAN
+              // dengan kedua tombol (TIDAK menggantikannya).
+              //
+              // "locked" menggabungkan DUA kondisi yang (sesuai komentar lama
+              // yang dipertahankan di bawah) tidak pernah tumpang tindih: Won
+              // (TD-318 Irisan 3) dan ditutup sebagai duplikat (Irisan 4
+              // Lingkup B, teks dari mockup Quotation Management.dc.html --
+              // mockup Inquiry Management ini sendiri tidak punya kasus ini).
+              const locked = dealStatus === 'WON' || !!inquiry?.duplicate_of_id;
+              const lockedLabel = inquiry?.duplicate_of_id
+                ? `Locked, inquiry closed as duplicate of ${duplicateOfNo || '—'}`
+                : 'Won, quotation locked';
+              return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {/* `onSearch` sengaja TIDAK dioper: daftar quotation satu deal
                     isinya sedikit, dan sejak guard baru di ListView, kotak
                     pencarian memang tak dirender kalau tak disediakan.
-
-                    Tombol di slot `right` BERUBAH BENTUK, bukan bertambah.
-                    Sejak nomor quotation diturunkan dari nomor inquiry, inquiry
-                    yang sudah punya quotation TIDAK BISA lagi melahirkan
-                    quotation kedua (UNIQUE quotation_no+revision) — yang kedua
-                    memang seharusnya REVISI. Menyodorkan "Create Quotation" di
-                    sana berarti menawarkan jalan buntu.
-
-                    [TD-318 Irisan 3, commit 2] Keadaan KETIGA: inquiry Won.
-                    Teks persis mockup rule 109 ("Won, quotation locked").
-                    Ini lapis UI saja (early-check sebelum RPC/trigger ada) —
-                    penjagaan sebenarnya menyusul di migrasi (commit 3, TASK 6):
-                    trg_fn_lock_quotation_closed_inquiry/trg_fn_lock_quotation_
-                    items_closed_inquiry diperluas ke status WON. Pengecualian
-                    Rate Sheet (rule 109) SENGAJA TIDAK diimplementasikan (final
-                    decision #4) — kunci berlaku rata untuk semua quotation.
-
-                    [Irisan 4 Lingkup B] Keadaan KEEMPAT: inquiry ditutup
-                    sebagai duplikat (duplicate_of_id terisi, status
-                    CANCELLED). Teks persis mockup Quotation Management.dc.html
-                    ("Locked, inquiry closed as duplicate of " + no). Dicek
-                    SEBELUM dealStatus==='WON' karena keduanya tidak pernah
-                    tumpang tindih (Close as Duplicate menulis CANCELLED, bukan
-                    WON) — urutan di sini murni supaya kondisi paling spesifik
-                    dibaca lebih dulu. Backend-nya SUDAH hidup (migrasi
-                    20261022000002, trg_fn_quotation_auto_close_on_inquiry_
-                    closed cabang CANCELLED+duplicate_of_id -> SUPERSEDED) —
-                    tombol untuk MEMULAI Close as Duplicate sendiri SENGAJA
-                    belum dibangun di halaman ini (ditunda ke Irisan 8/Owner
-                    Assignment), jadi teks ini murni pasif: tampil begitu ADA
-                    baris ber-duplicate_of_id, dari jalur mana pun ia terisi.
 
                     [Bugfix, hari setelahnya] Nomor inquiry yang dipertahankan
                     dibaca dari state `duplicateOfNo` (query terpisah, lihat
@@ -2589,111 +2699,223 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this inquiry will appear here."
-                  right={inquiry?.duplicate_of_id ? (
-                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
-                      Locked, inquiry closed as duplicate of {duplicateOfNo || '—'}
-                    </span>
-                  ) : dealStatus === 'WON' ? (
-                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.textMute, fontStyle: 'italic' }}>
-                      Won, quotation locked
-                    </span>
-                  ) : activeQuotation ? (
-                    <button onClick={() => setReviseOpen(true)} disabled={revising}
-                      style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff', cursor: revising ? 'not-allowed' : 'pointer', opacity: revising ? 0.6 : 1 }}>
-                      <FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
-                    </button>
-                  ) : (
-                    <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
-                      <FileText size={14} />Create Quotation
-                    </button>
-                  )}
+                  right={
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
+                        style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff',
+                          cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
+                        {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
+                      </button>
+                      <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
+                        style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff',
+                          cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
+                        {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
+                      </button>
+                      {locked && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                          <Lock size={14} />{lockedLabel}
+                        </span>
+                      )}
+                    </div>
+                  }
                   columns={QUOTATION_COLUMNS}
                 />
+                {/* D-72..D-74 keputusan Mas: QuotationItemsCard + PriceSummaryCard
+                    DIPERTAHANKAN walau tidak ada di mockup Detail/Quotations --
+                    fitur lama yang sudah bekerja (AGENTS.md §12), masuk daftar
+                    pembaruan Claude Design, bukan dihapus diam-diam di sini. */}
                 {activeQuotation && (
                   <QuotationItemsCard quotation={activeQuotation} items={activeQuotationItems} loading={activeItemsLoading} />
                 )}
                 <PriceSummaryCard quotations={quotations} termMap={termMap} />
               </div>
-            ),
+              );
+            },
           },
           {
             id: 'prf',
-            label: (
-              <>
-                PRF
-                {prfNeedsSelectionCount > 0 && (
-                  <span style={{ marginLeft: 6, background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px' }}>
-                    {prfNeedsSelectionCount}
-                  </span>
-                )}
-              </>
-            ),
+            // Koreksi visual Putaran 10 (Tahap 1/2) -- mockup `const DT`
+            // (Inquiry Management.dc.html:870) menulis "Procurement", bukan
+            // "PRF". `id` tetap 'prf' (tidak disentuh). Lencana angka
+            // (prfNeedsSelectionCount) DICABUT per keputusan Mas (lanjutan
+            // Tahap 2) -- mockup `dtabs` (baris 1032, dibangun dari
+            // `DT.map`) TIDAK membawa field count/badge sama sekali untuk
+            // tab mana pun.
+            label: 'Procurement',
             render: () => (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <ListView
-                  mode="table"
-                  rows={prfs}
-                  onRowClick={onViewPRF}
-                  emptyTitle="No PRFs yet"
-                  emptySub="PRFs raised for this inquiry will appear here."
-                  right={canCreatePRF ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* D-79 (Putaran 10, rekonstruksi audit mockup
+                    Detail/Procurement rReqs): "Rate Requests" -- tabel
+                    ListView -> kartu per-PRF + stepper 3 tahap (Submitted/
+                    Acknowledged/Quoted). "Find Rates"/Buy Rate Library/
+                    "Request Rates" SENGAJA TIDAK dibangun di sini (keputusan
+                    Mas: pindah ke Procurement 2.2.3). Readiness badge
+                    (PRF_READINESS, fitur lama yang sudah bekerja, nol
+                    kontradiksi dengan mockup) DIPERTAHANKAN, dipindah ke
+                    dalam kartu -- bukan dihapus.
+
+                    Koreksi visual Putaran 10 (Tahap 2): dicabut dari `<Card>`
+                    bertepi -- mockup (Inquiry Management.dc.html:411/:418)
+                    merender "Rate Requests"/"Vendor Offers" sebagai judul
+                    `<h3>` POLOS (section tab itu sendiri sudah berada di
+                    dalam kartu Detail/Quotations-setara, tanpa card kedua di
+                    dalamnya) -- hanya KARTU PER-PRF/PER-OFFER di dalamnya
+                    yang bertepi, sama seperti tab Quotation (ListView tanpa
+                    Card pembungkus). "Create PRF" (keputusan Mas,
+                    dipertahankan) dipindah jadi tombol di baris h3, pola
+                    sama "Find Rates" + "Request Rates" di mockup
+                    (baris ~1662, h3 ber-flex:1 + tombol sebaris). */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>Rate Requests</h3>
+                  {canCreatePRF && (
                     <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
                       <FileText size={14} />Create PRF
                     </button>
-                  ) : null}
-                  columns={PRF_COLUMNS}
-                />
-                {/* Kartu penawaran vendor — SALINAN LOKAL dari blok di PrfListCard
-                    (DealPanels.jsx). Disalin, bukan diedit di tempat, karena
-                    PrfListCard masih dipakai CustomerDetailPage:1597 dan file itu
-                    di luar scope batch ini. Kalau kelak PrfListCard tak lagi punya
-                    pemakai kedua, dua salinan ini WAJIB disatukan. */}
-                {prfs.filter((p) => String(p.status).toUpperCase() === 'QUOTED' && Array.isArray(p.vendorOffers)).map((p) => (
-                  <Card key={`offers-${p.id}`} title={`Vendor Offers — ${p.prf_no}`} icon={<FileText size={17} />}>
-                    {p.min_offers_waiver_reason && (
-                      <div style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.orange, marginBottom: 10 }}>
-                        Only {p.vendorOffers.length} offers. Procurement reason: {p.min_offers_waiver_reason}
-                      </div>
-                    )}
-                    {p.vendorOffers.length === 0 ? (
-                      <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>No vendor offers yet.</div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        {p.vendorOffers.map((o) => {
-                          const isSelected = p.selected_offer_id === o.id;
-                          const canSelect = p.created_by === profile?.id || isManagerOrAbove(erpRoles);
-                          return (
-                            <div key={o.id} style={{ width: 240, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px' }}>
-                              {isSelected && (
-                                <div style={{ fontFamily: HEAD, fontSize: 10, fontWeight: 800, letterSpacing: '.06em', color: C.orange, marginBottom: 6 }}>SELECTED BY SALES</div>
-                              )}
-                              <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</div>
-                              <div style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute, marginTop: 2 }}>Currency: {o.currency || '—'}</div>
-                              <div style={{ marginTop: 8, marginBottom: 10 }}>
-                                {Object.entries(o.totals || {}).length === 0 ? (
-                                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
-                                ) : Object.entries(o.totals).map(([cur, v]) => (
-                                  <div key={cur} style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 800, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>
-                                    {cur} {Number(v).toLocaleString('id-ID')}
-                                  </div>
-                                ))}
-                              </div>
-                              {!isSelected && canSelect && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectOffer(p, o)}
-                                  disabled={offerActionBusy}
-                                  style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
-                                  {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
+                  )}
+                </div>
+                {prfs.length === 0 ? (
+                  // Teks persis mockup (Inquiry Management.dc.html:416, `noReqs`).
+                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No rate requests for this inquiry.</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {prfs.map((p) => {
+                      const late = isPrfLate(p);
+                      const active = isPrfRequestActive(p);
+                      const canAct = canActOnPrf(p);
+                      return (
+                        <div key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            <button type="button" onClick={() => onViewPRF?.(p)}
+                              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: FONT_MONO, fontWeight: 700, color: C.navy, fontSize: 13 }}>
+                              {p.prf_no}
+                            </button>
+                            {/* Keputusan Den: badge readiness HANYA untuk
+                                CANCELLED/EXPIRED -- status lain sudah
+                                tersampaikan lewat stepper 5 tahap di bawah. */}
+                            {isPrfNotActive(p) && (
+                              <TintBadge meta={PRF_NOT_ACTIVE_BADGE} />
+                            )}
+                            {p.deadline_quotation && (
+                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>Needed by {fmtDate(p.deadline_quotation)}</span>
+                            )}
+                            <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{inquiryAgeLabel(p.created_at)}</span>
+                            {late && (
+                              <TintBadge meta={{ label: 'Over target', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+                            )}
+                            <span style={{ flex: 1 }} />
+                            {/* D-83/D-84 -- gerbang tombol = gerbang RPC
+                                (canActOnPrf/isPrfRequestActive), supaya
+                                tombol yang terlihat = aksi yang diterima. */}
+                            {active && canAct && (
+                              <>
+                                <button type="button" onClick={() => doRemindProcurement(p)} disabled={prfActionBusy}
+                                  style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
+                                  Remind Procurement
                                 </button>
-                              )}
+                                <button type="button" onClick={() => setPrfCancelConfirm({ open: true, prf: p })} disabled={prfActionBusy}
+                                  style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
+                                  Cancel Request
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+                            {PRF_STAGES.map((stage) => {
+                              const { at, by } = prfStageInfo(p, stage.key, quotations);
+                              const who = by ? profMap[by] : null;
+                              // Format persis mockup (Inquiry Management.dc.html:1144):
+                              // "[nama], [tanggal]" bila tercapai -- nama tak ketemu
+                              // (profMap miss) jatuh ke tanggal saja, bukan ditebak.
+                              const metaText = at ? (who ? `${who}, ${fmtDate(at)}` : fmtDate(at)) : 'Pending';
+                              return (
+                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
+                                    {at && <Check size={14} />}{stage.label}
+                                  </span>
+                                  <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{metaText}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Divider antar-section, pola persis mockup
+                    (Inquiry Management.dc.html, `height:1px;background:
+                    #ECF0E9` antara "Rate Requests" dan "Vendor Offers"). */}
+                <div style={{ height: 1, background: C.surfaceAlt }} />
+
+                {/* D-80 (Putaran 10) -- "Vendor Offers": satu Card FLAT
+                    lintas seluruh PRF inquiry ini (mockup Detail/Procurement
+                    offers[]), bukan dikelompokkan per kartu PRF seperti
+                    sebelumnya. Total per-currency DIPERTAHANKAN (keputusan
+                    Mas: fitur lama yang sudah bekerja -- mockup sendiri
+                    mengasumsikan satu angka "price" tapi satu offer bisa
+                    multi-currency di Nexus). "Transit" (mockup) TIDAK
+                    DIBANGUN -- nol kolom lead-time di prf_vendor_offers
+                    maupun vendors. Link profil vendor (mockup openV) TIDAK
+                    DIBANGUN -- nol halaman Detail Vendor untuk dituju (hanya
+                    ada daftar, proc-vendor-list, tanpa rute ber-:id).
+
+                    Koreksi visual Putaran 10 (Tahap 2): dicabut dari `<Card>`
+                    bertepi, pola sama "Rate Requests" di atas -- mockup
+                    (Inquiry Management.dc.html:418) juga h3 polos. */}
+                <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text }}>Vendor Offers</h3>
+                {allVendorOffers.length === 0 ? (
+                  // Teks sudah persis mockup (:420, `noOffers`) -- tidak diubah.
+                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No vendor offers yet.</span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {allVendorOffers.map((o) => {
+                      const p = o.prf;
+                      const isSelected = p.selected_offer_id === o.id;
+                      const canSelect = canActOnPrf(p);
+                      return (
+                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ flex: 1, fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</span>
+                            {isSelected && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, fontFamily: HEAD, fontSize: 11, fontWeight: 700, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint }}>PRF {p.prf_no}</span>
+                          {Object.entries(o.totals || {}).length === 0 ? (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
+                          ) : Object.entries(o.totals).map(([cur, v]) => (
+                            <div key={cur} style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 800, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>
+                              {cur} {Number(v).toLocaleString('id-ID')}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                ))}
+                          ))}
+                          {o.validUntil && (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textMute }}>Valid until {fmtDate(o.validUntil)}</span>
+                          )}
+                          {o.notes && (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>{o.notes}</span>
+                          )}
+                          {p.min_offers_waiver_reason && (
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.orange }}>
+                              Only {(p.vendorOffers || []).length} offers. Procurement reason: {p.min_offers_waiver_reason}
+                            </span>
+                          )}
+                          {!isSelected && canSelect && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectOffer(p, o)}
+                              disabled={offerActionBusy}
+                              style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
+                              {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ),
           },
@@ -2829,6 +3051,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           doSelectOffer(prf, offer);
         }}
         onCancel={() => setOfferSwitchConfirm({ open: false, prf: null, offer: null })}
+      />
+
+      {/* D-84 (Putaran 10) -- Cancel Request PRF. Mengubah prf.status saja,
+          TIDAK menyentuh inquiries.status. */}
+      <ConfirmModal
+        open={prfCancelConfirm.open}
+        variant="warning"
+        title="Cancel Request"
+        message={`Cancel the rate request ${prfCancelConfirm.prf?.prf_no || ''}? Procurement will no longer work on it.`}
+        confirmLabel="Yes, Cancel"
+        cancelLabel="Keep Request"
+        onConfirm={() => doCancelPrfRequest(prfCancelConfirm.prf)}
+        onCancel={() => setPrfCancelConfirm({ open: false, prf: null })}
       />
 
       {/* Tandai inquiry KALAH — alasan dari MASTER loss_reasons (B3). Field
