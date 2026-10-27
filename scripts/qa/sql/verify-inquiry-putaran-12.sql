@@ -844,9 +844,6 @@ BEGIN
   VALUES (v_company, (SELECT quotation_no FROM public.quotations WHERE id = v_quot_revised_old), 2, v_inq_id, v_account, 'DRAFT', v_sales_a)
   RETURNING id INTO v_quot_revised_new;
 
-  SELECT count(*) INTO v_audit_count_before FROM public.audit_logs WHERE entity_id = v_inq_id;
-  SELECT count(*) INTO v_hist_count_before FROM public.inquiry_status_history WHERE inquiry_id = v_inq_id;
-
   -- Mark Won manual -- menyapu Quotation 1/2/3 (DRAFT/SUBMITTED/SENT) ke
   -- SUPERSEDED, rejection_reason='Otomatis: inquiry ditandai Won'.
   -- Quotation 4 TIDAK tersentuh lagi (sudah SUPERSEDED, bukan di DRAFT/
@@ -857,6 +854,13 @@ BEGIN
 
   PERFORM set_config('request.jwt.claim.sub', v_sales_a::text, true);
   PERFORM public.mark_inquiry_won(v_inq_id, 'Verbal confirmation', v_company::text || '/' || v_inq_id::text || '/uji.pdf', NULL);
+
+  -- "before" diambil SESUDAH mark_inquiry_won, SEBELUM revert_manual_win --
+  -- supaya selisih after-before di bawah mengukur HANYA efek revert_manual_
+  -- win (bukan ikut menghitung +1 baris yang sudah ditulis mark_inquiry_won
+  -- sebelum titik ini).
+  SELECT count(*) INTO v_audit_count_before FROM public.audit_logs WHERE entity_id = v_inq_id;
+  SELECT count(*) INTO v_hist_count_before FROM public.inquiry_status_history WHERE inquiry_id = v_inq_id;
 
   -- Revert, sebagai manager.
   PERFORM set_config('request.jwt.claim.sub', v_manager::text, true);
@@ -939,7 +943,9 @@ BEGIN
   VALUES (v_company, v_account, 'freight_forwarding', NULL, 'Shipper', 'OPEN', v_sales_a, v_sales_a, v_loc_id, v_loc_id)
   RETURNING id INTO v_inq_both_id;
 
-  -- Kombinasi 2: SG->ID -> akan terisi Export.
+  -- Kombinasi 2: SG->ID (POL Singapore, POD Indonesia) -> akan terisi
+  -- Import (POD Indonesia = barang masuk; lihat backfill-inquiry-
+  -- direction.sql -- POL Indonesia = Export, POD Indonesia = Import).
   INSERT INTO public.inquiries (company_id, prospect_id, service_type, direction, customer_role, status, created_by, owner_id, pol_location_id, pod_location_id)
   VALUES (v_company, v_account, 'freight_forwarding', NULL, 'Shipper', 'OPEN', v_sales_a, v_sales_a, v_loc_sg, v_loc_id)
   RETURNING id INTO v_inq_export;
@@ -989,11 +995,11 @@ BEGIN
   SELECT direction INTO v_dir_neither FROM public.inquiries WHERE id = v_inq_neither_id;
   SELECT direction INTO v_dir_missing FROM public.inquiries WHERE id = v_inq_missing_loc;
 
-  RAISE NOTICE 'V9 -- both_ID=%(ekspektasi Domestic), SG_ID=%(ekspektasi Export), SG_MY=%(ekspektasi NULL), lokasi_hilang=%(ekspektasi NULL)',
+  RAISE NOTICE 'V9 -- both_ID=%(ekspektasi Domestic), SG_ID=%(ekspektasi Import), SG_MY=%(ekspektasi NULL), lokasi_hilang=%(ekspektasi NULL)',
     v_dir_both, v_dir_export, v_dir_neither, v_dir_missing;
 
   IF v_dir_both <> 'Domestic' THEN RAISE EXCEPTION 'UJI GAGAL (V9) -- kombinasi 1 seharusnya Domestic, dapat %', v_dir_both; END IF;
-  IF v_dir_export <> 'Export' THEN RAISE EXCEPTION 'UJI GAGAL (V9) -- kombinasi 2 seharusnya Export, dapat %', v_dir_export; END IF;
+  IF v_dir_export <> 'Import' THEN RAISE EXCEPTION 'UJI GAGAL (V9) -- kombinasi 2 seharusnya Import, dapat %', v_dir_export; END IF;
   IF v_dir_neither IS NOT NULL THEN RAISE EXCEPTION 'UJI GAGAL (V9) -- kombinasi 3 seharusnya TETAP NULL, dapat %', v_dir_neither; END IF;
   IF v_dir_missing IS NOT NULL THEN RAISE EXCEPTION 'UJI GAGAL (V9) -- kombinasi 4 seharusnya TETAP NULL, dapat %', v_dir_missing; END IF;
 

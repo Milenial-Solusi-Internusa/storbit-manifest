@@ -588,13 +588,13 @@ BEGIN
   v_new_direction := NULL;
   IF v_primary_pol_loc IS DISTINCT FROM v_old_pol_loc
      OR v_primary_pod_loc IS DISTINCT FROM v_old_pod_loc THEN
-    v_pol_found := EXISTS (SELECT 1 FROM public.locations WHERE id = v_primary_pol_loc);
-    v_pod_found := EXISTS (SELECT 1 FROM public.locations WHERE id = v_primary_pod_loc);
+    v_pol_found := EXISTS (SELECT 1 FROM public.locations l WHERE l.id = v_primary_pol_loc);
+    v_pod_found := EXISTS (SELECT 1 FROM public.locations l WHERE l.id = v_primary_pod_loc);
     IF v_pol_found AND v_pod_found THEN
-      SELECT lower(btrim(COALESCE(country, ''))) INTO v_pol_country
-        FROM public.locations WHERE id = v_primary_pol_loc;
-      SELECT lower(btrim(COALESCE(country, ''))) INTO v_pod_country
-        FROM public.locations WHERE id = v_primary_pod_loc;
+      SELECT lower(btrim(COALESCE(l.country, ''))) INTO v_pol_country
+        FROM public.locations l WHERE l.id = v_primary_pol_loc;
+      SELECT lower(btrim(COALESCE(l.country, ''))) INTO v_pod_country
+        FROM public.locations l WHERE l.id = v_primary_pod_loc;
       v_pol_is_id := (v_pol_country = 'indonesia');
       v_pod_is_id := (v_pod_country = 'indonesia');
       IF v_pol_is_id AND v_pod_is_id THEN

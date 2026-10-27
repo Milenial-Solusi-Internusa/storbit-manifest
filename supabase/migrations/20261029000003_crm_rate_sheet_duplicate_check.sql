@@ -42,7 +42,7 @@
 
 BEGIN;
 
-CREATE FUNCTION public.find_possible_duplicate_rate_sheets(
+CREATE OR REPLACE FUNCTION public.find_possible_duplicate_rate_sheets(
   p_company_id         uuid,
   p_prospect_id        uuid,
   p_validity_from      date,
@@ -70,7 +70,7 @@ BEGIN
   END IF;
 
   RETURN QUERY
-    SELECT DISTINCT i.id, i.inquiry_no, i.validity_from, i.validity_to
+    SELECT i.id, i.inquiry_no, i.validity_from, i.validity_to
       FROM public.inquiries i
      WHERE i.company_id = p_company_id
        AND i.inquiry_type = 'Rate Sheet Request'
