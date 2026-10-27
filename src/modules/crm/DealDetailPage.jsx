@@ -247,35 +247,54 @@ function NextStepHint({ status }) {
 // tercabut bersama PRF_COLUMNS (tabel ListView digantikan kartu+stepper;
 // mockup Detail/Procurement rReqs[] tidak menampilkan service_type di kartu).
 
-const PRF_READINESS = {
-  not_active:  { label: 'Not active',           bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' },
-  ready:       { label: 'Ready as source',      bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
-  needs:       { label: 'Needs selection',      bg: '#FDE7DB', color: '#B53F0D', bd: '#EFC5B2' },
-  awaiting:    { label: 'Awaiting procurement', bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
-};
-function prfReadinessKey(p) {
-  const st = String(p?.status || '').toUpperCase();
-  if (st === 'CANCELLED' || st === 'EXPIRED') return 'not_active';
-  if (st === 'QUOTED' && p?.selected_offer_id) return 'ready';
-  if (st === 'QUOTED') return 'needs';
-  return 'awaiting';
+// Keputusan Den (koreksi visual Putaran 10, lanjutan Tahap 2 -- masuk daftar
+// pembaruan Claude Design): badge readiness pada kartu PRF HANYA dipertahankan
+// untuk status CANCELLED/EXPIRED ("Not active") supaya PRF batal tetap
+// terlihat di antara yang masih berjalan -- untuk status lain (SUBMITTED/
+// ACKNOWLEDGED/QUOTED) badge DICABUT karena stepper 5 tahap di bawah sudah
+// menyampaikan progres itu sendiri. PRF_READINESS 4-keadaan lama (ready/
+// needs/awaiting) dan prfReadinessKey() dicabut bersamanya -- sudah tak
+// terpakai begitu badge "Needs selection" (sumber prfNeedsSelectionCount,
+// JUGA dicabut per keputusan Den: mockup `dtabs` baris 1032 nol field
+// badge/count di tab mana pun) ikut hilang.
+const PRF_NOT_ACTIVE_BADGE = { label: 'Not active', bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' };
+function isPrfNotActive(p) {
+  return ['CANCELLED', 'EXPIRED'].includes(String(p?.status || '').toUpperCase());
 }
 
-// D-79 (Putaran 10) -- stepper "Rate Requests" (mockup Detail/Procurement
-// rReqs[].steps): 3 tahap diturunkan dari timestamp yang SUDAH ada di `prf`
-// (submitted_at/acknowledged_at/answered_at) -- nol kolom baru, murni select
-// tambahan (lihat titik fetch). Fungsi modul (pure, nol closure) pola persis
-// prfReadinessKey di atasnya.
+// D-79 (Putaran 10, dibangun ulang PERSIS mockup atas keputusan Mas) --
+// stepper "Rate Requests" LIMA tahap (mockup Inquiry Management.dc.html:1130,
+// `const st5 = ['Submitted','Acknowledged','Offers Received','Offer
+// Selected','Used in Quotation']`; meta "[nama], [tanggal]"/"Pending" di
+// baris 1144). Pemetaan ke kolom Nexus (nol migrasi, kolom semua SUDAH ADA):
+//   Submitted         -- prf.submitted_at,     nama dari prf.created_by
+//   Acknowledged      -- prf.acknowledged_at,  nama dari prf.acknowledged_by
+//   Offers Received   -- prf.answered_at,      nama dari prf.answered_by
+//   Offer Selected    -- prf.selected_at,      nama dari prf.selected_by
+//   Used in Quotation -- quotations.created_at MILIK quotation ber-prf_id
+//                        = id PRF ini, nama dari quotations.created_by
+//                        (kolom diverifikasi ke schema_snapshot.sql, bukan
+//                        ditebak). TIDAK butuh query .in() terpisah --
+//                        `quotations` (state, sudah di-fetch per inquiry_id
+//                        di titik fetch utama) sudah mencakup SEMUA
+//                        quotation inquiry ini, termasuk punya PRF mana pun
+//                        -- filter client-side cukup, zero query tambahan.
 const PRF_STAGES = [
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'acknowledged', label: 'Acknowledged' },
-  { key: 'quoted', label: 'Quoted' },
+  { key: 'submitted', label: 'Submitted', atField: 'submitted_at', byField: 'created_by' },
+  { key: 'acknowledged', label: 'Acknowledged', atField: 'acknowledged_at', byField: 'acknowledged_by' },
+  { key: 'offersReceived', label: 'Offers Received', atField: 'answered_at', byField: 'answered_by' },
+  { key: 'offerSelected', label: 'Offer Selected', atField: 'selected_at', byField: 'selected_by' },
+  { key: 'usedInQuotation', label: 'Used in Quotation', atField: null, byField: null },
 ];
-function prfStageAt(p, key) {
-  if (key === 'submitted') return p?.submitted_at || null;
-  if (key === 'acknowledged') return p?.acknowledged_at || null;
-  if (key === 'quoted') return p?.answered_at || null;
-  return null;
+// `quotationsForInquiry` = state `quotations` dioper dari render (bukan
+// closure modul) -- satu-satunya tahap yang butuhnya adalah usedInQuotation.
+function prfStageInfo(p, key, quotationsForInquiry) {
+  if (key === 'usedInQuotation') {
+    const q = (quotationsForInquiry || []).find((x) => x.prf_id === p?.id);
+    return { at: q?.created_at || null, by: q?.created_by || null };
+  }
+  const stage = PRF_STAGES.find((s) => s.key === key);
+  return { at: p?.[stage.atField] || null, by: p?.[stage.byField] || null };
 }
 // q.active mockup (gerbang tombol Remind/Cancel): PRF masih menunggu jawaban
 // Procurement. Dipakai JUGA sebagai gerbang tampilan tombol di FE -- HARUS
@@ -730,7 +749,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       const { data: quos } = await supabase
         .from('quotations')
-        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
+        // D-79 (Putaran 10, stepper 5 tahap) -- prf_id/created_by ditambah:
+        // tahap "Used in Quotation" dicek dari quotation yang prf_id-nya =
+        // id PRF, "siapa"-nya dari created_by. Query ini SUDAH inquiry-
+        // scoped (bukan query baru per-PRF) -- nol risiko N+1, nol alasan
+        // ganti .limit(1000) jadi .range() (1000 quotation untuk SATU
+        // inquiry bukan kasus nyata; limit sudah ada sebelum Putaran 10).
+        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at, prf_id, created_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
@@ -766,7 +791,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // ter-select).
       const { data: prfRows } = await supabase
         .from('prf')
-        .select('id, prf_no, service_type, status, created_at, created_by, company_id, selected_offer_id, min_offers_waiver_reason, deadline_quotation, submitted_at, acknowledged_at, acknowledged_by, answered_at')
+        // D-79 (Putaran 10, stepper 5 tahap, keputusan Mas) -- answered_by/
+        // selected_at/selected_by ditambah (kolom SUDAH ADA di `prf`, lihat
+        // komentar PRF_STAGES) -- "siapa"/"kapan" tahap Offers Received dan
+        // Offer Selected.
+        .select('id, prf_no, service_type, status, created_at, created_by, company_id, selected_offer_id, min_offers_waiver_reason, deadline_quotation, submitted_at, acknowledged_at, acknowledged_by, answered_at, answered_by, selected_at, selected_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(200);
 
@@ -837,7 +866,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       }
 
       // resolve profile names (assigned_to, created_by, owner_id)
-      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id, ...(historyRows || []).map((h) => h.changed_by)].filter(Boolean))];
+      // D-79 (Putaran 10, stepper 5 tahap) -- "siapa" per tahap PRF
+      // (created_by/acknowledged_by/answered_by/selected_by) + pembuat
+      // quotation (tahap Used in Quotation) ditambah ke SATU query profiles
+      // yang sudah ada ini -- bukan query .in() kedua.
+      const pIds = [...new Set([
+        acc?.assigned_to, inq.created_by, inq.owner_id,
+        ...(historyRows || []).map((h) => h.changed_by),
+        ...prfsAugmented.flatMap((p) => [p.created_by, p.acknowledged_by, p.answered_by, p.selected_by]),
+        ...(quos || []).map((q) => q.created_by),
+      ].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -911,10 +949,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render, banner
   // langkah berikutnya, dan gate penutupan membaca nilai yang sama.
   const dealStatus = String(inquiry?.status || 'OPEN').toUpperCase();
-  // Badge angka di label tab PRF = PRF yang MENUNGGU TINDAKAN SALES saja.
-  // "Not active" (CANCELLED/EXPIRED) dan "Awaiting procurement" sengaja tak
-  // dihitung — badge yang menghitung semuanya cuma mengulang jumlah baris.
-  const prfNeedsSelectionCount = prfs.filter((p) => prfReadinessKey(p) === 'needs').length;
   // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role primer).
   // User multi-role (mis. manager+sales) sebelumnya kehilangan tombol ini karena
   // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert
@@ -2703,23 +2737,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             // Koreksi visual Putaran 10 (Tahap 1/2) -- mockup `const DT`
             // (Inquiry Management.dc.html:870) menulis "Procurement", bukan
             // "PRF". `id` tetap 'prf' (tidak disentuh). Lencana angka
-            // (prfNeedsSelectionCount) SENGAJA DIPERTAHANKAN -- mockup
-            // `dtabs` (baris 1032, dibangun dari `DT.map`) TIDAK membawa
-            // field count/badge sama sekali untuk tab mana pun, tapi
-            // lencana ini fitur fungsional lama (Batch 3C, di luar Putaran
-            // 10) yang menunjukkan PRF menunggu pilihan sales -- bukan
-            // sekadar teks label. Dilaporkan di Tahap 1, menunggu keputusan
-            // Mas, tidak dihapus sepihak di sini.
-            label: (
-              <>
-                Procurement
-                {prfNeedsSelectionCount > 0 && (
-                  <span style={{ marginLeft: 6, background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px' }}>
-                    {prfNeedsSelectionCount}
-                  </span>
-                )}
-              </>
-            ),
+            // (prfNeedsSelectionCount) DICABUT per keputusan Mas (lanjutan
+            // Tahap 2) -- mockup `dtabs` (baris 1032, dibangun dari
+            // `DT.map`) TIDAK membawa field count/badge sama sekali untuk
+            // tab mana pun.
+            label: 'Procurement',
             render: () => (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 {/* D-79 (Putaran 10, rekonstruksi audit mockup
@@ -2767,7 +2789,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                               style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: FONT_MONO, fontWeight: 700, color: C.navy, fontSize: 13 }}>
                               {p.prf_no}
                             </button>
-                            <TintBadge meta={PRF_READINESS[prfReadinessKey(p)]} />
+                            {/* Keputusan Den: badge readiness HANYA untuk
+                                CANCELLED/EXPIRED -- status lain sudah
+                                tersampaikan lewat stepper 5 tahap di bawah. */}
+                            {isPrfNotActive(p) && (
+                              <TintBadge meta={PRF_NOT_ACTIVE_BADGE} />
+                            )}
                             {p.deadline_quotation && (
                               <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>Needed by {fmtDate(p.deadline_quotation)}</span>
                             )}
@@ -2794,16 +2821,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                           </div>
                           <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
                             {PRF_STAGES.map((stage) => {
-                              const at = prfStageAt(p, stage.key);
+                              const { at, by } = prfStageInfo(p, stage.key, quotations);
+                              const who = by ? profMap[by] : null;
+                              // Format persis mockup (Inquiry Management.dc.html:1144):
+                              // "[nama], [tanggal]" bila tercapai -- nama tak ketemu
+                              // (profMap miss) jatuh ke tanggal saja, bukan ditebak.
+                              const metaText = at ? (who ? `${who}, ${fmtDate(at)}` : fmtDate(at)) : 'Pending';
                               return (
                                 <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
                                     {at && <Check size={14} />}{stage.label}
                                   </span>
-                                  {/* Teks persis mockup (Inquiry Management.dc.html:1144,
-                                      `meta: ... : 'Pending'`) -- Putaran 10 Tahap 2,
-                                      sebelumnya "Waiting" (bukan dari mockup). */}
-                                  <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{at ? fmtDate(at) : 'Pending'}</span>
+                                  <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{metaText}</span>
                                 </div>
                               );
                             })}
