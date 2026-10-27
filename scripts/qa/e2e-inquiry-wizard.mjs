@@ -728,6 +728,50 @@ function dealFieldValue(page, label) {
     check('Review step menampilkan Additional Services "Cargo Insurance" (bila diisi)', addlReview.includes('Cargo Insurance'), `dapat: "${addlReview}"`);
   }
 
+  // ── Putaran 12 Butir 5 (validasi lane identik, migrasi
+  // 20261029000001_crm_lane_validation_and_direction.sql) — SEBELUM lane 2
+  // dibedakan dari lane 1, kedua lane di titik ini MASIH identik (sama POL/
+  // POD/Mode/Load unit, warisan "Add route option" di atas). Klik Create
+  // Inquiry di sini WAJIB ditolak RPC dengan pesan baku -- ini perilaku yang
+  // DIHARAPKAN (aturan bisnis baru), BUKAN kegagalan RPC yang tak terduga,
+  // jadi TIDAK memakai label "Diagnostik" ala captureRejectionDiagnostics.
+  // Variabel lokal (dup*) sengaja TIDAK memakai nama rpcResp/inquiryNo/
+  // inquiryId di luar blok ini supaya nol tabrakan dengan percobaan
+  // sungguhan di bawah. ──────────────────────────────────────────────────────
+  const dupRpcPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  const createVisibleForDupCheck = await createBtnLocator.isVisible().catch(() => false);
+  if (createVisibleForDupCheck) await createBtnLocator.click();
+  const dupRpcResp = await dupRpcPromise;
+  check('[Lane identik] RPC create_inquiry_with_lanes DITOLAK selagi 2 lane masih identik', !!dupRpcResp && !dupRpcResp.ok(), dupRpcResp ? `HTTP ${dupRpcResp.status()}` : 'nol respon tertangkap');
+  await settle(page, 500);
+  const dupToastText = (await page.locator('[class*="toast" i], [role="alert" i], [role="status" i]').allInnerTexts().catch(() => [])).filter(Boolean);
+  check('[Lane identik] Toast "Two or more lanes are identical..." tampil',
+    dupToastText.some((t) => t.includes('Two or more lanes are identical (same Port of Loading, Port of Discharge, Mode, and Load Unit).')),
+    `toast sebenarnya: ${JSON.stringify(dupToastText)}`);
+  check('[Lane identik] URL TIDAK pindah ke Detail Inquiry (masih di wizard)', page.url().endsWith('/crm/inquiry/new'), page.url());
+
+  // ── Bedakan lane 2 dari lane 1 supaya payload berikutnya LOLOS validasi
+  // "lane identik": Mode lane 2 diganti "Sea LCL" (lane 1 tetap "Sea FCL").
+  // POD TETAP SAMA ("Jakarta (Tanjung Priok)") -- dua lane boleh berbagi POD
+  // yang sama, asalkan Mode ATAU Load unit berbeda; cek baris di atas
+  // ("kedua lane sama-sama menampilkan Jakarta di kolom POD") tetap
+  // bermakna. `onChange` LaneTable.jsx (`unitForMode`, src/kit/laneUtils.js)
+  // otomatis ikut mengubah load_unit -> "CBM" begitu Mode diganti dari
+  // "Sea FCL" -- SATU select yang disentuh skrip, DUA field yang akhirnya
+  // berbeda (cara paling sederhana, nol logika baru di skrip). ─────────────
+  await stepPill(page, 'Route & Terms').click();
+  await settle(page, 300);
+  await laneRow(page, 1).locator('select').nth(0).selectOption('Sea LCL');
+  await settle(page, 300);
+  const lane2ModeUnitAfterDiff = await laneRow(page, 1).locator('select').evaluateAll((els) => els.map((el) => el.value));
+  check('Lane 2 Mode diganti "Sea LCL" (beda dari lane 1 "Sea FCL")', lane2ModeUnitAfterDiff[0] === 'Sea LCL', `dapat: ${JSON.stringify(lane2ModeUnitAfterDiff)}`);
+  check('Lane 2 Load unit ikut berubah "CBM" (unitForMode, bukan disentuh manual)', lane2ModeUnitAfterDiff[1] === 'CBM', `dapat: ${JSON.stringify(lane2ModeUnitAfterDiff)}`);
+  const lane1ModeUnitStillFcl = await laneRow(page, 0).locator('select').evaluateAll((els) => els.map((el) => el.value));
+  check('Lane 1 TIDAK ikut berubah (tetap "Sea FCL"/"Container")', lane1ModeUnitStillFcl[0] === 'Sea FCL' && lane1ModeUnitStillFcl[1] === 'Container', `dapat: ${JSON.stringify(lane1ModeUnitStillFcl)}`);
+
+  const reachedReviewAgain = await goToReviewViaNext(page);
+  check('Step Review tercapai lagi setelah lane dibedakan', reachedReviewAgain);
+
   const createVisibleForReal = await createBtnLocator.isVisible().catch(() => false);
   check('Tombol "Create Inquiry" terlihat sebelum diklik (percobaan sungguhan)', createVisibleForReal);
 
@@ -773,8 +817,10 @@ function dealFieldValue(page, label) {
 
   // ── Detail Inquiry: blok "Route Options" (SectionHeader <h3> + LaneTable
   // <h4> bersarang sejak kit extraction -- lihat laneTableContainer di atas)
-  // berisi 2 baris, keduanya Sea FCL/Container (verifikasi fix 5c end-to-end,
-  // item a), + POL/POD read-only saat edit section Route & Terms (FIX 5). ──
+  // berisi 2 baris (lane 1 Sea FCL/Container, lane 2 Sea LCL/CBM -- sengaja
+  // dibedakan, lihat blok "Bedakan lane 2" di atas; verifikasi fix 5c
+  // end-to-end, item a), + POL/POD read-only saat edit section Route &
+  // Terms (FIX 5). ───────────────────────────────────────────────────────
   await settle(page, 800);
   // waitFor({state:'visible'}) -- bukan cek instan -- supaya timing render
   // Detail Inquiry sesaat sesudah Create (kemungkinan flaky, dicurigai dari
@@ -791,16 +837,20 @@ function dealFieldValue(page, label) {
   const detailLaneCount = await laneRowCount(page);
   check('Blok Route Options (struktur, bukan teks heading) punya tepat 2 baris', detailLaneCount === 2, `dapat: ${detailLaneCount}`);
 
-  // item (a) -- Mode/Load unit kedua lane harus Sea FCL/Container (kontainer
+  // item (a) -- Mode/Load unit lane 1 harus Sea FCL/Container (kontainer
   // dipilih "FCL 20'" di wizard; sebelum fix 5c, blankLane/startLanes
   // hardcode Sea LCL/CBM utk jalur lane-mode -- gejala MSI-INQ-X-2026-0024).
+  // Lane 2 SENGAJA berbeda (Sea LCL/CBM, lihat blok "Bedakan lane 2" di
+  // atas) -- validasi lane identik Putaran 12 Butir 5 menolak dua lane
+  // ber-Mode/Load unit sama persis, jadi lane 2 di sini TIDAK BOLEH lagi
+  // Sea FCL/Container sejak fixture ini dibedakan.
   if (detailLaneCount >= 2) {
     const row0ModeUnit = await laneRow(page, 0).locator('select').evaluateAll((els) => els.map((el) => el.value));
     const row1ModeUnit = await laneRow(page, 1).locator('select').evaluateAll((els) => els.map((el) => el.value));
     check('Lane 1 Detail Inquiry menunjukkan Mode "Sea FCL"', row0ModeUnit[0] === 'Sea FCL', `dapat: ${JSON.stringify(row0ModeUnit)}`);
     check('Lane 1 Detail Inquiry menunjukkan Load unit "Container"', row0ModeUnit[1] === 'Container', `dapat: ${JSON.stringify(row0ModeUnit)}`);
-    check('Lane 2 Detail Inquiry menunjukkan Mode "Sea FCL"', row1ModeUnit[0] === 'Sea FCL', `dapat: ${JSON.stringify(row1ModeUnit)}`);
-    check('Lane 2 Detail Inquiry menunjukkan Load unit "Container"', row1ModeUnit[1] === 'Container', `dapat: ${JSON.stringify(row1ModeUnit)}`);
+    check('Lane 2 Detail Inquiry menunjukkan Mode "Sea LCL" (sengaja beda dari lane 1)', row1ModeUnit[0] === 'Sea LCL', `dapat: ${JSON.stringify(row1ModeUnit)}`);
+    check('Lane 2 Detail Inquiry menunjukkan Load unit "CBM" (sengaja beda dari lane 1)', row1ModeUnit[1] === 'CBM', `dapat: ${JSON.stringify(row1ModeUnit)}`);
   }
 
   const routeEditBtn = sectionButton(page, 'Route & Terms', 'Edit');
