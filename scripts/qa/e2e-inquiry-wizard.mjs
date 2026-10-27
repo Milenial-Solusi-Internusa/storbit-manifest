@@ -738,6 +738,7 @@ function dealFieldValue(page, label) {
   // Variabel lokal (dup*) sengaja TIDAK memakai nama rpcResp/inquiryNo/
   // inquiryId di luar blok ini supaya nol tabrakan dengan percobaan
   // sungguhan di bawah. ──────────────────────────────────────────────────────
+  const urlBeforeDupCreate = page.url();
   const dupRpcPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
   const createVisibleForDupCheck = await createBtnLocator.isVisible().catch(() => false);
   if (createVisibleForDupCheck) await createBtnLocator.click();
@@ -748,7 +749,12 @@ function dealFieldValue(page, label) {
   check('[Lane identik] Toast "Two or more lanes are identical..." tampil',
     dupToastText.some((t) => t.includes('Two or more lanes are identical (same Port of Loading, Port of Discharge, Mode, and Load Unit).')),
     `toast sebenarnya: ${JSON.stringify(dupToastText)}`);
-  check('[Lane identik] URL TIDAK pindah ke Detail Inquiry (masih di wizard)', page.url().endsWith('/crm/inquiry/new'), page.url());
+  // Pola SAMA dgn cek "Estimated abc" (urlBeforeBadCreate di atas) dan [RS]
+  // "nol lane terpilih" -- bandingkan terhadap URL yang ditangkap SEBELUM
+  // percobaan, bukan menebak bentuk literalnya (rute wizard-baru TERNYATA
+  // /crm/inquiry/status-history/new, bukan /crm/inquiry/new -- koreksi atas
+  // percobaan pertama yang salah tebak dan GAGAL run sebelumnya).
+  check('[Lane identik] URL TIDAK pindah ke Detail Inquiry (masih di wizard)', page.url() === urlBeforeDupCreate, page.url());
 
   // ── Bedakan lane 2 dari lane 1 supaya payload berikutnya LOLOS validasi
   // "lane identik": Mode lane 2 diganti "Sea LCL" (lane 1 tetap "Sea FCL").
