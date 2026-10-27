@@ -1,8 +1,9 @@
 // src/modules/crm/InquiryIntakeWizardPage.jsx
 // Inquiry Management Putaran 4 — Tahap 4B. Wizard "Intake Form" untuk membuat
 // inquiry BARU, Single Shipment saja (Rate Sheet Request = Tahap 4C, belum
-// dibangun). CREATE-ONLY — InquiryFormPage.jsx TETAP satu-satunya halaman
-// untuk EDIT (mode='edit'), tidak disentuh di sini.
+// dibangun). CREATE-ONLY — editing berjalan inline per-section di
+// DealDetailPage.jsx (InquiryFormPage.jsx, dulu satu-satunya halaman EDIT,
+// dipensiunkan Putaran 15 Task 1).
 //
 // Kontrak: design-handoff/mockup/Inquiry Management.dc.html (kutipan baris
 // di komentar tiap bagian) + nexus-notes.js + crm-metrics.js. Urutan langkah

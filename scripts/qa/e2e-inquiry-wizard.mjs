@@ -499,8 +499,8 @@ function dealFieldValue(page, label) {
   // masih valid walau satu aksi gagal) alih-alih proses mati total seperti
   // sebelum perbaikan ini.
   try {
-  // ── buka wizard baru (CREATE-only; InquiryFormPage.jsx TETAP utk EDIT,
-  // tidak disentuh di sini) ──────────────────────────────────────────────
+  // ── buka wizard baru (CREATE-only; edit kini inline di DealDetailPage,
+  // InquiryFormPage.jsx dipensiunkan Putaran 15 Task 1) ───────────────────
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
   await settle(page);
   // Putaran 13a -- H1 diganti "Inquiry Intake Form" (mockup baris 43, nol

@@ -23,7 +23,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  FileText, ChevronLeft, Pencil, CalendarClock,
+  FileText, ChevronLeft, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
   Lock, Check, RefreshCcw,
@@ -557,7 +557,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -1858,17 +1858,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiryAge}</span>
             </div>
           </div>
-          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner || showCreateQuotationPrimary) && (
+          {(canMarkLost || canMarkWon || canCancel || canReassignOwner || showCreateQuotationPrimary) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
-              status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
-              literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
-              !isTerminal, jadi arahnya konsisten: nol aksi edit pada status terminal. */}
-          {onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus) && (
-            <button onClick={onEditInquiry} style={ACT_BTN}>
-              <Pencil size={14} />Edit Inquiry
-            </button>
-          )}
+          {/* Putaran 15 Task 1 -- tombol "Edit Inquiry" (onEditInquiry) dicabut:
+              mockup tidak punya tombol Edit literal di sini, dan sejak Task 1
+              seluruh editing berjalan inline per-section (Overview), bukan lagi
+              lewat halaman form terpisah (InquiryFormPage.jsx, dipensiunkan). */}
           {/* TD-318 Irisan 3, commit 4 -- aksi utama dinamis (final decision
               #9.1): Open/In Review = Create Quotation; Quoted/Negotiation =
               Mark as Won (kalau canMarkWon). "Request Rates" mockup TIDAK
