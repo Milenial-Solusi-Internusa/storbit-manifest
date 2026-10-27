@@ -219,7 +219,7 @@ export function MarkWonModal({
         <div style={{ marginTop: 6, fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
           {hasSupervisor
             ? 'Manual wins are reported separately and your supervisor is notified.'
-            : 'Manual wins are reported separately. No supervisor recorded for this account. No notification will be sent.'}
+            : 'Manual wins are reported separately. No supervisor is recorded on your profile, so no notification will be sent.'}
         </div>
       </label>
 
