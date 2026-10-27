@@ -15,6 +15,10 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import InquiryPicker from '../../components/InquiryPicker';
 import { COMMODITIES, ADD_ONS } from './prfShared';
+// IMO_CLASSES dipindah ke inquiryOptions.js (Irisan Inquiry Putaran 15, Task 2) —
+// satu sumber kebenaran bersama InquiryIntakeWizardPage.jsx/DealDetailPage.jsx,
+// bukan salinan lokal yang harus disinkronkan manual.
+import { IMO_CLASSES } from '../crm/inquiryOptions';
 
 const C = {
   navy: '#144682', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -31,9 +35,6 @@ const DIRECTIONS = [
   { value: 'export', label: 'Export' },
   { value: 'domestic', label: 'Domestic' },
 ];
-// IMO hazard classes — nilai string IDENTIK dengan InquiryFormPage.IMO_CLASSES supaya
-// nilai imo_class yang di-prefill dari inquiry cocok dengan salah satu opsi dropdown.
-const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
 const SERVICE_TYPES = [
   { value: 'sea', label: 'Sea' },
   { value: 'air', label: 'Air' },
