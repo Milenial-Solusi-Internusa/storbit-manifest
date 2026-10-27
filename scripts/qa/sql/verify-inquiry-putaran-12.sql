@@ -499,13 +499,13 @@ BEGIN
   SELECT t.id INTO v_existing_id FROM public.create_inquiry_with_lanes(
     p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
     p_direction := 'Export', p_customer_role := 'Shipper', p_inquiry_type := 'Rate Sheet Request',
-    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + interval '90 days', p_monthly_volume_cbm := 50,
+    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + 90, p_monthly_volume_cbm := 50,
     p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc_pol, 'pod_location_id', v_loc_pod, 'pol', 'POL', 'pod', 'POD'))
   ) AS t;
 
   SELECT count(*) INTO v_match_count FROM public.find_possible_duplicate_rate_sheets(
     p_company_id := v_company, p_prospect_id := v_account,
-    p_validity_from := CURRENT_DATE + interval '30 days', p_validity_to := CURRENT_DATE + interval '120 days',
+    p_validity_from := CURRENT_DATE + 30, p_validity_to := CURRENT_DATE + 120,
     p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc_pol, 'pod_location_id', v_loc_pod))
   );
   EXECUTE 'RESET ROLE';
@@ -544,7 +544,7 @@ BEGIN
 
   SELECT count(*) INTO v_match_count FROM public.find_possible_duplicate_rate_sheets(
     p_company_id := v_company, p_prospect_id := v_account,
-    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + interval '90 days',
+    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + 90,
     p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc_pol, 'pod_location_id', v_loc_pod))
   );
   EXECUTE 'RESET ROLE';
@@ -577,14 +577,14 @@ BEGIN
   SELECT t.id INTO v_existing_id FROM public.create_inquiry_with_lanes(
     p_company_id := v_company, p_prospect_id := v_account, p_service_type := 'freight_forwarding',
     p_direction := 'Export', p_customer_role := 'Shipper', p_inquiry_type := 'Rate Sheet Request',
-    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + interval '30 days', p_monthly_volume_cbm := 50,
+    p_validity_from := CURRENT_DATE, p_validity_to := CURRENT_DATE + 30, p_monthly_volume_cbm := 50,
     p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc_pol, 'pod_location_id', v_loc_pod, 'pol', 'POL', 'pod', 'POD'))
   ) AS t;
 
   -- validity CALON mulai 60 hari sesudah validity_to yang ada -- TIDAK overlap.
   SELECT count(*) INTO v_match_count FROM public.find_possible_duplicate_rate_sheets(
     p_company_id := v_company, p_prospect_id := v_account,
-    p_validity_from := CURRENT_DATE + interval '60 days', p_validity_to := CURRENT_DATE + interval '150 days',
+    p_validity_from := CURRENT_DATE + 60, p_validity_to := CURRENT_DATE + 150,
     p_lanes := jsonb_build_array(jsonb_build_object('pol_location_id', v_loc_pol, 'pod_location_id', v_loc_pod))
   );
   EXECUTE 'RESET ROLE';
