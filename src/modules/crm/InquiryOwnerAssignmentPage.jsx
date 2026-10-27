@@ -32,6 +32,12 @@
 // Report.md:42) yang SAMA dengan single-assign (`{{ mAssign }}`, mockup
 // baris 461-475) -- jendela itu sendiri eksplisit Putaran 11. Membangun
 // checkbox+bulk sekarang berarti membangun separuh jendela lebih awal.
+// [Putaran 11 Tahap B] SUPERSEDED -- jendela itu kini ADA
+// (OwnerAssignModal.jsx, modal bersama dgn kebab "Reassign Owner" Detail
+// Inquiry): checkbox per-baris + select-all + toolbar bulk "{N} selected/
+// Assign to Sales/Clear selection" dibangun di tab ini, select+Assign
+// per-baris lama DICABUT (diganti satu tombol "Assign to Sales" yang
+// membuka modal yang sama dgn bulk, target 1 elemen).
 // Dua gap kosmetik lain pada tab Unassigned DITUTUP Putaran 8 (BUKAN
 // ditunda, lihat DirectionCell + undernameBadgeStyle di bawah): ikon
 // Direction (Export/Import/Domestic, pola identik InquiryListPage.jsx
@@ -100,6 +106,7 @@ import { fetchOperationalRoster } from './salesRoster';
 import { STATUS_LABEL } from './v3/tokens';
 import { fmtRp } from './DealPanels';
 import ConfirmModal from '../../components/ConfirmModal';
+import OwnerAssignModal from './OwnerAssignModal';
 
 const C = {
   bg:        '#F6EFE3',
@@ -273,7 +280,15 @@ function OwnerAvatar({ name }) {
  */
 export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInquiries }) {
   const { profile, erpRoles } = useAuth();
-  const isManager = isManagerOrAbove(erpRoles);
+  // Putaran 11 Tahap B (Keputusan Den, prompt 40 jawaban 2): diselaraskan
+  // ke LINGKUP ENTITAS halaman ini -- SELURUH halaman (Unassigned/Team
+  // Workload/Possible Duplicates) sudah di-scope profile.company_id SAJA
+  // (keputusan Tahap 3B lama, lihat header file), jadi gate manajerialnya
+  // kini entity-scoped ke entitas yang SAMA, bukan lagi global. Manager di
+  // entitasnya sendiri (profile.company_id) TIDAK terdampak -- hanya
+  // manager yang peran manajerialnya di entitas LAIN (bukan home-nya) yang
+  // sebelumnya salah lihat tab ini kini tidak lagi.
+  const isManager = isManagerOrAbove(erpRoles, { companyId: profile?.company_id });
 
   const { options: serviceTypeOptsRaw } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const serviceTypeOpts = useMemo(
@@ -287,10 +302,17 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
   const [activeTab, setActiveTab] = useState('unassigned'); // 'unassigned' | 'workload' | 'duplicates'
   const [dupPairs, setDupPairs] = useState([]);
   const [dupLoading, setDupLoading] = useState(true);
-  const [assignDraft, setAssignDraft] = useState({});
-  const [savingRowId, setSavingRowId] = useState(null);
   const [closeDupTarget, setCloseDupTarget] = useState(null);
   const [closingDup, setClosingDup] = useState(false);
+  // Putaran 11 Tahap B -- bulk assign tab Unassigned (checkbox per baris +
+  // select-all) + modal Assign/Reassign bersama. `selectedIds` HANYA
+  // relevan tab Unassigned (satu-satunya tempat bulk dari mockup, nol
+  // owner by definition). `ownerAssignTargets` dipakai BAIK per-baris
+  // (array 1 elemen) MAUPUN bulk (array N elemen) -- satu state, satu
+  // modal, pola sama OwnerAssignModal.jsx.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [ownerAssignOpen, setOwnerAssignOpen] = useState(false);
+  const [ownerAssignTargets, setOwnerAssignTargets] = useState([]);
 
   const fetchRows = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -368,23 +390,51 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
     return computed.map((w) => ({ ...w, pct: Math.round((w.openValue / maxValue) * 100) }));
   }, [roster, rows]);
 
-  function handleDraftChange(rowId, ownerId) {
-    setAssignDraft((prev) => ({ ...prev, [rowId]: ownerId }));
+  // Putaran 11 Tahap B -- bangun target OwnerAssignModal dari satu baris
+  // Unassigned (mode="assign" SELALU di tab ini -- nol owner by definition).
+  function rowToTarget(r) {
+    return {
+      id: r.id,
+      inquiry_no: r.inquiry_no,
+      customer_name: r.prospect?.name || r.customer?.name || '—',
+      estimated_value: r.estimated_value,
+      owner_id: r.owner_id,
+      owner_name: null,
+    };
   }
 
-  async function handleAssign(row) {
-    const newOwnerId = assignDraft[row.id];
-    if (!newOwnerId) return;
-    setSavingRowId(row.id);
-    const { error } = await supabase.rpc('reassign_inquiry_owner', {
-      p_inquiry_id: row.id,
-      p_new_owner_id: newOwnerId,
-    });
-    setSavingRowId(null);
-    if (error) { showToast?.('Failed to assign: ' + error.message, 'error'); return; }
-    showToast?.(`${row.inquiry_no} assigned.`, 'success');
-    setAssignDraft((prev) => { const next = { ...prev }; delete next[row.id]; return next; });
+  function openAssignRow(row) {
+    setOwnerAssignTargets([rowToTarget(row)]);
+    setOwnerAssignOpen(true);
+  }
+
+  function openAssignBulk() {
+    const targets = unassignedRows.filter((r) => selectedIds.has(r.id)).map(rowToTarget);
+    if (!targets.length) return;
+    setOwnerAssignTargets(targets);
+    setOwnerAssignOpen(true);
+  }
+
+  function onOwnerAssigned() {
+    setOwnerAssignOpen(false);
+    setSelectedIds(new Set());
     fetchRows();
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => (
+      prev.size === unassignedRows.length
+        ? new Set()
+        : new Set(unassignedRows.map((r) => r.id))
+    ));
+  }
+
+  function toggleSelectRow(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
 
   async function handleCloseDup() {
@@ -439,7 +489,27 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                 </button>
               ))}
             </div>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>{ownCountText}</span>
+            {/* Putaran 11 Tahap B -- toolbar bulk MENGGANTIKAN baris hitungan
+                biasa saat ≥1 baris Unassigned dicentang (mockup: "{N}
+                selected" / "Assign to Sales" / "Clear selection"), bukan
+                ditambah di atasnya. */}
+            {activeTab === 'unassigned' && selectedIds.size > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: C.ink }}>
+                  {selectedIds.size} selected
+                </span>
+                <button type="button" onClick={openAssignBulk}
+                  style={{ height: 32, padding: '0 14px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Assign to Sales
+                </button>
+                <button type="button" onClick={() => setSelectedIds(new Set())}
+                  style={{ height: 32, padding: '0 14px', borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.inkSoft, fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Clear selection
+                </button>
+              </div>
+            ) : (
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>{ownCountText}</span>
+            )}
           </div>
 
           {activeTab === 'duplicates' && (
@@ -482,6 +552,13 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
             <section style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: UNASSIGNED_GRID, alignItems: 'center', minWidth: 1180, background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ ...headCell, display: 'flex', alignItems: 'center' }}>
+                    <input type="checkbox"
+                      checked={unassignedRows.length > 0 && selectedIds.size === unassignedRows.length}
+                      onChange={toggleSelectAll}
+                      style={{ width: 16, height: 16, cursor: 'pointer' }}
+                    />
+                  </div>
                   <div style={headCell}>Inquiry No</div>
                   <div style={headCell}>Customer</div>
                   <div style={headCell}>Service Type</div>
@@ -502,6 +579,10 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                   const svcLabel = serviceTypeOpts.find((o) => o.value === r.service_type)?.label || r.service_type || '—';
                   return (
                     <div key={r.id} style={{ display: 'grid', gridTemplateColumns: UNASSIGNED_GRID, alignItems: 'center', minWidth: 1180, borderBottom: `1px solid ${C.lineSoft}` }}>
+                      <div style={{ ...cellBase, display: 'flex', alignItems: 'center' }}>
+                        <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelectRow(r.id)}
+                          style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                      </div>
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap' }}>{r.inquiry_no}</div>
                       <div style={{ ...cellBase, fontWeight: 500, color: C.ink }}>{custName}</div>
                       <div style={{ ...cellBase, color: C.ink }}>
@@ -517,28 +598,20 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.ink, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtRp(r.estimated_value)}</div>
                       <div style={{ ...cellBase, color: C.inkSoft }}>{r.created_by_profile?.full_name || '—'}</div>
                       <div style={{ ...cellBase, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.inkSoft, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</div>
-                      <div style={{ ...cellBase, display: 'flex', gap: 6 }}>
-                        <select
-                          value={assignDraft[r.id] || ''}
-                          disabled={savingRowId === r.id}
-                          onChange={(e) => handleDraftChange(r.id, e.target.value)}
-                          style={{ height: 32, flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 8px', fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.ink }}
-                        >
-                          <option value="">— Select owner —</option>
-                          {roster.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                        </select>
+                      <div style={cellBase}>
+                        {/* Putaran 11 Tahap B -- select+Assign per-baris diganti SATU
+                            tombol yang membuka OwnerAssignModal (mode="assign",
+                            target tunggal); pola sama tombol bulk di toolbar atas. */}
                         <button
                           type="button"
-                          disabled={!assignDraft[r.id] || savingRowId === r.id}
-                          onClick={() => handleAssign(r)}
+                          onClick={() => openAssignRow(r)}
                           style={{
                             height: 32, padding: '0 12px', borderRadius: 10, border: 'none', whiteSpace: 'nowrap',
-                            background: assignDraft[r.id] ? C.accent : C.lineSoft,
-                            color: assignDraft[r.id] ? '#fff' : C.inkFaint,
+                            background: C.accent, color: '#fff',
                             fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer',
                           }}
                         >
-                          Assign
+                          Assign to Sales
                         </button>
                       </div>
                     </div>
@@ -672,11 +745,30 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
           onCancel={() => setCloseDupTarget(null)}
         />
       )}
+
+      {/* Putaran 11 Tahap B -- modal bersama Assign/Reassign, dipakai
+          per-baris (openAssignRow, target 1) dan bulk (openAssignBulk,
+          target N) dari tab Unassigned. Tab ini SELALU mode="assign"
+          (nol owner by definition). `key` berubah tiap dibuka -- pola sama
+          modal keluarga DealCloseModals/DealWonModals/ChangeAccountModal. */}
+      <OwnerAssignModal
+        key={ownerAssignOpen ? `owner-assign-${ownerAssignTargets.map((t) => t.id).join('-')}` : 'owner-assign-closed'}
+        open={ownerAssignOpen}
+        onClose={() => setOwnerAssignOpen(false)}
+        targets={ownerAssignTargets}
+        mode="assign"
+        companyId={profile?.company_id}
+        onSaved={onOwnerAssigned}
+        showToast={showToast}
+      />
     </div>
   );
 }
 
-const UNASSIGNED_GRID = '160px minmax(170px,1.3fr) 150px 110px 130px 140px minmax(130px,1fr) 120px 260px';
+// Putaran 11 Tahap B -- kolom checkbox (40px) ditambah di depan utk bulk
+// select; kolom terakhir diperkecil 260->160px (dulu select+button, kini
+// satu tombol "Assign to Sales" saja).
+const UNASSIGNED_GRID = '40px 160px minmax(170px,1.3fr) 150px 110px 130px 140px minmax(130px,1fr) 120px 160px';
 const WORKLOAD_GRID = 'minmax(180px,1.4fr) 80px 96px 80px 104px minmax(220px,1.6fr) 150px';
 // L-13 (Putaran 8) -- 6 kolom persis mockup: Inquiry No/Customer/Assigned
 // By/Assigned On/Reason/Status (Service Type/Direction DICABUT, tidak ada

@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router';
 import {
   FileText, ChevronLeft, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
+  Ban, UserCog, UserCheck, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
   Lock, Check, RefreshCcw,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -57,7 +57,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
 import { MarkWonModal, RevertWonModal } from './DealWonModals';
 import ChangeAccountModal from './ChangeAccountModal';
-import { fetchOperationalRoster } from './salesRoster';
+import OwnerAssignModal from './OwnerAssignModal';
 import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
 // Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
@@ -585,9 +585,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Order" (perlu tahu ADA/TIDAKnya baris berstatus SENT, bukan cuma yang
   // terbaru), (2) blok "Shipments" khusus Rate Sheet (daftar penuh).
   const [salesOrders, setSalesOrders] = useState([]);
-  // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status
-  // SAJA (bagian "owner" sengaja tidak dikerjakan, keputusan Mas).
+  // TD-318 Irisan 2 Inquiry, commit 7 — tab Status History. Bagian status.
   const [statusHistory, setStatusHistory] = useState([]);
+  // Putaran 11 Tahap B -- bagian "owner" (ditunda commit 7 di atas,
+  // "keputusan Mas") kini dikerjakan: baris inquiry_owner_history
+  // digabung ke timeline yang SAMA dengan statusHistory di render (mockup
+  // Inquiry Management.dc.html:855-864 -- satu array `changes`, diurut
+  // tanggal terbaru-dulu, BUKAN dua daftar terpisah). State ini TETAP
+  // terpisah dari statusHistory (ascending, dipakai statusHistorySegments
+  // utk bar "Time in each status") -- penggabungan terjadi di
+  // statusHistoryEvents saja, pola yang sama TIDAK menyentuh bar.
+  const [ownerHistory, setOwnerHistory] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
   // `activeQuotation` di bawah), bukan untuk semua quotation di daftar.
   const [activeQuotationItems, setActiveQuotationItems] = useState([]);
@@ -626,14 +634,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // contact_id). Modal + RPC change_inquiry_account (20261027000007).
   const [changeAccountOpen, setChangeAccountOpen] = useState(false);
   const [changeAccountSaving, setChangeAccountSaving] = useState(false);
-  // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
-  // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
-  const [ownerOpen,   setOwnerOpen]   = useState(false);
+  // Ganti pemilik deal (owner_id) -- Putaran 11 Tahap B: panel inline
+  // (satu dropdown, tanpa Reason/Notify) dicabut, diganti modal bersama
+  // OwnerAssignModal.jsx (dipakai juga InquiryOwnerAssignmentPage.jsx).
+  const [ownerAssignOpen, setOwnerAssignOpen] = useState(false);
   // TD-318 Irisan 3, commit 6 -- kebab (menu titik tiga).
   const [kebabOpen, setKebabOpen] = useState(false);
-  const [ownerDraft,  setOwnerDraft]  = useState('');
-  const [ownerSaving, setOwnerSaving] = useState(false);
-  const [salesOpts,   setSalesOpts]   = useState([]);
   // Batch 3C — pilih/ganti penawaran vendor (prf_select_offer). Konfirmasi
   // HANYA dibutuhkan saat MENGGANTI pilihan yang sudah ada; pilihan pertama
   // langsung jalan tanpa dialog.
@@ -860,6 +866,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .eq('inquiry_id', inq.id)
         .order('changed_at', { ascending: true }).limit(200);
 
+      // Putaran 11 Tahap B -- riwayat owner (inquiry_owner_history,
+      // 20261027000002), bagian "owner" yang ditunda commit 7 di atas.
+      // RLS SELECT = pola inquiry_status_history_select (siapa pun yang
+      // boleh membaca inquiry induknya) -- nol filter company_id/role
+      // tambahan diperlukan di query ini.
+      const { data: ownerHistoryRows } = await supabase
+        .from('inquiry_owner_history')
+        .select('id, from_owner_id, to_owner_id, reason, changed_by, changed_at')
+        .eq('inquiry_id', inq.id)
+        .order('changed_at', { ascending: true }).limit(200);
+
       let acts = [];
       if (inq.prospect_id) {
         const { data } = await supabase
@@ -878,6 +895,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       const pIds = [...new Set([
         acc?.assigned_to, inq.created_by, inq.owner_id,
         ...(historyRows || []).map((h) => h.changed_by),
+        // Putaran 11 Tahap B -- riwayat owner (from/to/changed_by) ikut
+        // satu query profiles ini, bukan query .in() kedua.
+        ...(ownerHistoryRows || []).flatMap((h) => [h.from_owner_id, h.to_owner_id, h.changed_by]),
         ...prfsAugmented.flatMap((p) => [p.created_by, p.acknowledged_by, p.answered_by, p.selected_by]),
         ...(quos || []).map((q) => q.created_by),
       ].filter(Boolean))];
@@ -905,6 +925,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setSalesOrders(soRows || []);
       setPrfs(prfsAugmented);
       setStatusHistory(historyRows || []);
+      setOwnerHistory(ownerHistoryRows || []);
       setActivities(acts);
       setProfMap(pMap);
       setTermMap(tMap);
@@ -1150,10 +1171,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
          sendiri dan tulisannya ditolak. Menampilkan tombolnya untuk sales cuma
          akan menghasilkan tombol yang gagal saat diklik.
          Ini lapis UI; penegak sebenarnya tetap RLS, plus trigger DB
-         `trg_z_lock_inquiry_owner` yang mengunci owner_id sesudah status closed. */
+         `trg_z_lock_inquiry_owner` yang mengunci owner_id sesudah status closed.
+     Putaran 11 Tahap B (Keputusan Den, prompt 40 jawaban 2): `isManagerOrAbove`
+     diselaraskan ke LINGKUP ENTITAS inquiry ini -- gate FE sebelumnya GLOBAL
+     (tanpa `{companyId}`), lebih longgar dari gate RPC
+     reassign_inquiry_owner sendiri yang entity-scoped
+     (`is_manager_or_above_in(v_company_id)`, 20261027000003). Manager entitas
+     LAIN yang dulu melihat tombol ini pada inquiry entitas asing kini tidak
+     lagi melihatnya (tombolnya akan GAGAL di RPC kalau diklik, konsisten
+     canChangeAccount/canMarkWon yang sudah entity-scoped sejak awal) --
+     pola PERSIS canChangeAccount di bawah. Manager di entitasnya sendiri
+     TIDAK terdampak. */
   const canReassignOwner =
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
-    && isManagerOrAbove(erpRoles);
+    && (isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id }) || isAllEntities(erpRoles));
   // Putaran 15, Task 4 -- Change Account. Gate SAMA BENTUKNYA dgn
   // canMarkWon/canRevertWon (owner_id TIDAK ikut -- beda dari
   // canReassignOwner di atas yang global/bukan entity-scoped): manager-ke-
@@ -1284,6 +1315,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // berubah.
   const statusHistoryEvents = statusHistory.map((h, i) => ({
     key: h.id,
+    kind: 'status',
     from: h.from_status,
     to: h.to_status,
     changedAt: h.changed_at,
@@ -1291,6 +1323,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     reason: h.reason || null,
     fromDays: daysBetween(i === 0 ? inquiry?.created_at : statusHistory[i - 1].changed_at, h.changed_at),
   })).reverse();
+  // Putaran 11 Tahap B -- baris "owner" (ditunda commit 7 di atas) kini
+  // digabung ke timeline YANG SAMA dengan statusHistoryEvents (mockup
+  // Inquiry Management.dc.html:855-864: satu array `changes`, diurut
+  // tanggal terbaru-dulu -- BUKAN dua daftar terpisah). `fromName`/`toName`
+  // null berarti "Unassigned" (baris pertama tab Unassigned, owner lama
+  // NULL) -- dibedakan dari string '—' (nama tak ketemu di profMap).
+  const ownerHistoryEvents = ownerHistory.map((h) => ({
+    key: `owner-${h.id}`,
+    kind: 'owner',
+    changedAt: h.changed_at,
+    byName: profMap[h.changed_by] || '—',
+    fromName: h.from_owner_id ? (profMap[h.from_owner_id] || '—') : null,
+    toName: h.to_owner_id ? (profMap[h.to_owner_id] || '—') : null,
+    reason: h.reason || null,
+  }));
+  const combinedHistoryEvents = [...statusHistoryEvents, ...ownerHistoryEvents]
+    .sort((a, b) => (a.changedAt < b.changedAt ? 1 : a.changedAt > b.changedAt ? -1 : 0));
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
@@ -1363,17 +1412,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return () => { cancelled = true; };
   }, []);
 
-  // Roster sales untuk dropdown "Ganti Pemilik" — helper bersama `./salesRoster`
-  // (sales + gm_bd, resolusi lewat RBAC roles.code, scoped user_roles.company_id).
-  // Sengaja TIDAK bikin query profiles sendiri: sumber daftar sales sudah satu
-  // pintu di helper itu, dan menyalinnya di sini akan jadi daftar kedua yang
-  // pasti melenceng.
-  useEffect(() => {
-    if (!profile?.company_id) return;
-    let cancelled = false;
-    fetchOperationalRoster(profile.company_id).then((s) => { if (!cancelled) setSalesOpts(s); });
-    return () => { cancelled = true; };
-  }, [profile?.company_id]);
+  // Roster sales utk dropdown "New Owner" -- Putaran 11 Tahap B: dipindah
+  // ke dalam OwnerAssignModal.jsx sendiri (fetch di-scope inquiry.company_id,
+  // BUKAN profile.company_id -- perbaikan insidental: manager multi-entitas
+  // kini lihat roster entitas INQUIRY-nya, bukan entitas home-nya).
 
   // ── B3: Batalkan deal. Alasan teks bebas (bukan master) — ini catatan
   // operasional sekali pakai, bukan taksonomi yang di-GROUP BY seperti alasan
@@ -1507,29 +1549,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Ganti pemilik deal (owner_id) -- Putaran 3 Tahap 3B, Lingkup F: diganti
-  // dari UPDATE langsung ke RPC reassign_inquiry_owner (migrasi
-  // 20261024000004), SATU fungsi dipakai bersama tab "Unassigned" halaman
-  // Inquiry Owner Assignment. RPC sendiri yang menggerbang (manager-ke-atas
-  // di company inquiry ini ATAU super admin), menolak status terminal, dan
-  // mencatat audit_logs REASSIGN_INQUIRY_OWNER -- logAudit DICABUT dari sini
-  // supaya tidak ganda (RPC yang mencatat, bukan FE lagi). Pesan error RPC
-  // ditampilkan apa adanya (RAISE EXCEPTION di server -> error.message di
-  // sini) -- lebih spesifik dari pesan generik lama ("you do not have
-  // permission..."). UI panel/gate canReassignOwner/toks sukses TIDAK
-  // disentuh.
-  async function reassignOwner() {
-    if (!inquiry?.id || !ownerDraft) return;
-    if (ownerDraft === inquiry.owner_id) { setOwnerOpen(false); return; }
-    setOwnerSaving(true);
-    const { error } = await supabase.rpc('reassign_inquiry_owner', {
-      p_inquiry_id: inquiry.id,
-      p_new_owner_id: ownerDraft,
-    });
-    setOwnerSaving(false);
-    if (error) { showToast?.('Failed to change owner: ' + error.message, 'error'); return; }
-    setOwnerOpen(false);
-    showToast?.('Inquiry owner updated.', 'success');
+  // ── Ganti pemilik deal (owner_id) -- Putaran 11 Tahap B: RPC
+  // reassign_inquiry_owner kini dipanggil DI DALAM OwnerAssignModal.jsx
+  // sendiri (p_reason/p_notify dikirim dari form modal) -- satu-satunya
+  // yang tersisa di sini adalah refresh sesudah sukses.
+  function onOwnerAssigned() {
+    setOwnerAssignOpen(false);
     refetch();
   }
 
@@ -1897,7 +1922,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(22,36,58,.16)', padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
                     {canReassignOwner && (
                       <button type="button"
-                        onClick={() => { setKebabOpen(false); setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen(true); }}
+                        onClick={() => { setKebabOpen(false); setOwnerAssignOpen(true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.text, cursor: 'pointer', textAlign: 'left' }}>
                         <UserCog size={14} />Reassign Owner
                       </button>
@@ -2120,44 +2145,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 title="Inquiry Detail"
                 icon={<FileText size={17} />}
               >
-        {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
-            ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
-            terlalu berat untuknya. */}
-        {canReassignOwner && ownerOpen && (
-          <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
-            <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-              Change Inquiry Owner
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select
-                value={ownerDraft}
-                onChange={(e) => setOwnerDraft(e.target.value)}
-                style={{ flex: '1 1 220px', height: 34, padding: '0 10px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', fontFamily: BODY, fontSize: 13, color: C.text }}
-              >
-                <option value="">— Select Salesperson —</option>
-                {salesOpts.map((s) => (
-                  <option key={s.id} value={s.id}>{s.full_name}</option>
-                ))}
-              </select>
-              <button
-                onClick={reassignOwner}
-                disabled={ownerSaving || !ownerDraft}
-                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: (ownerSaving || !ownerDraft) ? 'not-allowed' : 'pointer', opacity: (ownerSaving || !ownerDraft) ? 0.6 : 1 }}>
-                {ownerSaving ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                onClick={() => setOwnerOpen(false)}
-                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                Cancel
-              </button>
-            </div>
-            <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
-              Ownership is permanently locked once the inquiry reaches WON, LOST, or CANCELLED —
-              so historical Sales Performance and Win Rate figures stay intact.
-            </div>
-          </div>
-        )}
-
         {/* ===== Section "Service & Status" (Irisan 2 Inquiry, lanjutan audit
             mockup, Pekerjaan B commit 4; Direction/Customer Role/Source
             ditambahkan Putaran 9) -- mockup SECS[0], judul "Service &
@@ -3013,34 +3000,60 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             label: 'Status History',
             render: () => (
               <Card title="Status History" icon={<ListChecks size={17} />}>
-                {statusHistorySegments.length === 0 ? (
+                {statusHistorySegments.length === 0 && combinedHistoryEvents.length === 0 ? (
                   <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No recorded status transitions yet.</div>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-                      <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
-                      <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
-                        {statusHistorySegments.map((s, i) => (
-                          <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
-                            style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
-                        ))}
+                    {statusHistorySegments.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+                        <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
+                        <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
+                          {statusHistorySegments.map((s, i) => (
+                            <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
+                              style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          {statusHistorySegments.map((s, i) => (
+                            <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
+                              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
+                              {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                        {statusHistorySegments.map((s, i) => (
-                          <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
-                            <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
-                            {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                    )}
                     {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: warna
                         divider disamakan ke mockup -- `height:1px;background:
                         #ECF0E9` (padanan C.surfaceAlt, LEBIH TERANG dari
                         C.border/#D8E0D2 yang dipakai keliru sebelumnya). */}
-                    <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
+                    {statusHistorySegments.length > 0 && combinedHistoryEvents.length > 0 && (
+                      <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
+                    )}
+                    {/* Putaran 11 Tahap B -- baris status DAN owner digabung
+                        SATU timeline, diurut tanggal terbaru-dulu
+                        (combinedHistoryEvents) -- mockup Inquiry Management
+                        .dc.html:855-864. Ikon pembeda: CalendarClock utk
+                        status (tidak berubah), UserCheck utk owner (baru). */}
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {statusHistoryEvents.map((e) => (
+                      {combinedHistoryEvents.map((e) => e.kind === 'owner' ? (
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                            <UserCheck size={16} />
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+                            <span style={{ fontFamily: BODY, fontSize: 13.5, color: C.text }}>
+                              {e.fromName ? `Owner changed from ${e.fromName} to ${e.toName || 'Unassigned'}` : `Owner assigned to ${e.toName || 'Unassigned'}`}
+                            </span>
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
+                              {fmtDate(e.changedAt)}, {e.byName}
+                            </span>
+                            {e.reason && (
+                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>Reason: {e.reason}</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
                         <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
                           <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                             <CalendarClock size={16} />
@@ -3063,7 +3076,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                                 (migrasi 20261021000001 TASK 8); LOST/CANCELLED
                                 ikut tampil sebagai efek samping -- trigger
                                 lama sudah mengisinya sejak Irisan 2, hanya
-                                baru sekarang dibaca+ditampilkan. */}
+                                baru sekarang dibaca+ditampilkan. Format TANPA
+                                prefiks "Reason:" -- pre-existing, TIDAK diubah
+                                Putaran 11 (di luar scope; mockup sebenarnya
+                                berpola "Reason: {text}" sama seperti baris
+                                owner barusan, dilaporkan sebagai selisih,
+                                bukan diperbaiki di sini). */}
                             {e.reason && (
                               <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>{e.reason}</span>
                             )}
@@ -3203,6 +3221,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={changeAccountSaving}
         onSave={changeInquiryAccount}
         onCancel={() => setChangeAccountOpen(false)}
+      />
+
+      {/* Putaran 11 Tahap B -- Reassign Owner. Modal bersama dengan tombol
+          per-baris/bulk di InquiryOwnerAssignmentPage.jsx (OwnerAssignModal.jsx);
+          `key` berubah tiap dibuka -- pola sama 3 modal lain di atas. Modal
+          ini memanggil RPC SENDIRI (lihat header file) -- onSaved hanya
+          menutup+refetch. */}
+      <OwnerAssignModal
+        key={ownerAssignOpen ? `owner-assign-${inquiry?.id}` : 'owner-assign-closed'}
+        open={ownerAssignOpen}
+        onClose={() => setOwnerAssignOpen(false)}
+        targets={inquiry ? [{
+          id: inquiry.id,
+          inquiry_no: inquiry.inquiry_no,
+          customer_name: account?.name,
+          estimated_value: inquiry.estimated_value,
+          owner_id: inquiry.owner_id,
+          owner_name: ownerName,
+        }] : []}
+        mode="reassign"
+        companyId={inquiry?.company_id}
+        onSaved={onOwnerAssigned}
+        showToast={showToast}
       />
     </div>
   );
