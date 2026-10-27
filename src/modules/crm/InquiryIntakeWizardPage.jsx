@@ -711,6 +711,44 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRS, profile?.company_id, resolvedAccountId, primaryPolLoc, primaryPodLoc, containerTypesKey]);
 
+  // ── Possible duplicate Rate Sheet (Putaran 12 Butir 4) — mirror pattern di
+  // atas: debounce 500ms, cancel panggilan lama, state SAMA (possibleDuplicates/
+  // dupCheckLoading) karena isRS membuat kedua cek ini berbunyi bergantian,
+  // tidak pernah bersamaan. RPC find_possible_duplicate_rate_sheets read-only,
+  // nol baris untuk input belum lengkap -- effect ini hanya memanggilnya begitu
+  // akun + validity_from + validity_to + minimal 1 lane ber-POL+POD (dari
+  // location master, bukan teks bebas) sudah terisi.
+  const rsLaneLocKey = selectedLanes.map((l) => `${l.pol_location_id || ''}|${l.pod_location_id || ''}`).join(',');
+  useEffect(() => {
+    let cancelled = false;
+    const completeLanes = isRS ? selectedLanes.filter((l) => l.pol_location_id && l.pod_location_id) : [];
+    if (!isRS || !profile?.company_id || !resolvedAccountId || !f.validity_from || !f.validity_to || !completeLanes.length) {
+      const t = setTimeout(() => { if (!cancelled) setPossibleDuplicates([]); }, 0);
+      return () => { cancelled = true; clearTimeout(t); };
+    }
+    const loadingTimer = setTimeout(() => { if (!cancelled) setDupCheckLoading(true); }, 0);
+    const timer = setTimeout(() => {
+      supabase.rpc('find_possible_duplicate_rate_sheets', {
+        p_company_id: selectedAccount?.company_id || profile.company_id,
+        p_prospect_id: resolvedAccountId,
+        p_validity_from: f.validity_from,
+        p_validity_to: f.validity_to,
+        p_lanes: completeLanes.map((l) => ({ pol_location_id: l.pol_location_id, pod_location_id: l.pod_location_id })),
+      }).then(({ data, error }) => {
+        if (cancelled) return;
+        setDupCheckLoading(false);
+        if (error) {
+          console.error('find_possible_duplicate_rate_sheets failed', error);
+          setPossibleDuplicates([]);
+          return;
+        }
+        setPossibleDuplicates(data || []);
+      });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(loadingTimer); clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRS, profile?.company_id, resolvedAccountId, f.validity_from, f.validity_to, rsLaneLocKey]);
+
   // ── Owner — manager-ke-atas lihat roster + "Leave unassigned"; sales tidak
   // lihat kontrolnya sama sekali (default diri sendiri, ditegakkan RPC). ────
   const canPickOwner = isManagerOrAbove(erpRoles);
@@ -831,7 +869,12 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       if (!f.pickup_address.trim()) e.route_pickup = 'Pickup Address is required for Door to Door.';
       if (!f.delivery_address.trim()) e.route_delivery = 'Delivery Address is required for Door to Door.';
     }
-    if (possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
+    // Putaran 12 Butir 4 -- gerbang `!isRS` BARU: possibleDuplicates kini
+    // juga terisi lewat cek Rate Sheet (state yang sama, dipakai ulang),
+    // dan Rate Sheet TIDAK WAJIB mengisi alasan -- banner-nya non-blocking
+    // (lihat task Butir 4). Tanpa guard ini, cek duplikat Rate Sheet akan
+    // ikut memblokir Submit lewat jalur yang sama dengan Single Shipment.
+    if (!isRS && possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
       e.route_dup = 'Required when a possible duplicate is shown';
     }
     // Putaran 4 Tahap 4C -- Validity Requested + Estimated Volume per Month,
@@ -1300,6 +1343,41 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       <FieldError>{errors.route_volume}</FieldError>
                     </Field>
                   </div>
+                )}
+
+                {/* Putaran 12 Butir 4 -- banner Rate Sheet duplikat (read-only,
+                    non-blocking: tanpa field alasan, tidak menghalangi Next/
+                    Submit -- lihat guard `!isRS` di stepErrors). Pakai ulang
+                    shell/style banner duplikat Single Shipment di bawah,
+                    hanya isi dan gerbang `isRS` yang berbeda. */}
+                {isRS && !dupCheckLoading && possibleDuplicates.length > 0 && (
+                  <div style={{ background: '#FEF9E7', border: '1px solid #F2D675', borderRadius: 10, padding: '16px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <AlertTriangle size={18} color="#92700A" style={{ flex: '0 0 18px', marginTop: 1 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: '#5C4700' }}>
+                          Possible duplicate Rate Sheet
+                        </div>
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                          {possibleDuplicates.slice(0, 3).map((d) => (
+                            <li key={d.id} style={{ fontSize: 12.5, color: '#5C4700' }}>
+                              <button type="button" onClick={() => navigate(`${MENU_PATHS['crm-inquiry']}/${d.id}`)}
+                                style={{ fontFamily: "'IBM Plex Mono',monospace", color: '#5C4700', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'inherit' }}>
+                                {d.inquiry_no}
+                              </button>
+                              {` covers this account and lane for ${d.validity_from} to ${d.validity_to}.`}
+                            </li>
+                          ))}
+                          {possibleDuplicates.length > 3 && (
+                            <li style={{ fontSize: 12.5, color: '#5C4700' }}>and {possibleDuplicates.length - 3} more</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {isRS && dupCheckLoading && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.muted, fontSize: 12.5 }}><Loader2 size={14} className="animate-spin" />Checking for possible duplicates…</div>
                 )}
 
                 {/* Putaran 4 Tahap 4C -- enam field ini SEBELUMNYA dirender
