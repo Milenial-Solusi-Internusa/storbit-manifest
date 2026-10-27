@@ -2616,7 +2616,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           },
           {
             id: 'quotation',
-            label: 'Quotation',
+            // Koreksi visual Putaran 10 (Tahap 1/2) -- mockup `const DT`
+            // (Inquiry Management.dc.html:870) menulis "Quotations" (jamak),
+            // bukan "Quotation". `id` tetap 'quotation' (tidak disentuh --
+            // tak ada pemakai lain yang bergantung padanya di file ini).
+            label: 'Quotations',
             render: () => {
               // D-72/D-73 (Putaran 10, rekonstruksi audit mockup
               // Detail/QuotationActions rule 109): mockup SELALU merender
@@ -2696,9 +2700,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           },
           {
             id: 'prf',
+            // Koreksi visual Putaran 10 (Tahap 1/2) -- mockup `const DT`
+            // (Inquiry Management.dc.html:870) menulis "Procurement", bukan
+            // "PRF". `id` tetap 'prf' (tidak disentuh). Lencana angka
+            // (prfNeedsSelectionCount) SENGAJA DIPERTAHANKAN -- mockup
+            // `dtabs` (baris 1032, dibangun dari `DT.map`) TIDAK membawa
+            // field count/badge sama sekali untuk tab mana pun, tapi
+            // lencana ini fitur fungsional lama (Batch 3C, di luar Putaran
+            // 10) yang menunjukkan PRF menunggu pilihan sales -- bukan
+            // sekadar teks label. Dilaporkan di Tahap 1, menunggu keputusan
+            // Mas, tidak dihapus sepihak di sini.
             label: (
               <>
-                PRF
+                Procurement
                 {prfNeedsSelectionCount > 0 && (
                   <span style={{ marginLeft: 6, background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px' }}>
                     {prfNeedsSelectionCount}
@@ -2707,7 +2721,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               </>
             ),
             render: () => (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 {/* D-79 (Putaran 10, rekonstruksi audit mockup
                     Detail/Procurement rReqs): "Rate Requests" -- tabel
                     ListView -> kartu per-PRF + stepper 3 tahap (Submitted/
@@ -2716,75 +2730,94 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     Mas: pindah ke Procurement 2.2.3). Readiness badge
                     (PRF_READINESS, fitur lama yang sudah bekerja, nol
                     kontradiksi dengan mockup) DIPERTAHANKAN, dipindah ke
-                    dalam kartu -- bukan dihapus. */}
-                <Card title="Rate Requests" icon={<FileText size={17} />}
-                  right={canCreatePRF ? (
+                    dalam kartu -- bukan dihapus.
+
+                    Koreksi visual Putaran 10 (Tahap 2): dicabut dari `<Card>`
+                    bertepi -- mockup (Inquiry Management.dc.html:411/:418)
+                    merender "Rate Requests"/"Vendor Offers" sebagai judul
+                    `<h3>` POLOS (section tab itu sendiri sudah berada di
+                    dalam kartu Detail/Quotations-setara, tanpa card kedua di
+                    dalamnya) -- hanya KARTU PER-PRF/PER-OFFER di dalamnya
+                    yang bertepi, sama seperti tab Quotation (ListView tanpa
+                    Card pembungkus). "Create PRF" (keputusan Mas,
+                    dipertahankan) dipindah jadi tombol di baris h3, pola
+                    sama "Find Rates" + "Request Rates" di mockup
+                    (baris ~1662, h3 ber-flex:1 + tombol sebaris). */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>Rate Requests</h3>
+                  {canCreatePRF && (
                     <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
                       <FileText size={14} />Create PRF
                     </button>
-                  ) : null}
-                >
-                  {prfs.length === 0 ? (
-                    <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>
-                      No PRFs raised for this inquiry yet.
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {prfs.map((p) => {
-                        const late = isPrfLate(p);
-                        const active = isPrfRequestActive(p);
-                        const canAct = canActOnPrf(p);
-                        return (
-                          <div key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                              <button type="button" onClick={() => onViewPRF?.(p)}
-                                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: FONT_MONO, fontWeight: 700, color: C.navy, fontSize: 13 }}>
-                                {p.prf_no}
-                              </button>
-                              <TintBadge meta={PRF_READINESS[prfReadinessKey(p)]} />
-                              {p.deadline_quotation && (
-                                <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>Needed by {fmtDate(p.deadline_quotation)}</span>
-                              )}
-                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{inquiryAgeLabel(p.created_at)}</span>
-                              {late && (
-                                <TintBadge meta={{ label: 'Over target', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
-                              )}
-                              <span style={{ flex: 1 }} />
-                              {/* D-83/D-84 -- gerbang tombol = gerbang RPC
-                                  (canActOnPrf/isPrfRequestActive), supaya
-                                  tombol yang terlihat = aksi yang diterima. */}
-                              {active && canAct && (
-                                <>
-                                  <button type="button" onClick={() => doRemindProcurement(p)} disabled={prfActionBusy}
-                                    style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
-                                    Remind Procurement
-                                  </button>
-                                  <button type="button" onClick={() => setPrfCancelConfirm({ open: true, prf: p })} disabled={prfActionBusy}
-                                    style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
-                                    Cancel Request
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
-                              {PRF_STAGES.map((stage) => {
-                                const at = prfStageAt(p, stage.key);
-                                return (
-                                  <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
-                                      {at && <Check size={14} />}{stage.label}
-                                    </span>
-                                    <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{at ? fmtDate(at) : 'Waiting'}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
                   )}
-                </Card>
+                </div>
+                {prfs.length === 0 ? (
+                  // Teks persis mockup (Inquiry Management.dc.html:416, `noReqs`).
+                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No rate requests for this inquiry.</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {prfs.map((p) => {
+                      const late = isPrfLate(p);
+                      const active = isPrfRequestActive(p);
+                      const canAct = canActOnPrf(p);
+                      return (
+                        <div key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            <button type="button" onClick={() => onViewPRF?.(p)}
+                              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: FONT_MONO, fontWeight: 700, color: C.navy, fontSize: 13 }}>
+                              {p.prf_no}
+                            </button>
+                            <TintBadge meta={PRF_READINESS[prfReadinessKey(p)]} />
+                            {p.deadline_quotation && (
+                              <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>Needed by {fmtDate(p.deadline_quotation)}</span>
+                            )}
+                            <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{inquiryAgeLabel(p.created_at)}</span>
+                            {late && (
+                              <TintBadge meta={{ label: 'Over target', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
+                            )}
+                            <span style={{ flex: 1 }} />
+                            {/* D-83/D-84 -- gerbang tombol = gerbang RPC
+                                (canActOnPrf/isPrfRequestActive), supaya
+                                tombol yang terlihat = aksi yang diterima. */}
+                            {active && canAct && (
+                              <>
+                                <button type="button" onClick={() => doRemindProcurement(p)} disabled={prfActionBusy}
+                                  style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
+                                  Remind Procurement
+                                </button>
+                                <button type="button" onClick={() => setPrfCancelConfirm({ open: true, prf: p })} disabled={prfActionBusy}
+                                  style={{ ...ACT_BTN, background: 'transparent', border: '1px solid transparent', color: C.textMute, cursor: prfActionBusy ? 'not-allowed' : 'pointer' }}>
+                                  Cancel Request
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+                            {PRF_STAGES.map((stage) => {
+                              const at = prfStageAt(p, stage.key);
+                              return (
+                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
+                                    {at && <Check size={14} />}{stage.label}
+                                  </span>
+                                  {/* Teks persis mockup (Inquiry Management.dc.html:1144,
+                                      `meta: ... : 'Pending'`) -- Putaran 10 Tahap 2,
+                                      sebelumnya "Waiting" (bukan dari mockup). */}
+                                  <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{at ? fmtDate(at) : 'Pending'}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Divider antar-section, pola persis mockup
+                    (Inquiry Management.dc.html, `height:1px;background:
+                    #ECF0E9` antara "Rate Requests" dan "Vendor Offers"). */}
+                <div style={{ height: 1, background: C.surfaceAlt }} />
 
                 {/* D-80 (Putaran 10) -- "Vendor Offers": satu Card FLAT
                     lintas seluruh PRF inquiry ini (mockup Detail/Procurement
@@ -2796,60 +2829,64 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     DIBANGUN -- nol kolom lead-time di prf_vendor_offers
                     maupun vendors. Link profil vendor (mockup openV) TIDAK
                     DIBANGUN -- nol halaman Detail Vendor untuk dituju (hanya
-                    ada daftar, proc-vendor-list, tanpa rute ber-:id). */}
-                <Card title="Vendor Offers" icon={<FileText size={17} />}>
-                  {allVendorOffers.length === 0 ? (
-                    <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>No vendor offers yet.</div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {allVendorOffers.map((o) => {
-                        const p = o.prf;
-                        const isSelected = p.selected_offer_id === o.id;
-                        const canSelect = canActOnPrf(p);
-                        return (
-                          <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ flex: 1, fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</span>
-                              {isSelected && (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, fontFamily: HEAD, fontSize: 11, fontWeight: 700, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
-                                  Selected
-                                </span>
-                              )}
-                            </div>
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint }}>PRF {p.prf_no}</span>
-                            {Object.entries(o.totals || {}).length === 0 ? (
-                              <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
-                            ) : Object.entries(o.totals).map(([cur, v]) => (
-                              <div key={cur} style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 800, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>
-                                {cur} {Number(v).toLocaleString('id-ID')}
-                              </div>
-                            ))}
-                            {o.validUntil && (
-                              <span style={{ fontFamily: BODY, fontSize: 12, color: C.textMute }}>Valid until {fmtDate(o.validUntil)}</span>
-                            )}
-                            {o.notes && (
-                              <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>{o.notes}</span>
-                            )}
-                            {p.min_offers_waiver_reason && (
-                              <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.orange }}>
-                                Only {(p.vendorOffers || []).length} offers. Procurement reason: {p.min_offers_waiver_reason}
+                    ada daftar, proc-vendor-list, tanpa rute ber-:id).
+
+                    Koreksi visual Putaran 10 (Tahap 2): dicabut dari `<Card>`
+                    bertepi, pola sama "Rate Requests" di atas -- mockup
+                    (Inquiry Management.dc.html:418) juga h3 polos. */}
+                <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text }}>Vendor Offers</h3>
+                {allVendorOffers.length === 0 ? (
+                  // Teks sudah persis mockup (:420, `noOffers`) -- tidak diubah.
+                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No vendor offers yet.</span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {allVendorOffers.map((o) => {
+                      const p = o.prf;
+                      const isSelected = p.selected_offer_id === o.id;
+                      const canSelect = canActOnPrf(p);
+                      return (
+                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ flex: 1, fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</span>
+                            {isSelected && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, fontFamily: HEAD, fontSize: 11, fontWeight: 700, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                                Selected
                               </span>
                             )}
-                            {!isSelected && canSelect && (
-                              <button
-                                type="button"
-                                onClick={() => handleSelectOffer(p, o)}
-                                disabled={offerActionBusy}
-                                style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
-                                {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
-                              </button>
-                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
+                          <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint }}>PRF {p.prf_no}</span>
+                          {Object.entries(o.totals || {}).length === 0 ? (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
+                          ) : Object.entries(o.totals).map(([cur, v]) => (
+                            <div key={cur} style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 800, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>
+                              {cur} {Number(v).toLocaleString('id-ID')}
+                            </div>
+                          ))}
+                          {o.validUntil && (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textMute }}>Valid until {fmtDate(o.validUntil)}</span>
+                          )}
+                          {o.notes && (
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>{o.notes}</span>
+                          )}
+                          {p.min_offers_waiver_reason && (
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.orange }}>
+                              Only {(p.vendorOffers || []).length} offers. Procurement reason: {p.min_offers_waiver_reason}
+                            </span>
+                          )}
+                          {!isSelected && canSelect && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectOffer(p, o)}
+                              disabled={offerActionBusy}
+                              style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
+                              {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ),
           },
