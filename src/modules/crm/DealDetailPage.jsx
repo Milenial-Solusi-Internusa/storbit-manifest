@@ -1549,12 +1549,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Ganti pemilik deal (owner_id) -- Putaran 11 Tahap B: RPC
+  // ── Ganti pemilik deal (owner_id) -- Putaran 11 Tahap B/Prompt 42: RPC
   // reassign_inquiry_owner kini dipanggil DI DALAM OwnerAssignModal.jsx
-  // sendiri (p_reason/p_notify dikirim dari form modal) -- satu-satunya
-  // yang tersisa di sini adalah refresh sesudah sukses.
+  // sendiri (p_reason/p_notify dikirim dari form modal). JANGAN menutup
+  // modal di sini -- modal menutup DIRINYA SENDIRI (onClose) hanya saat
+  // sukses PENUH (target tunggal di halaman ini, jadi "penuh" = satu-
+  // satunya target berhasil); kalau RPC gagal, modal tetap terbuka
+  // menampilkan error-nya sendiri, dan menutupnya paksa di sini akan
+  // menyembunyikan pesan itu. Cukup refetch (aman dipanggil bahkan saat
+  // gagal -- tidak ada yang berubah untuk di-refresh).
   function onOwnerAssigned() {
-    setOwnerAssignOpen(false);
     refetch();
   }
 
@@ -3227,7 +3231,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           per-baris/bulk di InquiryOwnerAssignmentPage.jsx (OwnerAssignModal.jsx);
           `key` berubah tiap dibuka -- pola sama 3 modal lain di atas. Modal
           ini memanggil RPC SENDIRI (lihat header file) -- onSaved hanya
-          menutup+refetch. */}
+          refetch, modal menutup dirinya sendiri (lihat onOwnerAssigned).
+          Prompt 42 TASK 1: mode BUKAN hardcode "reassign" -- canReassignOwner
+          (di atas) TIDAK mensyaratkan owner_id ada, jadi kebab "Reassign
+          Owner" tetap bisa tampil untuk inquiry TANPA owner (status masih
+          LOSABLE_INQUIRY_STATUS); mode modal mengikuti DATA SEBENARNYA,
+          bukan asumsi label tombol kebab. */}
       <OwnerAssignModal
         key={ownerAssignOpen ? `owner-assign-${inquiry?.id}` : 'owner-assign-closed'}
         open={ownerAssignOpen}
@@ -3240,7 +3249,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           owner_id: inquiry.owner_id,
           owner_name: ownerName,
         }] : []}
-        mode="reassign"
+        mode={inquiry?.owner_id ? 'reassign' : 'assign'}
         companyId={inquiry?.company_id}
         onSaved={onOwnerAssigned}
         showToast={showToast}

@@ -415,9 +415,19 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
     setOwnerAssignOpen(true);
   }
 
-  function onOwnerAssigned() {
-    setOwnerAssignOpen(false);
-    setSelectedIds(new Set());
+  // Prompt 42 TASK 2: JANGAN menutup modal di sini -- modal menutup DIRINYA
+  // SENDIRI (onClose) hanya saat sukses PENUH. Kalau ada target yang gagal
+  // (meta.failed > 0), modal SENGAJA dibiarkan terbuka (pesan gagal sudah
+  // ditampilkan toast oleh modal) dan seleksi TIDAK dikosongkan -- supaya
+  // baris yang masih gagal tetap tercentang untuk dicoba ulang; baris yang
+  // SUDAH berhasil akan hilang sendiri dari unassignedRows sesudah
+  // fetchRows() (filter owner_id IS NULL tidak lagi mencakupnya). Sukses
+  // penuh (meta.failed === 0): kosongkan seleksi, modal sudah menutup
+  // dirinya sendiri sebelum onSaved ini dipanggil.
+  function onOwnerAssigned(_newOwnerName, meta) {
+    if (!meta?.failed) {
+      setSelectedIds(new Set());
+    }
     fetchRows();
   }
 

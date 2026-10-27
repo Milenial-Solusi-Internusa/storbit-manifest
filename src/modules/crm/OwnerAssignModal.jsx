@@ -97,10 +97,19 @@ const btnPrimary = (disabled) => ({
  * @param {string} companyId -- entitas target (satu entitas utk seluruh
  *   `targets`, konsisten desain halaman Owner Assignment yang sudah
  *   di-scope profile.company_id).
- * @param {(newOwnerName?: string) => void} [onSaved] -- dipanggil sesudah
- *   SETIAP panggilan RPC selesai (termasuk saat sebagian gagal, supaya
- *   pemanggil bisa refresh daftar/detail dan melihat baris yang SUDAH
- *   berhasil) dengan nama owner baru.
+ * @param {(newOwnerName?: string, meta?: {failed: number}) => void} [onSaved]
+ *   -- dipanggil sesudah SETIAP panggilan RPC selesai (termasuk saat
+ *   sebagian gagal, supaya pemanggil bisa refresh daftar/detail dan melihat
+ *   baris yang SUDAH berhasil) dengan nama owner baru + `meta.failed`
+ *   (Prompt 42 TASK 2) = jumlah target yang gagal (0 = sukses penuh).
+ *   PEMANGGIL TIDAK BOLEH menutup modal atau mengosongkan seleksinya
+ *   sendiri berdasarkan asumsi "onSaved dipanggil = selesai" -- modal INI
+ *   yang memutuskan buka/tutup (lihat `submit()`): menutup diri sendiri
+ *   lewat `onClose` HANYA saat `failures.length === 0` (sukses penuh),
+ *   tetap terbuka saat ada yang gagal supaya pesan error & form tetap
+ *   terlihat. Pemanggil memakai `meta.failed` hanya utk memutuskan apakah
+ *   BOLEH mengosongkan seleksinya sendiri (failed===0) -- bukan utk
+ *   menutup modal, itu tetap wewenang modal ini.
  * @param {(msg:string, type?:string)=>void} [showToast]
  */
 export default function OwnerAssignModal({ open, onClose, targets = [], mode = 'assign', companyId, onSaved, showToast }) {
@@ -190,7 +199,10 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
     if (failures.length) {
       const detail = failures.map((f) => `${f.name}: ${f.message}`).join(' | ');
       showToast?.(`${okCount} succeeded, ${failures.length} failed — ${detail}`, 'error');
-      onSaved?.(newOwnerName); // baris yang berhasil tetap tersimpan -- refresh pemanggil
+      // Prompt 42 TASK 2: argumen kedua `{ failed }` memberi tahu pemanggil
+      // ini BUKAN sukses penuh -- pemanggil TIDAK boleh mengosongkan seleksi/
+      // menutup apa pun sendiri (modal ini yang memutuskan buka/tutup).
+      onSaved?.(newOwnerName, { failed: failures.length }); // baris yang berhasil tetap tersimpan -- refresh pemanggil
       return; // modal TETAP TERBUKA -- pesan sudah tampil, user memutuskan lanjut/batal
     }
 
@@ -198,7 +210,7 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
       isReassign ? 'Inquiry owner updated.' : (single ? 'Inquiry assigned.' : `${okCount} inquiries assigned.`),
       'success',
     );
-    onSaved?.(newOwnerName);
+    onSaved?.(newOwnerName, { failed: 0 });
     onClose?.();
   }
 
