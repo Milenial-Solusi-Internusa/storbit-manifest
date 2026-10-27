@@ -23,10 +23,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  FileText, ChevronLeft, Pencil, CalendarClock,
+  FileText, ChevronLeft, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
-  Lock, Check,
+  Lock, Check, RefreshCcw,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
@@ -56,6 +56,7 @@ import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
 import { MarkWonModal, RevertWonModal } from './DealWonModals';
+import ChangeAccountModal from './ChangeAccountModal';
 import { fetchOperationalRoster } from './salesRoster';
 import InquiryChatter from './InquiryChatter';
 // Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
@@ -556,7 +557,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onCreatePRF, onViewPRF, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -621,6 +622,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // TD-318 Irisan 3, commit 5 -- Revert Manual Win.
   const [revertOpen, setRevertOpen] = useState(false);
   const [revertSaving, setRevertSaving] = useState(false);
+  // Putaran 15, Task 4 -- Change Account (ganti prospect_id/customer_id +
+  // contact_id). Modal + RPC change_inquiry_account (20261027000007).
+  const [changeAccountOpen, setChangeAccountOpen] = useState(false);
+  const [changeAccountSaving, setChangeAccountSaving] = useState(false);
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
@@ -1149,6 +1154,24 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const canReassignOwner =
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
     && isManagerOrAbove(erpRoles);
+  // Putaran 15, Task 4 -- Change Account. Gate SAMA BENTUKNYA dgn
+  // canMarkWon/canRevertWon (owner_id TIDAK ikut -- beda dari
+  // canReassignOwner di atas yang global/bukan entity-scoped): manager-ke-
+  // atas DI ENTITAS inquiry ini, atau super admin. Disetujui eksplisit Den,
+  // Putaran 15 -- lebih ketat dari form lama (InquiryFormPage.jsx) yang nol
+  // gerbang role sama sekali (RLS inquiries_update meloloskan owner_id
+  // JUGA, bukan hanya manager-ke-atas).
+  const canChangeAccount =
+    LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
+    && (isManagerOrAbove(erpRoles, { companyId: inquiry?.company_id }) || isAllEntities(erpRoles));
+  // Quotation/PRF hidup untuk inquiry ini mengunci Change Account (RPC
+  // menolak keras; ini hanya membuat tombolnya disabled+tooltip, bukan
+  // hilang -- pola Putaran 10, PRFDetailPage.jsx:929 `quotationBlockReason`).
+  // `quotations`/`prfs` SUDAH di-fetch inquiry-scoped + deleted_at-filtered
+  // di effect data loading di atas -- nol fetch baru di sini.
+  const changeAccountBlockReason = (quotations.length > 0 || prfs.length > 0)
+    ? 'Not available: this inquiry already has a quotation or PRF.'
+    : null;
   const ownerName = profMap[inquiry?.owner_id] || null;
   // TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row -- `Date.now()`
   // ditaruh di fungsi modul `inquiryAgeLabel()` (bukan langsung di badan
@@ -1428,6 +1451,33 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     if (error) { showToast?.(error.message, 'error'); return; }
     setRevertOpen(false);
     showToast?.('Manual win reverted for ' + inquiry.inquiry_no, 'success');
+    refetch();
+  }
+
+  // ── Ganti akun (prospect_id/customer_id) + kontak -- Putaran 15, Task 4.
+  // RPC change_inquiry_account (20261027000007) sendiri yang menggerbang
+  // (manager-ke-atas DI ENTITAS inquiry ini ATAU super admin), menolak
+  // status terminal/entitas beda/akun Lost atau Lead Pool/kontak bukan
+  // milik akun/inquiry yang sudah punya Quotation atau PRF hidup, dan
+  // mencatat audit_logs CHANGE_INQUIRY_ACCOUNT -- logAudit TIDAK dipanggil
+  // dari sini, pola sama reassignOwner/revertManualWin. Pesan error RPC
+  // ditampilkan apa adanya. Sesudah sukses: refetch() memuat ulang `inquiry`
+  // (prospect_id/contact_id baru, lewat select+embed yang sudah ada) DAN
+  // `account` (fetch terpisah dari inq.prospect_id baru) -- header Detail
+  // ikut terbarui tanpa kode tambahan.
+  async function changeInquiryAccount({ newAccountId, newContactId, reason }) {
+    if (!inquiry?.id) return;
+    setChangeAccountSaving(true);
+    const { error } = await supabase.rpc('change_inquiry_account', {
+      p_inquiry_id: inquiry.id,
+      p_new_account_id: newAccountId,
+      p_new_contact_id: newContactId,
+      p_reason: reason,
+    });
+    setChangeAccountSaving(false);
+    if (error) { showToast?.(error.message, 'error'); return; }
+    setChangeAccountOpen(false);
+    showToast?.('Account changed for ' + inquiry.inquiry_no, 'success');
     refetch();
   }
 
@@ -1808,17 +1858,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: C.text }}>{inquiryAge}</span>
             </div>
           </div>
-          {((onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus)) || canMarkLost || canMarkWon || canCancel || canReassignOwner || showCreateQuotationPrimary) && (
+          {(canMarkLost || canMarkWon || canCancel || canReassignOwner || showCreateQuotationPrimary) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* KOREKSI (keputusan Mas, ikut mockup): Edit Inquiry disembunyikan pada
-              status terminal (WON/LOST/CANCELLED) -- mockup tidak punya tombol Edit
-              literal, tapi SELURUH afirmasi editing-nya (mis. canReassignBox) digerbang
-              !isTerminal, jadi arahnya konsisten: nol aksi edit pada status terminal. */}
-          {onEditInquiry && LOSABLE_INQUIRY_STATUS.includes(dealStatus) && (
-            <button onClick={onEditInquiry} style={ACT_BTN}>
-              <Pencil size={14} />Edit Inquiry
-            </button>
-          )}
+          {/* Putaran 15 Task 1 -- tombol "Edit Inquiry" (onEditInquiry) dicabut:
+              mockup tidak punya tombol Edit literal di sini, dan sejak Task 1
+              seluruh editing berjalan inline per-section (Overview), bukan lagi
+              lewat halaman form terpisah (InquiryFormPage.jsx, dipensiunkan). */}
           {/* TD-318 Irisan 3, commit 4 -- aksi utama dinamis (final decision
               #9.1): Open/In Review = Create Quotation; Quoted/Negotiation =
               Mark as Won (kalau canMarkWon). "Request Rates" mockup TIDAK
@@ -1840,7 +1885,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               Quotation" duplikat/"Close as Duplicate" TIDAK dibangun (§9.2,
               Irisan 4). Link inline "Reassign" di metric row DICABUT --
               satu-satunya entry point sekarang di sini. */}
-          {showKebab && (canReassignOwner || canMarkLost || canCancel) && (
+          {showKebab && (canReassignOwner || canChangeAccount || canMarkLost || canCancel) && (
             <div style={{ position: 'relative' }}>
               <button type="button" title="More actions" onClick={() => setKebabOpen((v) => !v)}
                 style={{ ...ACT_BTN, width: 36, padding: 0, justifyContent: 'center', background: kebabOpen ? C.navySoft : '#fff' }}>
@@ -1857,7 +1902,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         <UserCog size={14} />Reassign Owner
                       </button>
                     )}
-                    {canReassignOwner && (canMarkLost || canCancel) && (
+                    {/* Putaran 15, Task 4 -- selalu tampil utk canChangeAccount,
+                        DISABLED + tooltip bila sudah ada Quotation/PRF hidup
+                        (pola Putaran 10, PRFDetailPage.jsx:929). RPC
+                        change_inquiry_account tetap penjaga sebenarnya. */}
+                    {canChangeAccount && (
+                      <button type="button"
+                        disabled={!!changeAccountBlockReason}
+                        title={changeAccountBlockReason || undefined}
+                        onClick={() => { setKebabOpen(false); setChangeAccountOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: changeAccountBlockReason ? C.textFaint : C.text, cursor: changeAccountBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: changeAccountBlockReason ? 0.6 : 1 }}>
+                        <RefreshCcw size={14} />Change Account
+                      </button>
+                    )}
+                    {(canReassignOwner || canChangeAccount) && (canMarkLost || canCancel) && (
                       <div style={{ height: 1, background: C.border, margin: '4px 0' }} />
                     )}
                     {canMarkLost && (
@@ -3131,6 +3189,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={revertSaving}
         onSave={revertManualWin}
         onCancel={() => setRevertOpen(false)}
+      />
+
+      {/* Putaran 15, Task 4 -- Change Account. `key` berubah tiap dibuka --
+          pola sama MarkWonModal/RevertWonModal, form bersih tiap kali. */}
+      <ChangeAccountModal
+        key={changeAccountOpen ? `change-account-${inquiry?.id}` : 'change-account-closed'}
+        open={changeAccountOpen}
+        inquiryNo={inquiry?.inquiry_no}
+        companyId={inquiry?.company_id}
+        currentAccountName={account?.name}
+        currentContactName={inquiry?.contact?.name}
+        saving={changeAccountSaving}
+        onSave={changeInquiryAccount}
+        onCancel={() => setChangeAccountOpen(false)}
       />
     </div>
   );

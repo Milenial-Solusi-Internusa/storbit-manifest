@@ -103,16 +103,17 @@ export const MENU_PATHS = Object.freeze({
  *  tertulis untuk sisanya. */
 const P = MENU_PATHS;
 export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
-  'crm-inquiry':        [`${P['crm-inquiry']}/new`, `${P['crm-inquiry']}/:id`, `${P['crm-inquiry']}/:id/edit`],
+  'crm-inquiry':        [`${P['crm-inquiry']}/new`, `${P['crm-inquiry']}/:id`],
   'quotation-draft':    [`${P['quotation-draft']}/new`, `${P['quotation-draft']}/:id`, `${P['quotation-draft']}/:id/edit`],
   'crm-prospects':      [`${P['crm-prospects']}/new`, `${P['crm-prospects']}/:id`, `${P['crm-prospects']}/:id/edit`],
-  // Dua bentuk BERSARANG lahir di G3 sebagai konsekuensi keputusan Den
+  // Satu bentuk BERSARANG lahir di G3 sebagai konsekuensi keputusan Den
   // "kembali ke customer yang membukanya": tujuan itu hanya deterministik
   // kalau ASAL-USULNYA ada di URL. Kalau dititipkan ke location.state,
   // janji "tetap benar setelah refresh / deep-link" gugur persis di kasus
-  // yang jadi alasan memilihnya.
+  // yang jadi alasan memilihnya. (Bentuk bersarang KEDUA, edit Inquiry dari
+  // Detail Customer, dicabut Putaran 15 Task 1 -- InquiryFormPage.jsx
+  // dipensiunkan, editing kini inline di DealDetailPage.jsx.)
   'customer-detail':    [`${P['crm-customers']}/:id`,
-                         `${P['crm-customers']}/:id/inquiry/:inquiryId/edit`,
                          `${P['crm-customers']}/:id/quotation/:quotationId`],
   'crm-sales-order':    [`${P['crm-sales-order']}/new`, `${P['crm-sales-order']}/:id`],
   'proc-inquiry-fwd-msi': [`${P['proc-inquiry-fwd-msi']}/:id`, `${P['proc-inquiry-fwd-msi']}/:id/edit`],

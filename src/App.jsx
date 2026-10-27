@@ -1811,9 +1811,10 @@ export default function StorbitManifest() {
   // Lihat Quotation & Cetak PRF dari Detail Account (tab Riwayat). Jalur TERPISAH dari
   // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
   const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
-  // Prefill "+ New Inquiry" dari Detail Account → InquiryFormPage (mode create).
+  // Prefill "+ New Inquiry" dari Detail Account → wizard pembuatan Inquiry
+  // (InquiryIntakeWizardPage, via InquiryNewRoute di crm.routes.jsx).
   // Bentuk: { accountId, contactId } — contactId = kontak UTAMA akun itu bila ada,
-  // null bila belum punya (InquiryFormPage tetap bisa menentukan sendiri dari daftar
+  // null bila belum punya (wizard tetap bisa menentukan sendiri dari daftar
   // kontak akun). null = form create dibuka TANPA konteks (jalur "+" Inquiry List).
   const [inquiryPrefill,        setInquiryPrefill]        = useState(null);
   // Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari customerPrfInquiryId

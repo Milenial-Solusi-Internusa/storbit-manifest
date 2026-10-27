@@ -61,10 +61,10 @@ const LeadQualificationPage  = lazy(() => import('@/modules/crm/lead/pages/LeadQ
 const InquiryListPage        = lazy(() => import('@/modules/crm/InquiryListPage'));
 const InquiryClassificationPage = lazy(() => import('@/modules/crm/InquiryClassificationPage'));
 const InquiryOwnerAssignmentPage = lazy(() => import('@/modules/crm/InquiryOwnerAssignmentPage'));
-const InquiryFormPage        = lazy(() => import('@/modules/crm/InquiryFormPage'));
 // Putaran 4 Tahap 4B -- wizard Intake Form, CREATE-ONLY (Single Shipment).
-// InquiryFormPage TETAP satu-satunya halaman EDIT -- lihat InquiryEditRoute/
-// CustomerInquiryEditRoute di bawah, tidak disentuh.
+// Putaran 15 Task 1 -- InquiryFormPage.jsx (dulu satu-satunya halaman EDIT,
+// lihat InquiryEditRoute/CustomerInquiryEditRoute lama) DIPENSIUNKAN: edit
+// kini inline per-section di DealDetailPage.jsx.
 const InquiryIntakeWizardPage = lazy(() => import('@/modules/crm/InquiryIntakeWizardPage'));
 const DealDetailPage         = lazy(() => import('@/modules/crm/DealDetailPage'));
 const QuotationListPage      = lazy(() => import('@/modules/crm/QuotationListPage'));
@@ -409,9 +409,9 @@ function InquiryOwnerAssignmentRoute() {
   );
 }
 
-/** `inquiryPrefill` (state App.jsx, dipakai InquiryFormPage lewat prop --
- *  "rute yang SUDAH ADA", TIDAK disentuh) tetap satu-satunya yang DIBACA
- *  halaman. `location.state.leadAccount` (Lead Qualification/Detail Lead,
+/** `inquiryPrefill` (state App.jsx, dioper ke InquiryIntakeWizardPage lewat
+ *  prop prefillAccountId/prefillContactId di bawah) tetap satu-satunya yang
+ *  DIBACA halaman. `location.state.leadAccount` (Lead Qualification/Detail Lead,
  *  irisan 6) ikut dikirim sebagai cadangan -- pola hybrid yang sama dengan
  *  useRecord di file ini (state = cache, bukan sumber wajib): kalau
  *  `inquiryPrefill` context kosong tapi location.state masih ada (mis.
@@ -445,28 +445,11 @@ function DealDetailRoute() {
         onBack={() => navigate(P_INQUIRY)}
         onCreateQuotation={(inqId) => navigate(`${P_QUOTATION}/new${inqId ? `?inquiry=${inqId}` : ''}`)}
         onViewQuotation={(q) => navigate(`${P_QUOTATION}/${q.id}`, { state: { row: q } })}
-        onEditInquiry={() => navigate(`${P_INQUIRY}/${id}/edit`)}
         // PRF belum pindah (giliran Procurement) → handoff tetap lewat menu id.
         onCreatePRF={() => { setPrfPrefillInquiryId(id); setActiveMenu('prf'); }}
         onViewPRF={(p) => { setProcPrfDetailId(p.id); setActiveMenu('proc-inquiry-fwd-msi'); }}
         onViewProfile={setViewingProfileId}
         onViewCustomer={(customerId) => navigateToCustomerDetail(customerId)}
-        showToast={showToast}
-      />
-    </Boundary>
-  );
-}
-
-function InquiryEditRoute() {
-  const { id } = useParams();
-  const { showToast } = useAppShell();
-  const navigate = useNavigate();
-  return (
-    <Boundary title="Edit Inquiry temporarily unavailable">
-      <InquiryFormPage
-        inquiryId={id}
-        mode="edit"
-        onBack={() => navigate(`${P_INQUIRY}/${id}`)}
         showToast={showToast}
       />
     </Boundary>
@@ -614,32 +597,11 @@ function CustomerDetailRoute() {
         onCreateInquiry={hasMenuPermission('crm_inquiry', 'view')
           ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); navigate(MENU_PATHS['crm-inquiry-intake']); }
           : undefined}
-        onEditInquiry={hasMenuPermission('crm_inquiry', 'view')
-          ? (inq) => navigate(`${P_CUSTOMER}/${id}/inquiry/${inq.id}/edit`)
-          : undefined}
         onViewQuotation={(q) => navigate(`${P_CUSTOMER}/${id}/quotation/${q.id}`, { state: { row: q } })}
         // Tab disimpan di URL lebih dulu supaya "kembali" mendarat di tab yang benar
         // walau sub-view PRF-nya masih digerakkan state.
         onCreatePRF={(inq) => { navigate(at('riwayat'), { replace: true }); setCustomerPrfInquiryId(inq.id); }}
         onViewPRF={(p) => { navigate(at('dokumen'), { replace: true }); setCustomerPrfViewId(p.id); }}
-      />
-    </Boundary>
-  );
-}
-
-/** Keputusan #3: dibuka DARI Detail Customer → kembali ke customer itu, dan
- *  tujuannya ada di URL sehingga tetap benar setelah refresh / deep-link. */
-function CustomerInquiryEditRoute() {
-  const { id, inquiryId } = useParams();
-  const { showToast } = useAppShell();
-  const navigate = useNavigate();
-  return (
-    <Boundary title="Edit Inquiry temporarily unavailable">
-      <InquiryFormPage
-        inquiryId={inquiryId}
-        mode="edit"
-        onBack={() => navigate(`${P_CUSTOMER}/${id}?tab=riwayat`)}
-        showToast={showToast}
       />
     </Boundary>
   );
@@ -792,7 +754,6 @@ export const crmRoutes = [
       // SKELETON_MENU_PATHS tidak saling menimpa path dua mount).
       { path: MENU_PATHS['crm-inquiry-intake'],     handle: { menuId: 'crm-inquiry-intake' },     element: <InquiryNewRoute /> },
       { path: `${P_INQUIRY}/:id`,                   handle: { menuId: 'crm-inquiry' },            element: <DealDetailRoute /> },
-      { path: `${P_INQUIRY}/:id/edit`,              handle: { menuId: 'crm-inquiry' },            element: <InquiryEditRoute /> },
       { path: MENU_PATHS['crm-inquiry-classification'], handle: { menuId: 'crm-inquiry-classification' }, element: <InquiryClassificationRoute /> },
       { path: MENU_PATHS['crm-inquiry-owner-assignment'], handle: { menuId: 'crm-inquiry-owner-assignment' }, element: <InquiryOwnerAssignmentRoute /> },
 
@@ -803,7 +764,6 @@ export const crmRoutes = [
 
       { path: P_CUSTOMER,                           handle: { menuId: 'crm-customers' },          element: <CustomerListRoute /> },
       { path: `${P_CUSTOMER}/:id`,                  handle: { menuId: 'customer-detail' },        element: <CustomerDetailRoute /> },
-      { path: `${P_CUSTOMER}/:id/inquiry/:inquiryId/edit`, handle: { menuId: 'customer-detail' }, element: <CustomerInquiryEditRoute /> },
       { path: `${P_CUSTOMER}/:id/quotation/:quotationId`,  handle: { menuId: 'customer-detail' }, element: <CustomerQuotationRoute /> },
 
       { path: MENU_PATHS['crm-calls'],              handle: { menuId: 'crm-calls' },              element: <ActivitiesRoute /> },

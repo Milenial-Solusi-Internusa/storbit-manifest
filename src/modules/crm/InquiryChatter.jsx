@@ -347,7 +347,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
   };
 
   return (
-    <Card title="Chatter" icon={<MessageCircle size={17} />}>
+    <Card title="Comments" icon={<MessageCircle size={17} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {loadingComments ? (
           <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Loading comments…</div>
@@ -409,7 +409,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             ref={textareaRef}
             value={newBody}
             onChange={handleComposerChange}
-            placeholder="Write a comment… type @ to tag someone"
+            placeholder="Write a comment. Use @ to mention a teammate."
             rows={3}
             style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.borderStrong}`, padding: '9px 11px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
           />
@@ -467,7 +467,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       <ConfirmModal
         open={!!deleteTarget}
         title="Delete comment?"
-        message="This comment will be removed from the chatter. This action cannot be undone."
+        message="This comment will be removed."
         confirmLabel={deleting ? 'Deleting…' : 'Delete'}
         cancelLabel="Cancel"
         variant="danger"

@@ -464,16 +464,18 @@ function InquiryDetailBlock({ inq }) {
     </div>
   );
 }
-function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCreatePRF }) {
+function InquiryHistoryRow({ inq, quotes, onViewQuotation, onCreatePRF }) {
   const [open, setOpen] = useState(false);
   const n = quotes.length;
   // Nilai tak dikenal JANGAN dibuat blank — tampilkan mentahnya (pelajaran NURTURE / TD-61).
   const st = INQ_STATUS_TONE[String(inq.status || '').toUpperCase()] || { bg: '#EEF0F3', fg: '#5E6553', label: String(inq.status || '—') };
   return (
     <div style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-      {/* Header baris: tombol toggle (expand) + tombol aksi Edit Inquiry sebagai
+      {/* Header baris: tombol toggle (expand) + tombol aksi (Create PRF) sebagai
           SAUDARA di dalam wrapper flex (bukan anak button toggle → hindari nested
-          button + jaga aksesibilitas keyboard tombol toggle). */}
+          button + jaga aksesibilitas keyboard tombol toggle). Putaran 15 Task 1 --
+          tombol "Edit Inquiry" yang dulu di sini dicabut (InquiryFormPage.jsx
+          dipensiunkan; editing kini inline di Detail Inquiry/DealDetailPage.jsx). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 22 }}>
         <button type="button" onClick={() => setOpen((o) => !o)}
           style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, border: 0, background: 'transparent', padding: '15px 0 15px 22px', cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
@@ -487,12 +489,6 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
             {n ? `${n} quotation` : 'No quotations yet'}
           </span>
         </button>
-        {onEditInquiry && (
-          <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
-            onClick={() => onEditInquiry(inq)}>
-            <Icon name="pencil" size={14} />Edit Inquiry
-          </button>
-        )}
         {onCreatePRF && (
           <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
             onClick={() => onCreatePRF(inq)}>
@@ -724,7 +720,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast, onCreateInquiry, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onCreateInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
@@ -1580,7 +1576,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onCreateInqu
           ) : (
             <div>
               {histInquiries.map((inq) => (
-                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} onEditInquiry={onEditInquiry} onViewQuotation={onViewQuotation} onCreatePRF={canCreatePRF ? onCreatePRF : undefined} />
+                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} onViewQuotation={onViewQuotation} onCreatePRF={canCreatePRF ? onCreatePRF : undefined} />
               ))}
               {orphanQuotes.length > 0 && (
                 <div style={{ padding: '15px 22px' }}>
