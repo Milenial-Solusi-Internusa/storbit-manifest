@@ -1,5 +1,6 @@
 // src/modules/crm/DealWonModals.jsx
-// Modal penutupan deal — TD-318 Irisan 3.
+// Modal penutupan deal — TD-318 Irisan 3, diselaraskan ke mockup Inquiry
+// Management.dc.html Putaran 11 Tahap C.
 //   MarkWonModal   — Won manual: alasan (4 pilihan tetap), notes opsional,
 //                    bukti wajib (file dipilih di sini, DIUNGGAH + RPC
 //                    mark_inquiry_won dipanggil oleh PEMANGGIL lewat onSave,
@@ -14,9 +15,34 @@
 //
 // Pemanggil WAJIB mengoper `key` yang berubah tiap kali dibuka supaya
 // komponen remount dengan field bersih -- pola sama DealCloseModals.
+//
+// Putaran 11 Tahap C -- tiga banner mockup diaudit, DUA dibangun, SATU
+// SENGAJA DILEWATI (keputusan Den):
+//   - Saran "Record the customer's acceptance on the quotation instead" --
+//     dibangun, hanya tampil bila ADA quotation berstatus SENT (gate PERSIS
+//     `canRecordOutcome` QuotationDetailPage.jsx:410) -- data `sentQuotation`
+//     dihitung PEMANGGIL dari `quotations` yang sudah di-fetch, nol query baru.
+//   - "First win" -- dibangun TANPA kode customer (koreksi Vir: kode akun
+//     [MSI0001 dst] dibuat SAAT akun di-INSERT oleh trg_z_gen_account_code_ins,
+//     BUKAN saat Won pertama -- tidak ada "kode customer" yang lahir di momen
+//     ini) dan TANPA kalimat "onboarding starts" (Nexus nol fitur onboarding).
+//     Gate: `isFirstWin` dihitung PEMANGGIL dari `account?.lifecycle_stage`
+//     yang sudah ada di state halaman -- nol query baru.
+//   - Banner `wonDeny` ("Only the inquiry owner or a Manager can mark this
+//     inquiry as won.") TIDAK dibangun -- keadaan itu TIDAK TERJANGKAU:
+//     tombol primer "Mark as Won" di DealDetailPage.jsx SUDAH digerbang
+//     `canMarkWon` yang PERSIS gate ini, jadi modal ini tak pernah terbuka
+//     dalam keadaan yang coba diperingatkan banner itu.
+//   - "Prototype, upload result" (selector Works/Upload fails/File not
+//     found) TIDAK dibangun -- harness simulasi khusus mockup, bukan field
+//     produk (keputusan Den eksplisit).
+// Helper Proof kondisional (`hasSupervisor`) dibangun persis mockup --
+// `hasSupervisor` = `!!profile?.reports_to` MILIK PEMANGGIL RPC (auth.uid()),
+// BUKAN pemilik inquiry -- cermin persis `mark_inquiry_won`
+// (20261021000001:173, `SELECT reports_to ... WHERE id = auth.uid()`).
 
 import { useState } from 'react';
-import { CheckCircle2, RotateCcw, AlertTriangle, Paperclip } from 'lucide-react';
+import { CheckCircle2, RotateCcw, AlertTriangle, Info, Paperclip } from 'lucide-react';
 import { C, HEAD, BODY } from './DealPanels';
 import { WON_MANUAL_REASONS } from './inquiryOptions';
 
@@ -95,8 +121,19 @@ function Shell({ icon, title, children, err, onCancel, onSubmit, saving, submitL
    decision §9.6); modal TETAP TERBUKA, user menekan "Yes, Mark as Won" lagi
    untuk mencoba ulang (bukan tombol Retry tersendiri -- file yang sama
    masih terpilih, submit berarti coba lagi).
+
+   Putaran 11 Tahap C -- 5 prop baru, SEMUANYA dihitung PEMANGGIL dari data
+   yang sudah di-fetch di DealDetailPage.jsx (nol query baru di dalam modal):
+     sentQuotation  -- quotation (atau null) berstatus SENT milik inquiry ini.
+     onOpenQuotation(q) -- navigasi ke Detail Quotation itu (reuse onViewQuotation).
+     isFirstWin     -- account?.lifecycle_stage !== 'customer'.
+     customerName   -- nama akun, utk teks banner firstWin.
+     hasSupervisor  -- !!profile?.reports_to MILIK PEMANGGIL (lihat header file).
    ═══════════════════════════════════════════════════════════════════════════ */
-export function MarkWonModal({ open, inquiryNo, saving, uploadError, onSave, onCancel }) {
+export function MarkWonModal({
+  open, inquiryNo, saving, uploadError, onSave, onCancel,
+  sentQuotation, onOpenQuotation, isFirstWin, customerName, hasSupervisor,
+}) {
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [file, setFile] = useState(null);
@@ -123,6 +160,26 @@ export function MarkWonModal({ open, inquiryNo, saving, uploadError, onSave, onC
       submitStyle={btnGreen}
     >
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{inquiryNo}</div>
+
+      {sentQuotation && (
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'flex-start',
+          padding: '9px 11px', borderRadius: 9,
+          background: C.blueBg, border: `1px solid ${C.blueBd}`,
+        }}>
+          <Info size={14} style={{ color: C.blue, flexShrink: 0, marginTop: 1 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>
+              Record the customer&rsquo;s acceptance on the quotation instead.
+            </span>
+            <button type="button"
+              onClick={() => onOpenQuotation?.(sentQuotation)}
+              style={{ ...btnGhost, alignSelf: 'flex-start', height: 28, padding: '0 10px', fontSize: 11.5, color: C.blue, borderColor: C.blueBd }}>
+              Open Record Outcome
+            </button>
+          </div>
+        </div>
+      )}
 
       <label>
         <span style={label}>Won Reason <span style={{ color: C.amber }}>*</span></span>
@@ -159,7 +216,24 @@ export function MarkWonModal({ open, inquiryNo, saving, uploadError, onSave, onC
             />
           </label>
         </div>
+        <div style={{ marginTop: 6, fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
+          {hasSupervisor
+            ? 'Manual wins are reported separately and your supervisor is notified.'
+            : 'Manual wins are reported separately. No supervisor recorded for this account. No notification will be sent.'}
+        </div>
       </label>
+
+      {isFirstWin && (
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'flex-start',
+          padding: '9px 11px', borderRadius: 9,
+          background: C.greenBg, border: `1px solid ${C.greenBd}`,
+          fontFamily: BODY, fontSize: 12.5, color: C.text,
+        }}>
+          <CheckCircle2 size={14} style={{ color: C.green, flexShrink: 0, marginTop: 1 }} />
+          This is the first win for {customerName || 'this account'}. The account becomes a customer.
+        </div>
+      )}
     </Shell>
   );
 }

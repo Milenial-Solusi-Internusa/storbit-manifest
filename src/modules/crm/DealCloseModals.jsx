@@ -21,6 +21,19 @@
 //
 // Pemanggil WAJIB mengoper `key` yang berubah tiap kali dibuka supaya
 // komponen remount dengan field bersih — pola sama WinLossModal.
+//
+// Putaran 11 Tahap C -- diselaraskan ke mockup Inquiry Management.dc.html:
+//   - CancelReasonModal: title "Cancel this inquiry?" (bukan "Cancel
+//     Inquiry"), tombol sekunder "Back" (bukan "Cancel", lihat `cancelLabel`
+//     Shell), helper teks menjelaskan KAPAN memakai Cancel vs Mark as Lost.
+//   - Kedua modal: blok `AffectedDocuments` baru (quotation DRAFT/SUBMITTED/
+//     SENT -- SATU teks "will be marked Rejected" sesuai trigger live
+//     trg_fn_quotation_auto_close_on_inquiry_closed, BUKAN dua cabang teks
+//     seperti draf mockup; PRF/rate request HANYA status, TANPA klaim
+//     "akan dibatalkan" -- nol trigger otomatis membatalkan PRF, lihat
+//     komentar AffectedDocuments di bawah).
+//   - LostReasonModal: field "Notes" mockup SENGAJA TIDAK dibangun
+//     (keputusan Den) -- nol kolom DB utk notes khusus Lost.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useMemo } from 'react';
@@ -65,7 +78,7 @@ const btnDanger = (disabled) => ({
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
 
-function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, saving, submitLabel }) {
+function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, saving, submitLabel, cancelLabel = 'Cancel' }) {
   return (
     <div style={overlay} role="dialog" aria-modal="true">
       <div style={sheet}>
@@ -95,7 +108,7 @@ function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, savin
         </div>
 
         <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>{cancelLabel}</button>
           <button type="button" style={btnDanger(saving)} onClick={onSubmit} disabled={saving}>
             {saving ? 'Saving…' : submitLabel}
           </button>
@@ -106,11 +119,61 @@ function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, savin
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   AffectedDocuments -- Putaran 11 Tahap C, dipakai LostReasonModal DAN
+   CancelReasonModal. `activeQuotation` = quotation (atau null/undefined)
+   berstatus DRAFT/SUBMITTED/SENT milik inquiry ini -- SATU-SATUNYA yang
+   DIJAMIN akan disentuh trigger `trg_fn_quotation_auto_close_on_inquiry_
+   closed` (LIVE, migrasi 20261022000002) begitu inquiry jadi LOST/CANCELLED:
+   trigger itu WHERE status IN ('DRAFT','SUBMITTED','SENT') -> REJECTED
+   TANPA SYARAT (LOST) atau REJECTED biasa (CANCELLED, bukan duplikat) --
+   SATU teks "will be marked Rejected", BUKAN dua cabang seperti draf mockup
+   ("Sent" vs lainnya) karena trigger memperlakukan ketiga status itu SAMA.
+   `openPrfs` ditampilkan HANYA sebagai status saat ini -- TANPA klaim
+   "will be cancelled": diverifikasi TIDAK ADA trigger otomatis yang
+   membatalkan PRF saat inquiry LOST/CANCELLED (satu-satunya RPC cancel PRF,
+   prf_cancel_request, manual dari tombol tersendiri tab Procurement).
+   Menulis klaim itu akan menjanjikan sesuatu yang tidak terjadi.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function AffectedDocuments({ activeQuotation, openPrfs = [] }) {
+  const hasAny = !!activeQuotation || openPrfs.length > 0;
+  return (
+    <div>
+      <span style={label}>Affected documents</span>
+      {!hasAny ? (
+        <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>
+          No linked quotations or rate requests.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {activeQuotation && (
+            <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>
+              {activeQuotation.quotation_no} — will be marked Rejected with the same reason.
+            </div>
+          )}
+          {openPrfs.map((p) => (
+            <div key={p.id} style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>
+              {p.prf_no} — currently {String(p.status || '').toUpperCase()}.
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    LostReasonModal
    onSave({ loss_reason_id, competitor_name, competitor_price })
    `reasons` = baris loss_reasons yang sudah difilter+diurut oleh pemanggil.
+   Putaran 11 Tahap C -- `activeQuotation`/`openPrfs` baru (lihat
+   AffectedDocuments di atas). Field "Notes" mockup SENGAJA TIDAK dibangun
+   (keputusan Den) -- nol kolom DB utk notes khusus Lost, dan menulis ke
+   `inquiries.notes` yang sama dengan section Overview berisiko menimpa
+   catatan yang sudah ada di sana. Dilaporkan sebagai selisih mockup, bukan
+   dibangun sebagai placeholder tanpa kolom (aturan "field tanpa kolom DB
+   tidak dibangun").
    ═══════════════════════════════════════════════════════════════════════════ */
-export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave, onCancel }) {
+export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave, onCancel, activeQuotation, openPrfs }) {
   const [reasonId, setReasonId] = useState('');
   const [compName, setCompName] = useState('');
   const [compPrice, setCompPrice] = useState('');
@@ -188,14 +251,21 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
           </div>
         </>
       )}
+
+      <AffectedDocuments activeQuotation={activeQuotation} openPrfs={openPrfs} />
     </Shell>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CancelReasonModal — onSave({ cancel_reason })
+   Putaran 11 Tahap C -- title/helper/tombol sekunder diselaraskan ke mockup
+   (title "Cancel this inquiry?" bukan "Cancel Inquiry"; tombol sekunder
+   "Back" bukan "Cancel" -- lihat `cancelLabel` di Shell; helper menjelaskan
+   KAPAN memakai Cancel, bukan sekadar "catatan operasional"). `activeQuotation`/
+   `openPrfs` baru -- lihat AffectedDocuments.
    ═══════════════════════════════════════════════════════════════════════════ */
-export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel }) {
+export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel, activeQuotation, openPrfs }) {
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
 
@@ -210,10 +280,10 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
   return (
     <Shell
       icon={<Ban size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
-      title="Cancel Inquiry"
+      title="Cancel this inquiry?"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
       err={err} onCancel={onCancel} onSubmit={submit} saving={saving}
-      submitLabel="Cancel Inquiry"
+      submitLabel="Cancel Inquiry" cancelLabel="Back"
     >
       <div>
         <label style={label} htmlFor="cancel-reason">Cancellation reason</label>
@@ -225,9 +295,11 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
           placeholder="Mis. customer menunda proyek, salah input, pengiriman dialihkan…"
         />
         <div style={{ marginTop: 6, fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
-          An operational note, not a loss taxonomy — write it as-is.
+          Use this when the customer withdraws the request, not when we lose to a competitor.
         </div>
       </div>
+
+      <AffectedDocuments activeQuotation={activeQuotation} openPrfs={openPrfs} />
     </Shell>
   );
 }

@@ -1204,6 +1204,44 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     ? 'Not available: this inquiry already has a quotation or PRF.'
     : null;
   const ownerName = profMap[inquiry?.owner_id] || null;
+
+  // Putaran 11 Tahap C -- data turunan utk modal Won/Lost/Cancel, SELURUHNYA
+  // dari `quotations`/`prfs`/`salesOrders`/`account`/`profile` yang SUDAH
+  // di-fetch (nol query baru di sini, konsisten pola changeAccountBlockReason
+  // di atas).
+  //
+  // Quotation yang akan disentuh trigger trg_fn_quotation_auto_close_on_
+  // inquiry_closed (LIVE, 20261022000002) kalau inquiry ini jadi LOST/
+  // CANCELLED -- WHERE status IN ('DRAFT','SUBMITTED','SENT'), nol
+  // perbedaan perlakuan antar ketiganya (REJECTED + alasan sama). Dipakai
+  // AffectedDocuments (Lost/Cancel) -- lihat header DealCloseModals.jsx.
+  const activeQuotationForClose = quotations.find((q) =>
+    ['DRAFT', 'SUBMITTED', 'SENT'].includes(String(q.status || '').toUpperCase()));
+  // PRF "terbuka" (bukan CANCELLED/EXPIRED) -- status-saja, TANPA klaim
+  // "akan dibatalkan" (nol trigger otomatis membatalkan PRF).
+  const openPrfsForClose = prfs.filter((p) =>
+    !['CANCELLED', 'EXPIRED'].includes(String(p.status || '').toUpperCase()));
+  // Quotation SENT -- gate PERSIS `canRecordOutcome` QuotationDetailPage.jsx:410
+  // (canAct && !isInquiryClosed && isLatestRevision && status==='SENT'); di
+  // sini dipakai HANYA utk menunjukkan banner saran, bukan menggerbang apa
+  // pun -- pemanggil `onOpenQuotation` membuka Detail Quotation yang gate
+  // "Record Outcome"-nya sendiri sudah benar.
+  const sentQuotationForWon = quotations.find((q) => String(q.status || '').toUpperCase() === 'SENT');
+  // "First win" -- account BELUM customer. Koreksi Vir: kode akun
+  // (MSI0001 dst) dibuat SAAT akun di-INSERT (trg_z_gen_account_code_ins),
+  // BUKAN saat Won pertama -- banner TIDAK menyebut kode apa pun.
+  const isFirstWinForAccount = account && account.lifecycle_stage !== 'customer';
+  // Supervisor PEMANGGIL RPC (auth.uid()), BUKAN pemilik inquiry -- cermin
+  // persis mark_inquiry_won (20261021000001:173).
+  const hasSupervisorForWon = !!profile?.reports_to;
+  // Cancel: SO hidup mengunci Cancel Inquiry -- RPC tetap penjaga
+  // sebenarnya (UPDATE langsung inquiries, bukan RPC -- lihat
+  // markInquiryCancel; ini murni UX disabled+tooltip, pola PERSIS
+  // changeAccountBlockReason di atas). `salesOrders` SUDAH di-fetch
+  // inquiry-scoped + deleted_at-filtered (Putaran 9).
+  const cancelBlockReason = salesOrders.length > 0
+    ? `Not available. ${salesOrders.length} shipment Sales Order${salesOrders.length === 1 ? '' : 's'} already exist under this inquiry.`
+    : null;
   // TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row -- `Date.now()`
   // ditaruh di fungsi modul `inquiryAgeLabel()` (bukan langsung di badan
   // komponen), pola PERSIS `ageDays()` InquiryListPage.jsx:96 -- react-hooks/
@@ -1954,8 +1992,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       </button>
                     )}
                     {canCancel && (
-                      <button type="button" onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.textMute, cursor: 'pointer', textAlign: 'left' }}>
+                      /* Putaran 11 Tahap C -- disabled+tooltip bila ada SO hidup,
+                         pola PERSIS Change Account (changeAccountBlockReason di
+                         atas). RPC/UPDATE tetap penjaga sebenarnya; ini murni UX. */
+                      <button type="button"
+                        disabled={!!cancelBlockReason}
+                        title={cancelBlockReason || undefined}
+                        onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: cancelBlockReason ? C.textFaint : C.textMute, cursor: cancelBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: cancelBlockReason ? 0.6 : 1 }}>
                         <Ban size={14} />Cancel Inquiry
                       </button>
                     )}
@@ -3157,6 +3201,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={lossSaving}
         onSave={markInquiryLost}
         onCancel={() => setLossOpen(false)}
+        activeQuotation={activeQuotationForClose}
+        openPrfs={openPrfsForClose}
       />
 
       {/* Batalkan deal — alasan teks bebas (B3). */}
@@ -3167,6 +3213,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={cancelSaving}
         onSave={markInquiryCancel}
         onCancel={() => setCancelOpen(false)}
+        activeQuotation={activeQuotationForClose}
+        openPrfs={openPrfsForClose}
       />
 
       {/* Revisi quotation — konfirmasi polos. Perlu konfirmasi karena akibatnya
@@ -3201,6 +3249,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         uploadError={wonUploadError}
         onSave={markInquiryWon}
         onCancel={() => { setWonOpen(false); setWonUploadError(''); }}
+        sentQuotation={sentQuotationForWon}
+        onOpenQuotation={onViewQuotation}
+        isFirstWin={isFirstWinForAccount}
+        customerName={account?.name}
+        hasSupervisor={hasSupervisorForWon}
       />
 
       {/* TD-318 Irisan 3, commit 5 -- Revert Manual Win. */}
