@@ -720,9 +720,24 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // location master, bukan teks bebas) sudah terisi.
   const rsLaneLocKey = selectedLanes.map((l) => `${l.pol_location_id || ''}|${l.pod_location_id || ''}`).join(',');
   useEffect(() => {
+    // Koreksi -- `!isRS` WAJIB keluar di sini TANPA menyentuh state sama
+    // sekali (nol setTimeout, nol setPossibleDuplicates/setDupCheckLoading).
+    // rsLaneLocKey (dependency di bawah) berasal dari selectedLanes, yang
+    // untuk Single Shipment = f.lanes mentah -- mengubah/menambah lane KEDUA
+    // (laneMode, bukan lane[0] yang dipakai cek Single Shipment) mengubah
+    // key itu dan me-retrigger effect INI walau isRS tetap false, padahal
+    // effect Single Shipment di atas TIDAK ikut jalan ulang (lane kedua
+    // bukan dependency-nya). Cabang lama di bawah ini (sebelum koreksi)
+    // tetap mengosongkan possibleDuplicates lewat setTimeout pada kasus itu
+    // -- menghapus diam-diam banner DAN kewajiban alasan milik cek Single
+    // Shipment yang sedang tampil. Pembersihan saat berpindah Rate Sheet ->
+    // Single Shipment sudah ditangani effect LAMA di atas (isRS ada di
+    // dependency-nya, cabang awalnya mengosongkan daftar) -- bukan tugas
+    // effect ini.
+    if (!isRS) return undefined;
     let cancelled = false;
-    const completeLanes = isRS ? selectedLanes.filter((l) => l.pol_location_id && l.pod_location_id) : [];
-    if (!isRS || !profile?.company_id || !resolvedAccountId || !f.validity_from || !f.validity_to || !completeLanes.length) {
+    const completeLanes = selectedLanes.filter((l) => l.pol_location_id && l.pod_location_id);
+    if (!profile?.company_id || !resolvedAccountId || !f.validity_from || !f.validity_to || !completeLanes.length) {
       const t = setTimeout(() => { if (!cancelled) setPossibleDuplicates([]); }, 0);
       return () => { cancelled = true; clearTimeout(t); };
     }
