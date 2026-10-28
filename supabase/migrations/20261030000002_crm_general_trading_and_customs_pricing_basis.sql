@@ -6,11 +6,39 @@
 -- 'customs' (sebelumnya hanya 'door_to_door'); (3) 4 parameter baru utk
 -- kolom "Delivery" dari 20261030000001.
 --
--- Status: DITULIS UNTUK REVIEW. BELUM DIJALANKAN di staging maupun
--- production. MEMUAT DROP FUNCTION -- DIJALANKAN MAS SENDIRI (psql / SQL
+-- Status: VERSI PASCA-PERBAIKAN. Versi PERTAMA berkas ini SUDAH DIJALANKAN
+-- Mas di STAGING dan merusak create_inquiry_with_lanes utk SEMUA
+-- service_type -- lihat "PERBAIKAN 42702" di bawah. BELUM pernah dijalankan
+-- di production. MEMUAT DROP FUNCTION -- DIJALANKAN MAS SENDIRI (psql / SQL
 -- Editor), BUKAN lewat connector Vir. Urutan: SETELAH
 -- 20261030000001_crm_inquiries_delivery_fields (kolom harus ada dulu,
 -- karena INSERT di badan fungsi ini menulis ke 4 kolom itu).
+--
+-- PERBAIKAN 42702 (ditemukan dari hasil verify-inquiry-putaran-14.sql di
+-- staging, T1-T9 gagal) -- blok DECLARE memuat
+-- `v_soa_id uuid := (SELECT id FROM public.companies WHERE code = 'SOA')`,
+-- `id` TANPA alias tabel. Fungsi ini RETURNS TABLE (id uuid, inquiry_no
+-- text), dan nama parameter OUT itu berlaku di SELURUH badan fungsi
+-- termasuk blok DECLARE -- jadi `id` polos di subquery itu bentrok dengan
+-- kolom keluaran `id` fungsi ini sendiri, BUKAN cuma dengan
+-- `companies.id`. Postgres menolaknya "42702 column reference \"id\" is
+-- ambiguous" SETIAP KALI FUNGSI DIPANGGIL (DECLARE dieksekusi tiap
+-- invocation) -- jadi create_inquiry_with_lanes rusak utk SEMUA
+-- service_type, bukan hanya 'trading'. Ditambal di DECLARE jadi
+-- `SELECT c.id FROM public.companies c WHERE c.code = 'SOA'` (alias
+-- eksplisit) -- lihat komentar di titik itu. SELURUH badan fungsi lain
+-- ditelusuri (lihat laporan chat sesi perbaikan ini) -- nol referensi `id`
+-- atau `inquiry_no` tanpa alias LAIN yang bentrok; satu-satunya tempat lain
+-- yang memakai kedua nama itu sudah terkualifikasi
+-- (`inquiries.id`/`inquiries.inquiry_no` pada klausa RETURNING, badan
+-- lama yang tidak disentuh perbaikan ini).
+--
+-- DAPAT DIJALANKAN ULANG DI KEDUA ENVIRONMENT -- kedua DROP FUNCTION di
+-- bawah memakai IF EXISTS: satu utk signature 39-parameter (LAMA, masih
+-- live di production hari ini), satu utk signature 43-parameter (versi
+-- PERTAMA/rusak yang sudah live di STAGING). Berkas yang SAMA ini aman
+-- dijalankan di staging (menimpa versi rusak) MAUPUN di production
+-- (migrasi pertama kali di sana) tanpa disunting ulang.
 --
 -- DASAR PERUBAHAN -- badan fungsi diambil VERBATIM dari migrasi TERAKHIR
 -- yang mendefinisikan create_inquiry_with_lanes, yaitu
@@ -117,11 +145,27 @@
 
 BEGIN;
 
-DROP FUNCTION public.create_inquiry_with_lanes(
+-- Signature LAMA (39 parameter, live production hari ini) -- IF EXISTS
+-- supaya berkas ini aman dijalankan ulang di environment yang BELUM pernah
+-- menjalankan 20261030000002 sama sekali (production, sebelum migrasi ini
+-- jalan di sana).
+DROP FUNCTION IF EXISTS public.create_inquiry_with_lanes(
   uuid, uuid, text, text, text, text, text, text, numeric, text, date, uuid,
   text[], text[], text, text, numeric, numeric, text, text[], text, text, text,
   text[], text, text, text, integer, date, boolean, text, text, boolean, text,
   date, date, numeric, uuid, jsonb
+);
+
+-- Signature BARU RUSAK (43 parameter) -- hasil percobaan PERTAMA migrasi
+-- ini yang sudah live di staging SEBELUM perbaikan 42702 ini. IF EXISTS
+-- supaya berkas yang sama ini juga aman dijalankan ulang DI STAGING (yang
+-- sekarang memegang signature 43-parameter yang rusak, bukan lagi
+-- signature 39-parameter lama).
+DROP FUNCTION IF EXISTS public.create_inquiry_with_lanes(
+  uuid, uuid, text, text, text, text, text, text, numeric, text, date, uuid,
+  text[], text[], text, text, numeric, numeric, text, text[], text, text, text,
+  text[], text, text, text, integer, date, boolean, text, text, boolean, text,
+  date, date, numeric, uuid, jsonb, text, date, numeric, text
 );
 
 CREATE FUNCTION public.create_inquiry_with_lanes(
@@ -199,7 +243,19 @@ DECLARE
   v_new_no                   text;
   -- Putaran 14 (W-10, Scope 1b) -- entitas SOA diselesaikan dari
   -- companies.code, bukan UUID hardcode.
-  v_soa_id                   uuid := (SELECT id FROM public.companies WHERE code = 'SOA');
+  --
+  -- PERBAIKAN PASCA-STAGING (42702) -- subquery di bawah SEBELUMNYA memakai
+  -- `id` TANPA alias tabel (`SELECT id FROM public.companies ...`). Fungsi
+  -- ini RETURNS TABLE (id uuid, inquiry_no text), dan parameter OUT itu
+  -- IKUT terlihat di dalam seluruh badan fungsi termasuk blok DECLARE --
+  -- jadi `id` polos bentrok dengan kolom keluaran `id`, bukan hanya dengan
+  -- `companies.id`. Postgres menolaknya "42702 column reference id is
+  -- ambiguous" SAAT FUNGSI DIPANGGIL (DECLARE dieksekusi tiap invocation,
+  -- bukan hanya sekali saat CREATE) -- merusak create_inquiry_with_lanes
+  -- utk SEMUA service_type, bukan hanya 'trading'. Ditambal dengan alias
+  -- tabel eksplisit `c.id`/`c.code` -- kelas jebakan yang sama dengan
+  -- "alias semua tabel di dalam fungsi RETURNS TABLE" (aturan wajib sesi).
+  v_soa_id                   uuid := (SELECT c.id FROM public.companies c WHERE c.code = 'SOA');
 BEGIN
   -- (1) company_id caller valid -- defense-in-depth (SECURITY DEFINER
   -- melewati RLS inquiries_insert, yang hanya berlaku utk INSERT langsung

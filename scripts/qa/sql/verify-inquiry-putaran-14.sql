@@ -19,6 +19,23 @@
 -- Setiap blok MENCETAK hasil terukur lewat RAISE NOTICE (nilai yang dicek,
 -- bukan hanya "OK"/"FAIL").
 --
+-- ⚠️ CATATAN PENTING -- T2, T8, DAN T9 menangkap `EXCEPTION WHEN OTHERS`
+-- (SEMUA jenis error), lalu mencocokkan ISI PESANNYA terhadap pesan yang
+-- diharapkan. Ini berarti bug LAIN yang sama sekali tidak berhubungan bisa
+-- membuat blok ini tampak "ditolak=true" di NOTICE padahal sebabnya BUKAN
+-- yang diuji. Terbukti nyata saat migrasi 20261030000002 versi pertama
+-- (jebakan 42702, `id` tanpa alias di DECLARE `v_soa_id`) membuat SELURUH
+-- panggilan create_inquiry_with_lanes gagal dgn "column reference id is
+-- ambiguous" -- T2/T8/T9 tetap mencetak `ditolak=true` (exception memang
+-- tertangkap), tapi PESANNYA salah, dan perbandingan `v_msg NOT LIKE ...`
+-- yang menyertai NOTICE itulah yang akhirnya menangkap gagalnya (pesan
+-- tidak cocok). Pembaca WAJIB selalu memeriksa ISI pesan/sqlstate di
+-- NOTICE, bukan hanya kata "ditolak=true" sendirian. Sejak sesi perbaikan
+-- ini, T2/T8/T9 JUGA memeriksa SQLSTATE secara eksplisit dan RAISE
+-- EXCEPTION kalau sqlstate='42702' -- supaya jebakan kelas ini gagal KERAS
+-- dengan pesan yang menyebut sebabnya, bukan cuma lolos diam-diam lewat
+-- pencocokan pesan yang sudah ada.
+--
 -- Identitas akun uji staging (SAMA PERSIS dengan verify-inquiry-putaran-
 -- 4/5/12.sql -- "jangan membuat pola baru"):
 --   sales A MSI (non-manager, pembuat) : a3eea21f-dcbc-47d3-897b-ad68e4e35989
@@ -110,6 +127,7 @@ DECLARE
   v_account     uuid;
   v_caught      boolean := false;
   v_msg         text;
+  v_sqlstate    text;
 BEGIN
   SELECT id INTO v_account FROM public.accounts
    WHERE company_id = v_company_msi AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
@@ -124,11 +142,14 @@ BEGIN
       p_lanes := '[]'::jsonb
     ) AS t;
   EXCEPTION WHEN OTHERS THEN
-    v_caught := true; v_msg := SQLERRM;
+    v_caught := true; v_msg := SQLERRM; v_sqlstate := SQLSTATE;
   END;
   EXECUTE 'RESET ROLE';
 
-  RAISE NOTICE 'T2 -- trading + akun MSI -- ditolak=%, pesan=%', v_caught, v_msg;
+  RAISE NOTICE 'T2 -- trading + akun MSI -- ditolak=%, sqlstate=%, pesan=%', v_caught, v_sqlstate, v_msg;
+  IF v_sqlstate = '42702' THEN
+    RAISE EXCEPTION 'UJI GAGAL (T2) -- bug ambigu id (42702) di create_inquiry_with_lanes, BUKAN guard SOA yang sedang diuji: %', v_msg;
+  END IF;
   IF NOT v_caught OR v_msg NOT LIKE '%General Trading hanya tersedia untuk entitas SOA%' THEN
     RAISE EXCEPTION 'UJI GAGAL (T2) -- seharusnya ditolak dgn pesan guard SOA, dapat: %', v_msg;
   END IF;
@@ -398,6 +419,7 @@ DECLARE
   v_account     uuid;
   v_caught      boolean := false;
   v_msg         text;
+  v_sqlstate    text;
 BEGIN
   SELECT id INTO v_account FROM public.accounts
    WHERE company_id = v_company_msi AND is_in_lead_pool = false AND deleted_at IS NULL LIMIT 1;
@@ -412,11 +434,14 @@ BEGIN
       p_lanes := '[]'::jsonb
     ) AS t;
   EXCEPTION WHEN OTHERS THEN
-    v_caught := true; v_msg := SQLERRM;
+    v_caught := true; v_msg := SQLERRM; v_sqlstate := SQLSTATE;
   END;
   EXECUTE 'RESET ROLE';
 
-  RAISE NOTICE 'T8 -- freight_forwarding tanpa lane -- ditolak=%, pesan=%', v_caught, v_msg;
+  RAISE NOTICE 'T8 -- freight_forwarding tanpa lane -- ditolak=%, sqlstate=%, pesan=%', v_caught, v_sqlstate, v_msg;
+  IF v_sqlstate = '42702' THEN
+    RAISE EXCEPTION 'UJI GAGAL (T8) -- bug ambigu id (42702) di create_inquiry_with_lanes, BUKAN guard minimal-1-lane yang sedang diuji: %', v_msg;
+  END IF;
   IF NOT v_caught OR v_msg NOT LIKE '%Minimal 1 lane%' THEN
     RAISE EXCEPTION 'UJI GAGAL (T8) -- seharusnya tetap ditolak minimal-1-lane, dapat: %', v_msg;
   END IF;
@@ -469,6 +494,9 @@ BEGIN
   EXECUTE 'RESET ROLE';
 
   RAISE NOTICE 'T9 -- order_category ngawur -- ditolak=%, sqlstate=% (ekspektasi 23514), pesan=%', v_caught, v_sqlstate, v_msg;
+  IF v_sqlstate = '42702' THEN
+    RAISE EXCEPTION 'UJI GAGAL (T9) -- bug ambigu id (42702) di create_inquiry_with_lanes, BUKAN CHECK order_category yang sedang diuji: %', v_msg;
+  END IF;
   IF NOT v_caught OR v_sqlstate IS DISTINCT FROM '23514' THEN
     RAISE EXCEPTION 'UJI GAGAL (T9) -- seharusnya ditolak CHECK (sqlstate 23514), dapat caught=% sqlstate=% pesan=%', v_caught, v_sqlstate, v_msg;
   END IF;
