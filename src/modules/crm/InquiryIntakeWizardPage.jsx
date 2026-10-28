@@ -23,7 +23,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ChevronLeft, ChevronRight, X, Check, Lock,
-  AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2,
+  AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2, Package,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -72,6 +72,13 @@ const SERVICE_TYPES_FALLBACK = [
 ];
 const SERVICE_ICON = {
   freight_forwarding: Ship, customs: Shield, door_to_door: Home, trucking: Truck,
+  // Putaran 14 (Scope 1) -- `Package` (kotak/kargo), BUKAN `Ship` yang
+  // sudah dipakai Freight Forwarding -- ikon mockup utk General Trading
+  // adalah ilustrasi kapal+kotak kargo gabungan, tanpa satu ikon Lucide
+  // yang sama persis; `Package` paling dekat maknanya (barang/kargo
+  // distribusi, bukan jasa pelayaran) dan tidak bertabrakan dgn ikon lain
+  // yang sudah dipakai di kartu Service Type ini. Bisa diganti Mas.
+  trading: Package,
 };
 // Badge status aside "Your recent inquiries" -- 7 nilai inquiries_status_check
 // (schema_snapshot.sql:8412). Palet lokal (bukan STATUS_META DealDetailPage.jsx
@@ -101,6 +108,11 @@ const DUTIES_AND_TAXES_OPTS = ['Included in price', 'Billed separately as per re
 const PRICING_BASIS_OPTS = ['Itemized charges', 'All in per CBM', 'All in per KG'];
 const CUSTOMER_ROLE_OPTS = ['Shipper', 'Consignee', 'Third Party'];
 const DIRECTION_OPTS = ['Import', 'Export', 'Domestic'];
+// Putaran 14 (W-60, Scope 3) -- Order Category, mockup baris 93: <select>
+// 3 opsi tetap + placeholder kosong, markup polos TANPA sc-for/dropdown
+// dinamis -- CHECK literal di DB (migrasi 20261030000001), pola sama 4
+// konstanta di atas, bukan dropdown_options.
+const ORDER_CATEGORY_OPTS = ['Regular', 'Baking Tray', 'Trolley'];
 
 // Putaran 13a — JCI (mockup svcJciBlocked/fEnt baris 57/62/1136): "Customs
 // Clearance" standalone (BUKAN Door-to-Door) adalah lini JCI. `JCI_ID` dipakai
@@ -108,6 +120,10 @@ const DIRECTION_OPTS = ['Import', 'Export', 'Domestic'];
 // (lihat komentar di dekat `entityCode` di bawah -- deviasi disengaja,
 // dilaporkan di chat, bukan ditebak).
 const JCI_ID = entityByCode('JCI')?.id;
+// Putaran 14 (W-10, Scope 1) -- rule desain #7 (nexus-notes.js): "General
+// Trading belongs to SOA." Dipakai menggerbang kartu Service Type (akun
+// terpilih harus ber-entitas SOA) -- pola PERSIS JCI_ID di atas.
+const SOA_ID = entityByCode('SOA')?.id;
 
 const PRA_CUSTOMER_STATUS = ['lead', 'mql', 'sql', 'prospect', 'lead_pool'];
 const CUSTOMER_SIDE_STATUS = ['customer', 'free_agent'];
@@ -117,9 +133,18 @@ const lifecycleLabel = (s) => LIFECYCLE_LABEL[s] || s || '';
 // ── Urutan langkah (mockup baris 763-764, SK) ──────────────────────────────
 const STEPS_DOOR_TO_DOOR = ['cust', 'svc', 'route', 'cargo', 'customs', 'commercial', 'review'];
 const STEPS_DEFAULT = ['cust', 'svc', 'route', 'cargo', 'addl', 'commercial', 'review'];
+// Putaran 14 (W-10, Scope 1c) -- mockup SK utk 'trading':
+// ['cust','svc','items','delivery','commercial','review'] -- langkah
+// "Items" SENGAJA TIDAK dibangun (ditunda ke batch Sales Order, instruksi
+// eksplisit), jadi urutan Putaran 14 jadi 5 langkah (bukan 6): route/
+// cargo/addl dilewati TOTAL, sama seperti mockup.
+const STEPS_GENERAL_TRADING = ['cust', 'svc', 'delivery', 'commercial', 'review'];
 const STEP_LABEL = {
   cust: 'Customer & Contact', svc: 'Service & Direction', route: 'Route & Terms', cargo: 'Cargo',
   addl: 'Additional Services', customs: 'Customs & Undername', commercial: 'Commercial', review: 'Review',
+  // Putaran 14 (W-60) -- mockup SNAME.delivery (baris 763), khusus General
+  // Trading.
+  delivery: 'Delivery',
 };
 
 const S = {
@@ -263,6 +288,10 @@ const blankF = () => ({
   goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
   cargo_types: [], un_number: '', imo_class: '', has_msds: '',
   additional_services: [],
+  // Putaran 14 (W-60, Scope 3) -- grup "Delivery", HANYA utk General
+  // Trading (langkah 'delivery', mockup baris 93/94/100/101). Nol field
+  // ini wajib di mockup manapun (absen dari objek req baris 759).
+  order_category: '', requested_delivery_date: '', estimated_shipping_cost: '', customer_reference: '',
   deadline_quote: '', estimated_value: '', owner_id: null, notes: '',
   duplicate_warning_reason: '',
 });
@@ -280,13 +309,6 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const { profile, erpRole, erpRoles, user, myCompanyIds } = useAuth();
   const navigate = useNavigate();
   const { options: serviceTypeOptsRaw } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
-  // Kartu 'trading' (General Trading) DISEMBUNYIKAN di wizard ini — GT tetap
-  // dibuat lewat InquiryFormPage.jsx lama (deviasi #2 PLAN, di luar lingkup
-  // Putaran 4 sama sekali: Items table/Delivery step/price-list auto-calc).
-  // 'warehousing' DISEMBUNYIKAN juga (review fix 6) -- bukan kartu Service
-  // Type di mockup sama sekali (hanya tag di Additional Services, SERVICES
-  // id='warehouse' -- konsep berbeda). dropdown_options tidak disentuh.
-  const serviceTypeOpts = useMemo(() => serviceTypeOptsRaw.filter((o) => o.value !== 'trading' && o.value !== 'warehousing'), [serviceTypeOptsRaw]);
   const { options: laneModeOpts } = useDropdownOptions('lane_mode', LANE_MODE_FALLBACK);
   const { options: laneUnitOpts } = useDropdownOptions('lane_unit', LANE_UNIT_FALLBACK);
   const { options: iorOpts } = useDropdownOptions('importer_of_record', IMPORTER_OF_RECORD_FALLBACK);
@@ -325,6 +347,10 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // (TD-285) -- type="text", format ulang hanya saat blur, blokir Create
   // kalau tak terbaca.
   const [monthlyVolumeUnrecognized, setMonthlyVolumeUnrecognized] = useState(false);
+  // Putaran 14 (W-60, Scope 2) -- Estimated Shipping Cost (grup Delivery,
+  // General Trading). Pola IDENTIK weight_kg/volume_cbm/estimated_value/
+  // monthly_volume_cbm di atas (TD-285).
+  const [shipCostUnrecognized, setShipCostUnrecognized] = useState(false);
 
   // Putaran 13a (D3) — "Add new contact" inline. Jalur simpan SAMA dengan
   // ContactModal.jsx (src/modules/crm/lead/components/ContactModal.jsx, dibaca
@@ -369,9 +395,29 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     if (unrecognized) return;
     setF((x) => ({ ...x, monthly_volume_cbm: x.monthly_volume_cbm.trim() === '' ? '' : formatIdNumber(value) }));
   };
+  // Putaran 14 (W-60, Scope 2) -- Estimated Shipping Cost, pola PERSIS
+  // handleEstValChange/handleEstValBlur (TD-285, format id-ID hanya saat
+  // blur) -- field ini opsional (mockup baris 759 absen total), tapi angka
+  // tak terbaca tetap memblokir Create (lihat stepErrors).
+  const handleShipCostChange = (v) => { setF((x) => ({ ...x, estimated_shipping_cost: v })); setShipCostUnrecognized(readMoneyInput(v).unrecognized); };
+  const handleShipCostBlur = () => {
+    const { value, unrecognized } = readMoneyInput(f.estimated_shipping_cost);
+    if (unrecognized) return;
+    setF((x) => ({ ...x, estimated_shipping_cost: x.estimated_shipping_cost.trim() === '' ? '' : formatIdNumber(value) }));
+  };
 
   const isDoorToDoor = f.service_type === 'door_to_door';
-  const SK = isDoorToDoor ? STEPS_DOOR_TO_DOOR : STEPS_DEFAULT;
+  // Putaran 14 (W-10, Scope 1) -- isGTf dipakai di SELURUH komponen (step
+  // array, validasi, payload, Review) -- mockup `isGTf`/`isGT`.
+  const isGTf = f.service_type === 'trading';
+  // Putaran 14 (W-41, Scope 2) -- Pricing Basis kini berlaku Door-to-Door
+  // DAN Customs Clearance standalone, TANPA syarat Direction=Import.
+  // PENGECUALIAN SADAR DARI MOCKUP (keputusan Mas, dicatat bukan ditebak):
+  // mockup HANYA punya UI Pricing Basis utk Door-to-Door (langkah
+  // "customs", lihat STEPS_DOOR_TO_DOOR) -- Customs Clearance berdiri
+  // sendiri sama sekali tidak punya field ini di mockup manapun.
+  const pricingBasisVisible = isDoorToDoor || f.service_type === 'customs';
+  const SK = isGTf ? STEPS_GENERAL_TRADING : isDoorToDoor ? STEPS_DOOR_TO_DOOR : STEPS_DEFAULT;
   // service_type bisa berubah SETELAH user sudah lebih jauh dari langkah
   // svc (mis. balik dari Cargo) — step tidak pernah dibiarkan lewat batas.
   const stepIdx = Math.min(step, SK.length);
@@ -481,6 +527,25 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   const selectedAccount = accounts.find((a) => a.id === resolvedAccountId) || null;
   const contactsLoaded = contactsFor.accountId === resolvedAccountId;
   const contacts = contactsLoaded ? contactsFor.list : [];
+
+  // Putaran 14 (W-10, Scope 1a) -- kartu 'trading' (General Trading)
+  // DIKEMBALIKAN, tapi HANYA kalau akun terpilih ber-entitas SOA (mockup
+  // `og.svc.gt.disp = acc && acc.ent==='SOA'`, rule desain #7). Sebelum
+  // akun dipilih (`selectedAccount` null) kartu TIDAK tampil -- cermin
+  // mockup yang juga memerlukan `acc` terisi dulu. Dipindah ke SINI (bukan
+  // di dekat `serviceTypeOptsRaw` di atas) krn butuh `selectedAccount`,
+  // yang baru terdefinisi di titik ini. 'warehousing' TETAP disembunyikan
+  // (review fix 6) -- bukan kartu Service Type di mockup sama sekali
+  // (hanya tag di Additional Services, SERVICES id='warehouse' -- konsep
+  // berbeda). dropdown_options tidak disentuh.
+  const serviceTypeOpts = useMemo(
+    () => serviceTypeOptsRaw.filter((o) => {
+      if (o.value === 'warehousing') return false;
+      if (o.value === 'trading') return !!selectedAccount && selectedAccount.company_id === SOA_ID;
+      return true;
+    }),
+    [serviceTypeOptsRaw, selectedAccount],
+  );
 
   // ── Entity (read-only, D2) — mockup fEnt baris 57/1136: entitas AKUN
   // terpilih, atau "Set from customer" sebelum akun dipilih. ⚠️ DEVIASI
@@ -663,6 +728,27 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     }, 0);
     return () => { cancelled = true; clearTimeout(t); };
   }, [stepKey]);
+
+  // Putaran 14 (W-41, Scope 2/3) -- default malas Pricing Basis utk Customs
+  // Clearance standalone, SAMA dgn Door-to-Door di atas (W-64, "Itemized
+  // charges") -- keputusan Mas yang BISA DIBALIK (laporan). Efek TERPISAH
+  // dari efek Door-to-Door di atas (bukan memperluas kondisinya) supaya
+  // NOL risiko mengubah perilaku duties_and_taxes Door-to-Door yang sudah
+  // benar -- duties_and_taxes utk Customs Clearance standalone punya jalur
+  // default SENDIRI lewat checkbox Undername (UndernamePanel, Review fix
+  // 1), BUKAN lewat efek ini. Dipicu begitu langkah 'svc' tercapai DENGAN
+  // Customs Clearance terpilih (Customs Clearance tidak punya langkah
+  // "customs" tersendiri di SK, field-nya dirender inline di langkah
+  // 'svc' -- lihat blok Pricing Basis inline di render).
+  useEffect(() => {
+    if (!(stepKey === 'svc' && f.service_type === 'customs')) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      setF((x) => (x.pricing_basis ? x : { ...x, pricing_basis: PRICING_BASIS_OPTS[0] }));
+    }, 0);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [stepKey, f.service_type]);
 
   // ── Possible Duplicate — lane pertama yang dipakai + container_types.
   // Mockup crm-metrics.js baris 82-85 (C.contOf/C.lane): hasil KOSONG bila
@@ -848,7 +934,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     if (!f.service_type) e.svc_service_type = 'Service Type is required';
     if (svcJciBlocked) e.svc_jci = 'JCI sales access is required for Customs Clearance.';
     if (!f.direction) e.svc_direction = 'Direction is required';
-    if (!f.customer_role) e.svc_customer_role = 'Customer Role is required';
+    // Putaran 14 (W-10, Scope 1) -- Customer Role TIDAK wajib utk General
+    // Trading (mockup req.role baris 759, cermin RPC
+    // create_inquiry_with_lanes: "Customer Role wajib kecuali General
+    // Trading"). Field-nya pun tidak dirender utk GT (lihat langkah 'svc').
+    if (!isGTf && !f.customer_role) e.svc_customer_role = 'Customer Role is required';
     const undernameActive = f.direction === 'Import' && ['customs', 'door_to_door'].includes(f.service_type) && f.undername_import;
     if (undernameActive) {
       if (!f.importer_of_record) e.under_ior = 'Importer of Record is required';
@@ -859,56 +949,74 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       if (!f.duties_and_taxes) e.under_duties = 'Duties & Taxes is required';
       if (!f.supporting_docs_received) e.under_docs = 'Supporting documents must be confirmed received';
     }
-    // C2/R2 -- laneTbl menyatukan Single Shipment multi-route DAN Rate Sheet
-    // Request; selectedLanes (filter "Use") dipakai utk laneTbl, lane
-    // tunggal apa adanya utk mode biasa. REVISI 2 -- pesan "0 lane terpilih"
-    // dibedakan dari "lane terpilih tapi POL/POD belum lengkap": kasus
-    // pertama HANYA bisa terjadi utk Rate Sheet Request (Single Shipment
-    // laneMode tak pernah bisa 0 lane -- tombol Remove LaneTable disabled
-    // di lanes.length<=1), tapi cabang fallback tetap disediakan, bukan
-    // dibiarkan unguarded.
-    if (laneTbl) {
-      if (!selectedLanes.length) {
-        e.route_lanes = isRS ? 'Select at least one lane to include.' : 'Every lane needs a Port of Loading and Port of Discharge';
-      } else if (selectedLanes.some((l) => !l.pol_location_id || !l.pod_location_id)) {
+    // Putaran 14 (W-10, Scope 1) -- General Trading tidak punya langkah
+    // "Route & Terms"/"Cargo" sama sekali (SK GT = cust/svc/delivery/
+    // commercial/review, STEPS_GENERAL_TRADING) -- SELURUH validasi route/
+    // lane/n_containers/pickup-delivery/duplikat/Rate-Sheet/cargo di bawah
+    // ini dibungkus `!isGTf` supaya nilai sisa dari sebelum GT dipilih
+    // (mis. user mengisi Cargo sebagai Freight Forwarding lalu berpindah
+    // Service Type ke GT tanpa mengganti akun) tidak ikut memblokir Create
+    // dengan error yang menunjuk ke langkah yang sudah tidak ada di SK.
+    if (!isGTf) {
+      // C2/R2 -- laneTbl menyatukan Single Shipment multi-route DAN Rate
+      // Sheet Request; selectedLanes (filter "Use") dipakai utk laneTbl,
+      // lane tunggal apa adanya utk mode biasa. REVISI 2 -- pesan "0 lane
+      // terpilih" dibedakan dari "lane terpilih tapi POL/POD belum
+      // lengkap": kasus pertama HANYA bisa terjadi utk Rate Sheet Request
+      // (Single Shipment laneMode tak pernah bisa 0 lane -- tombol Remove
+      // LaneTable disabled di lanes.length<=1), tapi cabang fallback tetap
+      // disediakan, bukan dibiarkan unguarded.
+      if (laneTbl) {
+        if (!selectedLanes.length) {
+          e.route_lanes = isRS ? 'Select at least one lane to include.' : 'Every lane needs a Port of Loading and Port of Discharge';
+        } else if (selectedLanes.some((l) => !l.pol_location_id || !l.pod_location_id)) {
+          e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
+        }
+      } else if (!f.pol_location_id || !f.pod_location_id) {
         e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
       }
-    } else if (!f.pol_location_id || !f.pod_location_id) {
-      e.route_lanes = 'Every lane needs a Port of Loading and Port of Discharge';
-    }
-    if (needsNContainers && !(Number(f.n_containers) > 0)) e.route_ncont = 'Number of containers is required for FCL';
-    // Putaran 13a -- Pickup/Delivery Address WAJIB untuk Door-to-Door
-    // (perubahan perilaku nyata). Digerbang `!isRS` SAMA dengan field-nya
-    // sendiri (disembunyikan utk Rate Sheet Request apa pun service_type-nya).
-    if (isDoorToDoor && !isRS) {
-      if (!f.pickup_address.trim()) e.route_pickup = 'Pickup Address is required for Door to Door.';
-      if (!f.delivery_address.trim()) e.route_delivery = 'Delivery Address is required for Door to Door.';
-    }
-    // Putaran 12 Butir 4 -- gerbang `!isRS` BARU: possibleDuplicates kini
-    // juga terisi lewat cek Rate Sheet (state yang sama, dipakai ulang),
-    // dan Rate Sheet TIDAK WAJIB mengisi alasan -- banner-nya non-blocking
-    // (lihat task Butir 4). Tanpa guard ini, cek duplikat Rate Sheet akan
-    // ikut memblokir Submit lewat jalur yang sama dengan Single Shipment.
-    if (!isRS && possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
-      e.route_dup = 'Required when a possible duplicate is shown';
-    }
-    // Putaran 4 Tahap 4C -- Validity Requested + Estimated Volume per Month,
-    // HANYA Rate Sheet Request (mencerminkan inquiries_rate_sheet_fields_check).
-    if (isRS) {
-      if (!f.validity_from || !f.validity_to || f.validity_to < f.validity_from) {
-        e.route_validity = 'Enter the requested validity, with Until on or after From.';
+      if (needsNContainers && !(Number(f.n_containers) > 0)) e.route_ncont = 'Number of containers is required for FCL';
+      // Putaran 13a -- Pickup/Delivery Address WAJIB untuk Door-to-Door
+      // (perubahan perilaku nyata). Digerbang `!isRS` SAMA dengan field-nya
+      // sendiri (disembunyikan utk Rate Sheet Request apa pun service_type-nya).
+      if (isDoorToDoor && !isRS) {
+        if (!f.pickup_address.trim()) e.route_pickup = 'Pickup Address is required for Door to Door.';
+        if (!f.delivery_address.trim()) e.route_delivery = 'Delivery Address is required for Door to Door.';
       }
-      if (monthlyVolumeUnrecognized) {
-        e.route_volume = 'Angka tidak dikenali';
-      } else if (!(readMoneyInput(f.monthly_volume_cbm).value > 0)) {
-        e.route_volume = 'Estimated Volume per Month is required and must be greater than 0.';
+      // Putaran 12 Butir 4 -- gerbang `!isRS` BARU: possibleDuplicates kini
+      // juga terisi lewat cek Rate Sheet (state yang sama, dipakai ulang),
+      // dan Rate Sheet TIDAK WAJIB mengisi alasan -- banner-nya non-blocking
+      // (lihat task Butir 4). Tanpa guard ini, cek duplikat Rate Sheet akan
+      // ikut memblokir Submit lewat jalur yang sama dengan Single Shipment.
+      if (!isRS && possibleDuplicates.length > 0 && !f.duplicate_warning_reason.trim()) {
+        e.route_dup = 'Required when a possible duplicate is shown';
       }
+      // Putaran 4 Tahap 4C -- Validity Requested + Estimated Volume per Month,
+      // HANYA Rate Sheet Request (mencerminkan inquiries_rate_sheet_fields_check).
+      if (isRS) {
+        if (!f.validity_from || !f.validity_to || f.validity_to < f.validity_from) {
+          e.route_validity = 'Enter the requested validity, with Until on or after From.';
+        }
+        if (monthlyVolumeUnrecognized) {
+          e.route_volume = 'Angka tidak dikenali';
+        } else if (!(readMoneyInput(f.monthly_volume_cbm).value > 0)) {
+          e.route_volume = 'Estimated Volume per Month is required and must be greater than 0.';
+        }
+      }
+      // Review fix 2 (TD-285) -- angka tak terbaca MEMBLOKIR Create (pola
+      // CaptureLeadModal.jsx), bukan diam-diam terkirim null.
+      if (weightUnrecognized) e.cargo_weight = 'Angka tidak dikenali';
+      if (volumeUnrecognized) e.cargo_volume = 'Angka tidak dikenali';
     }
-    // Review fix 2 (TD-285) -- angka tak terbaca MEMBLOKIR Create (pola
-    // CaptureLeadModal.jsx), bukan diam-diam terkirim null.
-    if (weightUnrecognized) e.cargo_weight = 'Angka tidak dikenali';
-    if (volumeUnrecognized) e.cargo_volume = 'Angka tidak dikenali';
     if (estValUnrecognized) e.commercial_estval = 'Angka tidak dikenali';
+    // Putaran 14 (W-60, Scope 2) -- Estimated Shipping Cost TIDAK wajib
+    // (mockup req baris 759 absen total utk grup Delivery), tapi angka tak
+    // terbaca MEMBLOKIR Create (pola sama weight_kg/volume_cbm/
+    // estimated_value, TD-285). Field ini HANYA tampil di langkah
+    // "delivery", yang HANYA ada utk GT -- guard `isGTf` murni jaga-jaga
+    // (state sisa dari GT yang ditinggalkan via kasus tepi ganti akun tidak
+    // ikut memblokir Create service_type lain).
+    if (isGTf && shipCostUnrecognized) e.delivery_shipcost = 'Angka tidak dikenali';
     return e;
   };
   // Pemetaan error -> langkah (urutan SK), untuk "lompat ke step pertama yang error".
@@ -918,6 +1026,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
     if (key.startsWith('under_')) return isDoorToDoor ? 'customs' : 'svc';
     if (key.startsWith('route_')) return 'route';
     if (key.startsWith('cargo_')) return 'cargo';
+    if (key.startsWith('delivery_')) return 'delivery';
     if (key.startsWith('commercial_')) return 'commercial';
     return 'review';
   };
@@ -976,6 +1085,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
       // BUKAN Number(...) -- angka tak terbaca sudah diblokir stepErrors,
       // jadi string yang tersisa di sini sudah pasti kosong ATAU terbaca.
       const monthlyVolumeVal = isRS && f.monthly_volume_cbm.trim() !== '' ? readMoneyInput(f.monthly_volume_cbm).value : null;
+      // Putaran 14 (W-60, Scope 2) -- angka tak terbaca sudah diblokir
+      // stepErrors (isGTf && shipCostUnrecognized) -- pola sama estVal dkk.
+      const shipCostVal = isGTf && f.estimated_shipping_cost.trim() !== '' ? readMoneyInput(f.estimated_shipping_cost).value : null;
 
       const params = {
         // D2(a) — company_id AKUN terpilih, BUKAN selalu profile.company_id
@@ -993,7 +1105,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_prospect_id: f.account_id,
         p_service_type: f.service_type,
         p_direction: f.direction || null,
-        p_customer_role: f.customer_role || null,
+        // Putaran 14 (W-10, Scope 1) -- General Trading TIDAK mengirim
+        // Customer Role (field-nya pun tidak dirender utk GT -- `isGTf`
+        // membuat ini EKSPLISIT alih-alih mengandalkan `f.customer_role`
+        // yang kebetulan kosong).
+        p_customer_role: isGTf ? null : (f.customer_role || null),
         p_contact_id: f.contact_id || null,
         p_deadline_quote: f.deadline_quote || null,
         p_estimated_value: estVal,
@@ -1031,13 +1147,32 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         p_importer_of_record: undernameActive ? (f.importer_of_record || null) : null,
         p_duties_and_taxes: dutiesVisible ? (f.duties_and_taxes || null) : null,
         p_supporting_docs_received: undernameActive ? !!f.supporting_docs_received : false,
-        p_pricing_basis: isDoorToDoor ? (f.pricing_basis || null) : null,
+        // Putaran 14 (W-41, Scope 2) -- Pricing Basis kini berlaku
+        // Door-to-Door ATAU Customs Clearance (`pricingBasisVisible`,
+        // didefinisikan di atas) -- PENGECUALIAN SADAR DARI MOCKUP, lihat
+        // komentar di definisinya.
+        p_pricing_basis: pricingBasisVisible ? (f.pricing_basis || null) : null,
         p_owner_id: canPickOwner ? (f.owner_id || null) : null,
         p_inquiry_type: f.inquiry_type,
         p_validity_from: isRS ? (f.validity_from || null) : null,
         p_validity_to: isRS ? (f.validity_to || null) : null,
         p_monthly_volume_cbm: monthlyVolumeVal,
-        p_lanes: laneRows,
+        // Putaran 14 (W-10, Scope 1a) -- General Trading TIDAK punya
+        // langkah "Route & Terms" sama sekali -- `laneRows` (dihitung di
+        // atas dari `f.pol_location_id`/dst, yang utk GT tetap NULL sejak
+        // blankF) akan membentuk SATU baris lane ber-POL/POD NULL kalau
+        // dibiarkan apa adanya, dan RPC akan menolaknya ("Setiap lane
+        // wajib punya Port of Loading dan Port of Discharge") walau
+        // syarat minimal-1-lane sendiri sudah dikecualikan utk 'trading'.
+        // Dipaksa array kosong eksplisit utk GT.
+        p_lanes: isGTf ? [] : laneRows,
+        // Putaran 14 (W-60, Scope 3) -- grup "Delivery", HANYA dikirim
+        // utk General Trading; selain itu NULL (field-nya pun tidak
+        // pernah dirender utk service_type lain).
+        p_order_category: isGTf ? (f.order_category || null) : null,
+        p_requested_delivery_date: isGTf ? (f.requested_delivery_date || null) : null,
+        p_estimated_shipping_cost: shipCostVal,
+        p_customer_reference: isGTf ? (f.customer_reference || null) : null,
       };
 
       const { data, error } = await supabase.rpc('create_inquiry_with_lanes', params).single();
@@ -1154,9 +1289,36 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     sudah mendukung `lifecycle_stage` apa adanya). */}
                 <div style={grid2}>
                   <Field label="Customer" required>
+                    {/* Putaran 14 (W-10, Scope 1, kasus tepi) -- ganti akun
+                        TIDAK boleh meninggalkan service_type='trading'
+                        tertinggal kalau akun barunya bukan SOA (kartu GT
+                        akan hilang dari daftar serviceTypeOpts, tapi
+                        service_type di state masih 'trading' kalau tidak
+                        direset di sini). onChangeText (akun dikosongkan
+                        total) SELALU reset kalau sedang GT -- tanpa akun,
+                        GT pasti tidak valid. onPick (akun BARU dipilih)
+                        hanya reset kalau akun baru BUKAN SOA -- pindah ke
+                        akun SOA lain sambil GT terpilih TETAP valid, tidak
+                        direset (pola "sebaliknya" di instruksi). Field
+                        turunan GT (direction/customer_role) SENGAJA TIDAK
+                        ikut direset -- pola sama field tersembunyi lain di
+                        file ini (pickup_address dkk, W-21): nilainya
+                        harmless sampai dikirim ulang, dan payload sudah
+                        menolkannya sendiri kalau service_type bukan lagi
+                        'trading'. */}
                     <AccountPicker value={accountText} accounts={accounts} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search account name or account code…"
-                      onChangeText={(v) => { setAccountText(v); setF((x) => ({ ...x, account_id: '', contact_id: '' })); }}
-                      onPick={(a) => { setAccountText(a.name); setF((x) => ({ ...x, account_id: a.id, contact_id: '' })); setAddingContact(false); }} />
+                      onChangeText={(v) => {
+                        setAccountText(v);
+                        setF((x) => ({ ...x, account_id: '', contact_id: '', service_type: x.service_type === 'trading' ? '' : x.service_type }));
+                      }}
+                      onPick={(a) => {
+                        setAccountText(a.name);
+                        setF((x) => ({
+                          ...x, account_id: a.id, contact_id: '',
+                          service_type: (x.service_type === 'trading' && a.company_id !== SOA_ID) ? '' : x.service_type,
+                        }));
+                        setAddingContact(false);
+                      }} />
                     <FieldError>{errors.cust_account}</FieldError>
                   </Field>
                   {/* Entity (D2) -- read-only, SELALU entitas AKUN terpilih
@@ -1239,7 +1401,15 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <div style={grid3}>
                     {serviceTypeOpts.map((o) => (
                       <ServiceCard key={o.value} icon={SERVICE_ICON[o.value]} label={o.label} active={f.service_type === o.value}
-                        onClick={() => setF((x) => ({ ...x, service_type: o.value }))} />
+                        onClick={() => setF((x) => ({
+                          ...x,
+                          service_type: o.value,
+                          // Putaran 14 (W-10, Scope 1) -- mockup `og.svc.gt.go`:
+                          // memilih General Trading menimpa Direction jadi
+                          // 'Domestic' KECUALI sudah 'Import'. Nol dampak ke
+                          // service_type lain.
+                          ...(o.value === 'trading' && x.direction !== 'Import' ? { direction: 'Domestic' } : {}),
+                        }))} />
                     ))}
                   </div>
                   {/* Hint JCI, Door-to-Door (mockup baris 61) -- customs fulfilled
@@ -1265,21 +1435,40 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
                 <Field label="Direction" required span>
                   <div style={grid3}>
-                    {DIRECTION_OPTS.map((d) => <Pill key={d} active={f.direction === d} onClick={() => pickDirection(d)}>{d}</Pill>)}
+                    {/* Putaran 14 (W-10, Scope 1) -- mockup `og.dir.ex.disp`:
+                        Export DISEMBUNYIKAN utk General Trading (GT hanya
+                        Domestic/Import). */}
+                    {DIRECTION_OPTS.filter((d) => !(isGTf && d === 'Export')).map((d) => <Pill key={d} active={f.direction === d} onClick={() => pickDirection(d)}>{d}</Pill>)}
                   </div>
                   <FieldError>{errors.svc_direction}</FieldError>
                 </Field>
 
                 {/* Putaran 13b (W-14) -- mockup `crShow`: tampil HANYA setelah
-                    Service Type dipilih (dan bukan General Trading -- aturan
-                    lama, 'trading' tetap tak reachable di wizard ini). */}
-                {!!f.service_type && f.service_type !== 'trading' && (
+                    Service Type dipilih dan bukan General Trading. */}
+                {!!f.service_type && !isGTf && (
                   <Field label="Customer Role" required span
                     hint="Who is our customer in this shipment? Full shipper and consignee details are filled in the Shipment Instruction or Job Order.">
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {CUSTOMER_ROLE_OPTS.map((r) => <Pill key={r} active={f.customer_role === r} onClick={() => setF((x) => ({ ...x, customer_role: r }))}>{r}</Pill>)}
                     </div>
                     <FieldError>{errors.svc_customer_role}</FieldError>
+                  </Field>
+                )}
+
+                {/* Putaran 14 (W-41, Scope 2/3) -- Pricing Basis utk Customs
+                    Clearance standalone, TANPA syarat Direction. LIHAT
+                    komentar `pricingBasisVisible` di atas: PENGECUALIAN SADAR
+                    DARI MOCKUP -- mockup tidak punya UI ini sama sekali utk
+                    Customs Clearance berdiri sendiri (hanya Door-to-Door,
+                    langkah "customs" di bawah). Dirender di blok inline yang
+                    sama dengan Duties & Taxes/Undername krn Customs Clearance
+                    tidak punya langkah tersendiri. Default malas "Itemized
+                    charges" (W-64) diisi efek terpisah di atas. */}
+                {f.service_type === 'customs' && (
+                  <Field label="Pricing Basis">
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {PRICING_BASIS_OPTS.map((p) => <Pill key={p} active={f.pricing_basis === p} onClick={() => setF((x) => ({ ...x, pricing_basis: p }))}>{p}</Pill>)}
+                    </div>
                   </Field>
                 )}
 
@@ -1546,6 +1735,39 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
               </div>
             )}
 
+            {/* Putaran 14 (W-60, Scope 3) -- langkah "Delivery", HANYA utk
+                General Trading (SK: cust/svc/delivery/commercial/review).
+                4 field, mockup baris 93 (Order Category)/94 (Requested
+                Delivery Date)/100 (Estimated Shipping Cost)/101 (Customer
+                Reference) -- nol field wajib (absen dari objek req mockup
+                baris 759). Delivery Destinations (mockup baris 95, multi-DC)
+                SENGAJA TIDAK dibangun -- ditunda ke batch Sales Order. */}
+            {stepKey === 'delivery' && (
+              <div style={grid2}>
+                <Field label="Order Category">
+                  <div style={{ position: 'relative' }}>
+                    <select value={f.order_category} onChange={set('order_category')} style={selInput}>
+                      <option value="">Select order category</option>
+                      {ORDER_CATEGORY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select><Chevron />
+                  </div>
+                </Field>
+                <Field label="Requested Delivery Date">
+                  <input type="date" value={f.requested_delivery_date} onChange={set('requested_delivery_date')} style={S.input} />
+                </Field>
+                <Field label="Estimated Shipping Cost" hint="Optional">
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>Rp</span>
+                    <input value={f.estimated_shipping_cost} onChange={(e) => handleShipCostChange(e.target.value)} onBlur={handleShipCostBlur} inputMode="decimal" style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingLeft: 38 }} placeholder="0" />
+                  </div>
+                  {shipCostUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
+                </Field>
+                <Field label="Customer Reference" hint="Optional">
+                  <input value={f.customer_reference} onChange={set('customer_reference')} style={S.input} placeholder="PO or SP number" />
+                </Field>
+              </div>
+            )}
+
             {stepKey === 'customs' && (
               <div style={{ display: 'grid', gap: 20 }}>
                 <Field label="Pricing Basis">
@@ -1619,7 +1841,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             )}
 
             {stepKey === 'review' && (
-              <ReviewStep f={f} accountText={accountText} contacts={contacts} isDoorToDoor={isDoorToDoor} isRS={isRS}
+              <ReviewStep f={f} accountText={accountText} contacts={contacts} isDoorToDoor={isDoorToDoor} isGTf={isGTf} isRS={isRS}
                 serviceTypeOpts={serviceTypeOpts} roster={roster} accountSource={accountSource} entityCode={entityCode} needsNContainers={needsNContainers}
                 onEditStep={(key) => { const idx = SK.indexOf(key); if (idx >= 0) setStep(idx + 1); }} />
             )}
@@ -1740,7 +1962,7 @@ function GroupHeader({ title, onClick }) {
     </div>
   );
 }
-function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeOpts, roster, accountSource, entityCode, needsNContainers, onEditStep }) {
+function ReviewStep({ f, accountText, contacts, isDoorToDoor, isGTf, isRS, serviceTypeOpts, roster, accountSource, entityCode, needsNContainers, onEditStep }) {
   const serviceLabel = serviceTypeOpts.find((o) => o.value === f.service_type)?.label || f.service_type;
   const ownerLabel = f.owner_id ? (roster.find((r) => r.id === f.owner_id)?.full_name || f.owner_id) : 'Unassigned (or yourself)';
   const contactLabel = f.contact_id ? (contacts.find((c) => c.id === f.contact_id)?.name || f.contact_id) : '';
@@ -1772,6 +1994,17 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
   // Taxes kini field mandiri (selalu tampil) utk Door-to-Door, bukan lagi
   // terkunci di dalam blok "Undername dicentang".
   const dutiesVisible = isDoorToDoor || (f.service_type === 'customs' && f.direction === 'Import' && f.undername_import);
+  // Putaran 14 (W-41, Scope 2) -- Pricing Basis kini berlaku Door-to-Door
+  // ATAU Customs Clearance standalone, TANPA syarat Direction (cermin
+  // `pricingBasisVisible` di komponen utama). Karena baris Pricing Basis
+  // bisa relevan utk Customs Clearance BUKAN-Import (yang
+  // `showUndernameReview` sendiri bernilai false utk kasus itu -- Undername
+  // memang hanya utk Import), grup "Customs & Undername" kini tampil kalau
+  // SALAH SATU dari dua kondisi benar, supaya baris Pricing Basis tidak
+  // ikut tersembunyi. Baris Duties & Taxes/Undername di dalamnya TETAP
+  // digerbang kondisi masing-masing yang SUDAH ADA, TIDAK diubah.
+  const pricingBasisVisible = isDoorToDoor || f.service_type === 'customs';
+  const showUndernameGroup = showUndernameReview || pricingBasisVisible;
   // W-44 -- grup "Customs & Undername" dipetakan ke step 'customs' kalau
   // Door-to-Door, atau 'svc' kalau Customs Clearance standalone (step
   // 'customs' tidak ada di SK utk kasus itu).
@@ -1793,47 +2026,56 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
         <div style={grid3}>
           <ReviewRow label="Service Type" value={serviceLabel} required />
           <ReviewRow label="Direction" value={f.direction} required />
-          <ReviewRow label="Customer Role" value={f.customer_role} required />
+          {/* Putaran 14 (W-10, Scope 1) -- Customer Role disembunyikan utk
+              General Trading (nol UI utk mengisinya, nol kewajiban). */}
+          {!isGTf && <ReviewRow label="Customer Role" value={f.customer_role} required />}
         </div>
       </div>
-      <div>
-        <GroupHeader title="Route & Terms" onClick={() => onEditStep('route')} />
-        <div style={grid3}>
-          <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? selectedLanes.length : 1})`} value={lanesText} required />
-          {!laneTbl && f.via && <ReviewRow label="Via port" value={f.via} />}
-          {isRS ? (
-            <>
-              <ReviewRow label="Validity Requested" value={f.validity_from && f.validity_to ? `${f.validity_from} to ${f.validity_to}` : ''} required />
-              <ReviewRow label="Estimated Volume per Month" value={f.monthly_volume_cbm ? `${f.monthly_volume_cbm} CBM` : ''} required />
-            </>
-          ) : (
-            <>
-              {pickupDeliveryVisible && <ReviewRow label="Pickup Address" value={f.pickup_address} required={isDoorToDoor} />}
-              {pickupDeliveryVisible && <ReviewRow label="Delivery Address" value={f.delivery_address} required={isDoorToDoor} />}
-              <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
-              <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
-              <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
-              {!laneTbl && <ReviewRow label="Cargo ready date" value={f.cargo_ready_date} />}
-            </>
-          )}
+      {/* Putaran 14 (W-10, Scope 1) -- General Trading tidak punya langkah
+          "Route & Terms" sama sekali -- grup ini disembunyikan total. */}
+      {!isGTf && (
+        <div>
+          <GroupHeader title="Route & Terms" onClick={() => onEditStep('route')} />
+          <div style={grid3}>
+            <ReviewRow label={isRS ? `Lanes (${selectedLanes.length})` : `Route options (${laneTbl ? selectedLanes.length : 1})`} value={lanesText} required />
+            {!laneTbl && f.via && <ReviewRow label="Via port" value={f.via} />}
+            {isRS ? (
+              <>
+                <ReviewRow label="Validity Requested" value={f.validity_from && f.validity_to ? `${f.validity_from} to ${f.validity_to}` : ''} required />
+                <ReviewRow label="Estimated Volume per Month" value={f.monthly_volume_cbm ? `${f.monthly_volume_cbm} CBM` : ''} required />
+              </>
+            ) : (
+              <>
+                {pickupDeliveryVisible && <ReviewRow label="Pickup Address" value={f.pickup_address} required={isDoorToDoor} />}
+                {pickupDeliveryVisible && <ReviewRow label="Delivery Address" value={f.delivery_address} required={isDoorToDoor} />}
+                <ReviewRow label="Incoterms" value={f.incoterms.join(', ')} />
+                <ReviewRow label="Container Type" value={f.container_types.join(', ')} />
+                <ReviewRow label="Number of containers" value={f.n_containers} required={needsNContainers} />
+                {!laneTbl && <ReviewRow label="Cargo ready date" value={f.cargo_ready_date} />}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {/* 5a -- sebelumnya ABSEN dari Review sama sekali (Cargo/Additional
           Services/Notes) atau SEBAGIAN (Undername: cuma flag Yes/No, dan
           hanya utk Door-to-Door -- jalur Customs Clearance+Import nol
-          representasi apa pun). */}
-      <div>
-        <GroupHeader title="Cargo" onClick={() => onEditStep('cargo')} />
-        <div style={grid3}>
-          <ReviewRow label="Total Weight (KG)" value={f.weight_kg} />
-          <ReviewRow label="Volume (CBM)" value={f.volume_cbm} />
+          representasi apa pun). Putaran 14 -- grup ini jg disembunyikan
+          total utk General Trading (tidak punya langkah "Cargo"). */}
+      {!isGTf && (
+        <div>
+          <GroupHeader title="Cargo" onClick={() => onEditStep('cargo')} />
+          <div style={grid3}>
+            <ReviewRow label="Total Weight (KG)" value={f.weight_kg} />
+            <ReviewRow label="Volume (CBM)" value={f.volume_cbm} />
+          </div>
         </div>
-      </div>
-      {showUndernameReview && (
+      )}
+      {showUndernameGroup && (
         <div>
           <GroupHeader title="Customs & Undername" onClick={() => onEditStep(undernameEditKey)} />
           <div style={grid3}>
-            {isDoorToDoor && <ReviewRow label="Pricing Basis" value={f.pricing_basis} />}
+            {pricingBasisVisible && <ReviewRow label="Pricing Basis" value={f.pricing_basis} />}
             {dutiesVisible && <ReviewRow label="Duties & Taxes" value={f.duties_and_taxes} />}
             <ReviewRow label="Undername import" value={f.undername_import ? 'Yes' : 'No'} />
             {f.undername_import && (
@@ -1850,6 +2092,20 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isRS, serviceTypeO
           <GroupHeader title="Additional Services" onClick={() => onEditStep('addl')} />
           <div style={grid3}>
             <ReviewRow label="Additional Services" value={additionalServicesLabel} />
+          </div>
+        </div>
+      )}
+      {/* Putaran 14 (W-60, Scope 3/4) -- grup "Delivery", HANYA utk General
+          Trading. Ditaruh sebelum "Commercial" (posisi mockup: items ->
+          delivery -> commercial, Items tidak dibangun). */}
+      {isGTf && (
+        <div>
+          <GroupHeader title="Delivery" onClick={() => onEditStep('delivery')} />
+          <div style={grid3}>
+            <ReviewRow label="Order Category" value={f.order_category} />
+            <ReviewRow label="Requested Delivery Date" value={f.requested_delivery_date} />
+            <ReviewRow label="Estimated Shipping Cost" value={f.estimated_shipping_cost} />
+            <ReviewRow label="Customer Reference" value={f.customer_reference} />
           </div>
         </div>
       )}
