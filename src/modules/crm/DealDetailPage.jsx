@@ -64,6 +64,7 @@ import InquiryChatter from './InquiryChatter';
 // kebenaran kedua yang pasti ketinggalan.
 import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS, WON_MANUAL_REASONS, isWonAwaitingSalesOrder } from './inquiryOptions';
 import { formatIdNumber, readMoneyInput } from '../../lib/numberFormat';
+import { entityByCode } from '../../lib/entities';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -121,6 +122,20 @@ const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: T
 // akhir Putaran 9.
 const DIRECTION_OPTIONS = ['Import', 'Export', 'Domestic'];
 const CUSTOMER_ROLE_OPTIONS = ['Shipper', 'Consignee', 'Third Party'];
+
+// Putaran 14 Tahap 3 -- MIRROR InquiryIntakeWizardPage.jsx PRICING_BASIS_OPTS
+// (baris 108) / ORDER_CATEGORY_OPTS (baris 115), bukan impor -- alasan sama
+// DIRECTION_OPTIONS di atas (rule eksekusi membatasi berkas yang disentuh per
+// tahap). Kalau salah satu sisi berubah nilainya, KEDUANYA wajib disunting
+// bersama -- utang mirror, sama kelas dengan DIRECTION_OPTIONS/
+// CUSTOMER_ROLE_OPTIONS.
+const PRICING_BASIS_OPTIONS = ['Itemized charges', 'All in per CBM', 'All in per KG'];
+const ORDER_CATEGORY_OPTIONS = ['Regular', 'Baking Tray', 'Trolley'];
+
+// Putaran 14 Tahap 3 -- entitas SOA, dipakai gate dropdown Service Type
+// (opsi 'trading' hanya muncul kalau inquiry.company_id === SOA_ID). Pola
+// identik InquiryIntakeWizardPage.jsx baris 126.
+const SOA_ID = entityByCode('SOA')?.id;
 
 // Putaran 9 -- label manusiawi accounts.source (field "Source" di Service
 // & Status, read-only). MIRROR CRMDashboardPage.jsx SOURCE_META /
@@ -699,7 +714,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, cargo_ready_date, n_containers, closed_at')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, pricing_basis, cargo_ready_date, n_containers, closed_at, order_category, requested_delivery_date, estimated_shipping_cost, customer_reference')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -1118,6 +1133,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Status) persis sama cara mockup menggerbangnya -- berbasis nilai
   // KOMITMEN inquiry.service_type, bukan draft, pola sama isInquiryRS dkk.
   const notGT = inquiry?.service_type !== 'trading';
+  // Putaran 14 Tahap 3 -- mockup :1092 (`isGT: cur.svc === 'General
+  // Trading'`), komplemen notGT. Menggerbang seluruh blok Route & Terms/
+  // Route Options/Cargo/Additional Services (mockup :317-362, SATU blok
+  // notGT yang sama) + section "Delivery" baru (GT-only, kebalikannya).
+  const isGT = !notGT;
 
   // Source (accounts.source) -- label manusiawi, read-only (arah tulis
   // balik belum diputuskan Mas). Section "Service & Status".
@@ -2214,6 +2234,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               service_type: inquiry.service_type || '',
               direction: inquiry.direction || '',
               customer_role: inquiry.customer_role || '',
+              pricing_basis: inquiry.pricing_basis || '',
             });
             setEditingSection('Service');
           }}
@@ -2222,6 +2243,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             service_type: sectionDraft.service_type || null,
             direction: sectionDraft.direction || null,
             customer_role: sectionDraft.customer_role || null,
+            pricing_basis: sectionDraft.pricing_basis || null,
           }, 'Service & Status')}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginTop: 16, marginBottom: 20 }}>
@@ -2231,7 +2253,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type}
             draft={sectionDraft.service_type}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, service_type: v }))}
-            options={Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label }))}
+            // Putaran 14 Tahap 2 -- opsi 'trading' hanya muncul bila
+            // entitas inquiry (inquiry.company_id) adalah SOA (mockup
+            // :756 `og.svc.gt.disp = acc && acc.ent === 'SOA' ? 'flex' :
+            // 'none'`, pola sama wizard). Inquiry yang sudah 'trading'
+            // tetap tampil benar di mode baca lewat SERVICE_LABEL di
+            // atas -- filter ini hanya mengubah pilihan dropdown saat
+            // EDIT, bukan tampilan tersimpan.
+            options={Object.entries(SERVICE_LABEL)
+              .filter(([value]) => value !== 'trading' || inquiry.company_id === SOA_ID)
+              .map(([value, label]) => ({ value, label }))}
           />
           <SelectField
             label="Direction"
@@ -2261,7 +2292,32 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <LockedField label="Status" value={STATUS_LABEL[dealStatus] || dealStatus} />
           <TextField label="Source" editing={false} value={accountSourceLabel} placeholder="Source not recorded" />
           <TextField label="Route" editing={false} value={inquiry.route} />
+          {/* Putaran 14 Tahap 2 -- Pricing Basis diperluas ke Customs
+              Clearance (sebelumnya hanya Door to Door). Nilai yang
+              tersimpan TIDAK berubah saat disembunyikan -- pola persis
+              Customer Role di atas. Pemeriksaan trigger/validasi: nol
+              trigger menyentuh pricing_basis di seluruh migrasi (grep
+              `CREATE TRIGGER.*inquiries`), hanya CHECK 3 nilai
+              (migrasi 20261025000002) -- plain UPDATE aman, dilaporkan
+              di laporan akhir. */}
+          {['door_to_door', 'customs'].includes(inquiry?.service_type) && (
+            <SelectField
+              label="Pricing Basis"
+              editing={editingSection === 'Service'}
+              value={inquiry.pricing_basis}
+              draft={sectionDraft.pricing_basis}
+              onDraft={(v) => setSectionDraft((d) => ({ ...d, pricing_basis: v }))}
+              options={PRICING_BASIS_OPTIONS}
+              includeEmpty
+            />
+          )}
         </div>
+        {/* Putaran 14 Tahap 3 -- mockup :317-362: divider + RouteStrip +
+            Route & Terms + Route Options + Cargo + Additional Services
+            SELURUHNYA di dalam SATU blok `notGT` yang sama (byte-offset
+            diverifikasi di file sumber) -- disembunyikan utuh untuk GT,
+            bukan dibongkar per-elemen. */}
+        {!isGT && (<>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
 
         {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
@@ -2634,6 +2690,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
         <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        </>)}
 
         {/* ===== Blok "Shipments" (Putaran 9, khusus Rate Sheet) -- mockup
             data-screen-label="Detail/Shipments" (:402), sibling SESUDAH
@@ -2737,6 +2794,76 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <TextareaField label="Notes" editing={editingSection === 'Notes'} value={inquiry.notes}
             draft={sectionDraft.notes} onDraft={(v) => setSectionDraft((d) => ({ ...d, notes: v }))} />
         </div>
+        {/* ===== Section "Delivery" (Putaran 14 Tahap 3) -- EMPAT kolom
+            baru (migrasi 20261030000001), GT-only (mockup SK-nya sendiri
+            menaruh step 'delivery' hanya di cabang isGTf -- lihat
+            InquiryIntakeWizardPage.jsx). Ditaruh SESUDAH Notes, bukan di
+            posisi mockup "Additional Services"/SECS[3] -- instruksi
+            eksekusi eksplisit minta posisi ini. Estimated Shipping Cost
+            pakai pola persis Cargo (TD-285: type="text" +
+            formatIdNumber/readMoneyInput, simpan DIBLOK kalau tak
+            terbaca, pesan toast '<Label>: number not recognized.'). */}
+        {isGT && (
+          <>
+            <div style={{ height: 1, background: C.surfaceAlt, marginTop: 20, marginBottom: 20 }} />
+            <SectionHeader
+              title="Delivery"
+              editing={editingSection === 'Delivery'}
+              canEdit={LOSABLE_INQUIRY_STATUS.includes(dealStatus)}
+              saving={savingSection}
+              onEdit={() => {
+                setSectionDraft({
+                  order_category: inquiry.order_category || '',
+                  requested_delivery_date: inquiry.requested_delivery_date || '',
+                  estimated_shipping_cost: inquiry.estimated_shipping_cost != null ? formatIdNumber(inquiry.estimated_shipping_cost) : '',
+                  customer_reference: inquiry.customer_reference || '',
+                });
+                setEditingSection('Delivery');
+              }}
+              onCancel={() => { setEditingSection(null); setSectionDraft({}); }}
+              onSave={() => {
+                const shipCost = readMoneyInput(sectionDraft.estimated_shipping_cost);
+                if (shipCost.unrecognized) { showToast?.('Estimated Shipping Cost: number not recognized.', 'error'); return; }
+                saveInquirySection({
+                  order_category: sectionDraft.order_category || null,
+                  requested_delivery_date: sectionDraft.requested_delivery_date || null,
+                  estimated_shipping_cost: String(sectionDraft.estimated_shipping_cost || '').trim() === '' ? null : shipCost.value,
+                  customer_reference: sectionDraft.customer_reference || null,
+                }, 'Delivery');
+              }}
+            />
+            {/* grid 2 kolom (bukan pola 3-kolom file ini) -- khusus di sini,
+                karena "Requested Delivery Date"/"Estimated Shipping Cost"
+                (23 char) overflow label `FieldWrap` (dealOverviewFieldInputs.jsx,
+                nowrap tanpa ellipsis) di kolom 113px standar 3-kolom, teramati
+                tabrakan visual saat uji layar -- bukan bug `FieldWrap` yang
+                diperbaiki di sini (shared, dipakai semua section file ini),
+                cukup diberi kolom lebih lebar (~177px) di section ini saja. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginTop: 16 }}>
+              <SelectField
+                label="Order Category"
+                editing={editingSection === 'Delivery'}
+                value={inquiry.order_category}
+                draft={sectionDraft.order_category}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, order_category: v }))}
+                options={ORDER_CATEGORY_OPTIONS}
+                includeEmpty
+              />
+              <TextField label="Requested Delivery Date" type="date" editing={editingSection === 'Delivery'}
+                value={inquiry.requested_delivery_date}
+                draft={sectionDraft.requested_delivery_date}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, requested_delivery_date: v }))} />
+              <TextField label="Estimated Shipping Cost" mono editing={editingSection === 'Delivery'}
+                value={inquiry.estimated_shipping_cost != null ? formatIdNumber(inquiry.estimated_shipping_cost) : ''}
+                draft={sectionDraft.estimated_shipping_cost}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, estimated_shipping_cost: v }))} />
+              <TextField label="Customer Reference" editing={editingSection === 'Delivery'}
+                value={inquiry.customer_reference}
+                draft={sectionDraft.customer_reference}
+                onDraft={(v) => setSectionDraft((d) => ({ ...d, customer_reference: v }))} />
+            </div>
+          </>
+        )}
               </Card>
               </div>
             ),

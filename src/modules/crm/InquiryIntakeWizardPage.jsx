@@ -435,7 +435,13 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   // TIDAK dikosongkan saat toggle, supaya bolak-balik tidak kehilangan
   // pilihan) -- tanpa guard `isRS`, lane itu diam-diam tidak terkirim ke
   // RPC walau nol cara bagi user Single Shipment untuk melihat/mengubahnya.
-  const isRS = f.inquiry_type === 'Rate Sheet Request';
+  // Putaran 14 Tahap 3, Task 4 -- `&& !isGTf` menutup celah: pilih Rate
+  // Sheet Request di step Route, balik, ganti Service Type ke General
+  // Trading TANPA ganti akun -- f.inquiry_type bisa tetap 'Rate Sheet
+  // Request' (reset akun tidak tersentuh). isRS turunan dari sini
+  // dipakai di SELURUH validasi/lane/payload RS, jadi satu guard di
+  // titik ini cukup -- bukan menambal tiap pemakainya satu-satu.
+  const isRS = !isGTf && f.inquiry_type === 'Rate Sheet Request';
   const laneTbl = isRS || f.laneMode;
   const selectedLanes = isRS ? f.lanes.filter((l) => l.on !== false) : f.lanes;
   // Putaran 13b (W-21) -- mockup `routeStd` (!laneTbl) membungkus Pickup/
@@ -1153,7 +1159,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         // komentar di definisinya.
         p_pricing_basis: pricingBasisVisible ? (f.pricing_basis || null) : null,
         p_owner_id: canPickOwner ? (f.owner_id || null) : null,
-        p_inquiry_type: f.inquiry_type,
+        // Putaran 14 Tahap 3, Task 4 -- GT MEMAKSA 'Single Shipment' di
+        // payload juga, bukan hanya lewat `isRS` (celah yang sama: `isRS`
+        // di atas sudah benar false untuk GT, tapi baris ini dulu membaca
+        // f.inquiry_type MENTAH, memotong jalur isRS sama sekali).
+        p_inquiry_type: isGTf ? 'Single Shipment' : f.inquiry_type,
         p_validity_from: isRS ? (f.validity_from || null) : null,
         p_validity_to: isRS ? (f.validity_to || null) : null,
         p_monthly_volume_cbm: monthlyVolumeVal,
