@@ -92,6 +92,14 @@ const SETTLE = Number(opt('settle', '1200'));
 // test@msi.com miliknya dilewati seluruhnya. Tanpa argumen ini, perilaku
 // skrip TIDAK berubah (byte-identik -- lihat IIFE utama di bawah).
 const ONLY = opt('only', null);
+// --only p14 (pola spasi SAMA, Putaran 14 Tahap 4 -- instruksi eksplisit "flag
+// kecil, tanpa mengubah perilaku run penuh"): HANYA blok Putaran 14 dijalankan
+// -- Flow 1/D2D/P13b/Flow 2 (RS)/Flow 3 (MGR)/Flow 4 (ACC) dilewati SELURUHNYA
+// (masing-masing dibungkus `if (!ONLY_P14)` di titik try{} masing-masing, isi
+// try/catch-nya sendiri TIDAK disentuh). Login/browser/context test@msi.com
+// TETAP jalan (blok P14 butuh itu, sama seperti Flow 1/D2D/P13b). Tanpa
+// argumen ini (atau dgn `--only 4`), perilaku skrip TIDAK berubah.
+const ONLY_P14 = ONLY === 'p14';
 
 // Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
 // QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
@@ -498,6 +506,9 @@ function dealFieldValue(page, label) {
   // Flow 2/Flow 3 TETAP lanjut jalan (memakai `page`/`browser` yang sama,
   // masih valid walau satu aksi gagal) alih-alih proses mati total seperti
   // sebelum perbaikan ini.
+  // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)` (instruksi eksplisit,
+  // flag `--only p14`): isi try/catch di bawah TIDAK disentuh sama sekali.
+  if (!ONLY_P14) {
   try {
   // ── buka wizard baru (CREATE-only; edit kini inline di DealDetailPage,
   // InquiryFormPage.jsx dipensiunkan Putaran 15 Task 1) ───────────────────
@@ -950,11 +961,14 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('FLOW1', 'Flow 1 (Single Shipment)', e, page);
   }
+  } // end if (!ONLY_P14) -- Flow 1
 
   // Putaran 13a Task 3 -- skenario D2D dibungkus try/catch TERPISAH dari
   // Flow 1 (instruksi eksplisit): kegagalannya tidak boleh ikut menyeret
   // Flow 2/Flow 3, dan sebaliknya kegagalan Flow 1 di atas tidak menghalangi
   // D2D tetap dicoba (selama `page` masih berupa Page yang terbuka).
+  // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1 di atas.
+  if (!ONLY_P14) {
   try {
   // =========================================================================
   // Putaran 13a (D8) -- skenario NEGATIF SAJA utk Pickup/Delivery Address
@@ -1020,6 +1034,7 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('D2D', 'Skenario D2D (Pickup/Delivery wajib untuk Door to Door)', e, page);
   }
+  } // end if (!ONLY_P14) -- D2D
 
   // =========================================================================
   // Putaran 13b -- skenario tambahan utk 8 butir W-14/W-16/W-21/W-33/W-34/
@@ -1029,6 +1044,8 @@ function dealFieldValue(page, label) {
   // ada). Create TIDAK PERNAH ditekan sepanjang skenario ini -- murni
   // verifikasi UI/state, nol inquiry baru tercipta.
   // =========================================================================
+  // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D.
+  if (!ONLY_P14) {
   try {
   console.log('\n— Skenario tambahan (Putaran 13b): W-14/W-16/W-21/W-33/W-34/W-40/W-44/W-64 —\n');
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
@@ -1204,9 +1221,394 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('P13B', 'Skenario tambahan Putaran 13b (W-14/16/21/33/34/40/44/64)', e, page);
   }
+  } // end if (!ONLY_P14) -- P13b
+
+  // Putaran 14 -- skenario General Trading (W-10/W-60, Tahap 1-3) + Pricing
+  // Basis Customs Clearance (W-41), dibungkus try/catch SENDIRI (pola sama
+  // P13b di atas), terpisah dari Flow 1/D2D/P13b di atas dan Flow 2 (RS)/
+  // Flow 3 (MGR)/Flow 4 (ACC) di bawah. `page`/`browser` SAMA (akun
+  // test@msi.com, super_admin -- SELALU lolos hasJciAccess utk Customs
+  // Clearance, lihat komentar P13b di atas). Fixture akun: SOA = "PT.
+  // Indomarco Prismatama" (dipilih lewat UI pencarian Customer -- satu-
+  // satunya akun SOA yang sudah dikonfirmasi beraksi di staging, dipakai
+  // ulang dari uji manual Tahap 3), MSI = "PT Agro Sawit Kalimantan"
+  // (fixture yang SUDAH ADA, dipakai ulang Flow 1/D2D/P13b di atas). TIGA
+  // inquiry baru tercipta di blok ini (dicatat ke testDataLog di titik
+  // masing-masing) -- dua SOA-prefiks (General Trading penuh + GT dari
+  // Rate Sheet Request) dan satu MSI-prefiks (Customs Clearance).
+  // =========================================================================
+  try {
+  console.log('\n— Skenario tambahan (Putaran 14): General Trading (W-10/W-60) + Pricing Basis Customs (W-41) —\n');
+  const p14Nonce = Date.now();
+
+  // REST GET baca-saja (pola SAMA pgrest() Flow 4 di bawah, versi ringkas
+  // HANYA GET -- blok ini tidak pernah menulis lewat jalur ini, Authorization
+  // = access_token sesi test@msi.com yang sudah login di atas). Dipakai
+  // HANYA utk (a) verifikasi inquiry_type pasca-Create (Task 4 Tahap 3,
+  // Detail tidak punya UI utk field ini sama sekali) dan (b) menemukan SATU
+  // inquiry freight_forwarding EXISTING utk uji regresi Pricing Basis di
+  // Detail (W-41, case 8) -- TIDAK membuat akun/data baru.
+  async function p14Get(path) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` } });
+    const text = await r.text();
+    let json = null; try { json = text ? JSON.parse(text) : null; } catch { json = text; }
+    return { ok: r.ok, status: r.status, json };
+  }
+
+  // ========== Case 1-2-3-4-5: akun SOA/MSI -> kartu GT -> Delivery -> Create ==========
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+
+  // ── Case 1a -- akun MSI: kartu General Trading TIDAK ADA ────────────────
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+  await settle(page);
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  check('[P14/1a] Akun MSI ("PT Agro Sawit Kalimantan"): kartu "General Trading" TIDAK ADA',
+    (await page.locator('button:has-text("General Trading")').count()) === 0);
+
+  // ── Case 1b -- ganti ke akun SOA: kartu General Trading ADA ──────────────
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT. Indomarco Prismatama');
+  await page.waitForTimeout(400);
+  const p14SoaFound = (await page.locator('button:has-text("PT. Indomarco Prismatama")').count()) > 0;
+  check('[P14/1b] Akun SOA "PT. Indomarco Prismatama" ditemukan di pencarian Customer', p14SoaFound,
+    p14SoaFound ? '' : 'akun tidak ada di daftar staging hari ini -- cek data, bukan skrip');
+  if (p14SoaFound) await page.locator('button:has-text("PT. Indomarco Prismatama")').first().click();
+  await settle(page);
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  check('[P14/1b] Akun SOA ("PT. Indomarco Prismatama"): kartu "General Trading" ADA',
+    (await page.locator('button:has-text("General Trading")').count()) > 0);
+
+  // ── Case 2 -- pilih General Trading: Export absen, Direction otomatis
+  // Domestic, Customer Role tidak tampil, stepper 5 langkah. ───────────────
+  await page.locator('button:has-text("General Trading")').first().click();
+  await settle(page, 300);
+  check('[P14/2] Kartu "General Trading" aktif (background orangeSoft) setelah diklik',
+    /253,\s*240,\s*233/.test(await page.locator('button:has-text("General Trading")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  check('[P14/2] Pill "Export" TIDAK ADA utk General Trading', (await page.locator('button:text-is("Export")').count()) === 0);
+  check('[P14/2] Direction otomatis "Domestic" setelah General Trading dipilih',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Domestic")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  check('[P14/2] "Customer Role" TIDAK tampil utk General Trading', (await page.locator('text="Customer Role"').count()) === 0);
+  const p14StepperLabels = ['Customer & Contact', 'Service & Direction', 'Delivery', 'Commercial', 'Review'];
+  const p14StepperAbsent = ['Route & Terms', 'Cargo', 'Additional Services'];
+  const p14StepperTotal = await page.locator('xpath=//button[contains(normalize-space(.), "Customer & Contact")]/parent::div/button').count();
+  check('[P14/2] Stepper General Trading punya tepat 5 langkah', p14StepperTotal === 5, `dapat: ${p14StepperTotal}`);
+  for (const lbl of p14StepperLabels) {
+    check(`[P14/2] Pill langkah "${lbl}" ada di stepper General Trading`, (await stepPill(page, lbl).count()) === 1);
+  }
+  for (const lbl of p14StepperAbsent) {
+    check(`[P14/2] Pill langkah "${lbl}" TIDAK ada di stepper General Trading`, (await stepPill(page, lbl).count()) === 0);
+  }
+
+  // ── Case 3 -- ganti akun ke non-SOA SAAT GT terpilih: kartu GT hilang +
+  // Service Type kembali kosong (nol kartu aktif). ─────────────────────────
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+  await settle(page);
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  check('[P14/3] Ganti akun ke non-SOA saat GT terpilih: kartu "General Trading" HILANG',
+    (await page.locator('button:has-text("General Trading")').count()) === 0);
+  const p14AnyCardActive = await page.evaluate(() => {
+    const labels = ['Freight Forwarding', 'Customs Clearance', 'Door to Door', 'Trucking', 'General Trading'];
+    return Array.from(document.querySelectorAll('button')).some((b) => {
+      const t = (b.textContent || '').trim();
+      return labels.includes(t) && getComputedStyle(b).backgroundColor === 'rgb(253, 240, 233)';
+    });
+  });
+  check('[P14/3] Service Type kembali KOSONG (nol kartu service type aktif) setelah ganti akun', !p14AnyCardActive);
+
+  // ── balik ke akun SOA utk lanjut ke Delivery/Review/Create (case 4-5) --
+  // account_id/contact_id ter-reset lagi (onPick), contact WAJIB dipilih
+  // ulang sebelum Create. ───────────────────────────────────────────────────
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT. Indomarco Prismatama');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT. Indomarco Prismatama")').first().click();
+  await settle(page);
+  const p14Contact1 = await ensureContactSelected(page);
+  check('[P14] Contact terisi (akun SOA, inquiry GT penuh)', !!p14Contact1, p14Contact1 || 'nol contact terpilih/ditambahkan');
+  if (p14Contact1) { console.log(`    i Contact — ${p14Contact1}`); testDataLog.push(`Putaran 14 (P14) — contact: ${p14Contact1}`); }
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:has-text("General Trading")').first().click();
+  await settle(page, 300);
+
+  // ── Case 4 -- langkah Delivery: isi 4 field, Review menampilkan grup
+  // Delivery dgn 4 nilai benar, TANPA grup Route & Terms/Cargo. ────────────
+  await stepPill(page, 'Delivery').click();
+  await settle(page);
+  await fieldLocator(page, 'Order Category', 'select').selectOption('Baking Tray');
+  const p14DeliveryDate = '2027-02-01';
+  await fieldLocator(page, 'Requested Delivery Date', 'input').fill(p14DeliveryDate);
+  const p14ShipCostInput = fieldLocator(page, 'Estimated Shipping Cost', 'input');
+  await p14ShipCostInput.fill('2.750.000');
+  await p14ShipCostInput.blur();
+  const p14CustRef = `ZZZTEST-P14-GT-${p14Nonce}`;
+  await fieldLocator(page, 'Customer Reference', 'input').fill(p14CustRef);
+  await settle(page, 300);
+
+  await stepPill(page, 'Review').click();
+  await settle(page);
+  const p14RevOrderCat = (await fieldLocator(page, 'Order Category', 'span').innerText().catch(() => '')).trim();
+  check('[P14/4] Review -- Order Category "Baking Tray"', p14RevOrderCat === 'Baking Tray', `dapat: "${p14RevOrderCat}"`);
+  const p14RevDate = (await fieldLocator(page, 'Requested Delivery Date', 'span').innerText().catch(() => '')).trim();
+  check('[P14/4] Review -- Requested Delivery Date', p14RevDate === p14DeliveryDate, `dapat: "${p14RevDate}"`);
+  const p14RevShipCost = (await fieldLocator(page, 'Estimated Shipping Cost', 'span').innerText().catch(() => '')).trim();
+  check('[P14/4] Review -- Estimated Shipping Cost "2.750.000"', p14RevShipCost === '2.750.000', `dapat: "${p14RevShipCost}"`);
+  const p14RevCustRef = (await fieldLocator(page, 'Customer Reference', 'span').innerText().catch(() => '')).trim();
+  check('[P14/4] Review -- Customer Reference', p14RevCustRef === p14CustRef, `dapat: "${p14RevCustRef}"`);
+  check('[P14/4] Review -- grup "Route & Terms" TIDAK tampil', (await page.locator('span:text-is("Route & Terms")').count()) === 0);
+  check('[P14/4] Review -- grup "Cargo" TIDAK tampil', (await page.locator('span:text-is("Cargo")').count()) === 0);
+
+  // ── Case 5 -- Create sungguhan: inquiry_no prefiks SOA-, Detail
+  // menampilkan Delivery dgn 4 nilai benar, TANPA Route & Terms/Cargo/
+  // Additional Services. ───────────────────────────────────────────────────
+  const p14CreateBtn = page.locator('button:text-is("Create Inquiry")');
+  const p14CreateVisible = await p14CreateBtn.isVisible().catch(() => false);
+  check('[P14/5] Tombol "Create Inquiry" terlihat di Review', p14CreateVisible);
+  const p14RpcPromise = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  if (p14CreateVisible) await p14CreateBtn.click();
+  const p14RpcResp = await p14RpcPromise;
+  let p14InquiryNo = null, p14InquiryId = null;
+  if (p14RpcResp && p14RpcResp.ok()) {
+    const body = await p14RpcResp.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    p14InquiryNo = row?.inquiry_no || null;
+    p14InquiryId = row?.id || null;
+  }
+  const p14RpcOk = check('[P14/5] RPC create_inquiry_with_lanes merespon sukses (GT penuh)', !!p14RpcResp && p14RpcResp.ok(), p14RpcResp ? `HTTP ${p14RpcResp.status()}` : 'nol respon tertangkap');
+  if (!p14RpcOk) {
+    const diag = await captureRejectionDiagnostics(page, join(tmpdir(), `e2e-inquiry-wizard-P14-gt-reject-${Date.now()}.png`));
+    console.log(`  ⚠ [P14/5] Diagnostik Create ditolak -- pill aktif: ${diag.activePill || '(tak terdeteksi)'} | FieldError: ${JSON.stringify(diag.fieldErrors)} | toast: ${JSON.stringify(diag.toastText)}`);
+  }
+  await settle(page, 800);
+  check('[P14/5] Nomor inquiry berprefiks "SOA-"', !!p14InquiryNo && p14InquiryNo.startsWith('SOA-'), p14InquiryNo || '(tidak tertangkap)');
+  check('[P14/5] Pindah ke Detail Inquiry setelah Create', /\/crm\/inquiry\/(?:status-history\/)?[0-9a-f-]{36}$/i.test(page.url()), page.url());
+  console.log(`\n  → [P14] Nomor inquiry GT penuh: ${p14InquiryNo || '(tidak tertangkap)'} ${p14InquiryId ? `(id: ${p14InquiryId})` : ''}`);
+  testDataLog.push(`Putaran 14 (P14) — inquiry 1, GT penuh: ${p14InquiryNo || '(tidak tertangkap)'}${p14InquiryId ? ` (id: ${p14InquiryId})` : ''}`);
+
+  await settle(page, 500);
+  const p14DetailOrderCat = (await dealFieldValue(page, 'Order Category').innerText().catch(() => '')).trim();
+  check('[P14/5] Detail -- Order Category "Baking Tray"', p14DetailOrderCat === 'Baking Tray', `dapat: "${p14DetailOrderCat}"`);
+  const p14DetailDate = (await dealFieldValue(page, 'Requested Delivery Date').innerText().catch(() => '')).trim();
+  check('[P14/5] Detail -- Requested Delivery Date', p14DetailDate === p14DeliveryDate, `dapat: "${p14DetailDate}"`);
+  const p14DetailShipCost = (await dealFieldValue(page, 'Estimated Shipping Cost').innerText().catch(() => '')).trim();
+  check('[P14/5] Detail -- Estimated Shipping Cost "2.750.000"', p14DetailShipCost === '2.750.000', `dapat: "${p14DetailShipCost}"`);
+  const p14DetailCustRef = (await dealFieldValue(page, 'Customer Reference').innerText().catch(() => '')).trim();
+  check('[P14/5] Detail -- Customer Reference', p14DetailCustRef === p14CustRef, `dapat: "${p14DetailCustRef}"`);
+  check('[P14/5] Detail -- section "Route & Terms" TIDAK ada', (await page.locator('h3:text-is("Route & Terms")').count()) === 0);
+  check('[P14/5] Detail -- section "Cargo" TIDAK ada', (await page.locator('h3:text-is("Cargo")').count()) === 0);
+  check('[P14/5] Detail -- section "Additional Services" TIDAK ada', (await page.locator('h3:text-is("Additional Services")').count()) === 0);
+
+  // ========== Case 6: Task 4 Tahap 3 -- Rate Sheet Request -> General
+  // Trading tanpa ganti akun -- inquiry_type HARUS "Single Shipment". ======
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('button:text-is("Rate Sheet Request")').click();
+  await settle(page, 200);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT. Indomarco Prismatama');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT. Indomarco Prismatama")').first().click();
+  await settle(page);
+  const p14Contact2 = await ensureContactSelected(page);
+  check('[P14/6] Contact terisi (akun SOA, inquiry GT dari Rate Sheet Request)', !!p14Contact2, p14Contact2 || 'nol contact terpilih/ditambahkan');
+  if (p14Contact2) { console.log(`    i Contact — ${p14Contact2}`); testDataLog.push(`Putaran 14 (P14) — contact: ${p14Contact2}`); }
+
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:has-text("General Trading")').first().click();
+  await settle(page, 300);
+
+  await stepPill(page, 'Delivery').click();
+  await settle(page);
+  await fieldLocator(page, 'Order Category', 'select').selectOption('Regular');
+  await fieldLocator(page, 'Requested Delivery Date', 'input').fill('2027-02-15');
+  const p14CustRef2 = `ZZZTEST-P14-GTRS-${p14Nonce}`;
+  await fieldLocator(page, 'Customer Reference', 'input').fill(p14CustRef2);
+  await settle(page, 300);
+
+  await stepPill(page, 'Review').click();
+  await settle(page);
+  const p14CreateBtn2 = page.locator('button:text-is("Create Inquiry")');
+  const p14CreateVisible2 = await p14CreateBtn2.isVisible().catch(() => false);
+  check('[P14/6] Tombol "Create Inquiry" terlihat di Review (GT dari Rate Sheet Request)', p14CreateVisible2);
+  const p14RpcPromise2 = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  if (p14CreateVisible2) await p14CreateBtn2.click();
+  const p14RpcResp2 = await p14RpcPromise2;
+  let p14InquiryNo2 = null, p14InquiryId2 = null;
+  if (p14RpcResp2 && p14RpcResp2.ok()) {
+    const body = await p14RpcResp2.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    p14InquiryNo2 = row?.inquiry_no || null;
+    p14InquiryId2 = row?.id || null;
+  }
+  const p14RpcOk2 = check('[P14/6] RPC create_inquiry_with_lanes merespon sukses (GT dari Rate Sheet Request)', !!p14RpcResp2 && p14RpcResp2.ok(), p14RpcResp2 ? `HTTP ${p14RpcResp2.status()}` : 'nol respon tertangkap');
+  if (!p14RpcOk2) {
+    const diag = await captureRejectionDiagnostics(page, join(tmpdir(), `e2e-inquiry-wizard-P14-gtrs-reject-${Date.now()}.png`));
+    console.log(`  ⚠ [P14/6] Diagnostik Create ditolak -- pill aktif: ${diag.activePill || '(tak terdeteksi)'} | FieldError: ${JSON.stringify(diag.fieldErrors)} | toast: ${JSON.stringify(diag.toastText)}`);
+  }
+  check('[P14/6] Nomor inquiry berprefiks "SOA-" (GT dari Rate Sheet Request)', !!p14InquiryNo2 && p14InquiryNo2.startsWith('SOA-'), p14InquiryNo2 || '(tidak tertangkap)');
+  console.log(`\n  → [P14] Nomor inquiry GT dari Rate Sheet Request: ${p14InquiryNo2 || '(tidak tertangkap)'} ${p14InquiryId2 ? `(id: ${p14InquiryId2})` : ''}`);
+  testDataLog.push(`Putaran 14 (P14) — inquiry 2, GT dari Rate Sheet Request (Task 4 Tahap 3): ${p14InquiryNo2 || '(tidak tertangkap)'}${p14InquiryId2 ? ` (id: ${p14InquiryId2})` : ''}`);
+
+  if (p14InquiryId2) {
+    const p14TypeCheck = await p14Get(`inquiries?id=eq.${p14InquiryId2}&select=inquiry_type,service_type`);
+    const p14TypeRow = Array.isArray(p14TypeCheck.json) ? p14TypeCheck.json[0] : null;
+    check('[P14/6] inquiry_type tersimpan "Single Shipment" (fix Task 4 Tahap 3 -- baca-saja ke DB)',
+      p14TypeRow?.inquiry_type === 'Single Shipment', JSON.stringify(p14TypeRow));
+    check('[P14/6] service_type tersimpan "trading" (sanity, baca-saja ke DB)',
+      p14TypeRow?.service_type === 'trading', JSON.stringify(p14TypeRow));
+  } else {
+    check('[P14/6] inquiry_type tersimpan "Single Shipment" (fix Task 4 Tahap 3 -- baca-saja ke DB)', false, 'inquiry tidak tercipta -- lihat check RPC di atas');
+  }
+
+  // ========== Case 7-8-9: Customs Clearance + Pricing Basis (W-41),
+  // regresi Freight Forwarding (wizard + Detail), Detail non-GT (Delivery
+  // absen + dropdown Service Type tanpa General Trading). ==================
+  await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
+  await settle(page);
+  await stepPill(page, 'Customer & Contact').click();
+  await settle(page);
+  await page.locator('input[placeholder="Search account name or account code…"]').fill('PT Agro Sawit Kalimantan');
+  await page.waitForTimeout(400);
+  await page.locator('button:has-text("PT Agro Sawit Kalimantan")').first().click();
+  await settle(page);
+  const p14Contact3 = await ensureContactSelected(page);
+  check('[P14/7] Contact terisi (akun MSI, inquiry Customs Clearance)', !!p14Contact3, p14Contact3 || 'nol contact terpilih/ditambahkan');
+  if (p14Contact3) { console.log(`    i Contact — ${p14Contact3}`); testDataLog.push(`Putaran 14 (P14) — contact: ${p14Contact3}`); }
+
+  // ── Case 8 (bagian wizard) -- Freight Forwarding: Pricing Basis TIDAK
+  // tampil. Diuji TRANSIT di sini (sebelum Customs Clearance dipilih
+  // sungguhan), Create TIDAK ditekan utk Freight Forwarding. ───────────────
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page);
+  await page.locator('button:has-text("Freight Forwarding")').first().click();
+  await settle(page, 300);
+  check('[P14/8] Wizard -- Freight Forwarding: "Pricing Basis" TIDAK tampil', (await page.locator('text="Pricing Basis"').count()) === 0);
+
+  // ── Case 7 -- Customs Clearance: Pricing Basis tampil (default lazy
+  // "Itemized charges"), Direction Export (POL Jakarta/POD Singapore ->
+  // auto Export, nol Undername krn Undername Customs Clearance HANYA utk
+  // Import), pilih "All in per CBM", nilai muncul di Review dan tersimpan
+  // (Detail menampilkan nilai yang sama). ──────────────────────────────────
+  await page.locator('button:has-text("Customs Clearance")').first().click();
+  await settle(page, 300);
+  check('[P14/7] Pricing Basis SUDAH "Itemized charges" sejak Customs Clearance pertama kali dipilih (default lazy)',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+
+  await stepPill(page, 'Route & Terms').click();
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of loading…")'), 'Jakarta', 'Jakarta (Tanjung Priok)');
+  await settle(page);
+  await pickLocation(page, page.locator('button:has-text("Select port of discharge or city…")'), 'Singapore', 'Singapore');
+  await settle(page, 300);
+
+  await stepPill(page, 'Service & Direction').click();
+  await settle(page, 300);
+  check('[P14/7] Direction otomatis "Export" (POL Indonesia, POD non-Indonesia)',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Export")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+  // TEMUAN (bukan diperbaiki di kode aplikasi, instruksi eksplisit) -- Customer
+  // Role TIDAK ikut auto-terisi di sini walau Direction sudah "Export": aturan
+  // W-14 (Export->Shipper/Import->Consignee, P13b di atas) HANYA terpasang di
+  // `pickDirection()` (klik pill Direction MANUAL), bukan di efek auto-suggest
+  // Direction dari POL/POD (baris ~678-693) yang dipakai di sini -- efek itu
+  // CUMA menulis `direction`, nol sentuhan ke `customer_role`. Customer Role
+  // tetap WAJIB utk Customs Clearance (stepErrors non-GT) -- dipilih manual di
+  // sini (bukan sekadar menunggu auto-fill yang memang tidak akan terjadi).
+  await page.locator('button:text-is("Shipper")').click();
+  await settle(page, 200);
+  check('[P14/7] Customs Clearance + Direction Export: panel Undername TIDAK tampil (Undername Customs Clearance hanya utk Import)',
+    (await page.locator('label:has-text("Undername import")').count()) === 0);
+  await page.locator('button:text-is("All in per CBM")').click();
+  await settle(page, 300);
+  check('[P14/7] Pricing Basis "All in per CBM" aktif setelah dipilih',
+    /27,\s*77,\s*138/.test(await page.locator('button:text-is("All in per CBM")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+
+  await stepPill(page, 'Review').click();
+  await settle(page);
+  const p14RevPricingBasis = (await fieldLocator(page, 'Pricing Basis', 'span').innerText().catch(() => '')).trim();
+  check('[P14/7] Review -- Pricing Basis "All in per CBM"', p14RevPricingBasis === 'All in per CBM', `dapat: "${p14RevPricingBasis}"`);
+
+  const p14DupReasonBox3 = page.locator('textarea[placeholder="Explain why this is a separate shipment…"]');
+  if (await p14DupReasonBox3.count() > 0) {
+    await p14DupReasonBox3.fill('Uji e2e otomatis Putaran 14 -- rute terpisah dari kebetulan histori data staging.');
+  }
+  const p14CreateBtn3 = page.locator('button:text-is("Create Inquiry")');
+  const p14CreateVisible3 = await p14CreateBtn3.isVisible().catch(() => false);
+  check('[P14/7] Tombol "Create Inquiry" terlihat di Review (Customs Clearance)', p14CreateVisible3);
+  const p14RpcPromise3 = page.waitForResponse((resp) => resp.url().includes('/rpc/create_inquiry_with_lanes'), { timeout: 20000 }).catch(() => null);
+  if (p14CreateVisible3) await p14CreateBtn3.click();
+  const p14RpcResp3 = await p14RpcPromise3;
+  let p14InquiryNo3 = null, p14InquiryId3 = null;
+  if (p14RpcResp3 && p14RpcResp3.ok()) {
+    const body = await p14RpcResp3.json().catch(() => null);
+    const row = Array.isArray(body) ? body[0] : body;
+    p14InquiryNo3 = row?.inquiry_no || null;
+    p14InquiryId3 = row?.id || null;
+  }
+  const p14RpcOk3 = check('[P14/7] RPC create_inquiry_with_lanes merespon sukses (Customs Clearance)', !!p14RpcResp3 && p14RpcResp3.ok(), p14RpcResp3 ? `HTTP ${p14RpcResp3.status()}` : 'nol respon tertangkap');
+  if (!p14RpcOk3) {
+    const diag = await captureRejectionDiagnostics(page, join(tmpdir(), `e2e-inquiry-wizard-P14-customs-reject-${Date.now()}.png`));
+    console.log(`  ⚠ [P14/7] Diagnostik Create ditolak -- pill aktif: ${diag.activePill || '(tak terdeteksi)'} | FieldError: ${JSON.stringify(diag.fieldErrors)} | toast: ${JSON.stringify(diag.toastText)}`);
+  }
+  check('[P14/7] Nomor inquiry berprefiks "MSI-" (Customs Clearance)', !!p14InquiryNo3 && p14InquiryNo3.startsWith('MSI-'), p14InquiryNo3 || '(tidak tertangkap)');
+  await settle(page, 800);
+  console.log(`\n  → [P14] Nomor inquiry Customs Clearance: ${p14InquiryNo3 || '(tidak tertangkap)'} ${p14InquiryId3 ? `(id: ${p14InquiryId3})` : ''}`);
+  testDataLog.push(`Putaran 14 (P14) — inquiry 3, Customs Clearance + Pricing Basis: ${p14InquiryNo3 || '(tidak tertangkap)'}${p14InquiryId3 ? ` (id: ${p14InquiryId3})` : ''}`);
+
+  const p14DetailPricingBasis = (await dealFieldValue(page, 'Pricing Basis').innerText().catch(() => '')).trim();
+  check('[P14/7] Detail -- Pricing Basis "All in per CBM" (tersimpan sama)', p14DetailPricingBasis === 'All in per CBM', `dapat: "${p14DetailPricingBasis}"`);
+
+  // ── Case 9 -- Detail non-GT (Customs, inquiry yang sama): section
+  // Delivery TIDAK ada; dropdown Service Type (akun MSI) tidak menawarkan
+  // General Trading. ───────────────────────────────────────────────────────
+  check('[P14/9] Detail -- section "Delivery" TIDAK ada (non-GT)', (await page.locator('h3:text-is("Delivery")').count()) === 0);
+  const p14ServiceEditBtn = sectionButton(page, 'Service & Status', 'Edit');
+  if (await p14ServiceEditBtn.count() > 0) {
+    await p14ServiceEditBtn.click();
+    await settle(page, 300);
+    const p14DetailSvcOptions = await dealFieldValue(page, 'Service Type').locator('option').allTextContents();
+    check('[P14/9] Detail -- dropdown Service Type (inquiry MSI) TIDAK menawarkan "General Trading"',
+      !p14DetailSvcOptions.some((t) => t.trim() === 'General Trading'), JSON.stringify(p14DetailSvcOptions));
+  } else {
+    check('[P14/9] Detail -- dropdown Service Type (inquiry MSI) TIDAK menawarkan "General Trading"', false, 'tombol Edit "Service & Status" tidak ditemukan');
+  }
+
+  // ── Case 8 (bagian Detail) -- temukan SATU inquiry freight_forwarding
+  // EXISTING lewat REST GET baca-saja (bukan dibuat skrip ini), Detail-nya
+  // TIDAK menampilkan "Pricing Basis". ─────────────────────────────────────
+  const p14FfLookup = await p14Get('inquiries?select=id,inquiry_no&service_type=eq.freight_forwarding&deleted_at=is.null&order=created_at.desc&limit=1');
+  const p14FfRow = Array.isArray(p14FfLookup.json) ? p14FfLookup.json[0] : null;
+  if (p14FfRow?.id) {
+    console.log(`  i [P14/8] Inquiry Freight Forwarding existing utk uji regresi Detail (baca-saja, bukan dibuat skrip ini): ${p14FfRow.inquiry_no} (id: ${p14FfRow.id})`);
+    await page.goto(`${BASE}/crm/inquiry/status-history/${p14FfRow.id}`, { waitUntil: 'domcontentloaded' });
+    await settle(page, 800);
+    check('[P14/8] Detail -- Freight Forwarding: "Pricing Basis" TIDAK tampil (regresi)', (await page.locator('text="Pricing Basis"').count()) === 0);
+  } else {
+    check('[P14/8] Detail -- Freight Forwarding: "Pricing Basis" TIDAK tampil (regresi)', false, 'nol inquiry freight_forwarding ditemukan di staging -- cek data, bukan skrip');
+  }
+  } catch (e) {
+    await recordFlowFailure('P14', 'Putaran 14 (GT W-10/W-60, Pricing Basis Customs W-41)', e, page);
+  }
 
   // Putaran 13a Task 3 -- Flow 2 (Rate Sheet Request) dibungkus try/catch
   // sendiri, terpisah dari Flow 1/D2D di atas dan Flow 3 di bawah.
+  // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D/P13b.
+  if (!ONLY_P14) {
   try {
   // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
@@ -1523,12 +1925,16 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('RS', 'Flow 2 (Rate Sheet Request)', e, page);
   }
+  } // end if (!ONLY_P14) -- Flow 2 (RS)
 
   // Putaran 13a Task 3 -- Flow 3 (owner default manager) dibungkus try/catch
   // sendiri. `page2` dideklarasikan dgn `let` DI LUAR try (lihat beberapa
   // baris di bawah) supaya catch di sini bisa mengambil screenshot-nya kalau
   // sudah terbuka saat exception terjadi -- `const` di dalam try tidak akan
   // terlihat dari catch (lexical scoping), jadi dihoist.
+  // Putaran 14 Tahap 4 -- `ctx2`/`page2` + try/catch dibungkus `if (!ONLY_P14)`
+  // sekaligus (nol pemakai `ctx2`/`page2` di luar blok ini, diverifikasi grep).
+  if (!ONLY_P14) {
   let ctx2, page2;
   try {
   // =========================================================================
@@ -1673,10 +2079,16 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('MGR', 'Flow 3 (Owner default manager, bd_sales_spv_forwarding)', e, page2 || page);
   }
+  } // end if (!ONLY_P14) -- Flow 3 (MGR)
   } // end if (ONLY !== '4') -- Flow 1-3
 
   if (ONLY === '4') console.log(`e2e-inquiry-wizard -- Flow 4 SAJA (--only 4) -- ${BASE} · project ${REF}\n`);
 
+  // Putaran 14 Tahap 4 -- Flow 4 (ACC) dibungkus `if (!ONLY_P14)` juga (ia
+  // berjalan TANPA syarat sebelum ini, di luar `if (ONLY !== '4')`) -- login
+  // sales@msi.com miliknya ikut dilewati saat `--only p14`. `ctx3`/`page3`
+  // nol pemakai di luar blok ini (diverifikasi grep).
+  if (!ONLY_P14) {
   // =========================================================================
   // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
   // pengguna, sesudah migrasi 20261026000004 LIVE di staging dan lulus
@@ -2119,6 +2531,7 @@ function dealFieldValue(page, label) {
     check('[ACC] Flow 4 selesai tanpa exception fatal', false, `${(e.stack || '').split('\n').slice(0, 3).join(' | ')} | cause: ${causeText}${shotPath ? ' | screenshot: ' + shotPath : ''}`);
     testDataLog.push('Flow 4 (ACC): BERHENTI sebelum selesai — data yang sempat tercipta sebelum titik ini TIDAK dihapus, lihat baris log Flow 4 di atas (fixture A/B/C) untuk id/nomor yang sudah tercetak sebelum exception ini.');
   }
+  } // end if (!ONLY_P14) -- Flow 4 (ACC)
 
   if (consoleErrors.length) console.log(`\n⚠ pageerror (${consoleErrors.length}): ${consoleErrors.slice(0, 3).join(' | ')}`);
   await browser.close();
@@ -2135,6 +2548,9 @@ function dealFieldValue(page, label) {
     // (recordFlowFailure, tag huruf besar) sama-sama diawali "[P13" --
     // satu cabang mencakup keduanya, bukan dua cabang case-sensitive.
     if (name.startsWith('[P13')) return 'Putaran 13b (W-14/16/21/33/34/40/44/64)';
+    // Putaran 14 -- prefix `[P14/...]` (check biasa) DAN `[P14-FATAL]`
+    // (recordFlowFailure, tag huruf besar) sama-sama diawali "[P14".
+    if (name.startsWith('[P14')) return 'Putaran 14 (GT W-10/W-60, Pricing Basis Customs W-41)';
     if (name.startsWith('[RS')) return 'Flow 2 (Rate Sheet Request)';
     if (name.startsWith('[MGR')) return 'Flow 3 (Owner default manager)';
     if (name.startsWith('[ACC')) return 'Flow 4 (Mark Accepted dengan bukti)';
@@ -2144,6 +2560,7 @@ function dealFieldValue(page, label) {
     'Flow 1 (Single Shipment)',
     'D2D (Pickup/Delivery wajib — Door to Door)',
     'Putaran 13b (W-14/16/21/33/34/40/44/64)',
+    'Putaran 14 (GT W-10/W-60, Pricing Basis Customs W-41)',
     'Flow 2 (Rate Sheet Request)',
     'Flow 3 (Owner default manager)',
     'Flow 4 (Mark Accepted dengan bukti)',
