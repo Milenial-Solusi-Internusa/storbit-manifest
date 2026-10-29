@@ -1912,9 +1912,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            selebar dokumen (lihat komentar FormSheet.jsx), `meta` di atas
            cuma selebar kolom judul. Grid persis mockup Inquiry Management.dc.html
            :300 (`grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;
-           padding-top:16px;border-top:1px solid #ECF0E9`) -- border pakai
-           `C.border` (token navy/orange/cream file ini), bukan hex sage
-           mockup. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
+           padding-top:16px;border-top:1px solid #ECF0E9`). [Putaran 16a
+           Tahap 0, GAGAL ditutup] border kini `C.lineSoft` (LINE_SOFT
+           EXACT) -- dulu `C.border`/LINE, satu kelas dgn divider lain yang
+           sama-sama ditutup Tahap 0. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
            Reassign memanggil panel inline YANG SAMA dengan tombol toolbar
            di bawah (keputusan Mas #4 -- nol modal baru). Overdue & Inquiry
            Age diturunkan dari `deadline_quote`/`created_at` yang SUDAH
@@ -1926,7 +1927,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            bawahnya dengan gate yang SAMA PERSIS seperti sebelumnya. */
         toolbar={(
         <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.lineSoft}` }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -2161,7 +2162,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               compact
               pol={inquiry.pol}
               pod={inquiry.pod}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         )}
@@ -2194,7 +2195,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <div style={{ marginTop: SP.s3 }}>
               <DocumentFlow
                 nodes={documentFlowNodes}
-                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
+                // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (data
+                // node: `bg: i===1 ? '#C3D9B8' : '#FFFFFF'`) -- node aktif
+                // = ACCENT polos, BUKAN ROW_HOVER (C.navySoft).
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.orange, linkColor: C.navy }}
               />
             </div>
             <NextStepHint status={dealStatus} />
@@ -2337,7 +2341,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             diverifikasi di file sumber) -- disembunyikan utuh untuk GT,
             bukan dibongkar per-elemen. */}
         {!isGT && (<>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
             panah POL→POD polos (mockup Detail/RouteStrip). Varian DoorToDoor
@@ -2357,7 +2361,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pod={inquiry.pod}
               delivery={inquiry.delivery_address}
               containerLabel={(inquiry.container_types || []).join(', ') || undefined}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         ) : (
@@ -2366,7 +2370,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol={inquiry.pol}
               pod={inquiry.pod}
               containerLabel={(inquiry.container_types || []).join(', ') || undefined}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         )}
@@ -2564,7 +2568,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             />
           </div>
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Cargo" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 7) -- mockup SECS[2]. UN Number/IMO Class/
@@ -2682,7 +2686,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             );
           })()}
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Additional Services" (Irisan 2 Inquiry, lanjutan
             audit mockup, Pekerjaan B commit 8) -- mockup SECS[3]. SATU-
@@ -2708,7 +2712,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             values={inquiry.additional_services} draft={sectionDraft.additional_services}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
         </>)}
 
         {/* ===== Blok "Shipments" (Putaran 9, khusus Rate Sheet) -- mockup
@@ -2740,7 +2744,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 No shipment yet. Shipments are created from the active Rate Sheet quotation, in the Sales Order stage that comes next. Once a shipment exists, this inquiry can no longer be cancelled.
               </div>
             )}
-            <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+            <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
           </>
         )}
 
@@ -2777,7 +2781,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <TextField label="Contact" editing={false} value={inquiry.contact?.name} />
           <TextField label="Est. Closing" editing={false} value={account?.estimated_closing_date ? fmtDate(account.estimated_closing_date) : ''} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Value" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 10) -- mockup SECS[5], TETAP READ-ONLY
@@ -2795,7 +2799,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <TextField label="Estimated Value" editing={false} mono
             value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Notes" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 11, TERAKHIR) -- mockup SECS[6]. Satu-satunya
@@ -2824,7 +2828,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             terbaca, pesan toast '<Label>: number not recognized.'). */}
         {isGT && (
           <>
-            <div style={{ height: 1, background: C.surfaceAlt, marginTop: 20, marginBottom: 20 }} />
+            <div style={{ height: 1, background: C.lineSoft, marginTop: 20, marginBottom: 20 }} />
             <SectionHeader
               title="Delivery"
               editing={editingSection === 'Delivery'}
@@ -3076,8 +3080,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                               // (profMap miss) jatuh ke tanggal saja, bukan ditebak.
                               const metaText = at ? (who ? `${who}, ${fmtDate(at)}` : fmtDate(at)) : 'Pending';
                               return (
-                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
+                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10,
+                                  // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup
+                                  // (`steps: ... bg: i<=at ? '#E4F0E5' : '#F6F8F3', fg:
+                                  // i<=at ? '#2D794D' : '#838E7A'`) -- tahap tercapai
+                                  // = hijau SEMANTIC.ok, BUKAN navySoft/navy; tahap
+                                  // pending = C.bg/textFaint, BUKAN surfaceAlt/textMute.
+                                  background: at ? C.greenBg : C.bg }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.green : C.textFaint }}>
                                     {at && <Check size={14} />}{stage.label}
                                   </span>
                                   <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{metaText}</span>
@@ -3094,7 +3104,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 {/* Divider antar-section, pola persis mockup
                     (Inquiry Management.dc.html, `height:1px;background:
                     #ECF0E9` antara "Rate Requests" dan "Vendor Offers"). */}
-                <div style={{ height: 1, background: C.surfaceAlt }} />
+                <div style={{ height: 1, background: C.lineSoft }} />
 
                 {/* D-80 (Putaran 10) -- "Vendor Offers": satu Card FLAT
                     lintas seluruh PRF inquiry ini (mockup Detail/Procurement
@@ -3122,7 +3132,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       const isSelected = p.selected_offer_id === o.id;
                       const canSelect = canActOnPrf(p);
                       return (
-                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: C.surface, border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur persis mockup
+                        // (offers.map 'o.bd'): border SELALU 1px, warna
+                        // terpilih = INK_SOFT (bukan ACCENT/orange 2px).
+                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: C.surface, border: `1px solid ${isSelected ? C.textMute : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ flex: 1, fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</span>
                             {isSelected && (
@@ -3151,11 +3164,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                             </span>
                           )}
                           {!isSelected && canSelect && (
+                            // [Putaran 16a Tahap 0, GAGAL ditutup] mockup
+                            // "Use This Offer" solid ACCENT+INK (bukan outline).
                             <button
                               type="button"
                               onClick={() => handleSelectOffer(p, o)}
                               disabled={offerActionBusy}
-                              style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
+                              style={{ width: '100%', background: C.orange, color: C.text, border: `1px solid ${C.orange}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
                               {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
                             </button>
                           )}
@@ -3228,10 +3243,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     )}
                     {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: warna
                         divider disamakan ke mockup -- `height:1px;background:
-                        #ECF0E9` (padanan C.surfaceAlt, LEBIH TERANG dari
-                        C.border/#D8E0D2 yang dipakai keliru sebelumnya). */}
+                        #ECF0E9`. [Putaran 16a Tahap 0] C.lineSoft = LINE_SOFT
+                        EXACT (dulu C.surfaceAlt/HEAD_BG, cuma pendekatan
+                        terdekat sebelum key lineSoft ada di DEAL_C). */}
                     {statusHistorySegments.length > 0 && combinedHistoryEvents.length > 0 && (
-                      <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
+                      <div style={{ height: 1, background: C.lineSoft, marginBottom: 4 }} />
                     )}
                     {/* Putaran 11 Tahap B -- baris status DAN owner digabung
                         SATU timeline, diurut tanggal terbaru-dulu
@@ -3309,8 +3325,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <RelatedDocuments
         upstream={relatedDocsUpstream}
         downstream={relatedDocsDownstream}
+        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (pembatas
+        // antar-baris grup Upstream/Downstream): border-bottom LINE_SOFT
+        // #ECF0E9 -- bukan HEAD_BG #EFF3ED (C.surfaceAlt).
         tokens={{
-          border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+          border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
           fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
         }}
       />

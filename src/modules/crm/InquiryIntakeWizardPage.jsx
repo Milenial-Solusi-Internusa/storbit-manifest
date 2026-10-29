@@ -184,7 +184,22 @@ function FieldError({ children }) {
 // mockup menandai "aktif" lewat border+latar+ikon centang, bukan teks
 // putih di atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
 // navy/oranye + teks putih" sudah tidak dipakai).
-function Pill({ active, onClick, children, invalid }) {
+// [Putaran 16a Tahap 2] `variant='chip'` BARU -- diukur mockup (Incoterms/
+// Container Type, Inquiry Intake Form: `fch.inco`/`fch.cont`, bg:
+// on?'#C3D9B8':'#FFFFFF', bd: on?'#AFC9A0':'#D8E0D2'). Pil BULAT (radius
+// 16, tinggi 32) tanpa ikon centang, teks SELALU INK (C.text) di kedua
+// state -- beda total dari variant default 'card' (kartu besar radius 10
+// tinggi 44, navySoft+navy+Check). Default TETAP 'card' supaya SELURUH
+// pemanggil lain (Direction/Customer Role/Pricing Basis) byte-identik.
+function Pill({ active, onClick, children, invalid, variant = 'card' }) {
+  if (variant === 'chip') {
+    return (
+      <button type="button" onClick={onClick}
+        style={{ height: 32, padding: '0 12px', borderRadius: 16, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', border: '1px solid ' + (active ? C.orangeDark : C.border), background: active ? C.orange : C.card, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+        {children}
+      </button>
+    );
+  }
   return (
     <button type="button" onClick={onClick}
       style={{ height: 44, borderRadius: 10, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
@@ -1626,11 +1641,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
                     <div>
                       <div style={S.label}>Incoterms</div>
-                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
+                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} variant="chip" active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
                     </div>
                     <div>
                       <div style={S.label}>Container Type</div>
-                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
+                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} variant="chip" active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
                     </div>
                     <div style={grid2}>
                       <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>

@@ -134,7 +134,10 @@ export function ChipToggleField({ label, editing, values, draft, onDraft, option
                 onClick={() => onDraft(on ? list.filter((x) => x !== id) : [...list, id])}
                 style={{
                   height: 24, padding: '0 9px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                  border: `1px solid ${on ? C.navy : C.border}`, background: on ? C.navySoft : C.surface,
+                  // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (edit
+                  // "Route & Terms", chip Incoterms "FOB" terpilih): bg
+                  // ACCENT + border ACCENT_HOVER -- bukan navySoft/INK.
+                  border: `1px solid ${on ? C.accentHover : C.border}`, background: on ? C.orange : C.surface,
                   color: C.text, fontFamily: HEAD, fontWeight: 700, fontSize: 11.5,
                 }}
               >
@@ -206,7 +209,10 @@ export function SectionHeader({ title, editing, canEdit, saving, onEdit, onCance
             Cancel
           </button>
           <button type="button" onClick={onSave} disabled={saving}
-            style={{ height: 32, padding: '0 12px', borderRadius: 10, background: C.navy, border: `1px solid ${C.navy}`, color: C.white, fontFamily: HEAD, fontWeight: 600, fontSize: 13.5, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+            // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (klik Edit
+            // "Service & Status"): Save = bg/border ACCENT_HOVER, teks INK
+            // -- bukan latar INK pekat + putih.
+            style={{ height: 32, padding: '0 12px', borderRadius: 10, background: C.accentHover, border: `1px solid ${C.accentHover}`, color: C.text, fontFamily: HEAD, fontWeight: 600, fontSize: 13.5, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </>

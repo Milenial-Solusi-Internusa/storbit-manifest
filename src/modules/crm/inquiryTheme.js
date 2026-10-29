@@ -42,7 +42,8 @@
 // Prompt A §2.
 import {
   BG, CARD, ACCENT, ACCENT_HOVER, ACCENT_2, LINE, LINE_SOFT, INK, INK_SOFT, INK_FAINT,
-  HEAD_BG, ROW_HOVER, DISABLED_BG, WHITE, DEAL_STATUS, SHADOW_DROP, SEMANTIC, TONE,
+  HEAD_BG, ROW_HOVER, DISABLED_BG, WHITE, DEAL_STATUS, SHADOW_DROP, SHADOW_MODAL, BACKDROP,
+  SEMANTIC, TONE,
 } from '../../kit/tokens';
 
 /* =========================================================================
@@ -162,7 +163,7 @@ export const WIZARD_C = {
 
    | key lama (hex lama)         | konstanta kit     | catatan |
    |-------------------------------|---------------------|---------|
-   | navy      (#1B4D8A)          | INK                 | SELURUH 16 titik pakai di DealDetailPage.jsx adalah teks/link/ikon/border-tipis, nol pakai sbg latar solid (diverifikasi grep) -- INK juga aman sbg latar solid+teks putih (kontras 12,4:1, dihitung manual) utk kotak "Best Quote" PriceSummaryCard & tombol modal |
+   | navy      (#1B4D8A)          | INK                 | SELURUH 16 titik pakai di DealDetailPage.jsx adalah teks/link/ikon/border-tipis, nol pakai sbg latar solid (diverifikasi grep) -- INK juga aman sbg latar solid+teks putih (kontras 12,4:1, dihitung manual) utk kotak "Best Quote" PriceSummaryCard |
    | navySoft  (#EAF0F8)          | ROW_HOVER           | latar tint terang (konsisten pola WIZARD_C.navySoft) |
    | orange    (#E85A1E)          | ACCENT              | tombol solid "Create Quotation"/"Create PRF" -- teks WAJIB C.text (INK), BUKAN putih (ACCENT pucat gagal AA) |
    | orangeSoft(#FEF2EC)          | ROW_HOVER           | tak terpakai pasca-edit (konsisten pola WIZARD_C) |
@@ -173,19 +174,37 @@ export const WIZARD_C = {
    | surfaceAlt(#FBF6EC)          | HEAD_BG             | |
    | border    (#E7DCC8)          | LINE                | |
    | borderStrong(#D9CDB6)        | INK_FAINT           | |
-   | green/greenBg/greenBd        | SEMANTIC.ok.*       | tombol solid DealWonModals -- teks putih AMAN (kontras 5,43:1) |
-   | red/redBg/redBd              | SEMANTIC.danger.*   | tombol solid DealCloseModals -- teks putih AMAN (kontras 6,57:1) |
+   | green/greenBg/greenBd        | SEMANTIC.ok.*       | |
+   | red/redBg/redBd              | SEMANTIC.danger.*   | |
    | blue/blueBg/blueBd           | SEMANTIC.info.*     | |
    | amber/amberBg/amberBd        | SEMANTIC.warn.*     | JUGA dipakai utk 3 titik teks penekanan mata uang non-IDR yang SEBELUMNYA memakai `orange` sbg teks (ACCENT pucat tak terbaca sbg teks) |
    | gray/grayBg/grayBd           | SEMANTIC.neutral.*  | |
    | white -- BARU, bukan ganti -- | WHITE              | pengganti literal `'#fff'` tersisa (mis. teks di kotak "Best Quote") supaya tetap tertelusur ke kit, bukan hex lepas |
+   | backdrop/shadowModal -- BARU -- | BACKDROP/SHADOW_MODAL | lihat catatan di bawah objek |
 
    ⚠️ `navy`/`orange` SELALU berperan TEKS/LINK/BORDER atau LATAR SOLID+TEKS
    PUTIH di ketiga berkas ini -- KEDUANYA aman dipetakan uniform (INK/ACCENT)
    karena dihitung dulu: putih di atas INK = 12,4:1 (lolos jauh di atas AA).
    SATU-SATUNYA pengecualian adalah `orange` dipakai sbg TEKS highlight mata
    uang (bukan latar) -- itu disurati ke `amber`, bukan dibiarkan `orange`
-   (ACCENT pucat gagal terbaca sbg teks, pelajaran sama Prompt A). */
+   (ACCENT pucat gagal terbaca sbg teks, pelajaran sama Prompt A).
+
+   [Putaran 16a Tahap 1, KOREKSI atas tabel di atas -- bukan asumsi, diukur
+   LANGSUNG di mockup Modal/AssignOwner, Modal/MarkWon, Modal/RevertManualWin,
+   Modal/MarkLost, Modal/CancelInquiry]: TIDAK ADA tombol modal yang memakai
+   `navy` solid+putih ATAU `green` solid+putih -- SELURUH tombol primer
+   "terima aksi" (Reassign/Assign, Yes Mark as Won, Revert) memakai `orange`
+   (ACCENT) solid + teks `text` (INK), SAMA PERSIS tombol toolbar "Create
+   Quotation". Tombol danger (Mark as Lost/Cancel Inquiry) memakai
+   `redBg`+`redBd`+`red` (latar PINK TER-TINT + teks merah + border ter-tint),
+   BUKAN `red` solid+putih. Banner peringatan/validasi (termasuk upload
+   gagal) SELALU `amberBg`/`amberBd`/`amber`, TIDAK PERNAH `red` -- SEMANTIC
+   danger (#B23227 dkk) nol kemunculan di seluruh region modal mockup
+   (diverifikasi grep). Komentar lama "tombol solid DealWonModals/
+   DealCloseModals -- teks putih aman" di atas SUDAH DICORET -- biarkan
+   trio green/red di DEAL_C seperti sekarang (dipakai SEBAGAI TRIO tint utk
+   banner+tombol danger/first-win-neutral), jangan dikembalikan ke bentuk
+   solid+putih. */
 export const DEAL_C = {
   navy: INK,
   navySoft: ROW_HOVER,
@@ -206,6 +225,9 @@ export const DEAL_C = {
   white: WHITE, // BARU -- lihat tabel di atas
   bg: BG, // BARU -- banner "Next step" DealDetailPage.jsx, diukur persis mockup data-screen-label="Detail/NextStep": background:#F6F8F3 (BUKAN navySoft lama -- lihat laporan chat Tahap 1 §4)
   lineSoft: LINE_SOFT, // BARU -- border banner "Next step" yang sama, mockup: border:1px solid #ECF0E9
+  accentHover: ACCENT_HOVER, // BARU [Putaran 16a Tahap 0] -- tombol Save inline-edit Overview (diukur mockup: Save = bg/border #AFC9A0, BUKAN plain ACCENT #C3D9B8) + border chip terpilih (diukur: on.bd #AFC9A0)
+  backdrop: BACKDROP, // BARU [Putaran 16a Tahap 1] -- overlay 4 modal (OwnerAssignModal/DealWonModals/DealCloseModals/ChangeAccountModal), diukur mockup data-screen-label="Modal/*": background:rgba(51,66,43,.35) (INK, BUKAN rgba(22,36,58,.45) navy lama)
+  shadowModal: SHADOW_MODAL, // BARU [Putaran 16a Tahap 1] -- sheet 4 modal yang sama, diukur mockup: box-shadow:0 24px 48px rgba(51,66,43,.22), NOL border (border lama C.border dicabut)
 };
 
 /* Status inquiry (badge tinted rounded-square) -- STATUS_META di

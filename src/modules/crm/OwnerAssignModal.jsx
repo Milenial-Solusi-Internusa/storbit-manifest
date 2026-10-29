@@ -44,7 +44,8 @@
 import { useState, useEffect } from 'react';
 import { UserCog, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { C, HEAD, BODY, fmtRp } from './DealPanels';
+import { DEAL_C as C } from './inquiryTheme';
+import { HEAD, BODY, fmtRp } from './DealPanels';
 import { fetchOperationalRoster } from './salesRoster';
 
 // Status "masih terbuka" -- SAMA PERSIS LOSABLE_INQUIRY_STATUS/
@@ -53,35 +54,48 @@ import { fetchOperationalRoster } from './salesRoster';
 // menghitung label "(N open)" per kandidat New Owner -- bukan gerbang.
 const OPEN_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 
+// [Putaran 16a Tahap 1] Chrome overlay/sheet diukur mockup
+// data-screen-label="Modal/AssignOwner": backdrop INK rgba(51,66,43,.35)
+// (BUKAN rgba(22,36,58,.45) navy lama) + sheet NOL border, box-shadow
+// rgba(51,66,43,.22), radius 18 (bukan 16).
 const overlay = {
   position: 'fixed', inset: 0, zIndex: 1000,
-  background: 'rgba(22,36,58,.45)', display: 'flex',
+  background: C.backdrop, display: 'flex',
   alignItems: 'center', justifyContent: 'center', padding: 16,
 };
 const sheet = {
-  width: '100%', maxWidth: 480, background: '#fff',
-  border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden',
+  width: '100%', maxWidth: 480, background: C.surface,
+  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
 };
+// [Putaran 16a Tahap 1] diukur mockup (label field "New Owner"/"Reason"
+// dkk): color INK_SOFT (textMute), BUKAN INK_FAINT (textFaint).
 const label = {
   display: 'block', fontFamily: BODY, fontSize: 11, fontWeight: 700,
-  color: C.textFaint, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
+  color: C.textMute, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
 };
+// [Putaran 16a Tahap 1] diukur mockup (select/textarea di dalam modal):
+// background BG (C.bg), BUKAN putih solid -- field "tenggelam" di atas
+// sheet putih, pola konsisten di seluruh field modal mockup.
 const field = {
   width: '100%', padding: '9px 11px', borderRadius: 9,
-  border: `1px solid ${C.border}`, background: '#fff',
+  border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
+// [Putaran 16a Tahap 1] diukur mockup (tombol "Cancel" footer modal):
+// background transparent (BUKAN putih solid), border INK_FAINT (borderStrong)
+// BUKAN LINE (border).
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`,
-  background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
   fontWeight: 600, cursor: 'pointer',
 };
-// Navy solid -- Keputusan Den (Putaran 11 prompt 40 jawaban 1): pola
-// IDENTIK tombol "Save" Change Account (aksi edit, bukan destruktif/
-// sukses). Palet sage dikerjakan Putaran 16a, TIDAK disentuh di sini.
+// [Putaran 16a Tahap 1, KOREKSI] diukur mockup ({{ saveAssign }} "Reassign"/
+// "Assign"): solid ACCENT + teks INK -- BUKAN navy solid+putih seperti
+// komentar lama (Putaran 11 prompt 40 jawaban 1, ditulis SEBELUM palet sage
+// & sebelum pengukuran mockup ini ada). Lihat koreksi tabel inquiryTheme.js.
 const btnPrimary = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`,
-  background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
+  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
 });
 
@@ -217,7 +231,8 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
   return (
     <div style={overlay} role="dialog" aria-modal="true">
       <div style={sheet}>
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {/* [Putaran 16a Tahap 1] border-bottom diukur mockup: LINE_SOFT (#ECF0E9), bukan LINE (C.border). */}
+        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <UserCog size={18} style={{ color: C.navy, flexShrink: 0, marginTop: 1 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>{title}</h3>
@@ -278,16 +293,21 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
           </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text, cursor: 'pointer' }}>
-            <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} style={{ width: 16, height: 16 }} />
+            {/* accentColor diukur mockup: INK_FAINT (#838E7A), bukan biru bawaan browser. */}
+            <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.borderStrong }} />
             Notify new owner
           </label>
 
+          {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (seluruh
+              pesan validasi "X is required" + banner Modal/MarkWon/*):
+              amber (warn), BUKAN merah/danger -- SEMANTIC danger nol
+              kemunculan di region modal mockup. */}
           {err && (
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
               padding: '9px 11px', borderRadius: 9,
-              background: C.redBg, border: `1px solid ${C.redBd}`,
-              fontFamily: BODY, fontSize: 12.5, color: C.red,
+              background: C.amberBg, border: `1px solid ${C.amberBd}`,
+              fontFamily: BODY, fontSize: 12.5, color: C.amber,
             }}>
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
               {err}
@@ -295,7 +315,7 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
           )}
         </div>
 
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" style={btnGhost} onClick={onClose} disabled={saving}>Cancel</button>
           <button type="button" style={btnPrimary(saving)} onClick={submit} disabled={saving}>
             {saving ? 'Saving…' : submitLabel}

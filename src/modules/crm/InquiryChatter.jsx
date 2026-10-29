@@ -22,7 +22,12 @@ import { MessageCircle, Send, Pencil, Trash2, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ConfirmModal from '../../components/ConfirmModal';
-import { C, HEAD, BODY, Card } from './DealPanels';
+import { DEAL_C as C } from './inquiryTheme';
+import { HEAD, BODY } from './DealPanels';
+// [Putaran 16a Tahap 1] `Card` dari inquiryParts.jsx (fork sage, SUDAH
+// dipakai seluruh section lain DealDetailPage.jsx) -- BUKAN DealPanels.jsx
+// (navy/orange lama). Reuse, bukan salinan ketiga.
+import { Card } from './inquiryParts';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -58,9 +63,14 @@ function findActiveMention(text, cursorPos) {
   return { atStart: before.length - atToken.length, query: atToken.slice(1) };
 }
 
+// [Putaran 16a Tahap 1] Edit/Delete per komentar NOL pasangan mockup
+// langsung (Comments aside mockup tak punya aksi per-baris) -- chrome
+// mengikuti pola "ghost"/"danger" yang TERBUKTI uniform di keluarga modal
+// (Tahap 1 §3): ghost = transparent + border INK_FAINT; danger = latar
+// pink ter-tint + border ter-tint + teks merah (BUKAN outline merah solid).
 const ghostBtn = (danger) => ({
   height: 28, padding: '0 10px', borderRadius: 8,
-  border: `1px solid ${danger ? C.redBd : C.border}`, background: '#fff',
+  border: `1px solid ${danger ? C.redBd : C.borderStrong}`, background: danger ? C.redBg : 'transparent',
   color: danger ? C.red : C.navy, fontFamily: HEAD, fontSize: 11.5, fontWeight: 600,
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5,
 });
@@ -376,11 +386,15 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                   </div>
                   {isEditing ? (
                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup
+                          (textarea composer, pola sama): border LINE (bukan
+                          INK_FAINT) + background BG (C.bg, sebelumnya nol --
+                          putih bawaan Card). */}
                       <textarea
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
                         rows={3}
-                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.borderStrong}`, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
+                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
                       />
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Save'}</button>
@@ -411,14 +425,22 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             onChange={handleComposerChange}
             placeholder="Write a comment. Use @ to mention a teammate."
             rows={3}
-            style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.borderStrong}`, padding: '9px 11px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
+            // [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (data-screen-
+            // label="Detail/Comments" textarea): border LINE (#D8E0D2, bukan
+            // INK_FAINT) + background BG (#F6F8F3, sebelumnya nol).
+            style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, padding: '9px 11px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup
+                ({{ sendComment }} "Send"): teks INK saat aktif, BUKAN putih
+                -- ACCENT pucat gagal AA sbg latar+teks putih (pelajaran
+                sama Prompt A). State disabled (gray) nol pasangan mockup,
+                dipertahankan. */}
             <button
               type="button"
               onClick={handleSubmit}
               disabled={submitting || !newBody.trim()}
-              style={{ height: 34, padding: '0 14px', borderRadius: 9, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              style={{ height: 34, padding: '0 14px', borderRadius: 9, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
               <Send size={13} />{submitting ? 'Sending…' : 'Send'}
             </button>
@@ -427,10 +449,15 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           {mentionOpen && mentionCoords && hasMentionMatches && createPortal(
             <div
               ref={menuRef}
+              // [Putaran 16a Tahap 1] boxShadow diukur dari konvensi tunggal
+              // mockup utk dropdown/popover melayang (kebab menu
+              // Inquiry Management.dc.html: rgba(51,66,43,.16), bukan
+              // rgba(15,23,42,.16) slate lama -- INK, bukan navy/slate).
+              // Dropdown mention sendiri nol pasangan mockup langsung.
               style={{
                 position: 'fixed', top: mentionCoords.top, left: mentionCoords.left, width: mentionCoords.width, marginTop: 2,
-                background: '#fff', border: `1px solid ${C.border}`, borderRadius: 8,
-                boxShadow: '0 6px 20px rgba(15,23,42,.16)', zIndex: 9999,
+                background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+                boxShadow: '0 6px 20px rgba(51,66,43,.16)', zIndex: 9999,
                 maxHeight: 220, overflowY: 'auto',
               }}
             >
@@ -440,7 +467,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                   {mentionMatches.priority.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = C.surfaceAlt)} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = C.navySoft)} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
                       <span style={{ fontSize: 13, color: C.text }}>{p.full_name}</span>
                     </button>
                   ))}
@@ -452,7 +479,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                   {mentionMatches.rest.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = C.surfaceAlt)} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = C.navySoft)} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
                       <span style={{ fontSize: 13, color: C.text }}>{p.full_name}</span>
                     </button>
                   ))}
