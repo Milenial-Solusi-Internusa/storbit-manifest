@@ -234,9 +234,9 @@ function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.OPEN;
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '2px 10px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
-      letterSpacing: '.3px', border: `1px solid ${m.bd}`,
+      display: 'inline-flex', alignItems: 'center', fontFamily: "Montserrat, sans-serif",
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
+      border: `1px solid ${m.bd}`,
       background: m.bg, color: m.color,
     }}>
       {m.label}
@@ -250,8 +250,8 @@ function SubBadge({ children, tone = 'warn' }) {
     : { bg: C.lineSoft, color: C.inkSoft, bd: C.line };
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11, fontWeight: 700,
+      display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: "Montserrat, sans-serif",
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
       whiteSpace: 'nowrap', border: `1px solid ${t.bd}`, background: t.bg, color: t.color,
     }}>
       {children}
@@ -962,7 +962,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+          <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, fontSize: 13, color: C.ink }}>
             {inq.inquiry_no || '—'}
           </span>
           {inq.inquiry_type === 'Rate Sheet Request' && <SubBadge tone="neutral">Rate Sheet</SubBadge>}
@@ -975,7 +975,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
             <span style={{ fontWeight: 600 }}>{acc?.name || '—'}</span>
             {acc?.lifecycle_stage && (
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft }}>
+              <span style={{ fontFamily: "Montserrat, sans-serif", fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft }}>
                 {acc.lifecycle_stage}
               </span>
             )}
@@ -1067,10 +1067,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <button
           onClick={onAddInquiry}
           style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            background: C.accent, color: C.ink, border: 'none',
-            borderRadius: 9, padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
-            cursor: 'pointer', boxShadow: '0 2px 8px rgba(51,66,43,.25)',
+            display: 'flex', alignItems: 'center', gap: 8, height: 40,
+            background: C.accent, color: C.ink, border: `1px solid ${C.accent}`,
+            borderRadius: 10, padding: '0 16px', fontSize: 13.5, fontWeight: 600,
+            fontFamily: "Montserrat, sans-serif", cursor: 'pointer',
           }}
         >
           <Plus size={16} /> Add Inquiry
@@ -1090,7 +1090,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                   style={{
                     height: 32, padding: '0 12px', borderRadius: 8, border: `1px solid ${on ? C.line : 'transparent'}`,
                     background: on ? C.surface : 'transparent', cursor: 'pointer',
-                    color: C.ink, fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    color: C.ink, fontSize: 13.5, fontWeight: 600, fontFamily: "Montserrat, sans-serif", whiteSpace: 'nowrap',
                   }}
                 >
                   {opt.label}
@@ -1110,7 +1110,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
               height: 32, padding: '0 12px', borderRadius: 16,
               border: `1px solid ${wasF ? C.inkSoft : C.line}`,
               background: wasF ? C.surface2 : C.surface,
-              color: C.ink, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+              color: C.ink, fontSize: 12.5, fontWeight: 600, fontFamily: "Montserrat, sans-serif",
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             }}
           >
@@ -1224,7 +1224,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           </label>
 
           <div style={{ display: 'flex', alignItems: 'center', height: 44 }}>
-            <button type="button" onClick={clearAll} style={{ height: 40, padding: '0 16px', borderRadius: 10, background: 'transparent', border: '1px solid transparent', color: C.inkSoft, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button type="button" onClick={clearAll} style={{ height: 40, padding: '0 16px', borderRadius: 10, background: 'transparent', border: '1px solid transparent', color: C.inkSoft, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: "Montserrat, sans-serif" }}>
               Clear all
             </button>
           </div>
@@ -1278,9 +1278,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 key={p} onClick={() => setPage(p)}
                 style={{
                   minWidth: 32, height: 32, padding: '0 8px', borderRadius: 10,
-                  border: `1px solid ${p === page ? C.line : 'transparent'}`,
-                  background: p === page ? C.surface2 : C.surface,
-                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1px solid ${p === page ? C.accentHover : C.line}`,
+                  background: p === page ? C.accentSoft : C.surface,
+                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: "Montserrat, sans-serif",
                 }}
               >
                 {p + 1}

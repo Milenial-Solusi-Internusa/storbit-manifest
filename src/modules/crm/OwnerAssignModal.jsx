@@ -77,25 +77,23 @@ const label = {
 // background BG (C.bg), BUKAN putih solid -- field "tenggelam" di atas
 // sheet putih, pola konsisten di seluruh field modal mockup.
 const field = {
-  width: '100%', padding: '9px 11px', borderRadius: 9,
+  width: '100%', padding: '9px 11px', borderRadius: 10,
   border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
-// [Putaran 16a Tahap 1] diukur mockup (tombol "Cancel" footer modal):
-// background transparent (BUKAN putih solid), border INK_FAINT (borderStrong)
-// BUKAN LINE (border).
+// [Putaran 16 Tahap 4] tinggi/padding/radius/fontSize diukur ULANG langsung
+// di mockup (Modal/MarkWon DAN Modal/MarkLost, dua kali, hasil identik):
+// tombol footer 40px tinggi, padding '0 16px', radius 10, Montserrat 600
+// 13.5px -- mengoreksi nilai 34/14/9/12.5 yang sebelumnya diklaim "diukur
+// mockup" (komentar Tahap 1) tapi tidak cocok hasil ukur hari ini.
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
-  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 13.5,
   fontWeight: 600, cursor: 'pointer',
 };
-// [Putaran 16a Tahap 1, KOREKSI] diukur mockup ({{ saveAssign }} "Reassign"/
-// "Assign"): solid ACCENT + teks INK -- BUKAN navy solid+putih seperti
-// komentar lama (Putaran 11 prompt 40 jawaban 1, ditulis SEBELUM palet sage
-// & sebelum pengukuran mockup ini ada). Lihat koreksi tabel inquiryTheme.js.
 const btnPrimary = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
-  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.orange}`,
+  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 13.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
 });
 
@@ -235,7 +233,7 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
         <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <UserCog size={18} style={{ color: C.navy, flexShrink: 0, marginTop: 1 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>{title}</h3>
+            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h3>
             <div style={{ marginTop: 2, fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>
               {single ? `Inquiry ${targets[0]?.inquiry_no || ''}` : `${targets.length} inquiries`}
             </div>
@@ -266,7 +264,7 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
           <div>
             <label style={label} htmlFor="owner-assign-new-owner">New Owner *</label>
             <select
-              id="owner-assign-new-owner" style={field} value={newOwner}
+              id="owner-assign-new-owner" style={{ ...field, height: 44, padding: '0 12px' }} value={newOwner}
               onChange={(e) => { setNewOwner(e.target.value); setErr(''); }}
             >
               <option value="">Select an active salesperson</option>

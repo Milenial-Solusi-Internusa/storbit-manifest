@@ -70,23 +70,23 @@ const label = {
 };
 // [Putaran 16a Tahap 1] field diukur mockup: background BG (C.bg), bukan putih solid.
 const field = {
-  width: '100%', padding: '9px 11px', borderRadius: 9,
+  width: '100%', padding: '9px 11px', borderRadius: 10,
   border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
-// [Putaran 16a Tahap 1] tombol sekunder ("Cancel"/"Back") diukur mockup:
-// background transparent, border INK_FAINT (borderStrong) bukan LINE.
+// [Putaran 16 Tahap 4] tinggi/padding/radius/fontSize diukur ULANG langsung
+// di mockup (Modal/MarkLost DAN Modal/MarkWon, dua kali, hasil identik):
+// tombol footer 40px tinggi, padding '0 16px', radius 10, Montserrat 600
+// 13.5px -- mengoreksi nilai 34/14/9/12.5 yang sebelumnya diklaim "diukur
+// mockup" (komentar Tahap 1) tapi tidak cocok hasil ukur hari ini.
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
-  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 13.5,
   fontWeight: 600, cursor: 'pointer',
 };
-// [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup ({{ saveLost }}/
-// {{ saveCancel }}): latar PINK TER-TINT (redBg) + border ter-tint (redBd)
-// + teks merah (red) -- BUKAN merah solid+putih, persis hint instruksi.
 const btnDanger = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.redBd}`,
-  background: C.redBg, color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.redBd}`,
+  background: C.redBg, color: C.red, fontFamily: HEAD, fontSize: 13.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
@@ -99,7 +99,7 @@ function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, savin
         <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           {icon}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>{title}</h3>
+            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h3>
             {subtitle && (
               <div style={{ marginTop: 2, fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{subtitle}</div>
             )}
@@ -237,7 +237,7 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
       <div>
         <label style={label} htmlFor="lost-reason">Loss reason</label>
         <select
-          id="lost-reason" style={field} value={reasonId}
+          id="lost-reason" style={{ ...field, height: 44, padding: '0 12px' }} value={reasonId}
           onChange={(e) => { setReasonId(e.target.value); setErr(''); }}
         >
           <option value="">— Select a reason —</option>
@@ -257,7 +257,7 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
           <div>
             <label style={label} htmlFor="comp-name">Competitor name</label>
             <input
-              id="comp-name" style={field} value={compName}
+              id="comp-name" style={{ ...field, height: 44, padding: '0 12px' }} value={compName}
               onChange={(e) => { setCompName(e.target.value); setErr(''); }}
               placeholder="Competitor company name"
             />
@@ -265,7 +265,7 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
           <div>
             <label style={label} htmlFor="comp-price">Competitor price</label>
             <input
-              id="comp-price" style={field} value={compPrice} type="number" min="0"
+              id="comp-price" style={{ ...field, height: 44, padding: '0 12px' }} value={compPrice} type="number" min="0"
               onChange={(e) => { setCompPrice(e.target.value); setErr(''); }}
               placeholder="0"
             />

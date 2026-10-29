@@ -718,9 +718,9 @@ export default function InquiryClassificationPage({ showToast }) {
                 key={p} onClick={() => setTablePage(p)}
                 style={{
                   minWidth: 32, height: 32, padding: '0 8px', borderRadius: 10,
-                  border: `1px solid ${p === tablePage ? C.line : 'transparent'}`,
-                  background: p === tablePage ? C.surface2 : C.surface,
-                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1px solid ${p === tablePage ? C.accentHover : C.line}`,
+                  background: p === tablePage ? C.accentSoft : C.surface,
+                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: "Montserrat, sans-serif",
                 }}
               >
                 {p + 1}

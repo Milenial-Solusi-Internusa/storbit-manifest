@@ -68,15 +68,20 @@ const label = {
 };
 // [Putaran 16a Tahap 1] field diukur mockup: background BG (C.bg), bukan putih solid.
 const field = {
-  width: '100%', padding: '9px 11px', borderRadius: 9,
+  width: '100%', padding: '9px 11px', borderRadius: 10,
   border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
 // [Putaran 16a Tahap 1] tombol "Cancel" footer diukur mockup: background
 // transparent, border INK_FAINT (borderStrong) bukan LINE.
+// [Putaran 16 Tahap 4] tinggi/padding/radius/fontSize diukur ULANG langsung
+// di mockup (Modal/MarkWon DAN Modal/MarkLost, dua kali, hasil identik):
+// tombol footer 40px tinggi, padding '0 16px', radius 10, Montserrat 600
+// 13.5px -- mengoreksi nilai 34/14/9/12.5 yang sebelumnya diklaim "diukur
+// mockup" (komentar Tahap 1) tapi tidak cocok hasil ukur hari ini.
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
-  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 13.5,
   fontWeight: 600, cursor: 'pointer',
 };
 // [Putaran 16a Tahap 1, KOREKSI] diukur mockup ({{ saveWon }} "Yes, Mark as
@@ -85,8 +90,8 @@ const btnGhost = {
 // mockup; nama fungsi `btnGreen` dipertahankan (dipakai 2 titik di bawah),
 // nilainya sudah ACCENT/INK.
 const btnGreen = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
-  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.orange}`,
+  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 13.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
@@ -98,7 +103,7 @@ function Shell({ icon, title, children, err, onCancel, onSubmit, saving, submitL
         {/* border-bottom diukur mockup: LINE_SOFT, bukan LINE (C.border). */}
         <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           {icon}
-          <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>{title}</h3>
+          <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h3>
         </header>
 
         <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -209,7 +214,7 @@ export function MarkWonModal({
 
       <label>
         <span style={label}>Won Reason <span style={{ color: C.amber }}>*</span></span>
-        <select style={field} value={reason} onChange={(e) => setReason(e.target.value)}>
+        <select style={{ ...field, height: 44, padding: '0 12px' }} value={reason} onChange={(e) => setReason(e.target.value)}>
           <option value="">Select a reason</option>
           {WON_MANUAL_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>

@@ -151,7 +151,10 @@ const S = {
   // Judul step di body card (mockup baris 49, h3 "{{stepN}}. {{SNAME[sKey]}}"
   // -- di atas isi tiap langkah, berdampingan dgn label yg sudah tampil di pill).
   stepHeading: { margin: '0 0 4px', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 15, color: C.text },
-  label: { fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
+  // [Putaran 16 Tahap 4] diukur mockup langsung (field "Direction" step 2):
+  // Inter 600 12px, warna sub, TANPA uppercase/letter-spacing -- label field
+  // wizard BUKAN label uppercase ala tabel (beda dari headCell layar daftar).
+  label: { fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
   req: { color: C.warning, fontWeight: 800 },
   input: { height: 44, borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box' },
   textarea: { borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 },
@@ -210,9 +213,13 @@ function Pill({ active, onClick, children, invalid, variant = 'card' }) {
 function ServiceCard({ icon: Icon, label, active, onClick }) {
   return (
     <button type="button" onClick={onClick}
-      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      style={{ borderRadius: 14, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}>{Icon && <Icon size={20} />}</span>
-      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{label}</span>
+      {/* [Putaran 16 Tahap 4] font diukur mockup (kartu "Door to Door" step
+          2): Inter 600 13.5px -- BUKAN Montserrat. Arah kartu (baris di
+          mockup vs kolom di sini) & ukuran ikon TIDAK diubah -- STRUKTUR,
+          dilaporkan terpisah. */}
+      <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{label}</span>
     </button>
   );
 }

@@ -95,6 +95,11 @@ export const C = {
   purple:  TONE.navy.fg,   purpleBg: TONE.navy.bg,   purpleBd: TONE.navy.bd,
   teal:    TONE.slate.fg,  tealBg: TONE.slate.bg,    tealBd: TONE.slate.bd,
   orange:  TONE.orange.fg, orangeBg: TONE.orange.bg, orangeBd: TONE.orange.bd,
+  // BARU [Putaran 16 Tahap 4] -- border tombol pagination AKTIF, diukur
+  // mockup Status/Table (tombol halaman "1" terpilih): border #AFC9A0 =
+  // ACCENT_HOVER, bg #E4EDDE = accentSoft (sudah ada). ACCENT_HOVER sudah
+  // diimpor file ini (dipakai WIZARD_C), tinggal diekspor lewat `C`.
+  accentHover: ACCENT_HOVER,
 };
 
 /* =========================================================================

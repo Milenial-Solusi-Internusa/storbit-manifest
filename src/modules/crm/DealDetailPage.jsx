@@ -341,8 +341,8 @@ function TintBadge({ meta }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
-      padding: '2px 10px', borderRadius: RADIUS.sm, fontFamily: HEAD,
-      fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px',
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontFamily: HEAD,
+      fontSize: 11.5, fontWeight: 700,
       border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
     }}>
       {meta.label}

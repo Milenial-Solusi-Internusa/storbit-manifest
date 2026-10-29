@@ -214,7 +214,7 @@ const headCell = {
 };
 const tabBtnStyle = (active) => ({
   height: 32, padding: '0 12px', borderRadius: 8, cursor: 'pointer',
-  border: `1px solid ${active ? C.ink : 'transparent'}`, background: active ? C.surface : 'transparent',
+  border: `1px solid ${active ? C.line : 'transparent'}`, background: active ? C.surface : 'transparent',
   fontFamily: "'Montserrat', sans-serif", fontSize: 13.5, fontWeight: 600, color: C.ink,
   display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
 });
@@ -228,8 +228,8 @@ const countBadgeStyle = {
 // pola per-file sudah mapan di file ini).
 const undernameBadgeStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 6,
-  border: `1px solid ${C.line}`, background: C.lineSoft, color: C.inkSoft,
-  fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+  border: `1px solid ${C.warnBd}`, background: C.warnBg, color: C.warn,
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
 };
 // Badge "New" (Assigned to Me, L-13) -- warna ok/hijau, SENGAJA beda dari
 // countBadgeStyle (warn/amber, dipakai utk count & overdue) supaya "baru
