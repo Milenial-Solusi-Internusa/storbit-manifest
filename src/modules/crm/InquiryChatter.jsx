@@ -449,15 +449,19 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           {mentionOpen && mentionCoords && hasMentionMatches && createPortal(
             <div
               ref={menuRef}
-              // [Putaran 16a Tahap 1] boxShadow diukur dari konvensi tunggal
-              // mockup utk dropdown/popover melayang (kebab menu
-              // Inquiry Management.dc.html: rgba(51,66,43,.16), bukan
-              // rgba(15,23,42,.16) slate lama -- INK, bukan navy/slate).
-              // Dropdown mention sendiri nol pasangan mockup langsung.
+              // [sapuan bayangan lepas] boxShadow sebelumnya literal
+              // '0 6px 20px rgba(51,66,43,.16)' -- bukan diukur dari mockup
+              // (dropdown mention nol pasangan langsung), melainkan konvensi
+              // Nexus-wide 6 komponen picker lain (AccountPicker dkk).
+              // Dipindah ke C.shadowPopover (token kit BARU, SHADOW_POPOVER
+              // = 0 12px 32px rgba(51,66,43,.16), persis dropdown/popover
+              // SATU-SATUNYA di mockup Inquiry Management) atas keputusan
+              // Mas -- supaya satu token dipakai dropdown kebab
+              // (DealDetailPage.jsx) dan dropdown mention ini sekaligus.
               style={{
                 position: 'fixed', top: mentionCoords.top, left: mentionCoords.left, width: mentionCoords.width, marginTop: 2,
                 background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                boxShadow: '0 6px 20px rgba(51,66,43,.16)', zIndex: 9999,
+                boxShadow: C.shadowPopover, zIndex: 9999,
                 maxHeight: 220, overflowY: 'auto',
               }}
             >

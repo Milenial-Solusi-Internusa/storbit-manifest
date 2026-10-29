@@ -2001,7 +2001,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {kebabOpen && (
                 <>
                   <div onClick={() => setKebabOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
-                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(51,66,43,.16)', padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
+                  {/* [sapuan bayangan lepas] boxShadow sebelumnya literal '0 12px 32px rgba(51,66,43,.16)'
+                      (sudah persis nilai mockup, belum tertelusur ke kit) -- kini C.shadowPopover. */}
+                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: C.shadowPopover, padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
                     {canReassignOwner && (
                       <button type="button"
                         onClick={() => { setKebabOpen(false); setOwnerAssignOpen(true); }}

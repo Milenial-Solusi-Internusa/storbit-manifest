@@ -42,8 +42,8 @@
 // Prompt A §2.
 import {
   BG, CARD, ACCENT, ACCENT_HOVER, ACCENT_2, LINE, LINE_SOFT, INK, INK_SOFT, INK_FAINT,
-  HEAD_BG, ROW_HOVER, DISABLED_BG, WHITE, DEAL_STATUS, SHADOW_DROP, SHADOW_MODAL, BACKDROP,
-  SEMANTIC, TONE,
+  HEAD_BG, ROW_HOVER, DISABLED_BG, WHITE, DEAL_STATUS, SHADOW_DROP, SHADOW_MODAL, SHADOW_POPOVER,
+  BACKDROP, SEMANTIC, TONE,
 } from '../../kit/tokens';
 
 /* =========================================================================
@@ -228,6 +228,7 @@ export const DEAL_C = {
   accentHover: ACCENT_HOVER, // BARU [Putaran 16a Tahap 0] -- tombol Save inline-edit Overview (diukur mockup: Save = bg/border #AFC9A0, BUKAN plain ACCENT #C3D9B8) + border chip terpilih (diukur: on.bd #AFC9A0)
   backdrop: BACKDROP, // BARU [Putaran 16a Tahap 1] -- overlay 4 modal (OwnerAssignModal/DealWonModals/DealCloseModals/ChangeAccountModal), diukur mockup data-screen-label="Modal/*": background:rgba(51,66,43,.35) (INK, BUKAN rgba(22,36,58,.45) navy lama)
   shadowModal: SHADOW_MODAL, // BARU [Putaran 16a Tahap 1] -- sheet 4 modal yang sama, diukur mockup: box-shadow:0 24px 48px rgba(51,66,43,.22), NOL border (border lama C.border dicabut)
+  shadowPopover: SHADOW_POPOVER, // BARU [Putaran 16a, sapuan bayangan lepas] -- dropdown kebab "More actions" (DealDetailPage.jsx, sebelumnya rgba(51,66,43,.16) literal, nilainya SUDAH persis mockup tapi belum tertelusur ke kit) + dropdown mention InquiryChatter.jsx (sebelumnya 0 6px 20px -- konvensi picker Nexus lama, dipindah ke geometri ini atas keputusan Mas supaya satu token dipakai dua tempat).
 };
 
 /* Status inquiry (badge tinted rounded-square) -- STATUS_META di

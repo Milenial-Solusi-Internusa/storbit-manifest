@@ -53,6 +53,7 @@ export const DISABLED_INK = INK_FAINT; // kontrol nonaktif dikecualikan WCAG; ni
 export const FOCUS_RING   = '0 0 0 3px rgba(92,107,82,.35)';   // INK_SOFT rgb(92,107,82) α .35
 export const BACKDROP     = 'rgba(51,66,43,.35)';              // INK rgb(51,66,43) α .35 — disamakan ke overlay modal mockup Inquiry Management (audit Tugas 2, semula .45)
 export const SHADOW_1     = '0 1px 2px rgba(51,66,43,.06), 0 2px 8px rgba(51,66,43,.07)'; // lift tipis (dropdown/popover)
+export const SHADOW_POPOVER = '0 12px 32px rgba(51,66,43,.16)'; // dikutip persis box-shadow kebab menu/DocumentFlow dropdown, mockup Inquiry Management (satu-satunya nilai popover/dropdown di mockup selain SHADOW_1 yang bentuknya beda total) — dipakai dropdown/popover melayang (kebab, dropdown mention), BUKAN Modal/Toast/SlideOver (tiga token lain di bawah)
 export const SHADOW_2     = '0 24px 64px rgba(51,66,43,.28)';  // elemen melayang (slide-over, tooltip) — SHADOW_MODAL dipisah di bawah utk Modal, nilainya tak sama dgn ini
 export const SHADOW_MODAL = '0 24px 48px rgba(51,66,43,.22)';  // dikutip persis box-shadow Modal/MarkWon dkk, mockup Inquiry Management — dipakai Modal, BUKAN SlideOver/Tooltip (belum ada acuan mockup utk dua itu)
 export const SHADOW_TOAST = '0 12px 32px rgba(51,66,43,.25)';  // dikutip persis toast mockup — nilai literal yang sudah dipakai useToast.jsx sejak TD-318 Irisan Kit, kini jadi token
