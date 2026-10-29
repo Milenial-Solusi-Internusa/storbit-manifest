@@ -256,8 +256,10 @@ async function checkToastExact(page, name, text, timeoutMs = 3000) {
   return check(name, false, `toast terlihat saat timeout: ${JSON.stringify(visibleToasts)}`);
 }
 
-// Pill aktif (InquiryIntakeWizardPage.jsx) berwarna solid navy `#1B4D8A` =
-// rgb(27, 77, 138) -- IDENTIK pola assert Direction "Import" di bawah.
+// [Putaran 16a] Pill aktif (InquiryIntakeWizardPage.jsx) berwarna
+// C.navySoft (ROW_HOVER kit) `#E4EDDE` = rgb(228, 237, 222) -- IDENTIK
+// pola assert Direction "Import" di bawah. Nilai lama (navy solid
+// `#1B4D8A` = rgb(27, 77, 138)) sudah tidak dipakai sejak palet sage.
 // Dipakai utk memastikan handleCreate BENAR melempar wizard balik ke step
 // yang errornya berasal, bukan cuma menebak dari "URL tidak berubah" (URL
 // memang TAK PERNAH berubah sampai Create sungguhan sukses -- itu assert
@@ -270,7 +272,7 @@ async function isStepActive(page, stepLabel) {
   const btn = stepPill(page, stepLabel);
   if (await btn.count() === 0) return false;
   const bg = await btn.evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
-  return /27,\s*77,\s*138/.test(bg || '');
+  return /228,\s*237,\s*222/.test(bg || '');
 }
 
 // Tombol "Create Inquiry" HANYA dirender saat `stepIdx===SK.length` (lihat
@@ -294,12 +296,13 @@ async function goToReviewViaNext(page, maxSteps = 10) {
 // Diagnostik dipakai SETELAH Create ditolak tanpa penjelasan dari assert
 // biasa, supaya akarnya terlihat dari output tanpa membuka browser headed
 // manual. Tiga sumber: (a) pill step mana yang AKTIF saat ini (background
-// navy solid rgb(27,77,138) -- IDENTIK isStepActive, tapi di sini discan
-// SEMUA pill sekali jalan, bukan mencocokkan satu label yang ditebak); (b)
-// SELURUH <span> ber-warna merah FieldError (color rgb(220,38,38) =
-// C.error `#DC2626`, InquiryIntakeWizardPage.jsx:128-131) yang SEDANG
-// tampil -- mencakup pesan under_docs/route_*/svc_* dkk, yang bentuk
-// teksnya berbeda-beda per field; (c) teks toast yang sedang tampil.
+// rgb(228,237,222) = C.navySoft/ROW_HOVER kit, Putaran 16a -- IDENTIK
+// isStepActive, tapi di sini discan SEMUA pill sekali jalan, bukan
+// mencocokkan satu label yang ditebak); (b) SELURUH <span> ber-warna merah
+// FieldError (color rgb(178,50,39) = C.error `#B23227` SEMANTIC.danger.fg
+// kit, Putaran 16a -- InquiryIntakeWizardPage.jsx) yang SEDANG tampil --
+// mencakup pesan under_docs/route_*/svc_* dkk, yang bentuk teksnya
+// berbeda-beda per field; (c) teks toast yang sedang tampil.
 // Screenshot full halaman disimpan ke `screenshotPath` supaya pemanggil
 // (manusia/alat baca gambar) bisa memverifikasi visual, bukan hanya
 // tekstual.
@@ -307,14 +310,14 @@ async function captureRejectionDiagnostics(page, screenshotPath) {
   const activePill = await page.evaluate(() => {
     const hit = Array.from(document.querySelectorAll('button')).find((b) => {
       const t = (b.textContent || '').trim();
-      return /^\d+\.\s/.test(t) && getComputedStyle(b).backgroundColor === 'rgb(27, 77, 138)';
+      return /^\d+\.\s/.test(t) && getComputedStyle(b).backgroundColor === 'rgb(228, 237, 222)';
     });
     return hit ? hit.textContent.trim() : null;
   }).catch(() => null);
   const fieldErrors = await page.evaluate(() => {
     const out = [];
     document.querySelectorAll('span').forEach((el) => {
-      if (getComputedStyle(el).color === 'rgb(220, 38, 38)') {
+      if (getComputedStyle(el).color === 'rgb(178, 50, 39)') {
         const t = (el.textContent || '').trim();
         if (t) out.push(t);
       }
@@ -571,8 +574,8 @@ function dealFieldValue(page, label) {
   await stepPill(page, 'Service & Direction').click();
   await settle(page, 300);
   const importActive = await page.locator('button:text-is("Import")').evaluate((el) => getComputedStyle(el).backgroundColor);
-  // Pill aktif = background navy (#1B4D8A → rgb(27, 77, 138)); pill tak aktif = putih.
-  check('Direction otomatis "Import" (POL non-Indonesia, POD Indonesia)', /27,\s*77,\s*138/.test(importActive || ''), importActive);
+  // [Putaran 16a] Pill aktif = background C.navySoft (#E4EDDE → rgb(228, 237, 222)); pill tak aktif = C.card (putih).
+  check('Direction otomatis "Import" (POL non-Indonesia, POD Indonesia)', /228,\s*237,\s*222/.test(importActive || ''), importActive);
 
   await page.locator('button:text-is("Consignee")').click();
   await page.locator('label:has-text("Undername import") input[type="checkbox"]').check();
@@ -816,7 +819,7 @@ function dealFieldValue(page, label) {
     const shotPath = '/tmp/e2e-wizard-after-reject.png';
     const diag = await captureRejectionDiagnostics(page, shotPath);
     console.log(`  ⚠ Diagnostik (Create ditolak client-side, RPC tak terpanggil) --`);
-    console.log(`      pill aktif saat ini: ${diag.activePill || '(tak terdeteksi -- nol pill berwarna navy solid)'}`);
+    console.log(`      pill aktif saat ini: ${diag.activePill || '(tak terdeteksi -- nol pill ber-latar navySoft)'}`);
     console.log(`      FieldError merah terlihat: ${JSON.stringify(diag.fieldErrors)}`);
     console.log(`      toast terlihat: ${JSON.stringify(diag.toastText)}`);
     console.log(`      screenshot: ${shotPath} · URL saat ini: ${page.url()}`);
@@ -1087,11 +1090,11 @@ function dealFieldValue(page, label) {
   await page.locator('button:text-is("Export")').click();
   await settle(page, 200);
   check('[P13b/W-14] Direction "Export" -> Customer Role otomatis "Shipper"',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   await page.locator('button:text-is("Import")').click();
   await settle(page, 200);
   check('[P13b/W-14] Direction "Import" -> Customer Role otomatis "Consignee"',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Consignee")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Consignee")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   // Bonus -- pilihan manual TIDAK dihormati lintas klik Direction berikutnya
   // (mockup sendiri tidak punya guard "touched" utk custRole; keputusan Den
   // "ikuti mockup apa adanya" dibuktikan lewat skenario ini, bukan ditebak).
@@ -1100,7 +1103,7 @@ function dealFieldValue(page, label) {
   await page.locator('button:text-is("Export")').click();
   await settle(page, 200);
   check('[P13b/W-14] Pilihan manual "Third Party" ditimpa lagi begitu Direction diklik ulang (Export -> Shipper, bukti nol guard "touched")',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
 
   // ── W-21 -- isi Route & Terms (POL/POD/Pickup/Delivery/Cargo ready date),
   // lalu "Add route option": utk Door-to-Door, Pickup/Delivery TETAP tampil
@@ -1164,7 +1167,7 @@ function dealFieldValue(page, label) {
   await p13bCustomsPill.click();
   await settle(page, 300);
   check('[P13b/W-64] Pricing Basis SUDAH "Itemized charges" sejak step Customs pertama kali dibuka (default lazy, bukan kosong)',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   const p13bDutiesDefault = await fieldLocator(page, 'Duties & Taxes', 'select').inputValue();
   check('[P13b/W-64] Duties & Taxes SUDAH "Included in price" sejak step Customs pertama kali dibuka (default lazy, bukan kosong)',
     p13bDutiesDefault === 'Included in price', `dapat: "${p13bDutiesDefault}"`);
@@ -1291,10 +1294,10 @@ function dealFieldValue(page, label) {
   await page.locator('button:has-text("General Trading")').first().click();
   await settle(page, 300);
   check('[P14/2] Kartu "General Trading" aktif (background orangeSoft) setelah diklik',
-    /253,\s*240,\s*233/.test(await page.locator('button:has-text("General Trading")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:has-text("General Trading")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   check('[P14/2] Pill "Export" TIDAK ADA utk General Trading', (await page.locator('button:text-is("Export")').count()) === 0);
   check('[P14/2] Direction otomatis "Domestic" setelah General Trading dipilih',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Domestic")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Domestic")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   check('[P14/2] "Customer Role" TIDAK tampil utk General Trading', (await page.locator('text="Customer Role"').count()) === 0);
   const p14StepperLabels = ['Customer & Contact', 'Service & Direction', 'Delivery', 'Commercial', 'Review'];
   const p14StepperAbsent = ['Route & Terms', 'Cargo', 'Additional Services'];
@@ -1323,7 +1326,7 @@ function dealFieldValue(page, label) {
     const labels = ['Freight Forwarding', 'Customs Clearance', 'Door to Door', 'Trucking', 'General Trading'];
     return Array.from(document.querySelectorAll('button')).some((b) => {
       const t = (b.textContent || '').trim();
-      return labels.includes(t) && getComputedStyle(b).backgroundColor === 'rgb(253, 240, 233)';
+      return labels.includes(t) && getComputedStyle(b).backgroundColor === 'rgb(228, 237, 222)';
     });
   });
   check('[P14/3] Service Type kembali KOSONG (nol kartu service type aktif) setelah ganti akun', !p14AnyCardActive);
@@ -1508,7 +1511,7 @@ function dealFieldValue(page, label) {
   await page.locator('button:has-text("Customs Clearance")').first().click();
   await settle(page, 300);
   check('[P14/7] Pricing Basis SUDAH "Itemized charges" sejak Customs Clearance pertama kali dipilih (default lazy)',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Itemized charges")').evaluate((el) => getComputedStyle(el).backgroundColor)));
 
   await stepPill(page, 'Route & Terms').click();
   await settle(page);
@@ -1520,7 +1523,7 @@ function dealFieldValue(page, label) {
   await stepPill(page, 'Service & Direction').click();
   await settle(page, 300);
   check('[P14/7] Direction otomatis "Export" (POL Indonesia, POD non-Indonesia)',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("Export")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Export")').evaluate((el) => getComputedStyle(el).backgroundColor)));
   // TEMUAN (bukan diperbaiki di kode aplikasi, instruksi eksplisit) -- Customer
   // Role TIDAK ikut auto-terisi di sini walau Direction sudah "Export": aturan
   // W-14 (Export->Shipper/Import->Consignee, P13b di atas) HANYA terpasang di
@@ -1536,7 +1539,7 @@ function dealFieldValue(page, label) {
   await page.locator('button:text-is("All in per CBM")').click();
   await settle(page, 300);
   check('[P14/7] Pricing Basis "All in per CBM" aktif setelah dipilih',
-    /27,\s*77,\s*138/.test(await page.locator('button:text-is("All in per CBM")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await page.locator('button:text-is("All in per CBM")').evaluate((el) => getComputedStyle(el).backgroundColor)));
 
   await stepPill(page, 'Review').click();
   await settle(page);
@@ -2324,14 +2327,14 @@ function dealFieldValue(page, label) {
       // Prasyarat eksplisit (diminta Mas) -- buktikan pengecekan Next-block
       // di bawah TIDAK vakum: step aktif BENAR "Service & Direction" (bukan
       // kebetulan nyangkut di step lain) DAN kartu Customs Clearance BENAR
-      // terpilih (latar oranye C.orangeSoft '#FDF0E9' = rgb(253,240,233),
-      // pola sama cek Pill aktif di tempat lain skrip ini) SEBELUM Next
-      // diklik -- kalau salah satu prasyarat ini gagal, hasil check
+      // terpilih (latar C.navySoft '#E4EDDE' = rgb(228,237,222), Putaran
+      // 16a -- pola sama cek Pill aktif di tempat lain skrip ini) SEBELUM
+      // Next diklik -- kalau salah satu prasyarat ini gagal, hasil check
       // berikutnya tidak bisa dipercaya sebagai bukti W-16.
       check('[ACC/W-16] Prasyarat: masih di step "Service & Direction" sesaat sebelum Next diklik',
         await isStepActive(page3, 'Service & Direction'));
-      check('[ACC/W-16] Prasyarat: kartu "Customs Clearance" benar terpilih (latar oranye aktif)',
-        /253,\s*240,\s*233/.test(await page3.locator('button:has-text("Customs Clearance")').first().evaluate((el) => getComputedStyle(el).backgroundColor)));
+      check('[ACC/W-16] Prasyarat: kartu "Customs Clearance" benar terpilih (latar aktif)',
+        /228,\s*237,\s*222/.test(await page3.locator('button:has-text("Customs Clearance")').first().evaluate((el) => getComputedStyle(el).backgroundColor)));
       check('[ACC/W-16] Banner blokir akses JCI tampil (ground truth REST: akun TANPA role aktif di JCI)', w16BannerVisible);
       await page3.locator('button:has-text("Next")').first().click();
       await settle(page3, 300);

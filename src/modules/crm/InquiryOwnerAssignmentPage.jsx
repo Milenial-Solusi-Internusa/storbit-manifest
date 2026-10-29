@@ -14,8 +14,10 @@
 // satu-satunya ada di Detail Inquiry (baris 1030, Lingkup F). Dicatat
 // sebagai deviasi INSTRUKSI, bukan deviasi mockup.
 //
-// Brand: navy/orange/cream (C di bawah) -- BUKAN sage, sama alasan
-// InquiryClassificationPage.jsx (CRM/Inquiry belum giliran migrasi kit).
+// Brand: sage (C di bawah, dari src/kit/tokens.js lewat ./inquiryTheme.js
+// -- Putaran 16a, keputusan J-043 butir 7). Nama key `C` dan bentuk
+// objeknya DIPERTAHANKAN dari warna navy/orange/cream lama (lihat
+// inquiryTheme.js untuk tabel pemetaan) -- hanya SUMBER nilainya berubah.
 //
 // Scope SENGAJA DIPERSEMPIT (instruksi eksplisit Tahap 3B): TANPA bulk
 // assign, TANPA filter Created Date/Entity -- "filter Entity" yang
@@ -107,24 +109,7 @@ import { STATUS_LABEL } from './v3/tokens';
 import { fmtRp } from './DealPanels';
 import ConfirmModal from '../../components/ConfirmModal';
 import OwnerAssignModal from './OwnerAssignModal';
-
-const C = {
-  bg:        '#F6EFE3',
-  surface:   '#FFFDF8',
-  surface2:  '#FBF6EC',
-  ink:       '#23291E',
-  inkSoft:   '#5E6553',
-  inkFaint:  '#8A8E7C',
-  line:      '#E7DCC8',
-  lineSoft:  '#F0E7D6',
-  accent:    '#E85A1E',
-  accentSoft:'#FEF2EC',
-  ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
-  warn:      '#9A6B0E', warnBg: '#F8ECCF', warnBd: '#E6CE94',
-  danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
-  info:      '#2A5B8C', infoBg: '#E1ECF5', infoBd: '#BAD2E6',
-  neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
-};
+import { C } from './inquiryTheme';
 
 // Cermin STATUS_META InquiryListPage.jsx/InquiryClassificationPage.jsx --
 // disalin, bukan diimpor (pola per-file sudah mapan, lihat Classification).
@@ -482,7 +467,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Users size={22} style={{ color: C.accent }} />
+        <Users size={22} style={{ color: C.inkFaint }} />
         <h1 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 24, fontWeight: 700, color: C.ink }}>
           Inquiry Owner Assignment
         </h1>
@@ -509,7 +494,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                   {selectedIds.size} selected
                 </span>
                 <button type="button" onClick={openAssignBulk}
-                  style={{ height: 32, padding: '0 14px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ height: 32, padding: '0 14px', borderRadius: 10, border: 'none', background: C.accent, color: C.ink, fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   Assign to Sales
                 </button>
                 <button type="button" onClick={() => setSelectedIds(new Set())}
@@ -617,7 +602,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                           onClick={() => openAssignRow(r)}
                           style={{
                             height: 32, padding: '0 12px', borderRadius: 10, border: 'none', whiteSpace: 'nowrap',
-                            background: C.accent, color: '#fff',
+                            background: C.accent, color: C.ink,
                             fontFamily: "'Montserrat', sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer',
                           }}
                         >
