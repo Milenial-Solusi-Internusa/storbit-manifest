@@ -26,7 +26,11 @@ import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 /* ---------- Card (fork DealPanels.jsx:189-202) ---------- */
 export function Card({ title, icon, right, children }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
+    // [Putaran 16 Tahap 5] radius diukur ULANG mockup (section "Service &
+    // Status" dkk): 14, bukan 16. Efek samping: PriceSummaryCard ikut 14
+    // (nol pasangan mockup utk kartu itu sendiri, tapi konsisten dgn
+    // kartu lain yg terbukti 14).
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px' }}>
       {(title || right) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
           {icon && <span style={{ color: C.navy, display: 'flex' }}>{icon}</span>}

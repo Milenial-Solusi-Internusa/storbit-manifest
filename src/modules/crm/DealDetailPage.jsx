@@ -342,7 +342,7 @@ function TintBadge({ meta }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
       padding: '2px 9px', borderRadius: RADIUS.sm, fontFamily: HEAD,
-      fontSize: 11.5, fontWeight: 700,
+      fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
       border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
     }}>
       {meta.label}
@@ -2975,7 +2975,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
                       </button>
                       {locked && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
                           <Lock size={14} />{lockedLabel}
                         </span>
                       )}

@@ -231,7 +231,7 @@ export function MarkWonModal({
           {file && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
-              borderRadius: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700,
+              borderRadius: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
               border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute,
             }}>
               <Paperclip size={11} />{file.name}

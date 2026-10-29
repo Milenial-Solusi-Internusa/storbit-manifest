@@ -218,10 +218,13 @@ const tabBtnStyle = (active) => ({
   fontFamily: "'Montserrat', sans-serif", fontSize: 13.5, fontWeight: 600, color: C.ink,
   display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
 });
+// [Putaran 16 Tahap 5] lineHeight:'normal' ditambah -- tanpa ini badge
+// mewarisi line-height:1.5 global, tinggi jadi 23px bukan 20px mockup
+// (sumber ditemukan lewat residual StatusBadge InquiryListPage.jsx).
 const countBadgeStyle = {
   display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
   border: `1px solid ${C.warnBd}`, background: C.warnBg, color: C.warn,
-  fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', whiteSpace: 'nowrap',
 };
 // T-3 (Unassigned, Putaran 8) -- pola badge identik SubBadge
 // InquiryListPage.jsx:267-280 tapi dgn style lokal file ini (bukan impor,
@@ -229,7 +232,7 @@ const countBadgeStyle = {
 const undernameBadgeStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 6,
   border: `1px solid ${C.warnBd}`, background: C.warnBg, color: C.warn,
-  fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', whiteSpace: 'nowrap',
 };
 // Badge "New" (Assigned to Me, L-13) -- warna ok/hijau, SENGAJA beda dari
 // countBadgeStyle (warn/amber, dipakai utk count & overdue) supaya "baru
@@ -237,7 +240,7 @@ const undernameBadgeStyle = {
 const newAssignBadgeStyle = {
   display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
   border: `1px solid ${C.okBd}`, background: C.okBg, color: C.ok,
-  fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+  fontFamily: "'Montserrat', sans-serif", fontSize: 11, fontWeight: 700, lineHeight: 'normal', whiteSpace: 'nowrap',
 };
 
 // Avatar owner -- SATU warna solid utk semua nama; garis putus HANYA saat
@@ -717,7 +720,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
                         border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
-                        fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+                        fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', whiteSpace: 'nowrap',
                       }}>
                         {meta.label}
                       </span>

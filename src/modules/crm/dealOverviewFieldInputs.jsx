@@ -154,7 +154,7 @@ export function ChipToggleField({ label, editing, values, draft, onDraft, option
               <span key={v} style={{
                 display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
                 border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute,
-                fontFamily: HEAD, fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap',
+                fontFamily: HEAD, fontWeight: 700, fontSize: 11.5, lineHeight: 'normal', whiteSpace: 'nowrap',
               }}>
                 {opt ? optLabel(opt) : v}
               </span>
@@ -198,7 +198,7 @@ export function SectionHeader({ title, editing, canEdit, saving, onEdit, onCance
       <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>{title}</h3>
       {!editing && canEdit && (
         <button type="button" onClick={onEdit}
-          style={{ height: 32, padding: '0 12px', borderRadius: 10, background: 'transparent', border: `1px solid ${C.textMute}`, color: C.text, fontFamily: HEAD, fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>
+          style={{ height: 32, padding: '0 12px', borderRadius: 10, background: 'transparent', border: `1px solid ${C.textFaint}`, color: C.text, fontFamily: HEAD, fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>
           Edit
         </button>
       )}

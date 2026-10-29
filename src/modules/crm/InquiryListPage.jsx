@@ -235,7 +235,7 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', fontFamily: "Montserrat, sans-serif",
-      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
       border: `1px solid ${m.bd}`,
       background: m.bg, color: m.color,
     }}>
@@ -251,7 +251,7 @@ function SubBadge({ children, tone = 'warn' }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: "Montserrat, sans-serif",
-      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
       whiteSpace: 'nowrap', border: `1px solid ${t.bd}`, background: t.bg, color: t.color,
     }}>
       {children}
@@ -289,7 +289,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
               <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 10, letterSpacing: -0.5 }}>
                 {inquiry.inquiry_no || '—'}
               </div>
-              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontFamily: "Montserrat, sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
                 {m.label}
               </span>
             </div>
@@ -1040,9 +1040,12 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // [Putaran 16 Tahap 5] bg diukur ULANG mockup (wrapper select Status/search):
+  // C.bg (#F6F8F3), BUKAN C.surface2 (#EFF3ED) -- klaim Tahap 4 "sudah cocok"
+  // ternyata salah ukur (measure select native yang tak terpakai selStyle).
   const selStyle = {
     height: 44, borderRadius: 10, border: `1px solid ${C.line}`,
-    background: C.surface2, padding: '0 12px', fontSize: 13.5, color: C.ink,
+    background: C.bg, padding: '0 12px', fontSize: 13.5, color: C.ink,
     outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
   };
   const fieldLabel = { display: 'block', fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 };

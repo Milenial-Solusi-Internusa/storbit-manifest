@@ -161,9 +161,11 @@ const headCell = {
   textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft, whiteSpace: 'nowrap',
 };
 // Filter card Putaran 7 -- pola sama InquiryListPage.jsx (selStyle/fieldLabel).
+// [Putaran 16 Tahap 5] bg diukur ULANG mockup: C.bg, BUKAN C.surface2 --
+// lihat koreksi sama di InquiryListPage.jsx selStyle.
 const filterSelStyle = {
   height: 44, borderRadius: 10, border: `1px solid ${C.line}`,
-  background: C.surface2, padding: '0 12px', fontSize: 13.5, color: C.ink,
+  background: C.bg, padding: '0 12px', fontSize: 13.5, color: C.ink,
   outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
 };
 const fieldLabel = { display: 'block', fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 };
@@ -696,7 +698,7 @@ export default function InquiryClassificationPage({ showToast }) {
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6,
                     border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
-                    fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+                    fontFamily: "'Montserrat', sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', whiteSpace: 'nowrap',
                   }}>
                     {meta.label}
                   </span>
