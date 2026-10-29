@@ -6,13 +6,22 @@
    lifecycle akun atau status deal inquiry. Ia hanya menerima daftar tahap +
    tahap sekarang; kosakata apa pun boleh, asal urut dari awal ke akhir.
 
-   TIGA KEADAAN SEGMEN:
-     dilewati → latar NAVY, teks putih, penanda centang
-     aktif    → latar ORANGE_AA, teks putih, penanda nomor urut, ber-drop-shadow
-     belum    → latar CREAM, teks INK_SOFT, garis tipis, penanda nomor urut
+   [Putaran 16a Tahap 1] Satu-satunya pemakai produksi berkas ini =
+   DealDetailPage.jsx (CrmV3DemoPage.jsx tidak ber-rute, diverifikasi grep
+   sebelum diedit) -- warna diganti sage lewat ../inquiryTheme.js (keputusan
+   J-043 butir 7), kontrak/perilaku TIDAK berubah satu pun (props, clip-path,
+   NOTCH, logika isPast/isNow/allDone, early-return `closed` yang SUDAH
+   dicabut 4 Sep tetap tercabut).
 
-   ⚠️ ORANGE_AA, BUKAN ORANGE/ORANGE_DK — segmen aktif memuat teks PUTIH, dan
-   hanya ORANGE_AA yang lolos WCAG AA di kombinasi itu (lihat komentar token).
+   TIGA KEADAAN SEGMEN (nilai baru, pola identik src/kit/Data.jsx StatusBar):
+     dilewati → latar ACCENT, teks INK, penanda centang
+     aktif    → latar ACCENT_2, teks INK, penanda nomor urut, ber-drop-shadow
+     belum    → latar CARD, teks INK_SOFT, garis LINE, penanda nomor urut
+
+   ⚠️ Teks SELALU INK (bukan lagi putih) -- ACCENT/ACCENT_2 sage GAGAL AA
+   dengan teks putih (kit/tokens.js baris 19-22). Ini sebabnya keterangan lama
+   "ORANGE_AA, BUKAN ORANGE/ORANGE_DK, karena teks putih" sudah tidak relevan
+   -- tak ada lagi teks putih di atas segmen.
 
    ⚠️ PERUBAHAN SEMANTIK `closed` — 4 September 2026.
    SEBELUMNYA `closed` adalah EARLY RETURN: begitu diisi, komponen berhenti di
@@ -33,8 +42,8 @@
    komponen ini sengaja tak tahu sumbu apa yang sedang dipegangnya.
    ========================================================================= */
 
-import { NAVY, ORANGE_AA, CREAM, INK_SOFT, LINE, DANGER, SLATE_SOFT, SURFACE,
-         FONT_HEAD, RADIUS } from './tokens';
+import { FONT_HEAD, RADIUS } from './tokens';
+import { ACCENT, ACCENT_2, CARD, INK, INK_SOFT, LINE, WHITE, DEAL_STATUS, SHADOW_DROP } from '../inquiryTheme';
 
 /* Lebar takik chevron. Dipakai bertiga sekaligus — bentuk clip-path, tumpang
    tindih antar-segmen (margin kiri negatif), dan padding kanan supaya teks tak
@@ -44,9 +53,10 @@ const NOTCH = { normal: 18, compact: 14 };
 /* Gaya penanda penutupan per nilai `closed.stage`. Nilai di luar tiga kunci ini
    (mis. lifecycle 'free_agent') jatuh ke gaya CANCELLED — netral abu, karena
    "ditutup tanpa menang/kalah" adalah pembacaan yang paling tidak menyesatkan.
-   rgba di LOST sengaja ditulis apa adanya: nilainya = RGB dari DANGER, tapi
-   token warna di file ini semuanya hex dan belum ada helper alpha (keputusan
-   Den, 4 Sep 2026 — jangan menambahkannya diam-diam).
+   [Putaran 16a Tahap 1] Warna status TETAP DEAL_STATUS dari kit (instruksi
+   Tahap 1 butir 6, sudah identik mockup) -- trio LOST/CANCELLED kini dari
+   DEAL_STATUS langsung (bukan rgba derivasi DANGER lagi; rgba lama dicabut
+   bersama hex-nya, bukan dipertahankan sebagai "helper alpha").
 
    `done: true` menandai penutupan yang berarti SELURUH tahap tuntas — dipakai
    render segmen, bukan cuma warna penanda. Ini menutup celah kontrak: `current`
@@ -68,9 +78,9 @@ const NOTCH = { normal: 18, compact: 14 };
    Begitu riwayat tersedia, LOST/CANCELLED BOLEH menampilkan tahap yang
    sesungguhnya dicapai; WON tidak perlu berubah. */
 const CLOSED_STYLE = {
-  WON:       { bg: NAVY,       fg: SURFACE,   bd: 'transparent', done: true },
-  LOST:      { bg: 'rgba(192,57,43,0.1)', fg: DANGER, bd: 'rgba(192,57,43,0.3)' },
-  CANCELLED: { bg: SLATE_SOFT, fg: INK_SOFT,  bd: LINE },
+  WON:       { bg: DEAL_STATUS.WON.fg,       fg: WHITE,              bd: 'transparent', done: true },
+  LOST:      { bg: DEAL_STATUS.LOST.bg,      fg: DEAL_STATUS.LOST.fg,      bd: DEAL_STATUS.LOST.bd },
+  CANCELLED: { bg: DEAL_STATUS.CANCELLED.bg, fg: DEAL_STATUS.CANCELLED.fg, bd: DEAL_STATUS.CANCELLED.bd },
 };
 
 /**
@@ -107,10 +117,10 @@ export default function StatusBar({ stages = [], current, closed = null, compact
           : `polygon(0 0, calc(100% - ${notch}px) 0, 100% 50%, calc(100% - ${notch}px) 100%, 0 100%, ${notch}px 50%)`;
 
         const tone = isNow
-          ? { background: ORANGE_AA, color: SURFACE, weight: 700 }
+          ? { background: ACCENT_2, color: INK, weight: 700 }
           : isPast
-            ? { background: NAVY, color: SURFACE, weight: 500 }
-            : { background: CREAM, color: INK_SOFT, weight: 500, border: `1px solid ${LINE}` };
+            ? { background: ACCENT, color: INK, weight: 500 }
+            : { background: CARD, color: INK_SOFT, weight: 500, border: `1px solid ${LINE}` };
 
         return (
           <div
@@ -130,7 +140,7 @@ export default function StatusBar({ stages = [], current, closed = null, compact
               display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', gap: 2,
               padding: `0 ${notch + 10}px 0 ${first ? notch : notch + 10}px`,
-              filter: isNow ? 'drop-shadow(0 3px 6px rgba(194,74,20,0.35))' : undefined,
+              filter: isNow ? SHADOW_DROP : undefined,
             }}
           >
             <span

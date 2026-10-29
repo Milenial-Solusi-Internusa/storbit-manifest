@@ -26,7 +26,19 @@
    Persistensinya milik pemanggil — ListView tak menyentuh localStorage
    maupun DB, supaya satu komponen bisa dipakai baik untuk view lokal
    maupun view tersimpan di server nanti.
-   ========================================================================= */
+
+   [Putaran 16a Tahap 1] Prop BARU `tokens` (opsional) -- diukur mockup
+   Inquiry Management.dc.html (Detail/Quotations, data-rule 109): tabel di
+   sana cuma `overflow-x:auto` polos, NOL `::-webkit-scrollbar` kustom --
+   TIDAK cocok dengan kelas `nk-scroll` (scrollbar selalu terlihat) di
+   salinan src/kit/Data.jsx. Karena itu DealDetailPage TIDAK pindah impor ke
+   kit; warnanya dipasok lewat `tokens` di sini. Default `DEFAULT_TOKENS` di
+   bawah = NILAI LAMA byte-sama (NAVY/INK/INK_SOFT/FAINT/LINE/LINE_SOFT/
+   SURFACE/SURFACE_2 v3/tokens.js) -- PipelineKanbanPage.jsx TIDAK mengoper
+   prop ini sama sekali, jadi rendering-nya TIDAK berubah satu piksel pun.
+   Hanya `FilterBar` dan badan tabel (mode="table") yang menerima token ini
+   -- `Lane`/`StepperBar`/`BOARD_BG`/`BOARD_LINE` (mode="lanes", satu-
+   satunya pemakainya Pipeline) SENGAJA TIDAK disentuh. */
 
 import { useMemo, useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
@@ -34,8 +46,13 @@ import { NAVY, INK, INK_SOFT, FAINT, LINE, LINE_SOFT, SURFACE, SURFACE_2,
          FONT_HEAD, FONT_BODY, SP, RADIUS, toneOf } from './tokens';
 import { Badge, EmptyState } from './kit';
 
+const DEFAULT_TOKENS = {
+  navy: NAVY, ink: INK, inkSoft: INK_SOFT, faint: FAINT,
+  line: LINE, lineSoft: LINE_SOFT, surface: SURFACE, surface2: SURFACE_2,
+};
+
 /* ---------- Filter bar ---------- */
-function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelectView, right, card }) {
+function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelectView, right, card, tokens: t }) {
   return (
     /* `card` OPT-IN. Tanpa ia, gaya wrapper persis seperti sebelum prop ini ada —
        itulah sebabnya PipelineKanbanPage, yang juga merender FilterBar ini lewat
@@ -45,7 +62,7 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
     <div style={{
       display: 'flex', flexDirection: 'column', gap: SP.s3, marginBottom: SP.s4,
       ...(card ? {
-        background: SURFACE, border: `1px solid ${LINE}`,
+        background: t.surface, border: `1px solid ${t.line}`,
         borderRadius: RADIUS.md, padding: SP.s4,
       } : null),
     }}>
@@ -59,11 +76,11 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
                     selaras badge status tinted di halaman pemanggil.
                  2. `color` saja        → SOLID warna itu (perilaku yang lahir
                     sebelum trio ini ada — PipelineKanbanPage memakai jalur ini).
-                 3. tak diisi sama sekali → SOLID NAVY, persis perilaku awal.
-               Pil TIDAK AKTIF tak tersentuh ketiganya: tetap outline `LINE` +
-               teks `INK_SOFT`, dua token netral yang dipakai sejak awal. */
+                 3. tak diisi sama sekali → SOLID navy/accent token, persis perilaku awal.
+               Pil TIDAK AKTIF tak tersentuh ketiganya: tetap outline `line` +
+               teks `inkSoft`, dua token netral yang dipakai sejak awal. */
             const tinted   = !!(v.bg && v.text);
-            const accent   = v.color || NAVY;
+            const accent   = v.color || t.navy;
             const onBg     = tinted ? v.bg : accent;
             const onText   = tinted ? v.text : '#FFFFFF';
             const onBorder = tinted ? (v.border || v.text) : accent;
@@ -72,8 +89,8 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
                 key={v.id} type="button" onClick={() => onSelectView?.(v.id)}
                 style={{
                   padding: '5px 12px', borderRadius: RADIUS.pill, cursor: 'pointer',
-                  border: `1px solid ${on ? onBorder : LINE}`,
-                  background: on ? onBg : 'transparent', color: on ? onText : INK_SOFT,
+                  border: `1px solid ${on ? onBorder : t.line}`,
+                  background: on ? onBg : 'transparent', color: on ? onText : t.inkSoft,
                   fontFamily: FONT_HEAD, fontSize: 12, fontWeight: on ? 700 : 600,
                 }}
               >
@@ -98,14 +115,14 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
             nol regresi. */}
         {onSearch && (
           <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
-            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: FAINT }} />
+            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: t.faint }} />
             <input
               value={search || ''} onChange={(e) => onSearch(e.target.value)}
               placeholder="Search…"
               style={{
                 width: '100%', padding: '8px 12px 8px 32px', borderRadius: RADIUS.md,
-                border: `1px solid ${LINE}`, background: SURFACE,
-                fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: 'none',
+                border: `1px solid ${t.line}`, background: t.surface,
+                fontFamily: FONT_BODY, fontSize: 13.5, color: t.ink, outline: 'none',
               }}
             />
           </div>
@@ -282,7 +299,7 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  *                                       Warna pil saat AKTIF, tiga tingkat:
  *                                       trio {bg,text,border} → TINTED;
  *                                       `color` saja → SOLID warna itu;
- *                                       tak diisi → SOLID NAVY (perilaku awal).
+ *                                       tak diisi → SOLID `tokens.navy` (perilaku awal).
  *                                       Pil non-aktif selalu outline netral.
  * @param {string}   [props.activeView]
  * @param {Function} [props.onSelectView]
@@ -298,13 +315,19 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  *                                       tempat baris, BUKAN EmptyState —
  *                                       "belum dimuat" harus bisa dibedakan
  *                                       dari "memang kosong".
+ * @param {Object}   [props.tokens]    - warna identitas (navy/ink/inkSoft/
+ *                                       faint/line/lineSoft/surface/surface2).
+ *                                       TIDAK diisi = DEFAULT_TOKENS (nilai
+ *                                       v3/tokens.js lama, byte-sama) --
+ *                                       PipelineKanbanPage.jsx tak mengoper
+ *                                       prop ini, jadi nol dampak padanya.
  */
 export default function ListView({
   mode = 'table', columns = [], rows = [], lanes = [], renderCard,
   search, onSearch, filters, savedViews, activeView, onSelectView, right,
   filterCard = false,
   emptyTitle = 'No data', emptySub, groupedBoard = false,
-  onRowClick, loading = false,
+  onRowClick, loading = false, tokens = DEFAULT_TOKENS,
 }) {
   // Lajur `closed` menciut secara default; user boleh membukanya per sesi.
   const [expanded, setExpanded] = useState({});
@@ -321,7 +344,7 @@ export default function ListView({
     <FilterBar
       search={search} onSearch={onSearch} filters={filters}
       savedViews={savedViews} activeView={activeView} onSelectView={onSelectView} card={filterCard}
-      right={right}
+      right={right} tokens={tokens}
     />
   );
 
@@ -384,18 +407,18 @@ export default function ListView({
      header tetap terlihat saat memuat dan tak ada lompatan layout begitu data
      tiba. */
   const shell = (body) => (
-    <div style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
+    <div style={{ overflowX: 'auto', border: `1px solid ${tokens.line}`, borderRadius: RADIUS.lg }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT_BODY, fontSize: 13.5 }}>
         <thead>
-          <tr style={{ background: SURFACE_2 }}>
+          <tr style={{ background: tokens.surface2 }}>
             {columns.map((c) => (
               <th
                 key={c.key}
                 style={{
                   textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
                   fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700,
-                  letterSpacing: '.04em', textTransform: 'uppercase', color: INK_SOFT,
-                  borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap',
+                  letterSpacing: '.04em', textTransform: 'uppercase', color: tokens.inkSoft,
+                  borderBottom: `1px solid ${tokens.line}`, whiteSpace: 'nowrap',
                 }}
               >
                 {c.label}
@@ -410,7 +433,7 @@ export default function ListView({
 
   const cellStyle = (c) => ({
     textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
-    borderBottom: `1px solid ${LINE_SOFT}`, color: INK,
+    borderBottom: `1px solid ${tokens.lineSoft}`, color: tokens.ink,
   });
 
   const dataBody = rows.map((r, i) => (
@@ -425,7 +448,7 @@ export default function ListView({
       onMouseLeave={onRowClick ? () => setHoverRow(-1) : undefined}
       style={onRowClick ? {
         cursor: 'pointer',
-        background: hoverRow === i ? SURFACE_2 : 'transparent',
+        background: hoverRow === i ? tokens.surface2 : 'transparent',
         transition: 'background .12s ease',
       } : undefined}
     >
@@ -451,7 +474,7 @@ export default function ListView({
         <td key={c.key} style={cellStyle(c)}>
           <span style={{
             display: 'block', height: 10, borderRadius: RADIUS.sm,
-            background: LINE_SOFT, maxWidth: 160,
+            background: tokens.lineSoft, maxWidth: 160,
             marginLeft: c.align === 'right' ? 'auto' : 0,
           }} />
         </td>

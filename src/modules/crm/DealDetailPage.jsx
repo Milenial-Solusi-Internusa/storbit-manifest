@@ -1,7 +1,13 @@
 // src/modules/crm/DealDetailPage.jsx
 // CRM — Detail Deal (per inquiry). Ported from the Lovable handoff, adapted to
-// Nexus conventions: Lucide icons, shared supabase client, useAuth, brand
-// tokens (navy #1B4D8A / orange #E85A1E), Montserrat/Inter fonts.
+// Nexus conventions: Lucide icons, shared supabase client, useAuth, Montserrat/
+// Inter fonts.
+//
+// [Putaran 16a Tahap 1] Warna sage (keputusan J-043 butir 7) lewat
+// inquiryTheme.js (`DEAL_C`) -- DealPanels.jsx TIDAK disentuh (dilarang
+// eksplisit; masih dipakai CustomerDetailPage.jsx dkk apa adanya). Card/
+// InfoRow/PriceSummaryCard difork lokal ke inquiryParts.jsx. Tabel pemetaan
+// lengkap: inquiryTheme.js, komentar blok `DEAL_C`.
 //
 // Props:
 //   inquiryId          : string — inquiry to render
@@ -34,14 +40,14 @@ import { markInquiryWonWithEvidence } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, isSuperAdmin, canCreatePrf, isAllEntities } from '../../lib/roles';
 import { useDetailCrumb } from '../../routes/useDetailCrumb';
-import {
-  C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
-} from './DealPanels';
+import { HEAD, BODY, fmtDate, fmtRp } from './DealPanels';
+import { DEAL_C as C } from './inquiryTheme';
+import { Card, PriceSummaryCard } from './inquiryParts';
 import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2, STATUS_LABEL } from './v3/tokens';
+import { RADIUS, SP, FONT_MONO, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
 import LocationPicker from '../../kit/LocationPicker';
@@ -198,7 +204,11 @@ function daysLabel(n) {
    dicabut 8 Sep 2026 (blueprint §6: perpindahan status digerakkan DOKUMEN).
    Tombolnya hilang, tapi pengetahuan "apa yang harus kulakukan supaya deal ini
    maju" tidak boleh ikut hilang — itulah gunanya baris ini.
-   Nada NAVY_SOFT + INK, bukan warna peringatan: ini informasi, bukan error.
+   [Putaran 16a Tahap 1] Diukur PERSIS mockup data-screen-label=
+   "Detail/NextStep": background #F6F8F3 (C.bg, BUKAN navySoft lama) +
+   border 1px solid #ECF0E9 (C.lineSoft, elemen yang SEBELUMNYA tidak ada
+   di kode) + teks #33422B (C.text). Bukan warna peringatan: ini informasi,
+   bukan error.
    Status tertutup (WON/LOST/CANCELLED) sengaja NOL render — tak ada langkah
    berikutnya untuk deal yang sudah selesai. */
 // TD-318 Irisan 2 Inquiry, commit 8: teks disamakan KATA PER KATA ke mockup
@@ -227,8 +237,9 @@ function NextStepHint({ status }) {
         marginTop: SP.s2,
         padding: `${SP.s2}px ${SP.s3}px`,
         borderRadius: RADIUS.md,
-        background: NAVY_SOFT,
-        color: INK,
+        background: C.bg,
+        border: `1px solid ${C.lineSoft}`,
+        color: C.text,
         fontFamily: BODY,
         fontSize: 12.5,
         lineHeight: 1.5,
@@ -273,7 +284,10 @@ function NextStepHint({ status }) {
 // terpakai begitu badge "Needs selection" (sumber prfNeedsSelectionCount,
 // JUGA dicabut per keputusan Den: mockup `dtabs` baris 1032 nol field
 // badge/count di tab mana pun) ikut hilang.
-const PRF_NOT_ACTIVE_BADGE = { label: 'Not active', bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' };
+// [Putaran 16a Tahap 1, GAGAL ditutup] diukur PERSIS mockup: "Not active"
+// -> QB['Not active']='N' -> SB.N=['#5C6B52','#EFF3ED','#D8E0D2'] = trio
+// netral SEMANTIC (C.gray/grayBg/grayBd), bukan abu-abu literal terpisah.
+const PRF_NOT_ACTIVE_BADGE = { label: 'Not active', bg: C.grayBg, color: C.gray, bd: C.grayBd };
 function isPrfNotActive(p) {
   return ['CANCELLED', 'EXPIRED'].includes(String(p?.status || '').toUpperCase());
 }
@@ -404,7 +418,7 @@ const QUO_STATUS = {
 
 const ACT_BTN = {
   height: 36, padding: '0 13px', borderRadius: 9,
-  border: `1px solid ${C.border}`, background: '#fff', color: C.navy,
+  border: `1px solid ${C.border}`, background: C.surface, color: C.navy,
   fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
   display: 'inline-flex', alignItems: 'center', gap: 6,
 };
@@ -519,13 +533,13 @@ function QuotationItemsCard({ quotation, items, loading }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead>
                       <tr>
-                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Description</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Cost Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Currency</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Sell Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Unit Label</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>QTY</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Total IDR</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Description</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Cost Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Currency</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Sell Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Unit Label</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>QTY</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.textMute, background: C.surfaceAlt }}>Total IDR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -535,7 +549,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
                           <td style={{ padding: '9px 8px', textAlign: 'right', color: C.textMute, fontSize: 12 }}>
                             {(Number(row.cost_price) || 0).toLocaleString('id-ID')}
                           </td>
-                          <td style={{ padding: '9px 8px', textAlign: 'center', color: row.currency === 'USD' ? C.orange : C.textMute, fontWeight: 600, fontSize: 12 }}>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: row.currency === 'USD' ? C.amber : C.textMute, fontWeight: 600, fontSize: 12 }}>
                             {row.currency || 'IDR'}
                           </td>
                           <td style={{ padding: '9px 8px', textAlign: 'right', color: C.text, fontSize: 12 }}>
@@ -543,7 +557,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
                           </td>
                           <td style={{ padding: '9px 8px', textAlign: 'center', color: C.textMute, fontSize: 12 }}>{row.unit_label || '—'}</td>
                           <td style={{ padding: '9px 8px', textAlign: 'center', color: C.text, fontWeight: 600 }}>{row.qty || 1}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency !== 'IDR' ? C.orange : C.text, whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency !== 'IDR' ? C.amber : C.text, whiteSpace: 'nowrap' }}>
                             {fmtRp(row.total)}
                             {row.currency !== 'IDR' && (
                               <div style={{ fontSize: 10, color: C.textFaint, fontWeight: 400 }}>
@@ -1837,7 +1851,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
         <AlertCircle size={30} color={C.red} />
         <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Inquiry not found</div>
-        <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Back</button>
+        <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Back</button>
       </div>
     );
   }
@@ -1898,9 +1912,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            selebar dokumen (lihat komentar FormSheet.jsx), `meta` di atas
            cuma selebar kolom judul. Grid persis mockup Inquiry Management.dc.html
            :300 (`grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;
-           padding-top:16px;border-top:1px solid #ECF0E9`) -- border pakai
-           `C.border` (token navy/orange/cream file ini), bukan hex sage
-           mockup. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
+           padding-top:16px;border-top:1px solid #ECF0E9`). [Putaran 16a
+           Tahap 0, GAGAL ditutup] border kini `C.lineSoft` (LINE_SOFT
+           EXACT) -- dulu `C.border`/LINE, satu kelas dgn divider lain yang
+           sama-sama ditutup Tahap 0. Owner pakai `ownerName`/Avatar yang SUDAH ada (:799),
            Reassign memanggil panel inline YANG SAMA dengan tombol toolbar
            di bawah (keputusan Mas #4 -- nol modal baru). Overdue & Inquiry
            Age diturunkan dari `deadline_quote`/`created_at` yang SUDAH
@@ -1912,7 +1927,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            bawahnya dengan gate yang SAMA PERSIS seperti sebelumnya. */
         toolbar={(
         <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16, paddingTop: 16, borderTop: `1px solid ${C.lineSoft}` }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.textMute }}>Owner</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1956,7 +1971,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               Mark as Won (kalau canMarkWon). "Request Rates" mockup TIDAK
               dibangun. Won/Lost/Cancelled = nol primary action. */}
           {showCreateQuotationPrimary && (
-            <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
+            // [Putaran 16a Tahap 1] Satu-satunya aksi UTAMA toolbar (beda
+            // dari pasangan tab-lokal Quotations/Procurement yang sudah
+            // diubah ghost) -- dipertahankan solid ACCENT, cermin pola
+            // tombol primer tunggal mockup ("Next"/"Yes, Mark as Won").
+            // Teks WAJIB C.text (INK), BUKAN putih -- ACCENT pucat gagal AA.
+            <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: C.text }}>
               <FileText size={14} />Create Quotation
             </button>
           )}
@@ -1975,13 +1995,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           {showKebab && (canReassignOwner || canChangeAccount || canMarkLost || canCancel) && (
             <div style={{ position: 'relative' }}>
               <button type="button" title="More actions" onClick={() => setKebabOpen((v) => !v)}
-                style={{ ...ACT_BTN, width: 36, padding: 0, justifyContent: 'center', background: kebabOpen ? C.navySoft : '#fff' }}>
+                style={{ ...ACT_BTN, width: 36, padding: 0, justifyContent: 'center', background: kebabOpen ? C.navySoft : C.surface }}>
                 <MoreVertical size={16} />
               </button>
               {kebabOpen && (
                 <>
                   <div onClick={() => setKebabOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
-                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(22,36,58,.16)', padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
+                  {/* [sapuan bayangan lepas] boxShadow sebelumnya literal '0 12px 32px rgba(51,66,43,.16)'
+                      (sudah persis nilai mockup, belum tertelusur ke kit) -- kini C.shadowPopover. */}
+                  <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: C.shadowPopover, padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
                     {canReassignOwner && (
                       <button type="button"
                         onClick={() => { setKebabOpen(false); setOwnerAssignOpen(true); }}
@@ -2142,7 +2164,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               compact
               pol={inquiry.pol}
               pod={inquiry.pod}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         )}
@@ -2175,7 +2197,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <div style={{ marginTop: SP.s3 }}>
               <DocumentFlow
                 nodes={documentFlowNodes}
-                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.navySoft, linkColor: C.navy }}
+                // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (data
+                // node: `bg: i===1 ? '#C3D9B8' : '#FFFFFF'`) -- node aktif
+                // = ACCENT polos, BUKAN ROW_HOVER (C.navySoft).
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.orange, linkColor: C.navy }}
               />
             </div>
             <NextStepHint status={dealStatus} />
@@ -2318,7 +2343,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             diverifikasi di file sumber) -- disembunyikan utuh untuk GT,
             bukan dibongkar per-elemen. */}
         {!isGT && (<>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* TD-318 Irisan 2 Inquiry, commit 4: RouteStrip menggantikan baris
             panah POL→POD polos (mockup Detail/RouteStrip). Varian DoorToDoor
@@ -2338,7 +2363,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pod={inquiry.pod}
               delivery={inquiry.delivery_address}
               containerLabel={(inquiry.container_types || []).join(', ') || undefined}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         ) : (
@@ -2347,7 +2372,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               pol={inquiry.pol}
               pod={inquiry.pod}
               containerLabel={(inquiry.container_types || []).join(', ') || undefined}
-              tokens={{ border: C.border, mutedBg: C.surfaceAlt, text: C.text, textMute: C.textMute }}
+              tokens={{ border: C.border, mutedBg: C.bg, text: C.text, textMute: C.textMute }}
             />
           </div>
         )}
@@ -2545,7 +2570,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             />
           </div>
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Cargo" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 7) -- mockup SECS[2]. UN Number/IMO Class/
@@ -2663,7 +2688,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             );
           })()}
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Additional Services" (Irisan 2 Inquiry, lanjutan
             audit mockup, Pekerjaan B commit 8) -- mockup SECS[3]. SATU-
@@ -2689,7 +2714,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             values={inquiry.additional_services} draft={sectionDraft.additional_services}
             onDraft={(v) => setSectionDraft((d) => ({ ...d, additional_services: v }))} options={SERVICES} span={3} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
         </>)}
 
         {/* ===== Blok "Shipments" (Putaran 9, khusus Rate Sheet) -- mockup
@@ -2721,7 +2746,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 No shipment yet. Shipments are created from the active Rate Sheet quotation, in the Sales Order stage that comes next. Once a shipment exists, this inquiry can no longer be cancelled.
               </div>
             )}
-            <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+            <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
           </>
         )}
 
@@ -2758,7 +2783,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <TextField label="Contact" editing={false} value={inquiry.contact?.name} />
           <TextField label="Est. Closing" editing={false} value={account?.estimated_closing_date ? fmtDate(account.estimated_closing_date) : ''} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Value" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 10) -- mockup SECS[5], TETAP READ-ONLY
@@ -2776,7 +2801,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <TextField label="Estimated Value" editing={false} mono
             value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))} />
         </div>
-        <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 20 }} />
+        <div style={{ height: 1, background: C.lineSoft, marginBottom: 20 }} />
 
         {/* ===== Section "Notes" (Irisan 2 Inquiry, lanjutan audit mockup,
             Pekerjaan B commit 11, TERAKHIR) -- mockup SECS[6]. Satu-satunya
@@ -2805,7 +2830,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             terbaca, pesan toast '<Label>: number not recognized.'). */}
         {isGT && (
           <>
-            <div style={{ height: 1, background: C.surfaceAlt, marginTop: 20, marginBottom: 20 }} />
+            <div style={{ height: 1, background: C.lineSoft, marginTop: 20, marginBottom: 20 }} />
             <SectionHeader
               title="Delivery"
               editing={editingSection === 'Delivery'}
@@ -2919,15 +2944,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this inquiry will appear here."
+                  tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
                   right={
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur PERSIS mockup
+                          data-screen-label="Detail/QuotationActions": GHOST
+                          (background:transparent;border:1px solid #838E7A;
+                          color:#33422B), BUKAN solid accent+putih -- "Create
+                          Quotation"/"Create Revision" mockup tidak ditonjolkan
+                          sbg CTA utama. */}
                       <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
-                        style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff',
+                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
                           cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
                         {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
                       </button>
                       <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
-                        style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff',
+                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
                           cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
                         {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
                       </button>
@@ -2988,7 +3020,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>Rate Requests</h3>
                   {canCreatePRF && (
-                    <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
+                    // [Putaran 16a Tahap 1, GAGAL ditutup] pola "Request Rates"
+                    // mockup (lihat komentar di atas) = GHOST, bukan solid.
+                    <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text }}>
                       <FileText size={14} />Create PRF
                     </button>
                   )}
@@ -3048,8 +3082,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                               // (profMap miss) jatuh ke tanggal saja, bukan ditebak.
                               const metaText = at ? (who ? `${who}, ${fmtDate(at)}` : fmtDate(at)) : 'Pending';
                               return (
-                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10, background: at ? C.navySoft : C.surfaceAlt }}>
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.navy : C.textMute }}>
+                                <div key={stage.key} style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', borderRadius: 10,
+                                  // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup
+                                  // (`steps: ... bg: i<=at ? '#E4F0E5' : '#F6F8F3', fg:
+                                  // i<=at ? '#2D794D' : '#838E7A'`) -- tahap tercapai
+                                  // = hijau SEMANTIC.ok, BUKAN navySoft/navy; tahap
+                                  // pending = C.bg/textFaint, BUKAN surfaceAlt/textMute.
+                                  background: at ? C.greenBg : C.bg }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: HEAD, fontSize: 12, fontWeight: 600, color: at ? C.green : C.textFaint }}>
                                     {at && <Check size={14} />}{stage.label}
                                   </span>
                                   <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{metaText}</span>
@@ -3066,7 +3106,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 {/* Divider antar-section, pola persis mockup
                     (Inquiry Management.dc.html, `height:1px;background:
                     #ECF0E9` antara "Rate Requests" dan "Vendor Offers"). */}
-                <div style={{ height: 1, background: C.surfaceAlt }} />
+                <div style={{ height: 1, background: C.lineSoft }} />
 
                 {/* D-80 (Putaran 10) -- "Vendor Offers": satu Card FLAT
                     lintas seluruh PRF inquiry ini (mockup Detail/Procurement
@@ -3094,7 +3134,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       const isSelected = p.selected_offer_id === o.id;
                       const canSelect = canActOnPrf(p);
                       return (
-                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur persis mockup
+                        // (offers.map 'o.bd'): border SELALU 1px, warna
+                        // terpilih = INK_SOFT (bukan ACCENT/orange 2px).
+                        <div key={o.id} style={{ width: 260, boxSizing: 'border-box', background: C.surface, border: `1px solid ${isSelected ? C.textMute : C.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ flex: 1, fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</span>
                             {isSelected && (
@@ -3118,16 +3161,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                             <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>{o.notes}</span>
                           )}
                           {p.min_offers_waiver_reason && (
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.orange }}>
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.amber }}>
                               Only {(p.vendorOffers || []).length} offers. Procurement reason: {p.min_offers_waiver_reason}
                             </span>
                           )}
                           {!isSelected && canSelect && (
+                            // [Putaran 16a Tahap 0, GAGAL ditutup] mockup
+                            // "Use This Offer" solid ACCENT+INK (bukan outline).
                             <button
                               type="button"
                               onClick={() => handleSelectOffer(p, o)}
                               disabled={offerActionBusy}
-                              style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
+                              style={{ width: '100%', background: C.orange, color: C.text, border: `1px solid ${C.orange}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
                               {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
                             </button>
                           )}
@@ -3200,10 +3245,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     )}
                     {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: warna
                         divider disamakan ke mockup -- `height:1px;background:
-                        #ECF0E9` (padanan C.surfaceAlt, LEBIH TERANG dari
-                        C.border/#D8E0D2 yang dipakai keliru sebelumnya). */}
+                        #ECF0E9`. [Putaran 16a Tahap 0] C.lineSoft = LINE_SOFT
+                        EXACT (dulu C.surfaceAlt/HEAD_BG, cuma pendekatan
+                        terdekat sebelum key lineSoft ada di DEAL_C). */}
                     {statusHistorySegments.length > 0 && combinedHistoryEvents.length > 0 && (
-                      <div style={{ height: 1, background: C.surfaceAlt, marginBottom: 4 }} />
+                      <div style={{ height: 1, background: C.lineSoft, marginBottom: 4 }} />
                     )}
                     {/* Putaran 11 Tahap B -- baris status DAN owner digabung
                         SATU timeline, diurut tanggal terbaru-dulu
@@ -3213,7 +3259,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {combinedHistoryEvents.map((e) => e.kind === 'owner' ? (
                         <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                             <UserCheck size={16} />
                           </span>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
@@ -3230,7 +3276,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         </div>
                       ) : (
                         <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 16, background: '#fff', border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                             <CalendarClock size={16} />
                           </span>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
@@ -3281,8 +3327,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <RelatedDocuments
         upstream={relatedDocsUpstream}
         downstream={relatedDocsDownstream}
+        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (pembatas
+        // antar-baris grup Upstream/Downstream): border-bottom LINE_SOFT
+        // #ECF0E9 -- bukan HEAD_BG #EFF3ED (C.surfaceAlt).
         tokens={{
-          border: C.border, borderSoft: C.surfaceAlt, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+          border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
           fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
         }}
       />

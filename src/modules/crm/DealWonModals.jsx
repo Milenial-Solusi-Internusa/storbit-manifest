@@ -43,35 +43,50 @@
 
 import { useState } from 'react';
 import { CheckCircle2, RotateCcw, AlertTriangle, Info, Paperclip } from 'lucide-react';
-import { C, HEAD, BODY } from './DealPanels';
+import { DEAL_C as C } from './inquiryTheme';
+import { HEAD, BODY } from './DealPanels';
 import { WON_MANUAL_REASONS } from './inquiryOptions';
 
+// [Putaran 16a Tahap 1] Chrome overlay/sheet diukur mockup
+// data-screen-label="Modal/MarkWon"/"Modal/RevertManualWin": backdrop INK
+// rgba(51,66,43,.35) + sheet NOL border, box-shadow rgba(51,66,43,.22),
+// radius 18.
 const overlay = {
   position: 'fixed', inset: 0, zIndex: 1000,
-  background: 'rgba(22,36,58,.45)', display: 'flex',
+  background: C.backdrop, display: 'flex',
   alignItems: 'center', justifyContent: 'center', padding: 16,
 };
 const sheet = {
-  width: '100%', maxWidth: 480, background: '#fff',
-  border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden',
+  width: '100%', maxWidth: 480, background: C.surface,
+  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
 };
+// [Putaran 16a Tahap 1] label field diukur mockup: INK_SOFT (textMute),
+// bukan INK_FAINT (textFaint).
 const label = {
   display: 'block', fontFamily: BODY, fontSize: 11, fontWeight: 700,
-  color: C.textFaint, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
+  color: C.textMute, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
 };
+// [Putaran 16a Tahap 1] field diukur mockup: background BG (C.bg), bukan putih solid.
 const field = {
   width: '100%', padding: '9px 11px', borderRadius: 9,
-  border: `1px solid ${C.border}`, background: '#fff',
+  border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
+// [Putaran 16a Tahap 1] tombol "Cancel" footer diukur mockup: background
+// transparent, border INK_FAINT (borderStrong) bukan LINE.
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`,
-  background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
   fontWeight: 600, cursor: 'pointer',
 };
+// [Putaran 16a Tahap 1, KOREKSI] diukur mockup ({{ saveWon }} "Yes, Mark as
+// Won" DAN {{ saveRevertWin }} "Revert"): KEDUANYA solid ACCENT + teks INK --
+// BUKAN hijau solid+putih. SEMANTIC.ok nol kemunculan di region modal
+// mockup; nama fungsi `btnGreen` dipertahankan (dipakai 2 titik di bawah),
+// nilainya sudah ACCENT/INK.
 const btnGreen = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.greenBd}`,
-  background: C.green, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
+  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
@@ -80,19 +95,23 @@ function Shell({ icon, title, children, err, onCancel, onSubmit, saving, submitL
   return (
     <div style={overlay} role="dialog" aria-modal="true">
       <div style={sheet}>
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {/* border-bottom diukur mockup: LINE_SOFT, bukan LINE (C.border). */}
+        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           {icon}
           <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>{title}</h3>
         </header>
 
         <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {children}
+          {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (pesan
+              validasi + Modal/MarkWon/NotAllowed/UploadFailed/FileMissing):
+              amber (warn), BUKAN merah/danger. */}
           {err && (
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
               padding: '9px 11px', borderRadius: 9,
-              background: C.redBg, border: `1px solid ${C.redBd}`,
-              fontFamily: BODY, fontSize: 12.5, color: C.red,
+              background: C.amberBg, border: `1px solid ${C.amberBd}`,
+              fontFamily: BODY, fontSize: 12.5, color: C.amber,
             }}>
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
               {err}
@@ -100,7 +119,7 @@ function Shell({ icon, title, children, err, onCancel, onSubmit, saving, submitL
           )}
         </div>
 
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
           <button type="button" style={submitStyle(saving)} onClick={onSubmit} disabled={saving}>
             {saving ? 'Working…' : submitLabel}
@@ -162,6 +181,9 @@ export function MarkWonModal({
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{inquiryNo}</div>
 
       {sentQuotation && (
+        // [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (banner
+        // {{ wonSug.on }}): teks headline WARIS warna container (blue/
+        // info.fg), BUKAN C.text (INK) -- koreksi span di bawah.
         <div style={{
           display: 'flex', gap: 8, alignItems: 'flex-start',
           padding: '9px 11px', borderRadius: 9,
@@ -169,12 +191,16 @@ export function MarkWonModal({
         }}>
           <Info size={14} style={{ color: C.blue, flexShrink: 0, marginTop: 1 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.text }}>
+            <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.blue }}>
               Record the customer&rsquo;s acceptance on the quotation instead.
             </span>
+            {/* background EKSPLISIT C.surface (putih) -- diukur mockup
+                (tombol "Open Record Outcome" DI ATAS latar biru tint
+                butuh latar putih sendiri, BUKAN transparent spread
+                dari btnGhost yang kini transparent). */}
             <button type="button"
               onClick={() => onOpenQuotation?.(sentQuotation)}
-              style={{ ...btnGhost, alignSelf: 'flex-start', height: 28, padding: '0 10px', fontSize: 11.5, color: C.blue, borderColor: C.blueBd }}>
+              style={{ ...btnGhost, background: C.surface, alignSelf: 'flex-start', height: 28, padding: '0 10px', fontSize: 11.5, color: C.blue, borderColor: C.blueBd }}>
               Open Record Outcome
             </button>
           </div>
@@ -223,11 +249,14 @@ export function MarkWonModal({
         </div>
       </label>
 
+      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup
+          (Modal/MarkWon/FirstWin): latar NEUTRAL (HEAD_BG/LINE), BUKAN
+          hijau -- "first win" bukan state sukses tersendiri di mockup. */}
       {isFirstWin && (
         <div style={{
           display: 'flex', gap: 8, alignItems: 'flex-start',
           padding: '9px 11px', borderRadius: 9,
-          background: C.greenBg, border: `1px solid ${C.greenBd}`,
+          background: C.surfaceAlt, border: `1px solid ${C.border}`,
           fontFamily: BODY, fontSize: 12.5, color: C.text,
         }}>
           <CheckCircle2 size={14} style={{ color: C.green, flexShrink: 0, marginTop: 1 }} />
@@ -263,9 +292,11 @@ export function RevertWonModal({ open, inquiryNo, saving, onSave, onCancel }) {
       onSubmit={submit}
       saving={saving}
       submitLabel="Revert"
+      // [Putaran 16a Tahap 1, KOREKSI] diukur mockup ({{ saveRevertWin }}
+      // "Revert"): solid ACCENT + teks INK, BUKAN hijau solid+putih.
       submitStyle={(disabled) => ({
-        height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.greenBd}`,
-        background: C.green, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+        height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
+        background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
       })}
     >

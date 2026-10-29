@@ -34,7 +34,8 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { C, HEAD, BODY } from './DealPanels';
+import { DEAL_C as C } from './inquiryTheme';
+import { HEAD, BODY } from './DealPanels';
 import AccountPicker from '../../components/AccountPicker';
 
 // Mirror SENGAJA, bukan impor -- InquiryIntakeWizardPage.jsx:113 (LIFECYCLE_LABEL)
@@ -45,36 +46,44 @@ import AccountPicker from '../../components/AccountPicker';
 const LIFECYCLE_LABEL = { lead: 'Lead', mql: 'MQL', sql: 'SQL', prospect: 'Prospect', customer: 'Customer', free_agent: 'Free Agent' };
 const lifecycleLabel = (s) => LIFECYCLE_LABEL[s] || s || '';
 
+// [Putaran 16a Tahap 1] "Change Account" NOL halaman di mockup Inquiry
+// Management.dc.html (diverifikasi grep) -- chrome di bawah MENGIKUTI pola
+// yang TERBUKTI UNIFORM di EMPAT modal lain yang terukur langsung
+// (Modal/AssignOwner, Modal/MarkWon, Modal/MarkLost, Modal/CancelInquiry:
+// overlay/sheet/label/field/btnGhost byte-sama di keempatnya), BUKAN
+// diukur langsung dari elemen "Change Account" sendiri -- dilaporkan
+// sebagai pengecualian PRINSIP KEBENARAN (nol pasangan mockup langsung).
 const overlay = {
   position: 'fixed', inset: 0, zIndex: 1000,
-  background: 'rgba(22,36,58,.45)', display: 'flex',
+  background: C.backdrop, display: 'flex',
   alignItems: 'center', justifyContent: 'center', padding: 16,
 };
 const sheet = {
-  width: '100%', maxWidth: 480, background: '#fff',
-  border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden',
+  width: '100%', maxWidth: 480, background: C.surface,
+  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
 };
 const label = {
   display: 'block', fontFamily: BODY, fontSize: 11, fontWeight: 700,
-  color: C.textFaint, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
+  color: C.textMute, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
 };
 const field = {
   width: '100%', padding: '9px 11px', borderRadius: 9,
-  border: `1px solid ${C.border}`, background: '#fff',
+  border: `1px solid ${C.border}`, background: C.bg,
   fontFamily: BODY, fontSize: 13.5, color: C.text, outline: 'none',
 };
 const btnGhost = {
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`,
-  background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.borderStrong}`,
+  background: 'transparent', color: C.navy, fontFamily: HEAD, fontSize: 12.5,
   fontWeight: 600, cursor: 'pointer',
 };
-// Navy solid -- pola IDENTIK tombol Save panel "Reassign Owner" inline
-// (DealDetailPage.jsx, ownerOpen). Change Account adalah aksi edit data,
-// bukan destruktif (merah, Lost/Cancel) atau penutup sukses (hijau, Won) --
-// navy dipilih supaya tak menambah kosakata warna baru ke keluarga modal ini.
+// [Putaran 16a Tahap 1, KOREKSI] Komentar lama ("navy solid, pola IDENTIK
+// Reassign Owner inline") sudah TIDAK BENAR sejak modal "Reassign Owner"
+// ITU SENDIRI diukur ulang mockup Putaran 16a ({{ saveAssign }}): solid
+// ACCENT + teks INK, bukan navy. "Save" di sini mengikuti pola "terima
+// aksi" yang sama -- konsisten dgn OwnerAssignModal.jsx, bukan pengecualian.
 const btnPrimary = (disabled) => ({
-  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`,
-  background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
+  height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.orange}`,
+  background: C.orange, color: C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
@@ -151,7 +160,8 @@ export default function ChangeAccountModal({
   return (
     <div style={overlay} role="dialog" aria-modal="true">
       <div style={sheet}>
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {/* border-bottom diukur mockup (pola uniform 4 modal lain): LINE_SOFT, bukan LINE (C.border). */}
+        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <RefreshCcw size={18} style={{ color: C.navy, flexShrink: 0, marginTop: 1 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>Change Account</h3>
@@ -214,12 +224,13 @@ export default function ChangeAccountModal({
             />
           </div>
 
+          {/* pesan validasi diukur mockup (pola uniform 4 modal lain): amber (warn), bukan merah/danger. */}
           {err && (
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
               padding: '9px 11px', borderRadius: 9,
-              background: C.redBg, border: `1px solid ${C.redBd}`,
-              fontFamily: BODY, fontSize: 12.5, color: C.red,
+              background: C.amberBg, border: `1px solid ${C.amberBd}`,
+              fontFamily: BODY, fontSize: 12.5, color: C.amber,
             }}>
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
               {err}
@@ -227,7 +238,7 @@ export default function ChangeAccountModal({
           )}
         </div>
 
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
           <button type="button" style={btnPrimary(saving || !accountId || !contactId)} onClick={submit} disabled={saving || !accountId || !contactId}>
             {saving ? 'Saving…' : 'Save'}

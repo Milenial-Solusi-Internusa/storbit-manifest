@@ -7,11 +7,12 @@
 //
 // Kontrak: design-handoff/mockup/Inquiry Management.dc.html (kutipan baris
 // di komentar tiap bagian) + nexus-notes.js + crm-metrics.js. Urutan langkah
-// (SK) dan nama field mengikuti mockup; token visual (navy/orange/cream,
-// Montserrat/Inter/IBM Plex Mono) mengikuti InquiryFormPage.jsx — CRM belum
-// migrasi kit sage, token diduplikasi lokal (pola sama DealDetailPage.jsx/
-// dealOverviewFieldInputs.jsx), bukan diimpor dari file lain (rule "jangan
-// refactor file lain").
+// (SK) dan nama field mengikuti mockup; token visual kini SAGE (Putaran
+// 16a, keputusan J-043 butir 7 -- menggantikan larangan impor kit #61
+// khusus utk layar Inquiry), lewat ./inquiryTheme.js (adaptor, bukan impor
+// langsung src/kit/tokens.js -- lihat inquiryTheme.js utk tabel pemetaan
+// key lama navy/orange/cream -> konstanta kit). Montserrat/Inter/IBM Plex
+// Mono TIDAK berubah (sudah sesuai kebijakan font tiga resmi sejak awal).
 //
 // Penulisan HANYA lewat RPC create_inquiry_with_lanes (migrasi
 // 20261025000001-5, Tahap 4A, LIVE staging) — nol INSERT langsung ke
@@ -39,20 +40,15 @@ import { fetchOperationalRoster } from './salesRoster';
 import { CARGO_TYPES, SERVICES, INCOTERMS, CONTAINER_TYPES, IMO_CLASSES, MSDS_OPTS } from './inquiryOptions';
 import { MENU_PATHS } from '../../routes/menu-paths';
 import { entityCodeOf, entityByCode } from '../../lib/entities';
+import { WIZARD_C as C } from './inquiryTheme';
+import { DEAL_STATUS } from '../../kit/tokens';
 
-// ── Token (duplikasi sadar dari InquiryFormPage.jsx — CRM belum migrasi kit) ──
-const C = {
-  navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
-  orange: '#E85A1E', orangeDark: '#C94D18', orangeSoft: '#FDF0E9',
-  pageBg: '#F8FAFC', card: '#FFFFFF',
-  border: '#E2E8F0', borderStrong: '#CBD5E1',
-  text: '#0F172A', sub: '#475569', muted: '#94A3B8',
-  success: '#16A34A', warning: '#F59E0B', error: '#DC2626',
-};
+// ── Token sage (Putaran 16a, keputusan J-043 butir 7 -- lihat inquiryTheme.js
+// utk tabel pemetaan lengkap key lama navy/orange/cream -> konstanta kit) ──
 const LOCATION_PICKER_TOKENS = {
-  bg: '#F8FAFC', card: C.card, border: C.border, text: C.text, textMute: C.sub,
+  bg: C.pageBg, card: C.card, border: C.border, text: C.text, textMute: C.sub,
   placeholder: C.muted, hover: C.navySoft, divider: C.border,
-  warnBg: '#FEF9E7', warnBorder: '#F2D675', warnText: '#92700A',
+  warnBg: C.warningBg, warnBorder: C.warningBorder, warnText: C.warning,
 };
 
 // Fallback FE (dropdown_options list_key='service_type' punya 6 baris sejak
@@ -81,18 +77,16 @@ const SERVICE_ICON = {
   trading: Package,
 };
 // Badge status aside "Your recent inquiries" -- 7 nilai inquiries_status_check
-// (schema_snapshot.sql:8412). Palet lokal (bukan STATUS_META DealDetailPage.jsx
-// -- di luar scope 3 file, "jangan refactor file lain").
+// (schema_snapshot.sql:8412). [Putaran 16a] Diselaraskan ke DEAL_STATUS kit
+// (src/kit/tokens.js) -- mockup SB map (Inquiry Management.dc.html, fungsi
+// `bd(k)`) TERNYATA memakai trio fg/bg/bd yang IDENTIK DEAL_STATUS utk
+// seluruh 7 status, termasuk badge aside ini (bukan palet lokal berbeda
+// spt tertulis sebelumnya) -- diverifikasi langsung ke sumber mockup
+// sebelum ditulis, bukan diasumsikan.
 const STATUS_LABEL = { OPEN: 'Open', IN_REVIEW: 'In Review', QUOTED: 'Quoted', NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost', CANCELLED: 'Cancelled' };
-const STATUS_BADGE = {
-  OPEN: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
-  IN_REVIEW: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
-  QUOTED: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
-  NEGOTIATION: { bg: '#EEF3FB', border: '#BAD2E6', fg: '#1B4D8A' },
-  WON: { bg: '#E7F4EA', border: '#BEE3C8', fg: '#16A34A' },
-  LOST: { bg: '#FBEAEA', border: '#F0C6C6', fg: '#DC2626' },
-  CANCELLED: { bg: '#F1F5F9', border: '#E2E8F0', fg: '#64748B' },
-};
+const STATUS_BADGE = Object.fromEntries(
+  Object.entries(DEAL_STATUS).map(([k, v]) => [k, { bg: v.bg, border: v.bd, fg: v.fg }])
+);
 const LANE_MODE_FALLBACK = [{ value: 'Sea LCL', label: 'Sea LCL' }, { value: 'Sea FCL', label: 'Sea FCL' }, { value: 'Air', label: 'Air' }];
 const LANE_UNIT_FALLBACK = [{ value: 'CBM', label: 'CBM' }, { value: 'Container', label: 'Container' }, { value: 'KG', label: 'KG' }, { value: 'Ton', label: 'Ton' }];
 const IMPORTER_OF_RECORD_FALLBACK = [
@@ -157,12 +151,15 @@ const S = {
   // Judul step di body card (mockup baris 49, h3 "{{stepN}}. {{SNAME[sKey]}}"
   // -- di atas isi tiap langkah, berdampingan dgn label yg sudah tampil di pill).
   stepHeading: { margin: '0 0 4px', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 15, color: C.text },
-  label: { fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#64748B', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
-  req: { color: C.orange, fontWeight: 800 },
-  input: { height: 44, borderRadius: 10, border: '1px solid ' + C.border, background: '#fff', padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box' },
-  textarea: { borderRadius: 10, border: '1px solid ' + C.border, background: '#fff', padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 },
-  btnPrimary: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 26px', borderRadius: 10, border: '1px solid ' + C.orange, background: C.orange, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer', boxShadow: '0 1px 2px rgba(232,90,30,.35)' },
-  btnGhost: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 10, border: '1px solid ' + C.navy, background: '#fff', color: C.navy, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer' },
+  label: { fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
+  req: { color: C.warning, fontWeight: 800 },
+  input: { height: 44, borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box' },
+  textarea: { borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 },
+  // "Next"/"Create Inquiry" mockup (baris ~111214): bg+border #C3D9B8 (ACCENT),
+  // teks #33422B (INK -- BUKAN putih, lihat kit/tokens.js:19-22).
+  btnPrimary: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 26px', borderRadius: 10, border: '1px solid ' + C.orange, background: C.orange, color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer', boxShadow: '0 1px 2px rgba(51,66,43,.18)' },
+  // "Back" mockup (baris ~111213): border #838E7A (INK_FAINT), teks #33422B (INK).
+  btnGhost: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 10, border: '1px solid ' + C.muted, background: C.card, color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer' },
 };
 const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '18px 20px' };
 const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px 16px' };
@@ -181,10 +178,31 @@ function FieldError({ children }) {
   if (!children) return null;
   return <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{children}</span>;
 }
-function Pill({ active, onClick, children, invalid }) {
+// Pola "kartu/pil aktif" (og.svc/og.dir/og.cargo/og.addl, mockup): latar
+// AKTIF = C.navySoft (ROW_HOVER), border AKTIF = C.navy (INK_SOFT), teks/
+// ikon SELALU C.text (INK) -- tidak berubah warna antara aktif/non-aktif,
+// mockup menandai "aktif" lewat border+latar+ikon centang, bukan teks
+// putih di atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
+// navy/oranye + teks putih" sudah tidak dipakai).
+// [Putaran 16a Tahap 2] `variant='chip'` BARU -- diukur mockup (Incoterms/
+// Container Type, Inquiry Intake Form: `fch.inco`/`fch.cont`, bg:
+// on?'#C3D9B8':'#FFFFFF', bd: on?'#AFC9A0':'#D8E0D2'). Pil BULAT (radius
+// 16, tinggi 32) tanpa ikon centang, teks SELALU INK (C.text) di kedua
+// state -- beda total dari variant default 'card' (kartu besar radius 10
+// tinggi 44, navySoft+navy+Check). Default TETAP 'card' supaya SELURUH
+// pemanggil lain (Direction/Customer Role/Pricing Basis) byte-identik.
+function Pill({ active, onClick, children, invalid, variant = 'card' }) {
+  if (variant === 'chip') {
+    return (
+      <button type="button" onClick={onClick}
+        style={{ height: 32, padding: '0 12px', borderRadius: 16, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', border: '1px solid ' + (active ? C.orangeDark : C.border), background: active ? C.orange : C.card, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+        {children}
+      </button>
+    );
+  }
   return (
     <button type="button" onClick={onClick}
-      style={{ height: 44, borderRadius: 10, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navy : '#fff', color: active ? '#fff' : C.sub, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      style={{ height: 44, borderRadius: 10, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
       {active && <Check size={15} />}{children}
     </button>
   );
@@ -192,9 +210,9 @@ function Pill({ active, onClick, children, invalid }) {
 function ServiceCard({ icon: Icon, label, active, onClick }) {
   return (
     <button type="button" onClick={onClick}
-      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.orange : C.border), background: active ? C.orangeSoft : '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? '#fff' : '#F1F5F9', color: active ? C.orange : C.sub }}>{Icon && <Icon size={20} />}</span>
-      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: active ? C.orangeDark : C.text, textAlign: 'center', lineHeight: 1.25 }}>{label}</span>
+      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}>{Icon && <Icon size={20} />}</span>
+      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{label}</span>
     </button>
   );
 }
@@ -202,10 +220,10 @@ function CargoCard({ item, active, onClick }) {
   const I = item.Icon;
   return (
     <button type="button" onClick={onClick}
-      style={{ textAlign: 'left', borderRadius: 12, padding: '16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : '#fff', display: 'flex', gap: 13, alignItems: 'flex-start' }}>
-      <span style={{ width: 38, height: 38, borderRadius: 10, flex: '0 0 38px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.navy : '#F1F5F9', color: active ? '#fff' : C.sub }}><I size={19} /></span>
+      style={{ textAlign: 'left', borderRadius: 12, padding: '16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+      <span style={{ width: 38, height: 38, borderRadius: 10, flex: '0 0 38px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={19} /></span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: active ? C.navy : C.text, lineHeight: 1.25 }}>{item.label}</span>
+        <span style={{ display: 'block', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
         <span style={{ display: 'block', fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{item.desc}</span>
       </span>
     </button>
@@ -215,9 +233,9 @@ function TagCard({ item, active, onClick }) {
   const I = item.Icon;
   return (
     <button type="button" onClick={onClick}
-      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.orange : C.border), background: active ? C.orangeSoft : '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? '#fff' : '#F1F5F9', color: active ? C.orange : C.sub }}><I size={20} /></span>
-      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: active ? C.orangeDark : C.text, textAlign: 'center', lineHeight: 1.25 }}>{item.label}</span>
+      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={20} /></span>
+      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{item.label}</span>
     </button>
   );
 }
@@ -225,9 +243,9 @@ function RadioPill({ value, current, onClick, children }) {
   const active = value === current;
   return (
     <button type="button" onClick={onClick}
-      style={{ height: 40, padding: '0 18px', borderRadius: 999, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navy : '#fff', color: active ? '#fff' : C.sub, display: 'flex', alignItems: 'center', gap: 7 }}>
-      <span style={{ width: 14, height: 14, borderRadius: 999, border: '2px solid ' + (active ? '#fff' : C.borderStrong), display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 14px' }}>
-        {active && <span style={{ width: 6, height: 6, borderRadius: 999, background: '#fff' }} />}
+      style={{ height: 40, padding: '0 18px', borderRadius: 999, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ width: 14, height: 14, borderRadius: 999, border: '2px solid ' + (active ? C.navy : C.borderStrong), display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 14px' }}>
+        {active && <span style={{ width: 6, height: 6, borderRadius: 999, background: C.navy }} />}
       </span>{children}
     </button>
   );
@@ -243,7 +261,7 @@ function RecentInquiriesAside({ items, onOpen }) {
       {items.map((r) => {
         const badge = STATUS_BADGE[r.status] || STATUS_BADGE.OPEN;
         return (
-          <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 0', borderBottom: '1px solid #ECF0E9' }}>
+          <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 0', borderBottom: '1px solid ' + C.lineSoft }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <button type="button" onClick={() => onOpen(r.id)}
                 style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap' }}>
@@ -1245,9 +1263,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             <button key={k} type="button" onClick={() => setStep(i + 1)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 999, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5,
-                border: '1px solid ' + (i + 1 === stepIdx ? C.navy : C.border), background: i + 1 === stepIdx ? C.navy : '#fff', color: i + 1 === stepIdx ? '#fff' : C.sub,
+                border: '1px solid ' + (i + 1 === stepIdx ? C.navy : C.border), background: i + 1 === stepIdx ? C.navySoft : C.card, color: C.text,
               }}>
-              <span style={{ width: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i + 1 === stepIdx ? 'rgba(255,255,255,.25)' : '#F1F5F9', color: i + 1 === stepIdx ? '#fff' : C.text, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
+              <span style={{ width: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i + 1 === stepIdx ? C.orange : C.headBg, color: C.text, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
               {STEP_LABEL[k]}
             </button>
           ))}
@@ -1255,7 +1273,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
         {/* Banner prefill generik (D6) — "Visit Prefill" (D5) tidak dibangun. */}
         {prefillBanner && (
-          <div style={{ margin: '0 0 16px', padding: '8px 12px', background: '#EFF3ED', border: '1px solid ' + C.border, borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: C.text }}>
+          <div style={{ margin: '0 0 16px', padding: '8px 12px', background: C.headBg, border: '1px solid ' + C.border, borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: C.text }}>
             <AlertTriangle size={14} color={C.sub} style={{ flex: '0 0 14px' }} />
             <span style={{ flex: 1 }}>{prefillBanner.text}</span>
             <button type="button" onClick={clearPrefill} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontWeight: 700, color: C.text }}>Clear</button>
@@ -1282,7 +1300,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <div style={{ display: 'flex', gap: 10 }}>
                     {['Single Shipment', 'Rate Sheet Request'].map((t) => (
                       <button key={t} type="button" onClick={() => switchInquiryType(t)}
-                        style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (f.inquiry_type === t ? C.navy : C.border), background: f.inquiry_type === t ? C.navy : '#fff', color: f.inquiry_type === t ? '#fff' : C.sub }}>
+                        style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (f.inquiry_type === t ? C.navy : C.border), background: f.inquiry_type === t ? C.navySoft : C.card, color: C.text }}>
                         {t}
                       </button>
                     ))}
@@ -1335,7 +1353,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       (lihat komentar panjang di dekat `entityCode` soal
                       deviasi dari override mockup utk Customs Clearance). */}
                   <Field label="Entity" hint="Read-only, from the account's company.">
-                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#E8ECE4', color: C.muted }}>
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.disabledBg, color: C.muted }}>
                       <span>{entityCode}</span>
                       <Lock size={14} />
                     </div>
@@ -1343,7 +1361,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 </div>
                 <div style={grid2}>
                   <Field label="Source" hint="Read-only, from the account record.">
-                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: '#F8FAFC', color: accountSource ? C.text : C.muted, fontStyle: accountSource ? 'normal' : 'italic' }}>
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: C.pageBg, color: accountSource ? C.text : C.muted, fontStyle: accountSource ? 'normal' : 'italic' }}>
                       {accountSource || 'Not set'}
                     </div>
                   </Field>
@@ -1433,10 +1451,10 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       klaim "terkirim" seperti mockup -- nol RPC notifikasi
                       nyata hari ini, dicatat sbg butir terbuka di laporan). */}
                   {svcJciBlocked && (
-                    <div style={{ marginTop: 10, padding: '12px 16px', background: '#F8ECCF', border: '1px solid #E6CE94', borderRadius: 10, display: 'flex', gap: 12, alignItems: 'center', color: '#8E620D', fontSize: 13 }}>
-                      <AlertTriangle size={16} color="#8E620D" style={{ flex: '0 0 16px' }} />
+                    <div style={{ marginTop: 10, padding: '12px 16px', background: C.warningBg, border: '1px solid ' + C.warningBorder, borderRadius: 10, display: 'flex', gap: 12, alignItems: 'center', color: C.warning, fontSize: 13 }}>
+                      <AlertTriangle size={16} color={C.warning} style={{ flex: '0 0 16px' }} />
                       <span style={{ flex: 1 }}>Customs Clearance is a JCI service line. Ask your manager to request JCI sales access for your account to continue.</span>
-                      <button type="button" onClick={requestJciAccess} style={{ height: 32, padding: '0 12px', borderRadius: 10, background: 'transparent', border: '1px solid #8E620D', color: '#8E620D', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>Request Access</button>
+                      <button type="button" onClick={requestJciAccess} style={{ height: 32, padding: '0 12px', borderRadius: 10, background: 'transparent', border: '1px solid ' + C.warning, color: C.warning, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>Request Access</button>
                     </div>
                   )}
                   <FieldError>{errors.svc_service_type}</FieldError>
@@ -1565,25 +1583,25 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     shell/style banner duplikat Single Shipment di bawah,
                     hanya isi dan gerbang `isRS` yang berbeda. */}
                 {isRS && !dupCheckLoading && possibleDuplicates.length > 0 && (
-                  <div style={{ background: '#FEF9E7', border: '1px solid #F2D675', borderRadius: 10, padding: '16px 20px' }}>
+                  <div style={{ background: C.warningBg, border: '1px solid ' + C.warningBorder, borderRadius: 10, padding: '16px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <AlertTriangle size={18} color="#92700A" style={{ flex: '0 0 18px', marginTop: 1 }} />
+                      <AlertTriangle size={18} color={C.warning} style={{ flex: '0 0 18px', marginTop: 1 }} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: '#5C4700' }}>
+                        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.warning }}>
                           Possible duplicate Rate Sheet
                         </div>
                         <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                           {possibleDuplicates.slice(0, 3).map((d) => (
-                            <li key={d.id} style={{ fontSize: 12.5, color: '#5C4700' }}>
+                            <li key={d.id} style={{ fontSize: 12.5, color: C.warning }}>
                               <button type="button" onClick={() => navigate(`${MENU_PATHS['crm-inquiry']}/${d.id}`)}
-                                style={{ fontFamily: "'IBM Plex Mono',monospace", color: '#5C4700', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'inherit' }}>
+                                style={{ fontFamily: "'IBM Plex Mono',monospace", color: C.warning, textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'inherit' }}>
                                 {d.inquiry_no}
                               </button>
                               {` covers this account and lane for ${d.validity_from} to ${d.validity_to}.`}
                             </li>
                           ))}
                           {possibleDuplicates.length > 3 && (
-                            <li style={{ fontSize: 12.5, color: '#5C4700' }}>and {possibleDuplicates.length - 3} more</li>
+                            <li style={{ fontSize: 12.5, color: C.warning }}>and {possibleDuplicates.length - 3} more</li>
                           )}
                         </ul>
                       </div>
@@ -1623,11 +1641,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
                     <div>
                       <div style={S.label}>Incoterms</div>
-                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
+                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} variant="chip" active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
                     </div>
                     <div>
                       <div style={S.label}>Container Type</div>
-                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
+                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} variant="chip" active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
                     </div>
                     <div style={grid2}>
                       <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>
@@ -1652,25 +1670,25 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     adalah lapis kedua supaya banner tak mungkin tampil kalau
                     state possibleDuplicates kebetulan basi dari toggle. */}
                 {!isRS && !dupCheckLoading && possibleDuplicates.length > 0 && (
-                  <div style={{ background: '#FEF9E7', border: '1px solid #F2D675', borderRadius: 10, padding: '16px 20px' }}>
+                  <div style={{ background: C.warningBg, border: '1px solid ' + C.warningBorder, borderRadius: 10, padding: '16px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <AlertTriangle size={18} color="#92700A" style={{ flex: '0 0 18px', marginTop: 1 }} />
+                      <AlertTriangle size={18} color={C.warning} style={{ flex: '0 0 18px', marginTop: 1 }} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: '#5C4700' }}>
+                        <div style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.warning }}>
                           Possible duplicate{possibleDuplicates.length > 1 ? 's' : ''} found
                         </div>
-                        <div style={{ fontSize: 12.5, color: '#5C4700', marginTop: 4 }}>Same account, same route, created in the last 30 days:</div>
+                        <div style={{ fontSize: 12.5, color: C.warning, marginTop: 4 }}>Same account, same route, created in the last 30 days:</div>
                         <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                           {possibleDuplicates.map((d) => (
-                            <li key={d.id} style={{ fontSize: 12.5, color: '#5C4700', fontFamily: "'IBM Plex Mono',monospace" }}>
+                            <li key={d.id} style={{ fontSize: 12.5, color: C.warning, fontFamily: "'IBM Plex Mono',monospace" }}>
                               {d.inquiry_no} — {new Date(d.created_at).toLocaleDateString('en-GB')}{d.owner_name ? ` (${d.owner_name})` : ''}
                             </li>
                           ))}
                         </ul>
                         <div style={{ marginTop: 12 }}>
-                          <div style={{ ...S.label, color: '#5C4700' }}>Reason to continue as a separate shipment</div>
+                          <div style={{ ...S.label, color: C.warning }}>Reason to continue as a separate shipment</div>
                           <textarea value={f.duplicate_warning_reason} onChange={set('duplicate_warning_reason')} rows={2}
-                            style={{ ...S.textarea, borderColor: errors.route_dup ? C.error : '#F2D675' }}
+                            style={{ ...S.textarea, borderColor: errors.route_dup ? C.error : C.warningBorder }}
                             placeholder="Explain why this is a separate shipment…" />
                           <FieldError>{errors.route_dup}</FieldError>
                         </div>
@@ -1710,13 +1728,24 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <Field label="Dimensi (P x L x T)"><input value={f.dimension} onChange={set('dimension')} style={S.input} placeholder="cth: 120 x 80 x 100 cm" /></Field>
                 </div>
                 <div>
-                  <div style={{ ...S.label, color: C.orange }}>Cargo Category</div>
+                  {/* [Tahap 0, GAGAL ditutup] label field mockup SELALU C.sub
+                      (#5C6B52) -- "Cargo Category" nol padanan literal di
+                      mockup, tapi seluruh label sejenis (Service Type/Cargo
+                      Type/Customer Role/dst.) konsisten C.sub, bukan C.text. */}
+                  <div style={{ ...S.label, color: C.sub }}>Cargo Category</div>
                   <div style={grid2}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
                 </div>
                 {dgSelected && (
-                  <div style={{ border: '1px solid ' + C.border, borderLeft: '3px solid ' + C.orange, borderRadius: 12, background: '#FFFCFA', padding: 20 }}>
+                  /* [Tahap 0, GAGAL ditutup] kotak ini PERSIS
+                     data-screen-label="Intake/DangerousGoods" mockup:
+                     background:#F8ECCF;border:1px solid #E6CE94 UNIFORM di
+                     keempat sisi -- bukan C.card + aksen kiri C.orange yang
+                     dipasang Prompt A. Heading+ikon ikut C.warning supaya
+                     senada dengan latar warn, bukan INK/navy (mockup sendiri
+                     tak punya heading ini, jadi dipilih yang paling koheren). */
+                  <div style={{ border: '1px solid ' + C.warningBorder, borderRadius: 12, background: C.warningBg, padding: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                      <AlertTriangle size={16} color={C.orange} /><span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, color: C.text }}>Detail Dangerous Goods</span>
+                      <AlertTriangle size={16} color={C.warning} /><span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, color: C.warning }}>Detail Dangerous Goods</span>
                     </div>
                     <div style={{ ...grid2, marginBottom: 18 }}>
                       <Field label="UN Number"><input value={f.un_number} onChange={(e) => setF((x) => ({ ...x, un_number: e.target.value.replace(/\D/g, '') }))} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="0000" /></Field>
@@ -1825,8 +1854,8 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     jadi quotation memang belum mungkin ada). "Suggested
                     estimate" (W-39, komparabel dari quotation diterima)
                     SENGAJA TIDAK dibangun -- butuh RPC baru, dilimpahkan. */}
-                <div style={{ gridColumn: '1 / -1', border: '1px solid ' + C.border, borderRadius: 10, background: '#fff', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>Latest quoted value</span>
+                <div style={{ gridColumn: '1 / -1', border: '1px solid ' + C.border, borderRadius: 10, background: C.card, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.sub }}>Latest quoted value</span>
                   <span style={{ fontSize: 12.5, color: C.muted }}>No quotation yet. It shows here and on the inquiry once a quotation exists.</span>
                 </div>
                 {canPickOwner ? (
@@ -1840,7 +1869,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   </Field>
                 ) : (
                   <Field label="Owner">
-                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: '#F8FAFC', color: C.sub }}>{profile?.full_name || user?.email || '—'}</div>
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: C.pageBg, color: C.sub }}>{profile?.full_name || user?.email || '—'}</div>
                   </Field>
                 )}
                 <div style={{ gridColumn: '1 / -1' }}>
@@ -1892,7 +1921,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 // & Taxes mandiri -- di sana field itu TETAP di dalam panel, gated checkbox.
 function UndernamePanel({ f, setF, errors, iorOpts, hideDuties }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, background: '#FFF8EE', border: '1px solid #F0DCAE', borderRadius: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, background: C.warningBg, border: '1px solid ' + C.warningBorder, borderRadius: 14 }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text }}>
         <input type="checkbox" checked={f.undername_import} onChange={(e) => setF((x) => ({
           ...x,

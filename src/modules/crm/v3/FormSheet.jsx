@@ -3,6 +3,12 @@
    (keputusan 19 Jul 2026), tapi DealDetailPage sendiri TIDAK disentuh: file
    ini menyalin polanya, bukan mengimpor darinya.
 
+   [Putaran 16a Tahap 1] Satu-satunya pemakai produksi = DealDetailPage.jsx
+   (CrmV3DemoPage.jsx tidak ber-rute, diverifikasi grep sebelum diedit) --
+   warna diganti sage lewat ../inquiryTheme.js (keputusan J-043 butir 7).
+   `toolbarFirst` TIDAK disentuh -- perilaku, urutan, dan seluruh slot persis
+   seperti sebelumnya, hanya SUMBER nilai INK/INK_SOFT/LINE/CARD yang berubah.
+
    ANATOMI (tiga slot, semuanya opsional kecuali body):
      header → nomor dokumen · judul · StatusBar/badge · aksi utama · toolbar
      body   → slot Notebook (atau konten bebas)
@@ -40,7 +46,8 @@
    memakainya. Perlakukan sisa kit ini sebagai BELUM TERUJI, bukan sudah jadi.
    ========================================================================= */
 
-import { INK, INK_SOFT, LINE, SURFACE, FONT_HEAD, FONT_BODY, SP, RADIUS } from './tokens';
+import { FONT_HEAD, FONT_BODY, SP, RADIUS } from './tokens';
+import { INK, INK_SOFT, LINE, CARD } from '../inquiryTheme';
 import { DocNo } from './kit';
 
 /**
@@ -146,7 +153,7 @@ export default function FormSheet({
         <aside
           style={{
             minWidth: 0, position: 'sticky', top: SP.s4,
-            background: SURFACE, border: `1px solid ${LINE}`, borderRadius: RADIUS.lg,
+            background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.lg,
             overflow: 'hidden',
           }}
         >

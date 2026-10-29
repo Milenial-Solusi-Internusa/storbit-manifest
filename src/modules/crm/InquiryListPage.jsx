@@ -22,27 +22,7 @@ import InquiryPDF from './InquiryPDF';
 import { STATUS_LABEL, RADIUS } from './v3/tokens';
 import { fetchOperationalRoster } from './salesRoster';
 import { isWonAwaitingSalesOrder, WON_MANUAL_REASONS } from './inquiryOptions';
-
-const C = {
-  bg:        '#F6EFE3',
-  surface:   '#FFFDF8',
-  surface2:  '#FBF6EC',
-  ink:       '#23291E',
-  inkSoft:   '#5E6553',
-  inkFaint:  '#8A8E7C',
-  line:      '#E7DCC8',
-  lineSoft:  '#F0E7D6',
-  accent:    '#E85A1E',
-  accentSoft:'#FEF2EC',
-  ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
-  warn:      '#9A6B0E', warnBg: '#F8ECCF', warnBd: '#E6CE94',
-  danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
-  info:      '#2A5B8C', infoBg: '#E1ECF5', infoBd: '#BAD2E6',
-  neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
-  purple:    '#6E4B8C', purpleBg: '#ECE3F4', purpleBd: '#D6C6E4',
-  teal:      '#1F6B6B', tealBg: '#DCEBEA', tealBd: '#B2D4D3',
-  orange:    '#A45A22', orangeBg: '#F6E8D6', orangeBd: '#E7CDA9',
-};
+import { C } from './inquiryTheme';
 
 // Warna badge status — palet TINTED (mockup Claude Design). Teksnya dirujuk dari
 // STATUS_LABEL (v3/tokens.js) yang dipakai bareng papan Pipeline — jangan tulis
@@ -286,7 +266,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
   const Field = ({ label, value, full }) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: value ? C.ink : '#D1D5DB', fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
+      <div style={{ fontSize: 13.5, color: value ? C.ink : C.inkFaint, fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
     </div>
   );
 
@@ -306,7 +286,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 6 }}>DETAIL INQUIRY</div>
-              <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.accent, marginBottom: 10, letterSpacing: -0.5 }}>
+              <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 10, letterSpacing: -0.5 }}>
                 {inquiry.inquiry_no || '—'}
               </div>
               <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
@@ -817,7 +797,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{
           width: 24, height: 24, borderRadius: 12, flexShrink: 0,
-          background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 700,
+          background: C.accentSoft, color: C.ink, fontSize: 10, fontWeight: 700,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           {initials(name)}
@@ -958,7 +938,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.ink }}>
             {inq.inquiry_no || '—'}
           </span>
           {inq.inquiry_type === 'Rate Sheet Request' && <SubBadge tone="neutral">Rate Sheet</SubBadge>}
@@ -1024,10 +1004,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
               title="Download PDF"
               onClick={(e) => e.stopPropagation()}
               style={{ display: 'inline-flex', alignItems: 'center', padding: 6, borderRadius: 6, opacity: pdfLoading ? 0.4 : 1, cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#EAF0F8'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = C.accentSoft; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
-              <Download size={16} color="#1B4D8A" />
+              <Download size={16} color={C.inkSoft} />
             </span>
           )}
         </PDFDownloadLink>
@@ -1053,7 +1033,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: C.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <FileText size={20} color={C.accent} />
+            <FileText size={20} color={C.inkFaint} />
           </div>
           {/* h1 mockup = "Inquiry Status & History", 700 24px Montserrat.
               Subjudul "{total} inquiry terdaftar" DICABUT (koreksi #9) --
@@ -1064,9 +1044,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           onClick={onAddInquiry}
           style={{
             display: 'flex', alignItems: 'center', gap: 7,
-            background: C.accent, color: '#fff', border: 'none',
+            background: C.accent, color: C.ink, border: 'none',
             borderRadius: 9, padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
-            cursor: 'pointer', boxShadow: '0 2px 8px rgba(47,107,63,.25)',
+            cursor: 'pointer', boxShadow: '0 2px 8px rgba(51,66,43,.25)',
           }}
         >
           <Plus size={16} /> Add Inquiry
@@ -1252,7 +1232,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
               key={inq.id}
               onClick={() => (onSelectInquiry ? onSelectInquiry(inq) : setDetailInquiry(inq))}
               style={{ display: 'grid', gridTemplateColumns: gridCols, minWidth: 1530, borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#F3EEE1'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = C.accentSoft; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
               {columns.map(col => (

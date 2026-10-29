@@ -21,10 +21,15 @@
    Komponen ini stateless soal tab aktif (controlled): pemanggil memegang
    `value`. Yang dikelola sendiri hanya koreksi otomatis saat `value` menunjuk
    tab yang tak (lagi) berhak — lihat useEffect di bawah.
+
+   [Putaran 16a Tahap 1] Warna diganti sage lewat ../inquiryTheme.js
+   (keputusan J-043 butir 7) -- NAVY (tab aktif) -> INK. Spasi/ukuran TD-318
+   di bawah TIDAK disentuh (itu struktur, bukan warna).
    ========================================================================= */
 
 import { useEffect, useMemo } from 'react';
-import { NAVY, INK_SOFT, LINE, FONT_HEAD, SP } from './tokens';
+import { FONT_HEAD, SP } from './tokens';
+import { INK, INK_SOFT, LINE } from '../inquiryTheme';
 
 /**
  * @param {Object}   props
@@ -83,8 +88,8 @@ export default function Notebook({ tabs = [], value, onChange, children, right =
                 appearance: 'none', border: 'none', background: 'transparent', cursor: 'pointer',
                 display: 'inline-flex', alignItems: 'center', height: 48, padding: 0, marginBottom: -1,
                 fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: on ? 700 : 600, whiteSpace: 'nowrap',
-                color: on ? NAVY : INK_SOFT,
-                borderBottom: on ? `2px solid ${NAVY}` : '2px solid transparent',
+                color: on ? INK : INK_SOFT,
+                borderBottom: on ? `2px solid ${INK}` : '2px solid transparent',
               }}
             >
               {t.label}

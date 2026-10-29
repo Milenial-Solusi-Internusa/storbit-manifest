@@ -5,13 +5,12 @@
 // Matrix), 815-819 (penghitungan matrix/filter dasar), 969 (ncTitle/ncCount/
 // handler bulk) -- dibaca utuh sebelum ditulis.
 //
-// Brand: navy/orange/cream (C di bawah, SAMA PERSIS palet InquiryListPage.jsx
-// di folder ini) -- BUKAN sage, walau warna literal mockup ini kebetulan sage.
-// CRM/Inquiry belum pada giliran migrasi kit ("kit ada != boleh diimpor di
-// luar giliran Batch DS", kebijakan CLAUDE.md) -- semantik mockup (bg warn
-// kuning utk "Not set", badge status tinted, dst) dipetakan ke token C
-// terdekat, bukan hex mockup disalin literal. Pola yang sama sudah dipakai
-// Part A InquiryListPage.jsx (badge "Not recorded" baris Route).
+// Brand: sage (C di bawah, dari src/kit/tokens.js lewat ./inquiryTheme.js --
+// Putaran 16a, keputusan J-043 butir 7, SAMA PERSIS objek InquiryListPage.jsx
+// di folder ini). Semantik mockup (bg warn kuning utk "Not set", badge status
+// tinted, dst) dipetakan ke token C terdekat, bukan hex mockup disalin
+// literal. Pola yang sama sudah dipakai Part A InquiryListPage.jsx (badge
+// "Not recorded" baris Route).
 //
 // Putaran 7: GAP Tahap 3A ditutup -- filter Created Date/Entity/Owner/Status
 // + icon arah di label baris Matrix + pagination tabel drill-down (20
@@ -60,24 +59,7 @@ import { STATUS_LABEL } from './v3/tokens';
 import { fmtRp } from './DealPanels';
 import { fetchOperationalRoster } from './salesRoster';
 import ConfirmModal from '../../components/ConfirmModal';
-
-const C = {
-  bg:        '#F6EFE3',
-  surface:   '#FFFDF8',
-  surface2:  '#FBF6EC',
-  ink:       '#23291E',
-  inkSoft:   '#5E6553',
-  inkFaint:  '#8A8E7C',
-  line:      '#E7DCC8',
-  lineSoft:  '#F0E7D6',
-  accent:    '#E85A1E',
-  accentSoft:'#FEF2EC',
-  ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
-  warn:      '#9A6B0E', warnBg: '#F8ECCF', warnBd: '#E6CE94',
-  danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
-  info:      '#2A5B8C', infoBg: '#E1ECF5', infoBd: '#BAD2E6',
-  neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
-};
+import { C } from './inquiryTheme';
 
 // Cermin persis STATUS_META InquiryListPage.jsx (7 status, label dari
 // STATUS_LABEL supaya kedua peta tidak melenceng) -- disalin, bukan
@@ -523,7 +505,7 @@ export default function InquiryClassificationPage({ showToast }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <ClipboardCheck size={22} style={{ color: C.accent }} />
+        <ClipboardCheck size={22} style={{ color: C.inkFaint }} />
         <h1 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 24, fontWeight: 700, color: C.ink }}>
           Inquiry Classification
         </h1>
@@ -673,7 +655,7 @@ export default function InquiryClassificationPage({ showToast }) {
                 style={{
                   display: 'grid', gridTemplateColumns: TABLE_GRID, alignItems: 'center', minWidth: 1080,
                   borderBottom: `1px solid ${C.lineSoft}`,
-                  background: selectedIds.has(r.id) ? '#EFE6D2' : 'transparent',
+                  background: selectedIds.has(r.id) ? C.accentSoft : 'transparent',
                 }}
               >
                 <div style={cellBase}>
@@ -859,7 +841,7 @@ function BulkFieldModal({ field, value, onChangeValue, count, options, saving, c
             type="button"
             disabled={!value}
             onClick={onRequestConfirm}
-            style={{ ...bulkBtnStyle, background: value ? C.accent : C.lineSoft, color: value ? '#fff' : C.inkFaint, border: 'none' }}
+            style={{ ...bulkBtnStyle, background: value ? C.accent : C.lineSoft, color: value ? C.ink : C.inkFaint, border: 'none' }}
           >
             Apply
           </button>
