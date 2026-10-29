@@ -44,8 +44,10 @@
 // ditunda, lihat DirectionCell + undernameBadgeStyle di bawah): ikon
 // Direction (Export/Import/Domestic, pola identik InquiryListPage.jsx
 // directionCell) dan badge "Undername" pada kolom Service Type -- sumber
-// field PERSIS InquiryListPage.jsx:986 --
-// `(inq.additional_services || []).includes('undername')`.
+// field [Putaran 16, koreksi] `inquiries.undername_import === true`,
+// pola PERSIS InquiryListPage.jsx -- BUKAN lagi
+// `additional_services.includes('undername')` (data nyata menyimpan
+// undername di kolom boolean ini, bukan di array `additional_services`).
 //
 // Sales (non-manager) HANYA melihat "Assigned to Me" -- RLS inquiries_read
 // sudah menyaring ke owner_id=auth.uid(), NOL filter owner tambahan di FE.
@@ -185,7 +187,7 @@ async function fetchAllInquiries(companyId) {
       .from('inquiries')
       .select(`
         id, inquiry_no, service_type, direction, status, estimated_value, deadline_quote, created_at, owner_id,
-        additional_services, assigned_by, assigned_at, assign_reason,
+        additional_services, undername_import, assigned_by, assigned_at, assign_reason,
         prospect:accounts!inquiries_prospect_id_fkey(name),
         customer:accounts!inquiries_customer_id_fkey(name),
         created_by_profile:profiles!inquiries_created_by_fkey(full_name),
@@ -583,7 +585,7 @@ export default function InquiryOwnerAssignmentPage({ showToast, onViewSalesInqui
                       <div style={{ ...cellBase, color: C.ink }}>
                         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           {svcLabel}
-                          {(r.additional_services || []).includes('undername') && (
+                          {r.undername_import === true && (
                             <span style={undernameBadgeStyle}><FileText size={11} />Undername</span>
                           )}
                         </span>

@@ -11,7 +11,7 @@
 // (grid CSS tangan, bukan komponen daftar generik) -- komponen ListView.jsx
 // sendiri TIDAK disentuh, 3 pemakai lain (PipelineKanbanPage/DealDetailPage/
 // demo) nol dampak.
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, FileText, FileCheck, Download, ChevronDown, ArrowUpRight, ArrowDownLeft, Truck } from 'lucide-react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
@@ -412,7 +412,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
     pol, pod, pol_location_id, pod_location_id, direction, inquiry_type, estimated_value,
     incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
-    cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
+    cargo_types, un_number, imo_class, has_msds, additional_services, undername_import, deadline_quote,
     won_reason, closed_at,
     prospect:accounts!inquiries_prospect_id_fkey(name, lifecycle_stage),
     customer:accounts!inquiries_customer_id_fkey(name, lifecycle_stage),
@@ -614,7 +614,31 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, profile?.company_id, isAllEntities, page, wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast, INQUIRY_SELECT]);
 
-  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
+  // [Putaran 16, Task 3] Guard 416 -- dibuktikan lewat tab network (lihat
+  // laporan chat): saat filter berubah DAN `page` belum sempat di-reset ke
+  // 0 oleh efek di bawah (yang baru berlaku RENDER BERIKUTNYA, bukan
+  // sinkron di commit yang sama), `fetchInquiries` di efek ini masih
+  // membawa `page` LAMA -> `.range(page*20, ...)` terkirim ke himpunan
+  // baru yang jauh lebih kecil -> PostgREST 416 PGRST103 ("offset of 40
+  // was requested, but there are only 5 rows"). filterSigRef melacak
+  // signature filter TERAKHIR yang sudah di-fetch; kalau signature
+  // berubah DAN `page !== 0`, lewati fetch ini (hanya update ref) --
+  // efek setPage(0) di bawah menjadwalkan render ulang dgn page=0, yang
+  // membuat efek ini jalan lagi dengan kombinasi yang sudah benar.
+  const filterSigRef = useRef(null);
+  useEffect(() => {
+    const sig = JSON.stringify([wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
+    if (filterSigRef.current !== null && filterSigRef.current !== sig && page !== 0) {
+      filterSigRef.current = sig;
+      return;
+    }
+    filterSigRef.current = sig;
+    fetchInquiries();
+    // Deps di bawah sudah covariant dgn identitas `fetchInquiries` sendiri
+    // (useCallback-nya sudah mendeklarasikan seluruhnya) -- dicantumkan
+    // eksplisit di sini murni supaya react-hooks/exhaustive-deps lolos,
+    // NOL perubahan kapan efek ini menyala.
+  }, [fetchInquiries, wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, page]);
   useEffect(() => { setPage(0); }, [wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
 
   // Pencarian dua-langkah (koreksi #6): resolve dulu id akun yang NAMANYA cocok,
@@ -963,7 +987,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
           {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
           {isFTZ(inq) && <SubBadge>Free Trade Zone</SubBadge>}
-          {(inq.additional_services || []).includes('undername') && (
+          {inq.undername_import === true && (
             <SubBadge><FileText size={11} />Undername</SubBadge>
           )}
         </span>

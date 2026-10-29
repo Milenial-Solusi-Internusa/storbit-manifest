@@ -795,7 +795,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         // scoped (bukan query baru per-PRF) -- nol risiko N+1, nol alasan
         // ganti .limit(1000) jadi .range() (1000 quotation untuk SATU
         // inquiry bukan kasus nyata; limit sudah ada sebelum Putaran 10).
-        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at, prf_id, created_by')
+        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, accepted_at, payment_terms_id, deleted_at, prf_id, created_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
