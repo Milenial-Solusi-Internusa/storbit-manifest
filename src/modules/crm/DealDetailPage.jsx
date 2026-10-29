@@ -2200,7 +2200,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (data
                 // node: `bg: i===1 ? '#C3D9B8' : '#FFFFFF'`) -- node aktif
                 // = ACCENT polos, BUKAN ROW_HOVER (C.navySoft).
-                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.orange, linkColor: C.navy }}
+                // [Putaran 16] textFaint BARU -- teks "Not yet" diukur
+                // mockup: INK_FAINT (#838E7A), beda dari label node
+                // (INK_SOFT/textMute). DealDetailPage.jsx SATU-SATUNYA
+                // pemanggil DocumentFlow (diverifikasi grep) -- LeadDetailPage
+                // tidak terdampak.
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, textFaint: C.textFaint, activeBg: C.orange, linkColor: C.navy }}
               />
             </div>
             <NextStepHint status={dealStatus} />

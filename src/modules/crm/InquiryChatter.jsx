@@ -255,7 +255,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           showToast?.('Comment sent, but tagging some people failed.', 'error');
         }
 
-        const taggerName = profile?.full_name || user?.email || 'Seseorang';
+        const taggerName = profile?.full_name || user?.email || 'Someone';
         const notifRows = finalTags
           .filter((m) => m.userId !== currentUserId) // jangan notif diri sendiri
           .map((m) => ({

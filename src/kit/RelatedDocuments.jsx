@@ -38,7 +38,12 @@ function Column({ title, rows, tokens }) {
       {!rows.length ? (
         <div style={{ fontSize: 13, color: t.textFaint, fontFamily: t.fontBody, fontStyle: 'italic' }}>None yet</div>
       ) : (
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        /* [Putaran 16] diukur mockup: pembungkus grup baris LINE_SOFT
+           (#ECF0E9) -- sama persis nilai t.borderSoft yang sudah dipakai
+           border-bottom antar-baris di bawah, BUKAN t.border (LINE,
+           #D8E0D2, milik kontainer luar RelatedDocuments). Reuse prop
+           yang ada -- nol prop baru. */
+        <div style={{ border: `1px solid ${t.borderSoft}`, borderRadius: 10, overflow: 'hidden' }}>
           {rows.map((r, i) => (
             <div
               key={r.key || `${r.type}-${r.no}-${i}`}
