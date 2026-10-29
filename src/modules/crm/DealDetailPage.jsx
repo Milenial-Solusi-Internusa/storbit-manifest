@@ -728,7 +728,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, pricing_basis, cargo_ready_date, n_containers, closed_at, order_category, requested_delivery_date, estimated_shipping_cost, customer_reference')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, undername_import, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, pricing_basis, cargo_ready_date, n_containers, closed_at, order_category, requested_delivery_date, estimated_shipping_cost, customer_reference')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -2105,7 +2105,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {inquiry.service_type && (
                 <TintBadge meta={{ label: SERVICE_LABEL[inquiry.service_type] || inquiry.service_type, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
               )}
-              {(inquiry.additional_services || []).includes('undername') && (
+              {/* [Putaran 16, Tahap 3] Sumber badge diganti ke
+                  `inquiries.undername_import` (boolean) -- data nyata
+                  menyimpan undername di kolom itu, bukan di array
+                  `additional_services` (pola sama InquiryListPage.jsx/
+                  InquiryOwnerAssignmentPage.jsx, Tahap 2). Tampilan badge
+                  (label/warna/posisi) tidak berubah. */}
+              {inquiry.undername_import === true && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
               {/* Putaran 9 -- chip Direction, mockup :282 (`{{ D.dirL }}`) --
