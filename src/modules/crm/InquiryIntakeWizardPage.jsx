@@ -1713,13 +1713,24 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                   <Field label="Dimensi (P x L x T)"><input value={f.dimension} onChange={set('dimension')} style={S.input} placeholder="cth: 120 x 80 x 100 cm" /></Field>
                 </div>
                 <div>
-                  <div style={{ ...S.label, color: C.text }}>Cargo Category</div>
+                  {/* [Tahap 0, GAGAL ditutup] label field mockup SELALU C.sub
+                      (#5C6B52) -- "Cargo Category" nol padanan literal di
+                      mockup, tapi seluruh label sejenis (Service Type/Cargo
+                      Type/Customer Role/dst.) konsisten C.sub, bukan C.text. */}
+                  <div style={{ ...S.label, color: C.sub }}>Cargo Category</div>
                   <div style={grid2}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
                 </div>
                 {dgSelected && (
-                  <div style={{ border: '1px solid ' + C.border, borderLeft: '3px solid ' + C.orange, borderRadius: 12, background: C.card, padding: 20 }}>
+                  /* [Tahap 0, GAGAL ditutup] kotak ini PERSIS
+                     data-screen-label="Intake/DangerousGoods" mockup:
+                     background:#F8ECCF;border:1px solid #E6CE94 UNIFORM di
+                     keempat sisi -- bukan C.card + aksen kiri C.orange yang
+                     dipasang Prompt A. Heading+ikon ikut C.warning supaya
+                     senada dengan latar warn, bukan INK/navy (mockup sendiri
+                     tak punya heading ini, jadi dipilih yang paling koheren). */
+                  <div style={{ border: '1px solid ' + C.warningBorder, borderRadius: 12, background: C.warningBg, padding: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                      <AlertTriangle size={16} color={C.navy} /><span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, color: C.text }}>Detail Dangerous Goods</span>
+                      <AlertTriangle size={16} color={C.warning} /><span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, color: C.warning }}>Detail Dangerous Goods</span>
                     </div>
                     <div style={{ ...grid2, marginBottom: 18 }}>
                       <Field label="UN Number"><input value={f.un_number} onChange={(e) => setF((x) => ({ ...x, un_number: e.target.value.replace(/\D/g, '') }))} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="0000" /></Field>

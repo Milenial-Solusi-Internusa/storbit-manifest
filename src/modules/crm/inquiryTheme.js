@@ -41,8 +41,8 @@
 // hex baru di sini. Tabel lengkap per titik: laporan chat Putaran 16a
 // Prompt A §2.
 import {
-  BG, CARD, ACCENT, ACCENT_HOVER, LINE, LINE_SOFT, INK, INK_SOFT, INK_FAINT,
-  HEAD_BG, ROW_HOVER, DISABLED_BG, SEMANTIC, TONE,
+  BG, CARD, ACCENT, ACCENT_HOVER, ACCENT_2, LINE, LINE_SOFT, INK, INK_SOFT, INK_FAINT,
+  HEAD_BG, ROW_HOVER, DISABLED_BG, WHITE, DEAL_STATUS, SHADOW_DROP, SEMANTIC, TONE,
 } from '../../kit/tokens';
 
 /* =========================================================================
@@ -151,11 +151,81 @@ export const WIZARD_C = {
   disabledBg:    DISABLED_BG, // BARU -- latar field terkunci/read-only (dulu hardcode #E8ECE4 di luar objek C -- nilainya kebetulan SUDAH identik DISABLED_BG)
 };
 
-/* Status inquiry (badge tinted rounded-square) -- SENGAJA TIDAK diekspor
-   dari sini. Task 1.3: tetap DEAL_STATUS dari kit (`src/kit/tokens.js`),
-   sudah identik mockup (termasuk WON navy #144682 yang disengaja) --
-   STATUS_META di InquiryListPage.jsx/InquiryOwnerAssignmentPage.jsx/
+/* =========================================================================
+   `DEAL_C` -- dipakai DealDetailPage.jsx, dealOverviewFieldInputs.jsx,
+   src/modules/crm/inquiryParts.jsx (fork lokal Card/InfoRow/PriceSummaryCard,
+   Putaran 16a Tahap 1). Shape SAMA PERSIS `const C` DealPanels.jsx -- impor
+   ulang `import { DEAL_C as C } from './inquiryTheme'` supaya call-site
+   `C.xxx` di ketiga berkas itu tidak berubah satu huruf pun.
+   DealPanels.jsx SENDIRI TIDAK DISENTUH (dilarang eksplisit) -- objek ini
+   hanya MENIRU bentuknya dari luar.
+
+   | key lama (hex lama)         | konstanta kit     | catatan |
+   |-------------------------------|---------------------|---------|
+   | navy      (#1B4D8A)          | INK                 | SELURUH 16 titik pakai di DealDetailPage.jsx adalah teks/link/ikon/border-tipis, nol pakai sbg latar solid (diverifikasi grep) -- INK juga aman sbg latar solid+teks putih (kontras 12,4:1, dihitung manual) utk kotak "Best Quote" PriceSummaryCard & tombol modal |
+   | navySoft  (#EAF0F8)          | ROW_HOVER           | latar tint terang (konsisten pola WIZARD_C.navySoft) |
+   | orange    (#E85A1E)          | ACCENT              | tombol solid "Create Quotation"/"Create PRF" -- teks WAJIB C.text (INK), BUKAN putih (ACCENT pucat gagal AA) |
+   | orangeSoft(#FEF2EC)          | ROW_HOVER           | tak terpakai pasca-edit (konsisten pola WIZARD_C) |
+   | text      (#16243A)          | INK                 | |
+   | textMute  (#5E6553)          | INK_SOFT            | |
+   | textFaint (#8A8E7C)          | INK_FAINT           | |
+   | surface   (#FFFFFF)          | CARD                | |
+   | surfaceAlt(#FBF6EC)          | HEAD_BG             | |
+   | border    (#E7DCC8)          | LINE                | |
+   | borderStrong(#D9CDB6)        | INK_FAINT           | |
+   | green/greenBg/greenBd        | SEMANTIC.ok.*       | tombol solid DealWonModals -- teks putih AMAN (kontras 5,43:1) |
+   | red/redBg/redBd              | SEMANTIC.danger.*   | tombol solid DealCloseModals -- teks putih AMAN (kontras 6,57:1) |
+   | blue/blueBg/blueBd           | SEMANTIC.info.*     | |
+   | amber/amberBg/amberBd        | SEMANTIC.warn.*     | JUGA dipakai utk 3 titik teks penekanan mata uang non-IDR yang SEBELUMNYA memakai `orange` sbg teks (ACCENT pucat tak terbaca sbg teks) |
+   | gray/grayBg/grayBd           | SEMANTIC.neutral.*  | |
+   | white -- BARU, bukan ganti -- | WHITE              | pengganti literal `'#fff'` tersisa (mis. teks di kotak "Best Quote") supaya tetap tertelusur ke kit, bukan hex lepas |
+
+   ⚠️ `navy`/`orange` SELALU berperan TEKS/LINK/BORDER atau LATAR SOLID+TEKS
+   PUTIH di ketiga berkas ini -- KEDUANYA aman dipetakan uniform (INK/ACCENT)
+   karena dihitung dulu: putih di atas INK = 12,4:1 (lolos jauh di atas AA).
+   SATU-SATUNYA pengecualian adalah `orange` dipakai sbg TEKS highlight mata
+   uang (bukan latar) -- itu disurati ke `amber`, bukan dibiarkan `orange`
+   (ACCENT pucat gagal terbaca sbg teks, pelajaran sama Prompt A). */
+export const DEAL_C = {
+  navy: INK,
+  navySoft: ROW_HOVER,
+  orange: ACCENT,
+  orangeSoft: ROW_HOVER,
+  text: INK,
+  textMute: INK_SOFT,
+  textFaint: INK_FAINT,
+  surface: CARD,
+  surfaceAlt: HEAD_BG,
+  border: LINE,
+  borderStrong: INK_FAINT,
+  green: SEMANTIC.ok.fg,     greenBg: SEMANTIC.ok.bg,     greenBd: SEMANTIC.ok.bd,
+  red: SEMANTIC.danger.fg,   redBg: SEMANTIC.danger.bg,   redBd: SEMANTIC.danger.bd,
+  blue: SEMANTIC.info.fg,    blueBg: SEMANTIC.info.bg,    blueBd: SEMANTIC.info.bd,
+  amber: SEMANTIC.warn.fg,   amberBg: SEMANTIC.warn.bg,   amberBd: SEMANTIC.warn.bd,
+  gray: SEMANTIC.neutral.fg, grayBg: SEMANTIC.neutral.bg, grayBd: SEMANTIC.neutral.bd,
+  white: WHITE, // BARU -- lihat tabel di atas
+  bg: BG, // BARU -- banner "Next step" DealDetailPage.jsx, diukur persis mockup data-screen-label="Detail/NextStep": background:#F6F8F3 (BUKAN navySoft lama -- lihat laporan chat Tahap 1 §4)
+  lineSoft: LINE_SOFT, // BARU -- border banner "Next step" yang sama, mockup: border:1px solid #ECF0E9
+};
+
+/* Status inquiry (badge tinted rounded-square) -- STATUS_META di
+   InquiryListPage.jsx/InquiryOwnerAssignmentPage.jsx/
    InquiryClassificationPage.jsx dan STATUS_BADGE di
    InquiryIntakeWizardPage.jsx dibiarkan APA ADANYA / diselaraskan LANGSUNG
-   ke DEAL_STATUS kit di berkasnya masing-masing (lihat laporan chat §6),
-   bukan di-passthrough lewat berkas ini. */
+   ke DEAL_STATUS kit di berkasnya masing-masing (Prompt A §6), BUKAN
+   di-passthrough lewat objek C/WIZARD_C di atas.
+   `DEAL_STATUS` TETAP diekspor di bawah (primitif mentah) -- dibutuhkan
+   v3/StatusBar.jsx (Putaran 16a Tahap 1) untuk penanda penutupan WON/
+   LOST/CANCELLED, "Warna status tetap DEAL_STATUS dari kit" (instruksi
+   Tahap 1 butir 6). */
+
+/* =========================================================================
+   PRIMITIF MENTAH -- diekspor ulang APA ADANYA (nol transformasi) untuk
+   v3/StatusBar.jsx, v3/FormSheet.jsx, v3/Notebook.jsx (Putaran 16a Tahap 1,
+   diedit DI TEMPAT, bukan lewat C/WIZARD_C karena shape ketiga file itu
+   bukan objek `const C` bergaya lama -- masing-masing mengimpor konstanta
+   lepas langsung dari './tokens'). Satu-satunya tujuan blok ini: ketiga
+   file itu tetap "warna sage hanya lewat inquiryTheme.js" tanpa mengimpor
+   src/kit/tokens.js langsung.
+   ========================================================================= */
+export { CARD, ACCENT, ACCENT_2, INK, INK_SOFT, LINE, WHITE, DEAL_STATUS, SHADOW_DROP };
