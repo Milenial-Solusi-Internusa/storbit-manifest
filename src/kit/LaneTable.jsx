@@ -44,8 +44,15 @@ import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import LocationPicker from './LocationPicker';
 import { unitForMode } from './laneUtils';
 
-const COLS_EDIT = '56px minmax(160px,1fr) minmax(160px,1fr) minmax(140px,1fr) 120px 110px 36px';
-const COLS_READONLY = '28px minmax(160px,1fr) minmax(160px,1fr) minmax(140px,1fr) 120px 110px';
+// [Putaran 16 Tahap 6] diukur LANGSUNG mockup (Intake/Lanes utk edit --
+// wizard "Add route option" -- DAN Detail/Lanes utk readonly, Detail
+// Inquiry, screen MSI-INQ-X-2026-0361): style attr literal grid-template-
+// columns kedua layar, byte-per-byte. COLS_READONLY mockup PUNYA kolom
+// ke-7 "Flag" (lebar 150px) yang di sini TIDAK ada padanan data/prop --
+// STRUKTUR, dilaporkan terpisah, TIDAK ditambahkan di sini (6 kolom lama
+// dipertahankan, hanya lebar 5 kolom pertama yang diselaraskan).
+const COLS_EDIT = '44px minmax(130px,1fr) minmax(150px,1.2fr) minmax(110px,1fr) 110px 90px 40px';
+const COLS_READONLY = '44px minmax(130px,1fr) minmax(150px,1.2fr) minmax(100px,1fr) 100px 80px';
 
 export function LaneTable({
   lanes, locations, laneModeOpts, laneUnitOpts, tokens,
@@ -61,22 +68,32 @@ export function LaneTable({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h4 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: tokens.text, flex: 1 }}>Route options ({lanes.length})</h4>
+        {/* [Putaran 16 Tahap 6] diukur mockup (Intake/Lanes, tombol "Add
+            lane"): height 32 (bukan 36), padding '0 12px' (bukan 14px),
+            border tokens.placeholder/INK_FAINT (bukan tokens.border/LINE),
+            fontWeight 600 (bukan 700). */}
         {!readOnly && onAdd && (
           <button type="button" onClick={onAdd}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 10, border: '1px solid ' + tokens.border, background: tokens.card, color: tokens.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 32, padding: '0 12px', borderRadius: 10, border: '1px solid ' + tokens.placeholder, background: tokens.card, color: tokens.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             <Plus size={14} />Add lane
           </button>
         )}
       </div>
       <div style={{ border: '1px solid ' + tokens.border, borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, background: tokens.bg, borderBottom: '1px solid ' + tokens.border }}>
+          {/* [Putaran 16 Tahap 6] diukur mockup (head-cell POL/POD/dst,
+              KEDUA layar byte-identik): padding 10px 8px (bukan 9px 8px),
+              fontSize 11 (bukan 10.5) -- warna tokens.textMute SUDAH cocok
+              (INK_SOFT di kedua pemanggil), tidak disentuh. */}
           {headers.map((h, i) => (
-            <div key={h || `_${i}`} style={{ padding: '9px 8px', fontFamily: "'Montserrat',sans-serif", fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: tokens.textMute }}>{h}</div>
+            <div key={h || `_${i}`} style={{ padding: '10px 8px', fontFamily: "'Montserrat',sans-serif", fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: tokens.textMute }}>{h}</div>
           ))}
         </div>
         {lanes.map((l, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: cols, alignItems: 'center', borderBottom: '1px solid ' + tokens.border }}>
-            <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* [Putaran 16 Tahap 6] padding 8px diukur mockup (sel "#"
+                Detail/Lanes: padding:8px seragam, bukan 6px 8px). */}
+            <div style={{ padding: '8px', display: 'flex', alignItems: 'center', gap: 4 }}>
               {showUseColumn ? (
                 <input type="checkbox" checked={l.on !== false} onChange={() => onToggleUse?.(i)} disabled={readOnly}
                   title="Include this lane" style={{ width: 16, height: 16, accentColor: tokens.textMute, cursor: readOnly ? 'default' : 'pointer' }} />
@@ -117,15 +134,20 @@ export function LaneTable({
                 onManage={canManageLocations ? openLocationMaster : undefined}
                 onRequest={canManageLocations ? undefined : requestNewLocation} />
             </div>
+            {/* [Putaran 16 Tahap 6] diukur mockup (select Mode/Load unit,
+                Intake/Lanes edit): bg SELALU tokens.bg (persis LocationPicker
+                trigger cell lain, bukan tokens.card hanya saat edit) --
+                fontSize 13 (bukan 12.5). readOnly tetap disabled (mockup nol
+                padanan select readonly -- STRUKTUR, dilaporkan terpisah). */}
             <div style={{ padding: '6px 4px' }}>
               <select value={l.mode || ''} onChange={(e) => onUpdate(i, { mode: e.target.value, load_unit: unitForMode(e.target.value) })} disabled={readOnly}
-                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + tokens.border, background: readOnly ? tokens.bg : tokens.card, padding: '0 8px', fontSize: 12.5, color: tokens.text }}>
+                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + tokens.border, background: tokens.bg, padding: '0 8px', fontSize: 13, color: tokens.text }}>
                 {laneModeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div style={{ padding: '6px 4px' }}>
               <select value={l.load_unit || ''} onChange={(e) => onUpdate(i, { load_unit: e.target.value })} disabled={readOnly}
-                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + tokens.border, background: readOnly ? tokens.bg : tokens.card, padding: '0 8px', fontSize: 12.5, color: tokens.text }}>
+                style={{ height: 36, width: '100%', borderRadius: 8, border: '1px solid ' + tokens.border, background: tokens.bg, padding: '0 8px', fontSize: 13, color: tokens.text }}>
                 {laneUnitOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -133,9 +155,14 @@ export function LaneTable({
               <div style={{ padding: '6px 4px', display: 'flex', justifyContent: 'center' }}>
                 {/* Minimum 1 lane ditegakkan (koreksi atas gap validasi mockup) --
                     tombol hapus disabled di baris terakhir; RPC update_inquiry_lanes
-                    menegakkan ulang server-side ("Minimal 1 lane..."). */}
+                    menegakkan ulang server-side ("Minimal 1 lane..."). [Putaran
+                    16 Tahap 6] kotak tombol 28x28 radius 8 diukur mockup ("Remove
+                    lane", Intake/Lanes) -- ikon TETAP Trash2 (mockup memakai
+                    glyph teks "x", STRUKTUR berbeda, dilaporkan terpisah, bukan
+                    gaya) -- warna conditional disabled/enabled DIPERTAHANKAN
+                    (sinyal UX Nexus sendiri, mockup nol contoh baris terkunci). */}
                 <button type="button" onClick={() => onRemove(i)} disabled={lanes.length <= 1}
-                  style={{ background: 'none', border: 0, cursor: lanes.length <= 1 ? 'not-allowed' : 'pointer', color: lanes.length <= 1 ? tokens.placeholder : tokens.textMute, opacity: lanes.length <= 1 ? 0.6 : 1 }}>
+                  style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: 'none', border: 0, cursor: lanes.length <= 1 ? 'not-allowed' : 'pointer', color: lanes.length <= 1 ? tokens.placeholder : tokens.textMute, opacity: lanes.length <= 1 ? 0.6 : 1 }}>
                   <Trash2 size={15} />
                 </button>
               </div>

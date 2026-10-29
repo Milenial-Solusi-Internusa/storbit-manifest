@@ -29,7 +29,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  FileText, ChevronLeft, CalendarClock,
+  FileText, ChevronLeft, RefreshCw,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   Ban, UserCog, UserCheck, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
   Lock, Check, RefreshCcw,
@@ -2024,8 +2024,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         <RefreshCcw size={14} />Change Account
                       </button>
                     )}
+                    {/* [Putaran 16 Tahap 6] diukur mockup (kebab panel
+                        divider): background LINE_SOFT (#ECF0E9), bukan LINE
+                        (#D8E0D2) -- C.border terlalu gelap dibanding mockup. */}
                     {(canReassignOwner || canChangeAccount) && (canMarkLost || canCancel) && (
-                      <div style={{ height: 1, background: C.border, margin: '4px 0' }} />
+                      <div style={{ height: 1, background: C.lineSoft, margin: '4px 0' }} />
                     )}
                     {canMarkLost && (
                       <button type="button" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
@@ -2037,11 +2040,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       /* Putaran 11 Tahap C -- disabled+tooltip bila ada SO hidup,
                          pola PERSIS Change Account (changeAccountBlockReason di
                          atas). RPC/UPDATE tetap penjaga sebenarnya; ini murni UX. */
+                      // [Putaran 16 Tahap 6] diukur mockup (item "Cancel
+                      // Inquiry" kebab panel): color danger/#B23227 saat
+                      // AKTIF (C.red) -- bukan C.textMute/INK_SOFT netral;
+                      // disabled TETAP C.textFaint (nol pasangan mockup utk
+                      // state terkunci, dipertahankan apa adanya).
                       <button type="button"
                         disabled={!!cancelBlockReason}
                         title={cancelBlockReason || undefined}
                         onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: cancelBlockReason ? C.textFaint : C.textMute, cursor: cancelBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: cancelBlockReason ? 0.6 : 1 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: cancelBlockReason ? C.textFaint : C.red, cursor: cancelBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: cancelBlockReason ? 0.6 : 1 }}>
                         <Ban size={14} />Cancel Inquiry
                       </button>
                     )}
@@ -2958,19 +2966,25 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
                   right={
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur PERSIS mockup
+                      {/* [Putaran 16a Tahap 1] diukur PERSIS mockup
                           data-screen-label="Detail/QuotationActions": GHOST
                           (background:transparent;border:1px solid #838E7A;
                           color:#33422B), BUKAN solid accent+putih -- "Create
                           Quotation"/"Create Revision" mockup tidak ditonjolkan
-                          sbg CTA utama. */}
+                          sbg CTA utama. [Putaran 16 Tahap 6, MENUTUP gap di
+                          atas] height 32 (bukan ACT_BTN 36), padding '0 12px'
+                          (bukan 13px), radius 10 (bukan 9), fontSize 13.5
+                          (bukan 12.5) -- diukur langsung tombol "Create
+                          Quotation" disabled, mockup. */}
                       <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
-                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
                           cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
                         {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
                       </button>
                       <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
-                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
                           cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
                         {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
                       </button>
@@ -3238,16 +3252,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     {statusHistorySegments.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
                         <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
+                        {/* [Putaran 16 Tahap 6] diukur mockup (Detail/StatusHistory,
+                            bar+legend): SEGMEN bar pakai DEAL_STATUS[status].bd
+                            (BUKAN .bg -- bar mockup rgb(188,208,228) utk Open =
+                            .bd #BCD0E4, bukan .bg #E4EEF7 yang jauh lebih pucat).
+                            Legend swatch JUGA .bd sebagai bg (sama alasan), tapi
+                            border swatch = .fg (bukan .bd) -- diukur
+                            rgb(29,90,150)=#1D5A96=.fg persis. */}
                         <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
                           {statusHistorySegments.map((s, i) => (
                             <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
-                              style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
+                              style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bd || C.surfaceAlt }} />
                           ))}
                         </div>
                         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                           {statusHistorySegments.map((s, i) => (
                             <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
-                              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
+                              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bd || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.fg || C.border}` }} />
                               {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
                             </span>
                           ))}
@@ -3265,11 +3286,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     {/* Putaran 11 Tahap B -- baris status DAN owner digabung
                         SATU timeline, diurut tanggal terbaru-dulu
                         (combinedHistoryEvents) -- mockup Inquiry Management
-                        .dc.html:855-864. Ikon pembeda: CalendarClock utk
-                        status (tidak berubah), UserCheck utk owner (baru). */}
+                        .dc.html:855-864. [Putaran 16 Tahap 6] Ikon status
+                        CalendarClock -> RefreshCw (diukur path SVG mockup
+                        byte-per-byte vs __iconNode lucide-react -- persis
+                        ikon refresh melingkar, BUKAN kalender). UserCheck
+                        utk owner DIPERTAHANKAN (nol contoh baris owner di
+                        mockup utk inquiry uji manapun -- tak ada bukti
+                        pembanding, bukan diasumsikan sama). */}
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {combinedHistoryEvents.map((e) => e.kind === 'owner' ? (
-                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                        // [Putaran 16 Tahap 6] borderBottom C.surfaceAlt/HEAD_BG
+                        // -> C.lineSoft/LINE_SOFT, diukur mockup: rgb(236,240,233)
+                        // = #ECF0E9 persis LINE_SOFT (bukan #EFF3ED/HEAD_BG).
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                           <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                             <UserCheck size={16} />
                           </span>
@@ -3286,9 +3315,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                           </div>
                         </div>
                       ) : (
-                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                           <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                            <CalendarClock size={16} />
+                            <RefreshCw size={16} />
                           </span>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

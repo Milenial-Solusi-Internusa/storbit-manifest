@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router';
 import {
   ChevronLeft, ChevronRight, X, Check, Lock,
   AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2, Package,
+  PlaneLanding, PlaneTakeoff,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -102,6 +103,11 @@ const DUTIES_AND_TAXES_OPTS = ['Included in price', 'Billed separately as per re
 const PRICING_BASIS_OPTS = ['Itemized charges', 'All in per CBM', 'All in per KG'];
 const CUSTOMER_ROLE_OPTS = ['Shipper', 'Consignee', 'Third Party'];
 const DIRECTION_OPTS = ['Import', 'Export', 'Domestic'];
+// [Putaran 16 Tahap 6] diukur dari SVG mockup (og.dir.*, step 2) --
+// path dibandingkan byte-per-byte ke __iconNode lucide-react: Import =
+// plane-landing, Export = plane-takeoff, Domestic = truck (Truck sudah
+// diimpor, dipakai juga di SERVICE_ICON.trucking).
+const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: Truck };
 // Putaran 14 (W-60, Scope 3) -- Order Category, mockup baris 93: <select>
 // 3 opsi tetap + placeholder kosong, markup polos TANPA sc-for/dropdown
 // dinamis -- CHECK literal di DB (migrasi 20261030000001), pola sama 4
@@ -188,19 +194,26 @@ function FieldError({ children }) {
   if (!children) return null;
   return <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{children}</span>;
 }
-// Pola "kartu/pil aktif" (og.svc/og.dir/og.cargo/og.addl, mockup): latar
-// AKTIF = C.navySoft (ROW_HOVER), border AKTIF = C.navy (INK_SOFT), teks/
-// ikon SELALU C.text (INK) -- tidak berubah warna antara aktif/non-aktif,
-// mockup menandai "aktif" lewat border+latar+ikon centang, bukan teks
-// putih di atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
+// Pola "pil aktif" (og.dir/og.cust_role/og.pricing_basis, mockup): latar
+// AKTIF = C.navySoft (ROW_HOVER), border AKTIF = C.navy (INK_SOFT), teks
+// SELALU C.text (INK) -- tidak berubah warna antara aktif/non-aktif,
+// mockup menandai "aktif" lewat border+latar saja, bukan teks putih di
+// atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
 // navy/oranye + teks putih" sudah tidak dipakai).
 // [Putaran 16a Tahap 2] `variant='chip'` BARU -- diukur mockup (Incoterms/
 // Container Type, Inquiry Intake Form: `fch.inco`/`fch.cont`, bg:
 // on?'#C3D9B8':'#FFFFFF', bd: on?'#AFC9A0':'#D8E0D2'). Pil BULAT (radius
 // 16, tinggi 32) tanpa ikon centang, teks SELALU INK (C.text) di kedua
-// state -- beda total dari variant default 'card' (kartu besar radius 10
-// tinggi 44, navySoft+navy+Check). Default TETAP 'card' supaya SELURUH
-// pemanggil lain (Direction/Customer Role/Pricing Basis) byte-identik.
+// state -- beda dari variant default 'card' (pil kecil radius 10 tinggi
+// 40, navySoft+navy, TANPA ikon centang). Default TETAP 'card' supaya
+// SELURUH pemanggil lain (Customer Role/Pricing Basis) byte-identik.
+// [Putaran 16 Tahap 6] variant default DIUKUR ULANG langsung di mockup
+// (Customer Role + Pricing Basis step 5, keduanya SAMA PERSIS): height
+// 40 (bukan 44), padding '0 16px' eksplisit, font Inter 600 13.5px
+// (bukan Montserrat 700 13), NOL ikon centang saat aktif (mockup
+// menandai aktif murni lewat border+bg). Direction PINDAH ke ServiceCard
+// (kartu ikon besar og.dir.*, byte-identik ServiceCard og.svc.*) --
+// Pill variant default kini HANYA dipakai Customer Role + Pricing Basis.
 function Pill({ active, onClick, children, invalid, variant = 'card' }) {
   if (variant === 'chip') {
     return (
@@ -212,8 +225,8 @@ function Pill({ active, onClick, children, invalid, variant = 'card' }) {
   }
   return (
     <button type="button" onClick={onClick}
-      style={{ height: 44, borderRadius: 10, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-      {active && <Check size={15} />}{children}
+      style={{ height: 40, padding: '0 16px', borderRadius: 10, fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      {children}
     </button>
   );
 }
@@ -234,14 +247,26 @@ function ServiceCard({ icon: Icon, label, active, onClick }) {
     </button>
   );
 }
+// [Putaran 16 Tahap 6] diukur LANGSUNG mockup (kartu "Cargo Category"
+// step 4 -- `og.cat.*`): byte-identik pola ServiceCard/Direction (min-height
+// 72, padding 12px 16px, radius 14, ikon 36px LINGKARAN PENUH/radius 18,
+// gap 12, label Inter 600 13.5, border aktif C.muted/INK_FAINT -- BUKAN
+// C.navy/INK_SOFT spt ServiceCard/Direction, diukur eksplisit, bukan
+// diasumsikan sama). ⚠️ Mockup NOL baris deskripsi sama sekali (childCount
+// 2: ikon+label saja, diverifikasi "Normal Cargo"/"Dangerous Goods") --
+// baris desc di bawah ini DIPERTAHANKAN APA ADANYA (instruksi eksplisit:
+// jangan hapus konten yang tak ada padanannya di mockup), hanya tata letak
+// ikon/radius/padding/gap/font/border yang diselaraskan. Karena desc tetap
+// ada, tinggi kartu TIDAK dipaksa 72 persis -- minHeight 72 (bukan height)
+// supaya dua baris teks tetap muat, konsisten dgn pola CargoCard lama.
 function CargoCard({ item, active, onClick }) {
   const I = item.Icon;
   return (
     <button type="button" onClick={onClick}
-      style={{ textAlign: 'left', borderRadius: 12, padding: '16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', gap: 13, alignItems: 'flex-start' }}>
-      <span style={{ width: 38, height: 38, borderRadius: 10, flex: '0 0 38px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={19} /></span>
+      style={{ textAlign: 'left', minHeight: 72, borderRadius: 14, padding: '12px 16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.muted : C.border), background: active ? C.navySoft : C.card, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={{ width: 36, height: 36, borderRadius: 18, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={18} /></span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
+        <span style={{ display: 'block', fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
         <span style={{ display: 'block', fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{item.desc}</span>
       </span>
     </button>
@@ -1492,11 +1517,18 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 </Field>
 
                 <Field label="Direction" required span>
-                  <div style={grid3}>
+                  {/* [Putaran 16 Tahap 6] Pill -> ServiceCard (kartu ikon
+                      besar), diukur mockup: grid 3 kolom TETAP (bukan
+                      grid3/auto-fill 200px -- Direction selalu persis 2-3
+                      opsi, mockup style attr literal
+                      "repeat(3, minmax(0px, 1fr))"). */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>
                     {/* Putaran 14 (W-10, Scope 1) -- mockup `og.dir.ex.disp`:
                         Export DISEMBUNYIKAN utk General Trading (GT hanya
                         Domestic/Import). */}
-                    {DIRECTION_OPTS.filter((d) => !(isGTf && d === 'Export')).map((d) => <Pill key={d} active={f.direction === d} onClick={() => pickDirection(d)}>{d}</Pill>)}
+                    {DIRECTION_OPTS.filter((d) => !(isGTf && d === 'Export')).map((d) => (
+                      <ServiceCard key={d} icon={DIRECTION_ICON[d]} label={d} active={f.direction === d} onClick={() => pickDirection(d)} />
+                    ))}
                   </div>
                   <FieldError>{errors.svc_direction}</FieldError>
                 </Field>
@@ -1765,7 +1797,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       mockup, tapi seluruh label sejenis (Service Type/Cargo
                       Type/Customer Role/dst.) konsisten C.sub, bukan C.text. */}
                   <div style={{ ...S.label, color: C.sub }}>Cargo Category</div>
-                  <div style={grid2}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
+                  {/* [Putaran 16 Tahap 6] grid2 (2 kolom) -> 3 kolom tetap,
+                      diukur mockup (`og.cat`, style attr literal
+                      "repeat(3, minmax(0px, 1fr))" gap 16px) -- sama persis
+                      pola Direction (Task 1), BUKAN grid2/grid3 lama. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
                 </div>
                 {dgSelected && (
                   /* [Tahap 0, GAGAL ditutup] kotak ini PERSIS
