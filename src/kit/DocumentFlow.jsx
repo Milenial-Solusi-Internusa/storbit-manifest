@@ -77,11 +77,14 @@ const ICON_MAP = {
  *   state: 'doc'|'name'|'multi'|'none', value?: string,
  *   onClick?: () => void, items?: Array<{label:string, onClick:()=>void}>,
  * }>} nodes
- * @param {{border:string, text:string, textMute:string, activeBg:string, linkColor:string, textFaint?:string}} tokens
+ * @param {{border:string, text:string, textMute:string, activeBg:string, linkColor:string, textFaint?:string, hoverBg?:string}} tokens
  *   `textFaint` opsional (Putaran 16) -- dipakai KHUSUS teks "Not yet"
  *   (mockup: INK_FAINT, beda dari label node yang INK_SOFT/textMute).
  *   Tidak diisi -> jatuh ke `t.textMute`, keluaran byte-sama utk pemanggil
  *   lama (satu-satunya hari ini: DealDetailPage.jsx).
+ *   `hoverBg` opsional BARU (Putaran 16 Tahap 8, Task 3) -- latar hover item
+ *   dropdown cabang "multi" (mockup #E4EDDE/ROW_HOVER). Tidak diisi -> nol
+ *   hover, byte-identik perilaku lama.
  */
 export function DocumentFlow({ nodes, tokens }) {
   const t = tokens;
@@ -123,9 +126,20 @@ export function DocumentFlow({ nodes, tokens }) {
               </div>
               {n.state === 'multi' && openIdx === i && (
                 <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 30, marginTop: 4, background: '#FFFFFF', border: `1px solid ${t.border}`, borderRadius: 10, boxShadow: SHADOW_POPOVER, padding: 4, display: 'flex', flexDirection: 'column', minWidth: 200 }}>
+                  {/* [Putaran 16 Tahap 8, Task 3] hover item dropdown cabang --
+                      diukur mockup (n.items, style-hover="background:#E4EDDE").
+                      `t.hoverBg` BARU, opsional+aditif -- tanpa itu hover tetap
+                      nol (byte-identik perilaku lama); DealDetailPage.jsx
+                      SATU-SATUNYA pemanggil, mengoper C.navySoft = ROW_HOVER =
+                      #E4EDDE persis. Inline onMouseEnter/Leave (bukan CSS
+                      :hover) -- pola yang sama dgn dropdown mention
+                      InquiryChatter.jsx, komponen ini tak punya <style> scoped
+                      sendiri. */}
                   {(n.items || []).map((x) => (
                     <button key={x.label} type="button" onClick={() => { setOpenIdx(null); x.onClick?.(); }}
-                      style={{ border: 0, background: 'transparent', textAlign: 'left', padding: '8px 12px', borderRadius: 8, font: "400 12.5px 'IBM Plex Mono', monospace", color: t.text, cursor: 'pointer' }}>
+                      style={{ border: 0, background: 'transparent', textAlign: 'left', padding: '8px 12px', borderRadius: 8, font: "400 12.5px 'IBM Plex Mono', monospace", color: t.text, cursor: 'pointer' }}
+                      onMouseEnter={t.hoverBg ? (e) => { e.currentTarget.style.background = t.hoverBg; } : undefined}
+                      onMouseLeave={t.hoverBg ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}>
                       {x.label}
                     </button>
                   ))}

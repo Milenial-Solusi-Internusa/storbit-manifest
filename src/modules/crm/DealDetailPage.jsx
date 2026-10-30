@@ -1359,11 +1359,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       key: `prf-${p.id}`, type: 'PRF', no: p.prf_no, status: String(p.status || '').toUpperCase(),
       date: fmtDate(p.created_at), onClick: () => onViewPRF?.(p),
     })),
-    ...quotations.map((q) => ({
-      key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
-      status: QUO_STATUS[String(q.status || '').toUpperCase()]?.label || q.status,
-      date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
-    })),
+    ...quotations.map((q) => {
+      // [Putaran 16 Tahap 8, Task 2] `statusTone` dari QUO_STATUS -- peta
+      // status quotation yang SUDAH dipakai tab Quotations (QUOTATION_COLUMNS
+      // di atas, TintBadge) -- bukan peta baru. PRF/akun di atas TIDAK
+      // mengoper `statusTone` (nol pemetaan sejenis di file ini) -- badge-nya
+      // jatuh ke gaya netral mockup di dalam RelatedDocuments.jsx sendiri.
+      const m = QUO_STATUS[String(q.status || '').toUpperCase()];
+      return {
+        key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
+        status: m?.label || q.status,
+        statusTone: m ? { fg: m.color, bg: m.bg, bd: m.bd } : undefined,
+        date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
+      };
+    }),
   ];
   // TD-318 Irisan 2 Inquiry, commit 7 -- segmen bar + daftar event Status
   // History. Bagian "owner" TIDAK dikerjakan (keputusan Mas) -- hanya
@@ -2234,7 +2243,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 // (INK_SOFT/textMute). DealDetailPage.jsx SATU-SATUNYA
                 // pemanggil DocumentFlow (diverifikasi grep) -- LeadDetailPage
                 // tidak terdampak.
-                tokens={{ border: C.border, text: C.text, textMute: C.textMute, textFaint: C.textFaint, activeBg: C.orange, linkColor: C.navy }}
+                // [Putaran 16 Tahap 8, Task 3] hoverBg BARU -- latar hover item
+                // dropdown cabang "multi" (mockup #E4EDDE), C.navySoft = ROW_HOVER
+                // persis, sudah dipakai pola yang sama di kebab menu (.kebab-item).
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, textFaint: C.textFaint, activeBg: C.orange, linkColor: C.navy, hoverBg: C.navySoft }}
               />
             </div>
             <NextStepHint status={dealStatus} />
@@ -2985,46 +2997,54 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     keduanya di UI memerlukan RPC pembaca sendiri (pola
                     SECURITY DEFINER ala find_possible_duplicate_inquiries) —
                     ditunda ke Irisan 8 bersama UI Close as Duplicate lainnya. */}
-                <ListView
-                  mode="table"
-                  rows={quotations}
-                  onRowClick={onViewQuotation}
-                  emptyTitle="No quotations yet"
-                  emptySub="Quotations created from this inquiry will appear here."
-                  tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
-                  right={
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {/* [Putaran 16a Tahap 1] diukur PERSIS mockup
-                          data-screen-label="Detail/QuotationActions": GHOST
-                          (background:transparent;border:1px solid #838E7A;
-                          color:#33422B), BUKAN solid accent+putih -- "Create
-                          Quotation"/"Create Revision" mockup tidak ditonjolkan
-                          sbg CTA utama. [Putaran 16 Tahap 6, MENUTUP gap di
-                          atas] height 32 (bukan ACT_BTN 36), padding '0 12px'
-                          (bukan 13px), radius 10 (bukan 9), fontSize 13.5
-                          (bukan 12.5) -- diukur langsung tombol "Create
-                          Quotation" disabled, mockup. */}
-                      <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
-                        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
-                          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                          cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
-                        {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
-                      </button>
-                      <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
-                        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
-                          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                          cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
-                        {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
-                      </button>
-                      {locked && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
-                          <Lock size={14} />{lockedLabel}
-                        </span>
-                      )}
-                    </div>
-                  }
-                  columns={QUOTATION_COLUMNS}
-                />
+                {/* [Putaran 16 Tahap 8, Task 4] Toolbar "QuotationActions" DIPINDAH
+                    keluar dari prop `right` ListView jadi wrapper sendiri -- mockup
+                    (:402, data-screen-label="Detail/QuotationActions") menaruhnya
+                    sebagai div TERPISAH di ATAS blok hasQuotes/noQuotes, bukan di
+                    dalam chrome generik ListView/FilterBar. Nol perubahan konten
+                    (tombol/gate/style byte-sama, cuma dipindah lokasi render) --
+                    marginBottom 16 menggantikan SP.s4 FilterBar yang sebelumnya
+                    membungkusnya supaya jarak ke tabel/blok kosong tak berubah. */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+                  <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
+                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                      cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
+                    {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
+                  </button>
+                  <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
+                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                      cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
+                    {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
+                  </button>
+                  {locked && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                      <Lock size={14} />{lockedLabel}
+                    </span>
+                  )}
+                </div>
+                {/* [Putaran 16 Tahap 8, Task 4] EmptyState kit (src/modules/crm/v3/
+                    kit.jsx) TIDAK BISA ditimpa gayanya (dikonfirmasi Tahap 7) --
+                    blok kosong buatan sendiri menggantikan ListView+EmptyState KHUSUS
+                    saat kosong, diukur mockup (noQuotes, :405): padding 32px 16px,
+                    text-align center, color #5C6B52 (C.textMute). Teks DIPERTAHANKAN
+                    apa adanya (judul+sub lama) -- mockup cuma satu baris, disusun dua
+                    baris center supaya isi lama tidak hilang. */}
+                {quotations.length === 0 ? (
+                  <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>No quotations yet</div>
+                    <div style={{ fontSize: 12.5, marginTop: 4 }}>Quotations created from this inquiry will appear here.</div>
+                  </div>
+                ) : (
+                  <ListView
+                    mode="table"
+                    rows={quotations}
+                    onRowClick={onViewQuotation}
+                    tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
+                    columns={QUOTATION_COLUMNS}
+                  />
+                )}
                 {/* D-72..D-74 keputusan Mas: QuotationItemsCard + PriceSummaryCard
                     DIPERTAHANKAN walau tidak ada di mockup Detail/Quotations --
                     fitur lama yang sudah bekerja (AGENTS.md §12), masuk daftar
@@ -3249,16 +3269,31 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     {activities.map((a) => {
                       const AIcon = ACT_ICON[a.type] || ListChecks;
                       return (
+                        // [Putaran 16 Tahap 8, Task 5] diukur mockup (Detail/
+                        // Activity, :421 -- `e`): avatar lingkaran PENUH
+                        // (border-radius:16px utk kotak 32px, bukan 9 --
+                        // sebelumnya bukan lingkaran); label tipe aktivitas
+                        // Montserrat 700 (bukan Inter/BODY 600 -- `e.type`
+                        // mockup: font:700 13.5px Montserrat); timestamp
+                        // 12px (bukan 11.5 -- `e.when` mockup: font:400 12px
+                        // Inter, warna C.textFaint SUDAH cocok #838E7A).
+                        // Deskripsi (`{{e.desc}}`, notes/outcome di sini)
+                        // SENGAJA TIDAK disentuh -- mockup nol style eksplisit
+                        // di elemen itu (TIDAK PASTI, dilaporkan bukan
+                        // ditebak). Garis penghubung vertikal + kartu
+                        // bertepi per-entri + warna ikon per-tipe + badge
+                        // "Upcoming" + tombol expand/collapse + pil "From X"
+                        // di mockup TIDAK dibangun (STRUKTUR, dilaporkan).
                         <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
+                          <span style={{ width: 32, height: 32, borderRadius: 16, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
                           <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
+                              <div style={{ fontFamily: HEAD, fontSize: 13.5, fontWeight: 700, color: C.text }}>
                                 {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
                               </div>
                               {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
                             </div>
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
+                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
                           </div>
                         </div>
                       );
@@ -3395,12 +3430,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <RelatedDocuments
         upstream={relatedDocsUpstream}
         downstream={relatedDocsDownstream}
-        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (pembatas
-        // antar-baris grup Upstream/Downstream): border-bottom LINE_SOFT
-        // #ECF0E9 -- bukan HEAD_BG #EFF3ED (C.surfaceAlt).
+        // [Putaran 16a Tahap 0] diukur mockup (pembatas antar-baris grup
+        // Upstream/Downstream): border-bottom LINE_SOFT #ECF0E9 -- bukan
+        // HEAD_BG #EFF3ED (C.surfaceAlt). [Putaran 16 Tahap 8, Task 2]
+        // `neutralBg` BARU -- latar badge status netral (mockup #EFF3ED),
+        // dipakai RelatedDocuments.jsx hanya saat baris tak mengoper
+        // `statusTone` sendiri (PRF/akun).
         tokens={{
           border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
-          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
+          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO, neutralBg: C.surfaceAlt,
         }}
       />
       </div>
