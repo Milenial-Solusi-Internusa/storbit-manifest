@@ -11,7 +11,7 @@
 // (grid CSS tangan, bukan komponen daftar generik) -- komponen ListView.jsx
 // sendiri TIDAK disentuh, 3 pemakai lain (PipelineKanbanPage/DealDetailPage/
 // demo) nol dampak.
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, FileText, FileCheck, Download, ChevronDown, ArrowUpRight, ArrowDownLeft, Truck } from 'lucide-react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
@@ -234,9 +234,9 @@ function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.OPEN;
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '2px 10px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
-      letterSpacing: '.3px', border: `1px solid ${m.bd}`,
+      display: 'inline-flex', alignItems: 'center', fontFamily: "Montserrat, sans-serif",
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
+      border: `1px solid ${m.bd}`,
       background: m.bg, color: m.color,
     }}>
       {m.label}
@@ -250,8 +250,8 @@ function SubBadge({ children, tone = 'warn' }) {
     : { bg: C.lineSoft, color: C.inkSoft, bd: C.line };
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11, fontWeight: 700,
+      display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: "Montserrat, sans-serif",
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
       whiteSpace: 'nowrap', border: `1px solid ${t.bd}`, background: t.bg, color: t.color,
     }}>
       {children}
@@ -289,7 +289,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
               <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 10, letterSpacing: -0.5 }}>
                 {inquiry.inquiry_no || '—'}
               </div>
-              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontFamily: "Montserrat, sans-serif", fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
                 {m.label}
               </span>
             </div>
@@ -412,7 +412,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
     pol, pod, pol_location_id, pod_location_id, direction, inquiry_type, estimated_value,
     incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
-    cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
+    cargo_types, un_number, imo_class, has_msds, additional_services, undername_import, deadline_quote,
     won_reason, closed_at,
     prospect:accounts!inquiries_prospect_id_fkey(name, lifecycle_stage),
     customer:accounts!inquiries_customer_id_fkey(name, lifecycle_stage),
@@ -614,7 +614,31 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, profile?.company_id, isAllEntities, page, wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, searchAccountIds, todayWIB, showToast, INQUIRY_SELECT]);
 
-  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
+  // [Putaran 16, Task 3] Guard 416 -- dibuktikan lewat tab network (lihat
+  // laporan chat): saat filter berubah DAN `page` belum sempat di-reset ke
+  // 0 oleh efek di bawah (yang baru berlaku RENDER BERIKUTNYA, bukan
+  // sinkron di commit yang sama), `fetchInquiries` di efek ini masih
+  // membawa `page` LAMA -> `.range(page*20, ...)` terkirim ke himpunan
+  // baru yang jauh lebih kecil -> PostgREST 416 PGRST103 ("offset of 40
+  // was requested, but there are only 5 rows"). filterSigRef melacak
+  // signature filter TERAKHIR yang sudah di-fetch; kalau signature
+  // berubah DAN `page !== 0`, lewati fetch ini (hanya update ref) --
+  // efek setPage(0) di bawah menjadwalkan render ulang dgn page=0, yang
+  // membuat efek ini jalan lagi dengan kombinasi yang sudah benar.
+  const filterSigRef = useRef(null);
+  useEffect(() => {
+    const sig = JSON.stringify([wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
+    if (filterSigRef.current !== null && filterSigRef.current !== sig && page !== 0) {
+      filterSigRef.current = sig;
+      return;
+    }
+    filterSigRef.current = sig;
+    fetchInquiries();
+    // Deps di bawah sudah covariant dgn identitas `fetchInquiries` sendiri
+    // (useCallback-nya sudah mendeklarasikan seluruhnya) -- dicantumkan
+    // eksplisit di sini murni supaya react-hooks/exhaustive-deps lolos,
+    // NOL perubahan kapan efek ini menyala.
+  }, [fetchInquiries, wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search, page]);
   useEffect(() => { setPage(0); }, [wasF, filterRates, stSel, filterService, filterInquiryType, filterOwner, filterEntity, filterDeadline, filterDirection, filterCreatedDate, scopeMine, search]);
 
   // Pencarian dua-langkah (koreksi #6): resolve dulu id akun yang NAMANYA cocok,
@@ -938,7 +962,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     { key: 'inquiry_no', label: 'Inquiry No',
       render: (inq) => (
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.ink }}>
+          <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, fontSize: 13, color: C.ink }}>
             {inq.inquiry_no || '—'}
           </span>
           {inq.inquiry_type === 'Rate Sheet Request' && <SubBadge tone="neutral">Rate Sheet</SubBadge>}
@@ -951,7 +975,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
             <span style={{ fontWeight: 600 }}>{acc?.name || '—'}</span>
             {acc?.lifecycle_stage && (
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft }}>
+              <span style={{ fontFamily: "Montserrat, sans-serif", fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.inkSoft }}>
                 {acc.lifecycle_stage}
               </span>
             )}
@@ -963,7 +987,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
           {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
           {isFTZ(inq) && <SubBadge>Free Trade Zone</SubBadge>}
-          {(inq.additional_services || []).includes('undername') && (
+          {inq.undername_import === true && (
             <SubBadge><FileText size={11} />Undername</SubBadge>
           )}
         </span>
@@ -1016,9 +1040,12 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // [Putaran 16 Tahap 5] bg diukur ULANG mockup (wrapper select Status/search):
+  // C.bg (#F6F8F3), BUKAN C.surface2 (#EFF3ED) -- klaim Tahap 4 "sudah cocok"
+  // ternyata salah ukur (measure select native yang tak terpakai selStyle).
   const selStyle = {
     height: 44, borderRadius: 10, border: `1px solid ${C.line}`,
-    background: C.surface2, padding: '0 12px', fontSize: 13.5, color: C.ink,
+    background: C.bg, padding: '0 12px', fontSize: 13.5, color: C.ink,
     outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
   };
   const fieldLabel = { display: 'block', fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 };
@@ -1043,10 +1070,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <button
           onClick={onAddInquiry}
           style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            background: C.accent, color: C.ink, border: 'none',
-            borderRadius: 9, padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
-            cursor: 'pointer', boxShadow: '0 2px 8px rgba(51,66,43,.25)',
+            display: 'flex', alignItems: 'center', gap: 8, height: 40,
+            background: C.accent, color: C.ink, border: `1px solid ${C.accent}`,
+            borderRadius: 10, padding: '0 16px', fontSize: 13.5, fontWeight: 600,
+            fontFamily: "Montserrat, sans-serif", cursor: 'pointer',
           }}
         >
           <Plus size={16} /> Add Inquiry
@@ -1066,7 +1093,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                   style={{
                     height: 32, padding: '0 12px', borderRadius: 8, border: `1px solid ${on ? C.line : 'transparent'}`,
                     background: on ? C.surface : 'transparent', cursor: 'pointer',
-                    color: C.ink, fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    color: C.ink, fontSize: 13.5, fontWeight: 600, fontFamily: "Montserrat, sans-serif", whiteSpace: 'nowrap',
                   }}
                 >
                   {opt.label}
@@ -1086,7 +1113,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
               height: 32, padding: '0 12px', borderRadius: 16,
               border: `1px solid ${wasF ? C.inkSoft : C.line}`,
               background: wasF ? C.surface2 : C.surface,
-              color: C.ink, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+              color: C.ink, fontSize: 12.5, fontWeight: 600, fontFamily: "Montserrat, sans-serif",
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             }}
           >
@@ -1200,7 +1227,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           </label>
 
           <div style={{ display: 'flex', alignItems: 'center', height: 44 }}>
-            <button type="button" onClick={clearAll} style={{ height: 40, padding: '0 16px', borderRadius: 10, background: 'transparent', border: '1px solid transparent', color: C.inkSoft, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button type="button" onClick={clearAll} style={{ height: 40, padding: '0 16px', borderRadius: 10, background: 'transparent', border: '1px solid transparent', color: C.inkSoft, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: "Montserrat, sans-serif" }}>
               Clear all
             </button>
           </div>
@@ -1254,9 +1281,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 key={p} onClick={() => setPage(p)}
                 style={{
                   minWidth: 32, height: 32, padding: '0 8px', borderRadius: 10,
-                  border: `1px solid ${p === page ? C.line : 'transparent'}`,
-                  background: p === page ? C.surface2 : C.surface,
-                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1px solid ${p === page ? C.accentHover : C.line}`,
+                  background: p === page ? C.accentSoft : C.surface,
+                  fontSize: 12.5, fontWeight: 600, color: C.ink, cursor: 'pointer', fontFamily: "Montserrat, sans-serif",
                 }}
               >
                 {p + 1}

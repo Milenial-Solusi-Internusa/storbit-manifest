@@ -26,7 +26,11 @@ import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 /* ---------- Card (fork DealPanels.jsx:189-202) ---------- */
 export function Card({ title, icon, right, children }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
+    // [Putaran 16 Tahap 5] radius diukur ULANG mockup (section "Service &
+    // Status" dkk): 14, bukan 16. Efek samping: PriceSummaryCard ikut 14
+    // (nol pasangan mockup utk kartu itu sendiri, tapi konsisten dgn
+    // kartu lain yg terbukti 14).
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px' }}>
       {(title || right) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
           {icon && <span style={{ color: C.navy, display: 'flex' }}>{icon}</span>}
@@ -51,7 +55,21 @@ export function InfoRow({ label, value, full }) {
 
 /* ---------- PriceSummaryCard (fork DealPanels.jsx:643-669) ---------- */
 export function PriceSummaryCard({ quotations, termMap }) {
-  const accepted = quotations.find((q) => String(q.status).toUpperCase() === 'ACCEPTED');
+  // [Putaran 16] Keputusan Mas (butir b): dua quotation ACCEPTED pada satu
+  // Rate Sheet TIDAK dijumlah -- Best Quote memakai yang `accepted_at`
+  // paling baru (tie-break: `revision` lebih tinggi). Sebelumnya
+  // `.find()` ambil yang PERTAMA di array (urutan `created_at` DESC dari
+  // query DealDetailPage.jsx), bukan yang diterima terakhir.
+  const acceptedList = quotations.filter((q) => String(q.status).toUpperCase() === 'ACCEPTED');
+  const accepted = acceptedList.length
+    ? acceptedList.reduce((latest, q) => {
+        const qTime = q.accepted_at ? new Date(q.accepted_at).getTime() : -Infinity;
+        const latestTime = latest.accepted_at ? new Date(latest.accepted_at).getTime() : -Infinity;
+        if (qTime > latestTime) return q;
+        if (qTime === latestTime && Number(q.revision || 0) > Number(latest.revision || 0)) return q;
+        return latest;
+      })
+    : null;
   const best = accepted || pickActiveQuotation(quotations);
   const totals = quotations.map((q) => Number(q.total_amount || 0));
   const minT = totals.length ? Math.min(...totals) : null;
@@ -62,7 +80,12 @@ export function PriceSummaryCard({ quotations, termMap }) {
         <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>—</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ background: C.navy, borderRadius: 12, padding: '14px 16px', color: C.white }}>
+          {/* [Putaran 16] Keputusan Mas (butir c): latar sage muda (ROW_HOVER
+              via C.navySoft) + teks INK -- Price Summary nol pasangan mockup,
+              pengecualian tanpa ukuran langsung. Anak-anaknya (label/angka/
+              nomor quotation di bawah) tidak menyetel `color` sendiri, jadi
+              ikut warisan C.text dari sini -- satu titik ubah cukup. */}
+          <div style={{ background: C.navySoft, borderRadius: 12, padding: '14px 16px', color: C.text }}>
             <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Best Quote</div>
             <div style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '2px 0' }}>{fmtRp(best.total_amount)}</div>
             <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: 0.85 }}>{formatQuotationNo(best.quotation_no, best.revision)}</div>

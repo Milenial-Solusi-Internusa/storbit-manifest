@@ -255,7 +255,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           showToast?.('Comment sent, but tagging some people failed.', 'error');
         }
 
-        const taggerName = profile?.full_name || user?.email || 'Seseorang';
+        const taggerName = profile?.full_name || user?.email || 'Someone';
         const notifRows = finalTags
           .filter((m) => m.userId !== currentUserId) // jangan notif diri sendiri
           .map((m) => ({
@@ -368,33 +368,47 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             const author = authorMap[c.created_by];
             const isMine = c.created_by === currentUserId;
             const isEditing = editingId === c.id;
+            // [Putaran 16 Tahap 7, Task 6] diukur persis mockup (Detail/Comments,
+            // sc-for c): row gap 12 + padding '8px 0' + border-bottom LINE_SOFT
+            // (#ECF0E9 -- C.lineSoft, sudah token identik) -- sebelumnya nol
+            // padding/border sama sekali. Avatar 32x32 (bukan 30x30) + font
+            // Montserrat 700 10px (bukan 11px) + border dashed transparent
+            // (mockup punya baris itu, inert visual, disalin apa adanya).
             return (
-              <div key={c.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+              <div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '8px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                 {author?.avatar_url ? (
-                  <img src={author.avatar_url} alt={author.full_name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
+                  <img src={author.avatar_url} alt={author.full_name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
                 ) : (
-                  <span style={{ width: 30, height: 30, borderRadius: '50%', background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontFamily: HEAD, fontSize: 11, fontWeight: 700 }}>
+                  <span style={{ width: 32, height: 32, borderRadius: '50%', border: '1px dashed transparent', background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontFamily: HEAD, fontSize: 10, fontWeight: 700 }}>
                     {initialsOf(author?.full_name)}
                   </span>
                 )}
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                    <span style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.text }}>{author?.full_name || '—'}</span>
-                    <span style={{ fontFamily: BODY, fontSize: 11, color: C.textFaint }}>
+                  {/* [Putaran 16 Tahap 7, Task 6] nama diukur mockup: font Inter
+                      (BODY, bukan HEAD/Montserrat) 600 13.5px (bukan 700 12.5px);
+                      timestamp 12px (bukan 11px, warna sudah cocok C.textFaint);
+                      wrapper gap 8 align baseline (bukan gap 7 align center). */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{author?.full_name || '—'}</span>
+                    <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
                       {timeAgo(c.created_at)}{c.updated_at ? ' · (diedit)' : ''}
                     </span>
                   </div>
                   {isEditing ? (
                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup
-                          (textarea composer, pola sama): border LINE (bukan
-                          INK_FAINT) + background BG (C.bg, sebelumnya nol --
-                          putih bawaan Card). */}
+                      {/* [Putaran 16a Tahap 1] diukur mockup (textarea
+                          composer, pola sama): border LINE (bukan INK_FAINT)
+                          + background BG (C.bg, sebelumnya nol -- putih
+                          bawaan Card). [Putaran 16 Tahap 6, MENUTUP gap]
+                          radius 10 (bukan 9), padding 12px seragam (bukan
+                          '8px 10px'), fontSize 13.5 (bukan 13) -- pola sama
+                          composer baru di bawah, nilai diukur langsung di
+                          sana (mockup nol contoh textarea EDIT comment). */}
                       <textarea
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
                         rows={3}
-                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
+                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, padding: 12, fontFamily: BODY, fontSize: 13.5, color: C.text, resize: 'vertical', outline: 'none' }}
                       />
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Save'}</button>
@@ -403,7 +417,13 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                     </div>
                   ) : (
                     <>
-                      <div style={{ marginTop: 3, fontFamily: BODY, fontSize: 13, color: C.text, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
+                      {/* [Putaran 16 Tahap 7, Task 6] lineHeight 1.45 diukur
+                          mockup (span pembungkus parts, Detail/Comments) --
+                          fontSize 13 DIPERTAHANKAN (mockup nol font-size
+                          eksplisit di span badan teks, hanya mewarisi; nilai
+                          pasti tak bisa diukur, TIDAK PASTI, dilaporkan bukan
+                          ditebak). */}
+                      <div style={{ marginTop: 3, fontFamily: BODY, fontSize: 13, color: C.text, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
                       {isMine && (
                         <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                           <button type="button" onClick={() => startEdit(c)} style={ghostBtn(false)}><Pencil size={12} />Edit</button>
@@ -425,24 +445,31 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             onChange={handleComposerChange}
             placeholder="Write a comment. Use @ to mention a teammate."
             rows={3}
-            // [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (data-screen-
+            // [Putaran 16a Tahap 1] diukur mockup (data-screen-
             // label="Detail/Comments" textarea): border LINE (#D8E0D2, bukan
             // INK_FAINT) + background BG (#F6F8F3, sebelumnya nol).
-            style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, padding: '9px 11px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
+            // [Putaran 16 Tahap 6, MENUTUP gap] padding 12px seragam (bukan
+            // '9px 11px'), fontSize 13.5 (bukan 13) -- diukur persis textarea
+            // composer mockup: padding:12px;font:400 13.5px Inter.
+            style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, padding: 12, fontFamily: BODY, fontSize: 13.5, color: C.text, resize: 'vertical', outline: 'none' }}
           />
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-            {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup
+            {/* [Putaran 16a Tahap 1] diukur mockup
                 ({{ sendComment }} "Send"): teks INK saat aktif, BUKAN putih
                 -- ACCENT pucat gagal AA sbg latar+teks putih (pelajaran
                 sama Prompt A). State disabled (gray) nol pasangan mockup,
-                dipertahankan. */}
+                dipertahankan. [Putaran 16 Tahap 6, MENUTUP gap] height 32
+                (bukan 34), padding '0 12px' (bukan '0 14px'), radius 10
+                (bukan 9), fontSize 13.5/fontWeight 600 (bukan 12.5/700),
+                ikon Send size 16 (bukan 13) -- diukur persis tombol Send
+                mockup, state aktif (disabled nol pasangan, dipertahankan). */}
             <button
               type="button"
               onClick={handleSubmit}
               disabled={submitting || !newBody.trim()}
-              style={{ height: 34, padding: '0 14px', borderRadius: 9, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : C.text, fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              style={{ height: 32, padding: '0 12px', borderRadius: 10, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : C.text, fontFamily: HEAD, fontSize: 13.5, fontWeight: 600, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Send size={13} />{submitting ? 'Sending…' : 'Send'}
+              <Send size={16} />{submitting ? 'Sending…' : 'Send'}
             </button>
           </div>
 

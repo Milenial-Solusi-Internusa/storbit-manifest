@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router';
 import {
   ChevronLeft, ChevronRight, X, Check, Lock,
   AlertTriangle, Ship, Shield, Home, Truck, Plus, Loader2, Package,
+  PlaneLanding, PlaneTakeoff,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -102,6 +103,11 @@ const DUTIES_AND_TAXES_OPTS = ['Included in price', 'Billed separately as per re
 const PRICING_BASIS_OPTS = ['Itemized charges', 'All in per CBM', 'All in per KG'];
 const CUSTOMER_ROLE_OPTS = ['Shipper', 'Consignee', 'Third Party'];
 const DIRECTION_OPTS = ['Import', 'Export', 'Domestic'];
+// [Putaran 16 Tahap 6] diukur dari SVG mockup (og.dir.*, step 2) --
+// path dibandingkan byte-per-byte ke __iconNode lucide-react: Import =
+// plane-landing, Export = plane-takeoff, Domestic = truck (Truck sudah
+// diimpor, dipakai juga di SERVICE_ICON.trucking).
+const DIRECTION_ICON = { Import: PlaneLanding, Export: PlaneTakeoff, Domestic: Truck };
 // Putaran 14 (W-60, Scope 3) -- Order Category, mockup baris 93: <select>
 // 3 opsi tetap + placeholder kosong, markup polos TANPA sc-for/dropdown
 // dinamis -- CHECK literal di DB (migrasi 20261030000001), pola sama 4
@@ -151,15 +157,25 @@ const S = {
   // Judul step di body card (mockup baris 49, h3 "{{stepN}}. {{SNAME[sKey]}}"
   // -- di atas isi tiap langkah, berdampingan dgn label yg sudah tampil di pill).
   stepHeading: { margin: '0 0 4px', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 15, color: C.text },
-  label: { fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
+  // [Putaran 16 Tahap 4] diukur mockup langsung (field "Direction" step 2):
+  // Inter 600 12px, warna sub, TANPA uppercase/letter-spacing -- label field
+  // wizard BUKAN label uppercase ala tabel (beda dari headCell layar daftar).
+  label: { fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1.35 },
   req: { color: C.warning, fontWeight: 800 },
   input: { height: 44, borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box' },
   textarea: { borderRadius: 10, border: '1px solid ' + C.border, background: C.card, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, width: '100%', outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.55 },
   // "Next"/"Create Inquiry" mockup (baris ~111214): bg+border #C3D9B8 (ACCENT),
   // teks #33422B (INK -- BUKAN putih, lihat kit/tokens.js:19-22).
-  btnPrimary: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 26px', borderRadius: 10, border: '1px solid ' + C.orange, background: C.orange, color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer', boxShadow: '0 1px 2px rgba(51,66,43,.18)' },
-  // "Back" mockup (baris ~111213): border #838E7A (INK_FAINT), teks #33422B (INK).
-  btnGhost: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 10, border: '1px solid ' + C.muted, background: C.card, color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer' },
+  // [Putaran 16 Tahap 5] diukur ULANG mockup Next/Back/Create Inquiry (ketiganya
+  // identik): height 40 (bukan 44), padding '0 16px' (bukan 26/20px), fontSize
+  // 13.5 (bukan 14), fontWeight 600 (bukan 700), NOL box-shadow.
+  btnPrimary: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + C.orange, background: C.orange, color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 13.5, cursor: 'pointer' },
+  // "Back"/"Cancel" footer mockup: border #838E7A (INK_FAINT), teks #33422B (INK),
+  // bg TRANSPARAN (bukan C.card solid). height/padding/fontSize beda per lokasi
+  // pakai (tombol footer 40/'0 16px'/13.5, tombol inline lebih kecil spt "Add
+  // route option" 32/'0 12px'/13) -- base di sini dipakai tombol footer, dua
+  // titik lain sudah override sendiri di call-site-nya.
+  btnGhost: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + C.muted, background: 'transparent', color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 13.5, cursor: 'pointer' },
 };
 const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '18px 20px' };
 const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px 16px' };
@@ -178,19 +194,26 @@ function FieldError({ children }) {
   if (!children) return null;
   return <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{children}</span>;
 }
-// Pola "kartu/pil aktif" (og.svc/og.dir/og.cargo/og.addl, mockup): latar
-// AKTIF = C.navySoft (ROW_HOVER), border AKTIF = C.navy (INK_SOFT), teks/
-// ikon SELALU C.text (INK) -- tidak berubah warna antara aktif/non-aktif,
-// mockup menandai "aktif" lewat border+latar+ikon centang, bukan teks
-// putih di atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
+// Pola "pil aktif" (og.dir/og.cust_role/og.pricing_basis, mockup): latar
+// AKTIF = C.navySoft (ROW_HOVER), border AKTIF = C.navy (INK_SOFT), teks
+// SELALU C.text (INK) -- tidak berubah warna antara aktif/non-aktif,
+// mockup menandai "aktif" lewat border+latar saja, bukan teks putih di
+// atas latar solid (lihat kit/tokens.js:19-22, pola lama "solid
 // navy/oranye + teks putih" sudah tidak dipakai).
 // [Putaran 16a Tahap 2] `variant='chip'` BARU -- diukur mockup (Incoterms/
 // Container Type, Inquiry Intake Form: `fch.inco`/`fch.cont`, bg:
 // on?'#C3D9B8':'#FFFFFF', bd: on?'#AFC9A0':'#D8E0D2'). Pil BULAT (radius
 // 16, tinggi 32) tanpa ikon centang, teks SELALU INK (C.text) di kedua
-// state -- beda total dari variant default 'card' (kartu besar radius 10
-// tinggi 44, navySoft+navy+Check). Default TETAP 'card' supaya SELURUH
-// pemanggil lain (Direction/Customer Role/Pricing Basis) byte-identik.
+// state -- beda dari variant default 'card' (pil kecil radius 10 tinggi
+// 40, navySoft+navy, TANPA ikon centang). Default TETAP 'card' supaya
+// SELURUH pemanggil lain (Customer Role/Pricing Basis) byte-identik.
+// [Putaran 16 Tahap 6] variant default DIUKUR ULANG langsung di mockup
+// (Customer Role + Pricing Basis step 5, keduanya SAMA PERSIS): height
+// 40 (bukan 44), padding '0 16px' eksplisit, font Inter 600 13.5px
+// (bukan Montserrat 700 13), NOL ikon centang saat aktif (mockup
+// menandai aktif murni lewat border+bg). Direction PINDAH ke ServiceCard
+// (kartu ikon besar og.dir.*, byte-identik ServiceCard og.svc.*) --
+// Pill variant default kini HANYA dipakai Customer Role + Pricing Basis.
 function Pill({ active, onClick, children, invalid, variant = 'card' }) {
   if (variant === 'chip') {
     return (
@@ -202,40 +225,70 @@ function Pill({ active, onClick, children, invalid, variant = 'card' }) {
   }
   return (
     <button type="button" onClick={onClick}
-      style={{ height: 44, borderRadius: 10, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-      {active && <Check size={15} />}{children}
+      style={{ height: 40, padding: '0 16px', borderRadius: 10, fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, cursor: 'pointer', border: '1px solid ' + (active ? C.navy : invalid ? C.warning : C.border), background: active ? C.navySoft : C.card, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      {children}
     </button>
   );
 }
+// [Putaran 16 Tahap 5] diputar jadi HORIZONTAL persis mockup (kartu "Door
+// to Door" step 2, markup lengkap diukur dari sumber mockup): ikon 36px
+// lingkaran PENUH (radius 18, bukan rounded-square 42/11) di kiri, label
+// flex:1 di tengah/kanan, centang muncul di ujung kanan saat aktif. min-
+// height (bukan height tetap) + padding 12px 16px (bukan 18px 14px) + gap
+// 12 (bukan 10). Perilaku klik/state aktif/aria TIDAK diubah -- hanya tata
+// letak & ukuran.
 function ServiceCard({ icon: Icon, label, active, onClick }) {
   return (
     <button type="button" onClick={onClick}
-      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}>{Icon && <Icon size={20} />}</span>
-      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{label}</span>
+      style={{ minHeight: 72, borderRadius: 14, padding: '12px 16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', color: C.text }}>
+      <span style={{ width: 36, height: 36, borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text, flex: 'none' }}>{Icon && <Icon size={18} />}</span>
+      <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, flex: 1, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{label}</span>
+      {active && <Check size={16} style={{ flex: 'none' }} />}
     </button>
   );
 }
+// [Putaran 16 Tahap 6] diukur LANGSUNG mockup (kartu "Cargo Category"
+// step 4 -- `og.cat.*`): byte-identik pola ServiceCard/Direction (min-height
+// 72, padding 12px 16px, radius 14, ikon 36px LINGKARAN PENUH/radius 18,
+// gap 12, label Inter 600 13.5, border aktif C.muted/INK_FAINT -- BUKAN
+// C.navy/INK_SOFT spt ServiceCard/Direction, diukur eksplisit, bukan
+// diasumsikan sama). ⚠️ Mockup NOL baris deskripsi sama sekali (childCount
+// 2: ikon+label saja, diverifikasi "Normal Cargo"/"Dangerous Goods") --
+// baris desc di bawah ini DIPERTAHANKAN APA ADANYA (instruksi eksplisit:
+// jangan hapus konten yang tak ada padanannya di mockup), hanya tata letak
+// ikon/radius/padding/gap/font/border yang diselaraskan. Karena desc tetap
+// ada, tinggi kartu TIDAK dipaksa 72 persis -- minHeight 72 (bukan height)
+// supaya dua baris teks tetap muat, konsisten dgn pola CargoCard lama.
 function CargoCard({ item, active, onClick }) {
   const I = item.Icon;
   return (
     <button type="button" onClick={onClick}
-      style={{ textAlign: 'left', borderRadius: 12, padding: '16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', gap: 13, alignItems: 'flex-start' }}>
-      <span style={{ width: 38, height: 38, borderRadius: 10, flex: '0 0 38px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={19} /></span>
+      style={{ textAlign: 'left', minHeight: 72, borderRadius: 14, padding: '12px 16px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.muted : C.border), background: active ? C.navySoft : C.card, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={{ width: 36, height: 36, borderRadius: 18, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={18} /></span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
+        <span style={{ display: 'block', fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
         <span style={{ display: 'block', fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{item.desc}</span>
       </span>
     </button>
   );
 }
+// [Putaran 16 Tahap 5] REBUILD, bukan sekadar diputar horizontal -- diukur
+// mockup (`ech.addl` chip "Additional Services" step, bukan pola kartu
+// `og.*` seperti ServiceCard): bukan kartu ikon sama sekali, melainkan pil
+// kecil TANPA ikon dalam baris flex-wrap. Sumber warna aktif/nonaktif
+// ditelusur dari JS mockup (`ech[g][k] = { bg: on?'#C3D9B8':'#FFFFFF',
+// bd: on?'#AFC9A0':'#D8E0D2' }`) -- persis C.orange/orangeDark/card/border.
 function TagCard({ item, active, onClick }) {
-  const I = item.Icon;
   return (
     <button type="button" onClick={onClick}
-      style={{ borderRadius: 12, padding: '18px 14px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid ' + (active ? C.navy : C.border), background: active ? C.navySoft : C.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <span style={{ width: 42, height: 42, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text }}><I size={20} /></span>
-      <span style={{ fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5, color: C.text, textAlign: 'center', lineHeight: 1.25 }}>{item.label}</span>
+      style={{
+        height: 24, padding: '0 9px', borderRadius: 6, cursor: 'pointer',
+        border: '1px solid ' + (active ? C.orangeDark : C.border),
+        background: active ? C.orange : C.card,
+        fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 11.5, color: C.text,
+        display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
+      }}>
+      {item.label}
     </button>
   );
 }
@@ -267,7 +320,7 @@ function RecentInquiriesAside({ items, onOpen }) {
                 style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap' }}>
                 {r.inquiry_no}
               </button>
-              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, border: '1px solid ' + badge.border, background: badge.bg, color: badge.fg, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 6, border: '1px solid ' + badge.border, background: badge.bg, color: badge.fg, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 11.5, lineHeight: 'normal', whiteSpace: 'nowrap' }}>
                 {STATUS_LABEL[r.status] || r.status}
               </span>
             </div>
@@ -1426,7 +1479,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             {stepKey === 'svc' && (
               <div style={{ display: 'grid', gap: 20 }}>
                 <Field label="Service Type" required span>
-                  <div style={grid3}>
+                  {/* [Putaran 16 Tahap 5] bukan grid3 (3 kolom tetap) -- diukur mockup:
+                      `grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px`. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16 }}>
                     {serviceTypeOpts.map((o) => (
                       <ServiceCard key={o.value} icon={SERVICE_ICON[o.value]} label={o.label} active={f.service_type === o.value}
                         onClick={() => setF((x) => ({
@@ -1462,11 +1517,18 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 </Field>
 
                 <Field label="Direction" required span>
-                  <div style={grid3}>
+                  {/* [Putaran 16 Tahap 6] Pill -> ServiceCard (kartu ikon
+                      besar), diukur mockup: grid 3 kolom TETAP (bukan
+                      grid3/auto-fill 200px -- Direction selalu persis 2-3
+                      opsi, mockup style attr literal
+                      "repeat(3, minmax(0px, 1fr))"). */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>
                     {/* Putaran 14 (W-10, Scope 1) -- mockup `og.dir.ex.disp`:
                         Export DISEMBUNYIKAN utk General Trading (GT hanya
                         Domestic/Import). */}
-                    {DIRECTION_OPTS.filter((d) => !(isGTf && d === 'Export')).map((d) => <Pill key={d} active={f.direction === d} onClick={() => pickDirection(d)}>{d}</Pill>)}
+                    {DIRECTION_OPTS.filter((d) => !(isGTf && d === 'Export')).map((d) => (
+                      <ServiceCard key={d} icon={DIRECTION_ICON[d]} label={d} active={f.direction === d} onClick={() => pickDirection(d)} />
+                    ))}
                   </div>
                   <FieldError>{errors.svc_direction}</FieldError>
                 </Field>
@@ -1542,7 +1604,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={startLanes} style={S.btnGhost}><Plus size={15} />Add route option</button>
+                      {/* [Putaran 16 Tahap 5] tombol kecil, diukur mockup terpisah dari
+                          S.btnGhost footer: height 32, padding '0 12px', fontSize 13. */}
+                      <button type="button" onClick={startLanes} style={{ ...S.btnGhost, height: 32, padding: '0 12px', fontSize: 13 }}><Plus size={15} />Add route option</button>
                       <span style={{ fontSize: 12, color: C.sub }}>Add a second route when the customer wants to compare routes for the same shipment.</span>
                     </div>
                   </>
@@ -1733,7 +1797,11 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       mockup, tapi seluruh label sejenis (Service Type/Cargo
                       Type/Customer Role/dst.) konsisten C.sub, bukan C.text. */}
                   <div style={{ ...S.label, color: C.sub }}>Cargo Category</div>
-                  <div style={grid2}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
+                  {/* [Putaran 16 Tahap 6] grid2 (2 kolom) -> 3 kolom tetap,
+                      diukur mockup (`og.cat`, style attr literal
+                      "repeat(3, minmax(0px, 1fr))" gap 16px) -- sama persis
+                      pola Direction (Task 1), BUKAN grid2/grid3 lama. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>{CARGO_TYPES.map((c) => <CargoCard key={c.id} item={c} active={f.cargo_types.includes(c.id)} onClick={() => toggleArr('cargo_types', c.id)} />)}</div>
                 </div>
                 {dgSelected && (
                   /* [Tahap 0, GAGAL ditutup] kotak ini PERSIS
@@ -1770,7 +1838,9 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             {stepKey === 'addl' && (
               <div>
                 <div style={S.label}>Additional Services</div>
-                <div style={grid3}>{SERVICES.map((s) => <TagCard key={s.id} item={s} active={f.additional_services.includes(s.id)} onClick={() => toggleArr('additional_services', s.id)} />)}</div>
+                {/* [Putaran 16 Tahap 5] bukan grid3 (dipakai kartu ikon ServiceCard/
+                    CargoCard) -- diukur mockup: `display:flex;gap:8px;flex-wrap:wrap`. */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SERVICES.map((s) => <TagCard key={s.id} item={s} active={f.additional_services.includes(s.id)} onClick={() => toggleArr('additional_services', s.id)} />)}</div>
               </div>
             )}
 

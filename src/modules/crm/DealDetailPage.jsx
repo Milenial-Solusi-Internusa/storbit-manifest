@@ -29,11 +29,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  FileText, ChevronLeft, CalendarClock,
-  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
+  FileText, ChevronLeft, RefreshCw,
+  Loader2, AlertCircle, ListChecks, XCircle,
   Ban, UserCog, UserCheck, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
   Lock, Check, RefreshCcw,
 } from 'lucide-react';
+import InquiryActivityTimeline from './InquiryActivityTimeline';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { markInquiryWonWithEvidence } from '../../lib/db';
@@ -155,12 +156,6 @@ const SOURCE_LABEL = {
   linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website',
   walk_in: 'Walk In', other: 'Other',
 };
-
-const ACT_ICON = {
-  call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
-  email: Mail, followup: ListChecks,
-};
-
 
 // Papan Pipeline nanti butuh daftar tahap yang SAMA PERSIS dengan ini; konsolidasinya
 // (ke tokens.js atau modul bersama) menunggu Batch B3 — jangan disatukan sekarang.
@@ -341,8 +336,8 @@ function TintBadge({ meta }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
-      padding: '2px 10px', borderRadius: RADIUS.sm, fontFamily: HEAD,
-      fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px',
+      padding: '2px 9px', borderRadius: RADIUS.sm, fontFamily: HEAD,
+      fontSize: 11.5, fontWeight: 700, lineHeight: 'normal',
       border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
     }}>
       {meta.label}
@@ -728,7 +723,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, pricing_basis, cargo_ready_date, n_containers, closed_at, order_category, requested_delivery_date, estimated_shipping_cost, customer_reference')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, pol_location_id, pod_location_id, pickup_address, delivery_address, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension, cargo_types, un_number, imo_class, has_msds, additional_services, undername_import, company_id, company:companies!inquiries_company_id_fkey(code, name), contact_id, contact:contacts!inquiries_contact_id_fkey(name), won_reason, duplicate_of_id, inquiry_type, validity_from, validity_to, monthly_volume_cbm, direction, customer_role, pricing_basis, cargo_ready_date, n_containers, closed_at, order_category, requested_delivery_date, estimated_shipping_cost, customer_reference')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -795,7 +790,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         // scoped (bukan query baru per-PRF) -- nol risiko N+1, nol alasan
         // ganti .limit(1000) jadi .range() (1000 quotation untuk SATU
         // inquiry bukan kasus nyata; limit sudah ada sebelum Putaran 10).
-        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at, prf_id, created_by')
+        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, accepted_at, payment_terms_id, deleted_at, prf_id, created_by')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
@@ -908,11 +903,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       let acts = [];
       if (inq.prospect_id) {
+        // [Putaran 16 Tahap 9] limit dinaikkan 5 -> 200 (pola sama
+        // inquiry_status_history/inquiry_owner_history di atas, dan
+        // listLeadActivities di leadActivity.js, skema identik) -- ditemukan
+        // saat audit: inquiry 0051 (data uji resmi tahap ini) punya 8
+        // aktivitas, limit lama memotongnya jadi 5 tanpa indikasi apa pun di
+        // UI. `created_by`/`next_action` BARU di-select -- kolom SUDAH ADA
+        // di skema (bukan migrasi baru), dibutuhkan utk field "by" (penulis)
+        // dan detail expand/collapse mockup yang sebelumnya tak pernah
+        // ditarik oleh query ini.
         const { data } = await supabase
           .from('activities')
-          .select('id, type, status, notes, outcome, contact_name, prospect_name, scheduled_for, created_at')
+          .select('id, type, status, notes, outcome, next_action, contact_name, prospect_name, scheduled_for, created_at, created_by')
           .eq('account_id', inq.prospect_id).is('deleted_at', null)
-          .order('created_at', { ascending: false }).limit(5);
+          .order('created_at', { ascending: false }).limit(200);
         acts = data || [];
       }
 
@@ -929,6 +933,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         ...(ownerHistoryRows || []).flatMap((h) => [h.from_owner_id, h.to_owner_id, h.changed_by]),
         ...prfsAugmented.flatMap((p) => [p.created_by, p.acknowledged_by, p.answered_by, p.selected_by]),
         ...(quos || []).map((q) => q.created_by),
+        // [Putaran 16 Tahap 9] penulis aktivitas ("by" mockup) -- satu query
+        // profiles yang sama, bukan .in() kedua.
+        ...acts.map((a) => a.created_by),
       ].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
@@ -1071,6 +1078,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const locationById = useMemo(() => {
     const m = {};
     locations.forEach((l) => { m[l.id] = l; });
+    return m;
+  }, [locations]);
+  // [Putaran 16 Tahap 7, Task 1] nilai TURUNAN dari locationById yang SUDAH
+  // ADA di atas (nol query baru) -- bentuk {id: type} yang dibutuhkan prop
+  // baru LaneTable.locationTypeById (Lane Editor mode baca, kolom Flag).
+  // SUMBER SAMA dgn isLocationFtz/isInquiryFtz di bawah -- hanya bentuknya
+  // beda (per-lane granular di LaneTable vs boolean per-inquiry di sini).
+  const locationTypeById = useMemo(() => {
+    const m = {};
+    locations.forEach((l) => { m[l.id] = l.type; });
     return m;
   }, [locations]);
   // FTZ -- keputusan Mas (Putaran 9): FTZ bila POL, POD, ATAU Via pada
@@ -1349,11 +1366,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       key: `prf-${p.id}`, type: 'PRF', no: p.prf_no, status: String(p.status || '').toUpperCase(),
       date: fmtDate(p.created_at), onClick: () => onViewPRF?.(p),
     })),
-    ...quotations.map((q) => ({
-      key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
-      status: QUO_STATUS[String(q.status || '').toUpperCase()]?.label || q.status,
-      date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
-    })),
+    ...quotations.map((q) => {
+      // [Putaran 16 Tahap 8, Task 2] `statusTone` dari QUO_STATUS -- peta
+      // status quotation yang SUDAH dipakai tab Quotations (QUOTATION_COLUMNS
+      // di atas, TintBadge) -- bukan peta baru. PRF/akun di atas TIDAK
+      // mengoper `statusTone` (nol pemetaan sejenis di file ini) -- badge-nya
+      // jatuh ke gaya netral mockup di dalam RelatedDocuments.jsx sendiri.
+      const m = QUO_STATUS[String(q.status || '').toUpperCase()];
+      return {
+        key: `quo-${q.id}`, type: 'Quotation', no: formatQuotationNo(q.quotation_no, q.revision),
+        status: m?.label || q.status,
+        statusTone: m ? { fg: m.color, bg: m.bg, bd: m.bd } : undefined,
+        date: fmtDate(q.created_at), onClick: () => onViewQuotation?.(q),
+      };
+    }),
   ];
   // TD-318 Irisan 2 Inquiry, commit 7 -- segmen bar + daftar event Status
   // History. Bagian "owner" TIDAK dikerjakan (keputusan Mas) -- hanya
@@ -1861,8 +1887,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       {/* .cd-tab:hover di sini SUPAYA hover tab konsisten dengan CustomerDetailPage —
           Tab (dari DealPanels.jsx) sama-sama merender className="cd-tab" di kedua
           halaman, tapi rule hover-nya sendiri hanya hidup di mana pun <style> ini
-          dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
-      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}`}</style>
+          dirender (CustomerDetailPage punya rule identik di file-nya sendiri).
+          [Putaran 16 Tahap 7, Task 3] .kebab-item:hover -- mockup (scp1:hover)
+          memberi latar ROW_HOVER (C.navySoft) ke item menu kebab yang aktif;
+          `:not(:disabled)` supaya item terkunci (Change Account/Cancel Inquiry
+          saat diblok) TIDAK ikut hover -- disabled-nya sendiri sudah dibedakan
+          lewat opacity+cursor, bukan ditambah di sini. */}
+      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}.kebab-item:hover:not(:disabled){background:${C.navySoft} !important;}`}</style>
 
       {/* Batch B1 — seluruh halaman dibungkus FormSheet. Grid dua kolomnya
           (1.7fr/1fr, header membentang penuh) + collapse di bawah 1024px lewat
@@ -2005,7 +2036,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       (sudah persis nilai mockup, belum tertelusur ke kit) -- kini C.shadowPopover. */}
                   <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: C.shadowPopover, padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
                     {canReassignOwner && (
-                      <button type="button"
+                      <button type="button" className="kebab-item"
                         onClick={() => { setKebabOpen(false); setOwnerAssignOpen(true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.text, cursor: 'pointer', textAlign: 'left' }}>
                         <UserCog size={14} />Reassign Owner
@@ -2016,7 +2047,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         (pola Putaran 10, PRFDetailPage.jsx:929). RPC
                         change_inquiry_account tetap penjaga sebenarnya. */}
                     {canChangeAccount && (
-                      <button type="button"
+                      <button type="button" className="kebab-item"
                         disabled={!!changeAccountBlockReason}
                         title={changeAccountBlockReason || undefined}
                         onClick={() => { setKebabOpen(false); setChangeAccountOpen(true); }}
@@ -2024,11 +2055,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         <RefreshCcw size={14} />Change Account
                       </button>
                     )}
+                    {/* [Putaran 16 Tahap 6] diukur mockup (kebab panel
+                        divider): background LINE_SOFT (#ECF0E9), bukan LINE
+                        (#D8E0D2) -- C.border terlalu gelap dibanding mockup. */}
                     {(canReassignOwner || canChangeAccount) && (canMarkLost || canCancel) && (
-                      <div style={{ height: 1, background: C.border, margin: '4px 0' }} />
+                      <div style={{ height: 1, background: C.lineSoft, margin: '4px 0' }} />
                     )}
                     {canMarkLost && (
-                      <button type="button" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
+                      <button type="button" className="kebab-item" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.red, cursor: 'pointer', textAlign: 'left' }}>
                         <XCircle size={14} />Mark as Lost
                       </button>
@@ -2037,11 +2071,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       /* Putaran 11 Tahap C -- disabled+tooltip bila ada SO hidup,
                          pola PERSIS Change Account (changeAccountBlockReason di
                          atas). RPC/UPDATE tetap penjaga sebenarnya; ini murni UX. */
-                      <button type="button"
+                      // [Putaran 16 Tahap 6] diukur mockup (item "Cancel
+                      // Inquiry" kebab panel): color danger/#B23227 saat
+                      // AKTIF (C.red) -- bukan C.textMute/INK_SOFT netral;
+                      // disabled TETAP C.textFaint (nol pasangan mockup utk
+                      // state terkunci, dipertahankan apa adanya).
+                      <button type="button" className="kebab-item"
                         disabled={!!cancelBlockReason}
                         title={cancelBlockReason || undefined}
                         onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: cancelBlockReason ? C.textFaint : C.textMute, cursor: cancelBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: cancelBlockReason ? 0.6 : 1 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: cancelBlockReason ? C.textFaint : C.red, cursor: cancelBlockReason ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: cancelBlockReason ? 0.6 : 1 }}>
                         <Ban size={14} />Cancel Inquiry
                       </button>
                     )}
@@ -2105,7 +2144,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               {inquiry.service_type && (
                 <TintBadge meta={{ label: SERVICE_LABEL[inquiry.service_type] || inquiry.service_type, bg: C.surfaceAlt, color: C.textMute, bd: C.border }} />
               )}
-              {(inquiry.additional_services || []).includes('undername') && (
+              {/* [Putaran 16, Tahap 3] Sumber badge diganti ke
+                  `inquiries.undername_import` (boolean) -- data nyata
+                  menyimpan undername di kolom itu, bukan di array
+                  `additional_services` (pola sama InquiryListPage.jsx/
+                  InquiryOwnerAssignmentPage.jsx, Tahap 2). Tampilan badge
+                  (label/warna/posisi) tidak berubah. */}
+              {inquiry.undername_import === true && (
                 <TintBadge meta={{ label: 'Undername', bg: C.amberBg, color: C.amber, bd: C.amberBd }} />
               )}
               {/* Putaran 9 -- chip Direction, mockup :282 (`{{ D.dirL }}`) --
@@ -2200,7 +2245,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (data
                 // node: `bg: i===1 ? '#C3D9B8' : '#FFFFFF'`) -- node aktif
                 // = ACCENT polos, BUKAN ROW_HOVER (C.navySoft).
-                tokens={{ border: C.border, text: C.text, textMute: C.textMute, activeBg: C.orange, linkColor: C.navy }}
+                // [Putaran 16] textFaint BARU -- teks "Not yet" diukur
+                // mockup: INK_FAINT (#838E7A), beda dari label node
+                // (INK_SOFT/textMute). DealDetailPage.jsx SATU-SATUNYA
+                // pemanggil DocumentFlow (diverifikasi grep) -- LeadDetailPage
+                // tidak terdampak.
+                // [Putaran 16 Tahap 8, Task 3] hoverBg BARU -- latar hover item
+                // dropdown cabang "multi" (mockup #E4EDDE), C.navySoft = ROW_HOVER
+                // persis, sudah dipakai pola yang sama di kebab menu (.kebab-item).
+                tokens={{ border: C.border, text: C.text, textMute: C.textMute, textFaint: C.textFaint, activeBg: C.orange, linkColor: C.navy, hoverBg: C.navySoft }}
               />
             </div>
             <NextStepHint status={dealStatus} />
@@ -2567,6 +2620,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               canManageLocations={canManageLocations} openLocationMaster={openLocationMaster} requestNewLocation={requestNewLocation}
               readOnly={editingSection !== 'RouteOptions'}
               onUpdate={updateDetailLane} onRemove={removeDetailLane} onAdd={addDetailLane} onMove={moveDetailLane}
+              // [Putaran 16 Tahap 7, Task 1] locationTypeById SUDAH ADA di atas
+              // (nol query baru); ftzFeasibilityNote diukur mockup (laneFlagTxt,
+              // :1155) -- satu kalimat tergantung service_type, byte-per-byte
+              // termasuk tanda baca/spasi, pola cek SAMA persis `['door_to_door',
+              // 'customs'].includes(inquiry?.service_type)` yg sudah dipakai di
+              // file ini (:2347, Pricing Basis). Kedua prop ini inert di mode
+              // edit (LaneTable hanya memakainya saat readOnly=true).
+              locationTypeById={locationTypeById}
+              ftzFeasibilityNote={
+                ['door_to_door', 'customs'].includes(inquiry?.service_type)
+                  ? 'Feasibility is required for these lanes.'
+                  : 'Feasibility applies to these lanes when the service is Door to Door or Customs Clearance.'
+              }
             />
           </div>
         </div>
@@ -2938,40 +3004,54 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     keduanya di UI memerlukan RPC pembaca sendiri (pola
                     SECURITY DEFINER ala find_possible_duplicate_inquiries) —
                     ditunda ke Irisan 8 bersama UI Close as Duplicate lainnya. */}
-                <ListView
-                  mode="table"
-                  rows={quotations}
-                  onRowClick={onViewQuotation}
-                  emptyTitle="No quotations yet"
-                  emptySub="Quotations created from this inquiry will appear here."
-                  tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
-                  right={
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur PERSIS mockup
-                          data-screen-label="Detail/QuotationActions": GHOST
-                          (background:transparent;border:1px solid #838E7A;
-                          color:#33422B), BUKAN solid accent+putih -- "Create
-                          Quotation"/"Create Revision" mockup tidak ditonjolkan
-                          sbg CTA utama. */}
-                      <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
-                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                          cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
-                        {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
-                      </button>
-                      <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
-                        style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                          cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
-                        {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
-                      </button>
-                      {locked && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
-                          <Lock size={14} />{lockedLabel}
-                        </span>
-                      )}
-                    </div>
-                  }
-                  columns={QUOTATION_COLUMNS}
-                />
+                {/* [Putaran 16 Tahap 8, Task 4] Toolbar "QuotationActions" DIPINDAH
+                    keluar dari prop `right` ListView jadi wrapper sendiri -- mockup
+                    (:402, data-screen-label="Detail/QuotationActions") menaruhnya
+                    sebagai div TERPISAH di ATAS blok hasQuotes/noQuotes, bukan di
+                    dalam chrome generik ListView/FilterBar. Nol perubahan konten
+                    (tombol/gate/style byte-sama, cuma dipindah lokasi render) --
+                    marginBottom 16 menggantikan SP.s4 FilterBar yang sebelumnya
+                    membungkusnya supaya jarak ke tabel/blok kosong tak berubah. */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+                  <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
+                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                      cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
+                    {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
+                  </button>
+                  <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
+                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+                      cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
+                    {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
+                  </button>
+                  {locked && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+                      <Lock size={14} />{lockedLabel}
+                    </span>
+                  )}
+                </div>
+                {/* [Putaran 16 Tahap 8, Task 4] EmptyState kit (src/modules/crm/v3/
+                    kit.jsx) TIDAK BISA ditimpa gayanya (dikonfirmasi Tahap 7) --
+                    blok kosong buatan sendiri menggantikan ListView+EmptyState KHUSUS
+                    saat kosong, diukur mockup (noQuotes, :405): padding 32px 16px,
+                    text-align center, color #5C6B52 (C.textMute). Teks DIPERTAHANKAN
+                    apa adanya (judul+sub lama) -- mockup cuma satu baris, disusun dua
+                    baris center supaya isi lama tidak hilang. */}
+                {quotations.length === 0 ? (
+                  <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>No quotations yet</div>
+                    <div style={{ fontSize: 12.5, marginTop: 4 }}>Quotations created from this inquiry will appear here.</div>
+                  </div>
+                ) : (
+                  <ListView
+                    mode="table"
+                    rows={quotations}
+                    onRowClick={onViewQuotation}
+                    tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
+                    columns={QUOTATION_COLUMNS}
+                  />
+                )}
                 {/* D-72..D-74 keputusan Mas: QuotationItemsCard + PriceSummaryCard
                     DIPERTAHANKAN walau tidak ada di mockup Detail/Quotations --
                     fitur lama yang sudah bekerja (AGENTS.md §12), masuk daftar
@@ -3187,33 +3267,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           {
             id: 'aktivitas',
             label: 'Activity',
-            render: () => (
-              <Card title="Related Activity" icon={<ListChecks size={17} />}>
-                {activities.length === 0 ? (
-                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {activities.map((a) => {
-                      const AIcon = ACT_ICON[a.type] || ListChecks;
-                      return (
-                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
-                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                              </div>
-                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                            </div>
-                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            ),
+            // [Putaran 16 Tahap 9] struktur dipindah ke InquiryActivityTimeline.jsx
+            // (berkas baru, lihat komentarnya utk audit Fase A lengkap). Card
+            // pembungkus "Related Activity" DICABUT -- mockup (Detail/Activity,
+            // :421) merender timeline LANGSUNG di body tab (`padding:16px`
+            // polos), NOL judul/card kedua -- sama persis pola Rate Requests/
+            // Vendor Offers tab Procurement (Putaran 16 Tahap 8, h3 polos tanpa
+            // Card kedua). `profMap` diteruskan sbg actorMap -- created_by
+            // aktivitas sudah ikut query profiles yang sama (lihat efek fetch).
+            render: () => <InquiryActivityTimeline activities={activities} actorMap={profMap} />,
           },
           {
             id: 'statusHistory',
@@ -3227,16 +3289,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     {statusHistorySegments.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
                         <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: C.text }}>Time in each status</div>
+                        {/* [Putaran 16 Tahap 6] diukur mockup (Detail/StatusHistory,
+                            bar+legend): SEGMEN bar pakai DEAL_STATUS[status].bd
+                            (BUKAN .bg -- bar mockup rgb(188,208,228) utk Open =
+                            .bd #BCD0E4, bukan .bg #E4EEF7 yang jauh lebih pucat).
+                            Legend swatch JUGA .bd sebagai bg (sama alasan), tapi
+                            border swatch = .fg (bukan .bd) -- diukur
+                            rgb(29,90,150)=#1D5A96=.fg persis. */}
                         <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 }}>
                           {statusHistorySegments.map((s, i) => (
                             <span key={`${s.status}-${i}`} title={`${STATUS_LABEL[s.status] || s.status} ${daysLabel(s.days)}`}
-                              style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt }} />
+                              style={{ flex: Math.max(s.days, 0.3), background: DEAL_STATUS[s.status]?.bd || C.surfaceAlt }} />
                           ))}
                         </div>
                         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                           {statusHistorySegments.map((s, i) => (
                             <span key={`${s.status}-legend-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: BODY, fontSize: 13, color: C.text }}>
-                              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bg || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.bd || C.border}` }} />
+                              <span style={{ width: 12, height: 12, borderRadius: 3, background: DEAL_STATUS[s.status]?.bd || C.surfaceAlt, border: `1px solid ${DEAL_STATUS[s.status]?.fg || C.border}` }} />
                               {STATUS_LABEL[s.status] || s.status} {daysLabel(s.days)}
                             </span>
                           ))}
@@ -3254,11 +3323,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     {/* Putaran 11 Tahap B -- baris status DAN owner digabung
                         SATU timeline, diurut tanggal terbaru-dulu
                         (combinedHistoryEvents) -- mockup Inquiry Management
-                        .dc.html:855-864. Ikon pembeda: CalendarClock utk
-                        status (tidak berubah), UserCheck utk owner (baru). */}
+                        .dc.html:855-864. [Putaran 16 Tahap 6] Ikon status
+                        CalendarClock -> RefreshCw (diukur path SVG mockup
+                        byte-per-byte vs __iconNode lucide-react -- persis
+                        ikon refresh melingkar, BUKAN kalender). UserCheck
+                        utk owner DIPERTAHANKAN (nol contoh baris owner di
+                        mockup utk inquiry uji manapun -- tak ada bukti
+                        pembanding, bukan diasumsikan sama). */}
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {combinedHistoryEvents.map((e) => e.kind === 'owner' ? (
-                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                        // [Putaran 16 Tahap 6] borderBottom C.surfaceAlt/HEAD_BG
+                        // -> C.lineSoft/LINE_SOFT, diukur mockup: rgb(236,240,233)
+                        // = #ECF0E9 persis LINE_SOFT (bukan #EFF3ED/HEAD_BG).
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                           <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                             <UserCheck size={16} />
                           </span>
@@ -3275,9 +3352,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                           </div>
                         </div>
                       ) : (
-                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                        <div key={e.key} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                           <span style={{ width: 32, height: 32, borderRadius: 16, background: C.surface, border: `1px solid ${C.border}`, color: C.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                            <CalendarClock size={16} />
+                            <RefreshCw size={16} />
                           </span>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -3327,12 +3404,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <RelatedDocuments
         upstream={relatedDocsUpstream}
         downstream={relatedDocsDownstream}
-        // [Putaran 16a Tahap 0, GAGAL ditutup] diukur mockup (pembatas
-        // antar-baris grup Upstream/Downstream): border-bottom LINE_SOFT
-        // #ECF0E9 -- bukan HEAD_BG #EFF3ED (C.surfaceAlt).
+        // [Putaran 16a Tahap 0] diukur mockup (pembatas antar-baris grup
+        // Upstream/Downstream): border-bottom LINE_SOFT #ECF0E9 -- bukan
+        // HEAD_BG #EFF3ED (C.surfaceAlt). [Putaran 16 Tahap 8, Task 2]
+        // `neutralBg` BARU -- latar badge status netral (mockup #EFF3ED),
+        // dipakai RelatedDocuments.jsx hanya saat baris tak mengoper
+        // `statusTone` sendiri (PRF/akun).
         tokens={{
           border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
-          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO,
+          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO, neutralBg: C.surfaceAlt,
         }}
       />
       </div>
