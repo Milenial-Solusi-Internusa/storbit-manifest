@@ -118,6 +118,22 @@ const ONLY_P14 = ONLY === 'p14';
 // atas), bukan byte-identik dgn `--only 4` dalam hal itu. Tanpa argumen ini,
 // perilaku skrip TIDAK berubah.
 const ONLY_3 = ONLY === '3';
+// --only 1 (pola spasi SAMA dgn --only 4/p14/3 di atas) -- HANYA Flow 1
+// (Single Shipment) dijalankan: D2D/P13b/Putaran 14 (P14)/Flow 2 (RS)/Flow 3
+// (MGR)/Flow 4 (ACC) dilewati lewat gate ADITIF `&& !ONLY_1` di gate
+// masing-masing yang SUDAH ada (pola sama persis `--only 3` di atas, bukan
+// membongkar struktur `if (ONLY !== '4')` di sekelilingnya). Gate Flow 1
+// SENDIRI TIDAK disentuh (tetap `if (!ONLY_P14 && !ONLY_3)`, byte-identik)
+// -- `ONLY_1` tidak pernah disebut di gate itu, jadi Flow 1 otomatis tetap
+// jalan setiap kali ONLY bukan 'p14'/'4'/'3' TERMASUK saat ONLY==='1' --
+// persis pola Flow 3 yang gate-nya sendiri juga tidak pernah menyebut
+// `ONLY_3`. HANYA password test@msi.com (QA_PASSWORD) diminta -- D2D/P13b/
+// P14/RS memakai SESI yang sama (page/ctx test@msi.com, nol password
+// tambahan utk ketiganya pun bukan isu baru), tapi Flow 3/Flow 4 yang
+// masing-masing butuh QA_PASSWORD_MANAGER/QA_PASSWORD_SALES kini ikut
+// dilewati gate baru ini -- keduanya TIDAK akan pernah diminta. Tanpa
+// argumen ini, perilaku skrip TIDAK berubah.
+const ONLY_1 = ONLY === '1';
 
 // Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
 // QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
@@ -509,6 +525,22 @@ function laneTableContainer(page) {
 // tanpa memegang handle basi dari render sebelumnya.
 function laneRow(page, i) { return laneTableContainer(page).locator('> div').nth(i + 1); }
 async function laneRowCount(page) { return Math.max(0, await laneTableContainer(page).locator('> div').count() - 1); }
+// Sel Mode (kolom index-4) / Load unit (kolom index-5) pada baris lane MODE
+// BACA (readOnly=true, Detail Inquiry sebelum diklik "Edit") -- sejak
+// Putaran 16 Tahap 7 (commit a4c63af, LaneTable.jsx:202/214) kedua sel itu
+// merender TEKS POLOS `<div>{l.mode||''}</div>`/`<div>{l.load_unit||''}</div>`,
+// BUKAN `<select>` -- `<select>` HANYA ada di mode EDIT (readOnly=false,
+// LaneTable.jsx:207/217). Posisi index-4/5 SAMA di KEDUA mode (readOnly
+// MAUPUN edit, ber-FTZ atau tidak) karena kolom Flag/Trash yang membedakan
+// jumlah kolom SELALU ditambahkan di UJUNG grid (lihat `cols`/`headers`
+// LaneTable.jsx:101-103), tidak pernah disisipkan di tengah -- jadi 0=indeks/
+// checkbox, 1=POL, 2=POD, 3=Via, 4=Mode, 5=Load unit, berlaku tetap. Dipakai
+// HANYA utk baca teks baris mode BACA; mode EDIT (wizard Route & Terms,
+// editor Route Options Detail Inquiry) TETAP baca `<select>` langsung
+// (laneRow(page,i).locator('select')), TIDAK disentuh fungsi ini.
+function laneReadOnlyCellText(page, i, colIndex) {
+  return laneRow(page, i).locator('> div').nth(colIndex).innerText();
+}
 
 // FieldWrap (DealDetailPage.jsx, dealOverviewFieldInputs.jsx:41-48):
 // <div><span>{label}</span>{sibling}</div> -- label SPAN (beda dari
@@ -545,6 +577,12 @@ function dealFieldValue(page, label) {
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.waitForTimeout(1500);
 
+  // [Putaran 16a] pola sama baris "Flow 3/Flow 4 SAJA" -- banner ini TIDAK
+  // menggantikan login/console.log test@msi.com di atas (Flow 1 memakainya
+  // LANGSUNG, beda dari Flow 3/Flow 4 yang login akun lain), murni label
+  // tambahan di run log.
+  if (ONLY === '1') console.log(`e2e-inquiry-wizard -- Flow 1 SAJA (--only 1) -- ${BASE} · project ${REF}\n`);
+
   // Putaran 13a Task 3 -- Flow 1 dibungkus try/catch sendiri (lihat
   // recordFlowFailure di atas): kalau langkah apa pun di bawah throw, D2D/
   // Flow 2/Flow 3 TETAP lanjut jalan (memakai `page`/`browser` yang sama,
@@ -553,7 +591,8 @@ function dealFieldValue(page, label) {
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)` (instruksi eksplisit,
   // flag `--only p14`): isi try/catch di bawah TIDAK disentuh sama sekali.
   // [Putaran 16a] `&& !ONLY_3` ADITIF (pola sama, flag `--only 3`) -- lihat
-  // komentar `ONLY_3` di atas.
+  // komentar `ONLY_3` di atas. Gate ini SENGAJA TIDAK menyebut `ONLY_1` --
+  // Flow 1 memang harus tetap jalan saat `--only 1`.
   if (!ONLY_P14 && !ONLY_3) {
   try {
   // ── buka wizard baru (CREATE-only; edit kini inline di DealDetailPage,
@@ -908,12 +947,17 @@ function dealFieldValue(page, label) {
   // ber-Mode/Load unit sama persis, jadi lane 2 di sini TIDAK BOLEH lagi
   // Sea FCL/Container sejak fixture ini dibedakan.
   if (detailLaneCount >= 2) {
-    const row0ModeUnit = await laneRow(page, 0).locator('select').evaluateAll((els) => els.map((el) => el.value));
-    const row1ModeUnit = await laneRow(page, 1).locator('select').evaluateAll((els) => els.map((el) => el.value));
-    check('Lane 1 Detail Inquiry menunjukkan Mode "Sea FCL"', row0ModeUnit[0] === 'Sea FCL', `dapat: ${JSON.stringify(row0ModeUnit)}`);
-    check('Lane 1 Detail Inquiry menunjukkan Load unit "Container"', row0ModeUnit[1] === 'Container', `dapat: ${JSON.stringify(row0ModeUnit)}`);
-    check('Lane 2 Detail Inquiry menunjukkan Mode "Sea LCL" (sengaja beda dari lane 1)', row1ModeUnit[0] === 'Sea LCL', `dapat: ${JSON.stringify(row1ModeUnit)}`);
-    check('Lane 2 Detail Inquiry menunjukkan Load unit "CBM" (sengaja beda dari lane 1)', row1ModeUnit[1] === 'CBM', `dapat: ${JSON.stringify(row1ModeUnit)}`);
+    // [Fix] Detail Inquiry baru dibuka = LaneTable readOnly=true (belum klik
+    // "Edit") -- dibaca sbg TEKS sel, bukan `.value` <select> (lihat
+    // laneReadOnlyCellText di atas; select tak ada sama sekali di mode ini).
+    const row0Mode = (await laneReadOnlyCellText(page, 0, 4).catch(() => '')).trim();
+    const row0Unit = (await laneReadOnlyCellText(page, 0, 5).catch(() => '')).trim();
+    const row1Mode = (await laneReadOnlyCellText(page, 1, 4).catch(() => '')).trim();
+    const row1Unit = (await laneReadOnlyCellText(page, 1, 5).catch(() => '')).trim();
+    check('Lane 1 Detail Inquiry menunjukkan Mode "Sea FCL"', row0Mode === 'Sea FCL', `dapat: "${row0Mode}"`);
+    check('Lane 1 Detail Inquiry menunjukkan Load unit "Container"', row0Unit === 'Container', `dapat: "${row0Unit}"`);
+    check('Lane 2 Detail Inquiry menunjukkan Mode "Sea LCL" (sengaja beda dari lane 1)', row1Mode === 'Sea LCL', `dapat: "${row1Mode}"`);
+    check('Lane 2 Detail Inquiry menunjukkan Load unit "CBM" (sengaja beda dari lane 1)', row1Unit === 'CBM', `dapat: "${row1Unit}"`);
   }
 
   const routeEditBtn = sectionButton(page, 'Route & Terms', 'Edit');
@@ -1015,7 +1059,9 @@ function dealFieldValue(page, label) {
   // D2D tetap dicoba (selama `page` masih berupa Page yang terbuka).
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1 di atas.
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1 di atas.
-  if (!ONLY_P14 && !ONLY_3) {
+  // [Putaran 16a] `&& !ONLY_1` ADITIF (flag `--only 1`) -- lihat komentar
+  // `ONLY_1` di atas.
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
   try {
   // =========================================================================
   // Putaran 13a (D8) -- skenario NEGATIF SAJA utk Pickup/Delivery Address
@@ -1093,7 +1139,8 @@ function dealFieldValue(page, label) {
   // =========================================================================
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D.
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D di atas.
-  if (!ONLY_P14 && !ONLY_3) {
+  // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama Flow 1/D2D di atas.
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
   try {
   console.log('\n— Skenario tambahan (Putaran 13b): W-14/W-16/W-21/W-33/W-34/W-40/W-44/W-64 —\n');
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
@@ -1285,6 +1332,19 @@ function dealFieldValue(page, label) {
   // masing-masing) -- dua SOA-prefiks (General Trading penuh + GT dari
   // Rate Sheet Request) dan satu MSI-prefiks (Customs Clearance).
   // =========================================================================
+  // [Fix, Putaran 16a] blok ini TIDAK PERNAH ber-gate ONLY sama sekali
+  // (byte-identik sejak lahir) -- selalu jalan begitu outer `if (ONLY !== '4')`
+  // di atas lolos, termasuk saat `--only p14` (MEMANG disengaja, inilah blok
+  // yang dimaksud flag itu) dan `--only 3` (SALAH -- "only 3" artinya HANYA
+  // Flow 3, P14 ikut membuat 3 inquiry tanpa diminta). Gate baru `if
+  // (!ONLY_3)` (BUKAN `if (!ONLY_P14 && !ONLY_3)` seperti flow lain --
+  // `--only p14` harus TETAP menjalankan blok ini, byte-identik perilaku
+  // sebelumnya): default (`ONLY` kosong) -> jalan · `--only p14` -> jalan
+  // (tidak berubah) · `--only 3` -> DILEWATI (baru) · `--only 4` -> sudah
+  // dilewati lewat outer gate, tidak berubah.
+  // [Putaran 16a] `&& !ONLY_1` ADITIF (flag `--only 1`, pola sama) -- blok
+  // ini JUGA harus dilewati saat "only 1" (HANYA Flow 1 yang dimaksud).
+  if (!ONLY_3 && !ONLY_1) {
   try {
   console.log('\n— Skenario tambahan (Putaran 14): General Trading (W-10/W-60) + Pricing Basis Customs (W-41) —\n');
   const p14Nonce = Date.now();
@@ -1652,12 +1712,14 @@ function dealFieldValue(page, label) {
   } catch (e) {
     await recordFlowFailure('P14', 'Putaran 14 (GT W-10/W-60, Pricing Basis Customs W-41)', e, page);
   }
+  } // end if (!ONLY_3) -- Putaran 14 (P14)
 
   // Putaran 13a Task 3 -- Flow 2 (Rate Sheet Request) dibungkus try/catch
   // sendiri, terpisah dari Flow 1/D2D di atas dan Flow 3 di bawah.
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D/P13b.
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D/P13b di atas.
-  if (!ONLY_P14 && !ONLY_3) {
+  // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama Flow 1/D2D/P13b di atas.
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
   try {
   // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
@@ -1989,7 +2051,10 @@ function dealFieldValue(page, label) {
   // terlihat dari catch (lexical scoping), jadi dihoist.
   // Putaran 14 Tahap 4 -- `ctx2`/`page2` + try/catch dibungkus `if (!ONLY_P14)`
   // sekaligus (nol pemakai `ctx2`/`page2` di luar blok ini, diverifikasi grep).
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_1` ADITIF (flag `--only 1`) -- Flow 3 ikut
+  // dilewati saat "only 1" (HANYA Flow 1 yang dimaksud); gate ini TETAP
+  // tidak menyebut `ONLY_3` (Flow 3 memang harus jalan saat `--only 3`).
+  if (!ONLY_P14 && !ONLY_1) {
   let ctx2, page2;
   try {
   // =========================================================================
@@ -2145,7 +2210,9 @@ function dealFieldValue(page, label) {
   // nol pemakai di luar blok ini (diverifikasi grep).
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama -- Flow 4 ikut dilewati saat
   // `--only 3` (HANYA Flow 3 yang dimaksud "only 3").
-  if (!ONLY_P14 && !ONLY_3) {
+  // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama -- Flow 4 ikut dilewati saat
+  // `--only 1` (HANYA Flow 1 yang dimaksud).
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
   // =========================================================================
   // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
   // pengguna, sesudah migrasi 20261026000004 LIVE di staging dan lulus
