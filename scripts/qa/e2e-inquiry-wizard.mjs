@@ -100,6 +100,24 @@ const ONLY = opt('only', null);
 // TETAP jalan (blok P14 butuh itu, sama seperti Flow 1/D2D/P13b). Tanpa
 // argumen ini (atau dgn `--only 4`), perilaku skrip TIDAK berubah.
 const ONLY_P14 = ONLY === 'p14';
+// --only 3 (pola spasi SAMA dgn --only 4/p14 di atas) -- HANYA Flow 3 (owner
+// default manager, bd_sales_spv_forwarding) dijalankan: Flow 1/D2D/P13b/Flow
+// 2 (RS) dilewati lewat gate ADITIF `&& !ONLY_3` di keempat `if (!ONLY_P14)`
+// yang sudah ada (pola sama persis `--only p14`, bukan membongkar struktur
+// `if (ONLY !== '4')` di sekelilingnya -- Flow 3 TIDAK bergantung pada
+// `page`/`ctx`/sesi test@msi.com yang dibuka blok itu, ia login akun manager
+// SENDIRI ke `page2`/`ctx2`, lihat komentar "FLOW KETIGA" di bawah; satu-
+// satunya sebab login test@msi.com TETAP dipertahankan berjalan di sini,
+// bukan dilewati total seperti `--only 4`, adalah fallback `page2 || page`
+// di catch Flow 3 -- `page` harus tetap berupa variabel yang valid). Flow 4
+// (ACC) juga dilewati lewat gate aditif yang sama di `if (!ONLY_P14)`
+// miliknya. Gate Flow 3 SENDIRI TIDAK disentuh (tetap `if (!ONLY_P14)`, byte-
+// identik) -- ia memang sudah berjalan setiap kali ONLY bukan 'p14'/'4'.
+// HANYA password zzztest.salesspv@msi.com (QA_PASSWORD_MANAGER) diminta
+// --- QA_PASSWORD test@msi.com TETAP diminta (lihat alasan fallback di
+// atas), bukan byte-identik dgn `--only 4` dalam hal itu. Tanpa argumen ini,
+// perilaku skrip TIDAK berubah.
+const ONLY_3 = ONLY === '3';
 
 // Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
 // QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
@@ -372,6 +390,29 @@ function stepPill(page, label) {
   ).first();
 }
 
+// Kartu Direction (ServiceCard, InquiryIntakeWizardPage.jsx:240-249 + 1530 --
+// "Import"/"Export"/"Domestic"). Sejak Putaran 16 Tahap 5 (commit 804bb5e)
+// Direction pindah dari markup lama ke ServiceCard, dan teks labelnya kini
+// SELALU di dalam <span style={{flex:1,...}}>{label}</span> -- bukan lagi
+// teks langsung anak <button>. `button:text-is(label)` (selector lama)
+// berhenti cocok karena Playwright `:text-is()` menguji teks SENDIRI elemen
+// itu (bukan gabungan teks seluruh descendant), dan teks "sendiri" <button>
+// kini kosong (seluruh teksnya sudah pindah ke <span> anak). Dicari dari
+// span berteks PERSIS label itu, lalu naik ke <button> leluhurnya --
+// scoping yang sama persis dengan makna selector lama (satu <button> yang
+// memuat teks itu), bukan lewat teks gabungan (`:has-text`) yang berisiko
+// ambigu kalau kelak ada span lain yang memuat substring sama. Dipakai
+// HANYA untuk ketiga label Direction -- "Import"/"Export"/"Domestic" --
+// yang hari ini satu-satunya span berteks persis itu di seluruh halaman
+// wizard (diverifikasi: grep `'Import'|'Export'|'Domestic'` di
+// InquiryIntakeWizardPage.jsx, satu-satunya pemakai ServiceCard dengan
+// label itu adalah Direction sendiri; ReviewRow — satu-satunya render lain
+// nilai Direction — memakai <span> polos TANPA <button> pembungkus, jadi
+// tidak pernah ikut tertangkap selector ini).
+function dirCard(page, label) {
+  return page.locator(`button:has(span:text-is(${JSON.stringify(label)}))`).first();
+}
+
 // SectionHeader (DealDetailPage.jsx): <div><h3>{title}</h3>{button Edit}</div> —
 // title dan tombol SIBLING, parent langsung dari h3.
 function sectionButton(page, title, buttonText) {
@@ -511,7 +552,9 @@ function dealFieldValue(page, label) {
   // sebelum perbaikan ini.
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)` (instruksi eksplisit,
   // flag `--only p14`): isi try/catch di bawah TIDAK disentuh sama sekali.
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_3` ADITIF (pola sama, flag `--only 3`) -- lihat
+  // komentar `ONLY_3` di atas.
+  if (!ONLY_P14 && !ONLY_3) {
   try {
   // ── buka wizard baru (CREATE-only; edit kini inline di DealDetailPage,
   // InquiryFormPage.jsx dipensiunkan Putaran 15 Task 1) ───────────────────
@@ -573,7 +616,7 @@ function dealFieldValue(page, label) {
   // langkah "customs" — itu khusus Door-to-Door). ─────────────────────────
   await stepPill(page, 'Service & Direction').click();
   await settle(page, 300);
-  const importActive = await page.locator('button:text-is("Import")').evaluate((el) => getComputedStyle(el).backgroundColor);
+  const importActive = await dirCard(page, 'Import').evaluate((el) => getComputedStyle(el).backgroundColor);
   // [Putaran 16a] Pill aktif = background C.navySoft (#E4EDDE → rgb(228, 237, 222)); pill tak aktif = C.card (putih).
   check('Direction otomatis "Import" (POL non-Indonesia, POD Indonesia)', /228,\s*237,\s*222/.test(importActive || ''), importActive);
 
@@ -971,7 +1014,8 @@ function dealFieldValue(page, label) {
   // Flow 2/Flow 3, dan sebaliknya kegagalan Flow 1 di atas tidak menghalangi
   // D2D tetap dicoba (selama `page` masih berupa Page yang terbuka).
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1 di atas.
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1 di atas.
+  if (!ONLY_P14 && !ONLY_3) {
   try {
   // =========================================================================
   // Putaran 13a (D8) -- skenario NEGATIF SAJA utk Pickup/Delivery Address
@@ -1048,7 +1092,8 @@ function dealFieldValue(page, label) {
   // verifikasi UI/state, nol inquiry baru tercipta.
   // =========================================================================
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D.
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D di atas.
+  if (!ONLY_P14 && !ONLY_3) {
   try {
   console.log('\n— Skenario tambahan (Putaran 13b): W-14/W-16/W-21/W-33/W-34/W-40/W-44/W-64 —\n');
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
@@ -1087,11 +1132,11 @@ function dealFieldValue(page, label) {
   // nol guard "touched"). ──────────────────────────────────────────────────
   await page.locator('button:has-text("Door to Door")').first().click();
   await settle(page, 300);
-  await page.locator('button:text-is("Export")').click();
+  await dirCard(page, 'Export').click();
   await settle(page, 200);
   check('[P13b/W-14] Direction "Export" -> Customer Role otomatis "Shipper"',
     /228,\s*237,\s*222/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
-  await page.locator('button:text-is("Import")').click();
+  await dirCard(page, 'Import').click();
   await settle(page, 200);
   check('[P13b/W-14] Direction "Import" -> Customer Role otomatis "Consignee"',
     /228,\s*237,\s*222/.test(await page.locator('button:text-is("Consignee")').evaluate((el) => getComputedStyle(el).backgroundColor)));
@@ -1100,7 +1145,7 @@ function dealFieldValue(page, label) {
   // "ikuti mockup apa adanya" dibuktikan lewat skenario ini, bukan ditebak).
   await page.locator('button:text-is("Third Party")').click();
   await settle(page, 200);
-  await page.locator('button:text-is("Export")').click();
+  await dirCard(page, 'Export').click();
   await settle(page, 200);
   check('[P13b/W-14] Pilihan manual "Third Party" ditimpa lagi begitu Direction diklik ulang (Export -> Shipper, bukti nol guard "touched")',
     /228,\s*237,\s*222/.test(await page.locator('button:text-is("Shipper")').evaluate((el) => getComputedStyle(el).backgroundColor)));
@@ -1184,7 +1229,7 @@ function dealFieldValue(page, label) {
   // yang sengaja tidak ditiru -- lihat komentar UndernamePanel/hideDuties). ──
   await stepPill(page, 'Service & Direction').click();
   await settle(page);
-  await page.locator('button:text-is("Import")').click();
+  await dirCard(page, 'Import').click();
   await settle(page, 200);
   await p13bCustomsPill.click();
   await settle(page, 300);
@@ -1295,9 +1340,9 @@ function dealFieldValue(page, label) {
   await settle(page, 300);
   check('[P14/2] Kartu "General Trading" aktif (background orangeSoft) setelah diklik',
     /228,\s*237,\s*222/.test(await page.locator('button:has-text("General Trading")').evaluate((el) => getComputedStyle(el).backgroundColor)));
-  check('[P14/2] Pill "Export" TIDAK ADA utk General Trading', (await page.locator('button:text-is("Export")').count()) === 0);
+  check('[P14/2] Kartu "Export" TIDAK ADA utk General Trading', (await dirCard(page, 'Export').count()) === 0);
   check('[P14/2] Direction otomatis "Domestic" setelah General Trading dipilih',
-    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Domestic")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await dirCard(page, 'Domestic').evaluate((el) => getComputedStyle(el).backgroundColor)));
   check('[P14/2] "Customer Role" TIDAK tampil utk General Trading', (await page.locator('text="Customer Role"').count()) === 0);
   const p14StepperLabels = ['Customer & Contact', 'Service & Direction', 'Delivery', 'Commercial', 'Review'];
   const p14StepperAbsent = ['Route & Terms', 'Cargo', 'Additional Services'];
@@ -1523,7 +1568,7 @@ function dealFieldValue(page, label) {
   await stepPill(page, 'Service & Direction').click();
   await settle(page, 300);
   check('[P14/7] Direction otomatis "Export" (POL Indonesia, POD non-Indonesia)',
-    /228,\s*237,\s*222/.test(await page.locator('button:text-is("Export")').evaluate((el) => getComputedStyle(el).backgroundColor)));
+    /228,\s*237,\s*222/.test(await dirCard(page, 'Export').evaluate((el) => getComputedStyle(el).backgroundColor)));
   // TEMUAN (bukan diperbaiki di kode aplikasi, instruksi eksplisit) -- Customer
   // Role TIDAK ikut auto-terisi di sini walau Direction sudah "Export": aturan
   // W-14 (Export->Shipper/Import->Consignee, P13b di atas) HANYA terpasang di
@@ -1611,7 +1656,8 @@ function dealFieldValue(page, label) {
   // Putaran 13a Task 3 -- Flow 2 (Rate Sheet Request) dibungkus try/catch
   // sendiri, terpisah dari Flow 1/D2D di atas dan Flow 3 di bawah.
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D/P13b.
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D/P13b di atas.
+  if (!ONLY_P14 && !ONLY_3) {
   try {
   // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
@@ -1930,6 +1976,12 @@ function dealFieldValue(page, label) {
   }
   } // end if (!ONLY_P14) -- Flow 2 (RS)
 
+  // [Putaran 16a] pola sama baris "Flow 4 SAJA (--only 4)" di bawah --
+  // banner ini TIDAK menggantikan login/console.log test@msi.com di atas
+  // (lihat komentar `ONLY_3` di dekat deklarasinya utk alasan keduanya
+  // tetap jalan), murni label tambahan di run log.
+  if (ONLY === '3') console.log(`e2e-inquiry-wizard -- Flow 3 SAJA (--only 3) -- ${BASE} · project ${REF}\n`);
+
   // Putaran 13a Task 3 -- Flow 3 (owner default manager) dibungkus try/catch
   // sendiri. `page2` dideklarasikan dgn `let` DI LUAR try (lihat beberapa
   // baris di bawah) supaya catch di sini bisa mengambil screenshot-nya kalau
@@ -2091,7 +2143,9 @@ function dealFieldValue(page, label) {
   // berjalan TANPA syarat sebelum ini, di luar `if (ONLY !== '4')`) -- login
   // sales@msi.com miliknya ikut dilewati saat `--only p14`. `ctx3`/`page3`
   // nol pemakai di luar blok ini (diverifikasi grep).
-  if (!ONLY_P14) {
+  // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama -- Flow 4 ikut dilewati saat
+  // `--only 3` (HANYA Flow 3 yang dimaksud "only 3").
+  if (!ONLY_P14 && !ONLY_3) {
   // =========================================================================
   // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
   // pengguna, sesudah migrasi 20261026000004 LIVE di staging dan lulus
