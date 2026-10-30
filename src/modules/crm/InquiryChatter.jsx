@@ -368,19 +368,29 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             const author = authorMap[c.created_by];
             const isMine = c.created_by === currentUserId;
             const isEditing = editingId === c.id;
+            // [Putaran 16 Tahap 7, Task 6] diukur persis mockup (Detail/Comments,
+            // sc-for c): row gap 12 + padding '8px 0' + border-bottom LINE_SOFT
+            // (#ECF0E9 -- C.lineSoft, sudah token identik) -- sebelumnya nol
+            // padding/border sama sekali. Avatar 32x32 (bukan 30x30) + font
+            // Montserrat 700 10px (bukan 11px) + border dashed transparent
+            // (mockup punya baris itu, inert visual, disalin apa adanya).
             return (
-              <div key={c.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+              <div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '8px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
                 {author?.avatar_url ? (
-                  <img src={author.avatar_url} alt={author.full_name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
+                  <img src={author.avatar_url} alt={author.full_name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flex: 'none' }} />
                 ) : (
-                  <span style={{ width: 30, height: 30, borderRadius: '50%', background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontFamily: HEAD, fontSize: 11, fontWeight: 700 }}>
+                  <span style={{ width: 32, height: 32, borderRadius: '50%', border: '1px dashed transparent', background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontFamily: HEAD, fontSize: 10, fontWeight: 700 }}>
                     {initialsOf(author?.full_name)}
                   </span>
                 )}
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                    <span style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.text }}>{author?.full_name || '—'}</span>
-                    <span style={{ fontFamily: BODY, fontSize: 11, color: C.textFaint }}>
+                  {/* [Putaran 16 Tahap 7, Task 6] nama diukur mockup: font Inter
+                      (BODY, bukan HEAD/Montserrat) 600 13.5px (bukan 700 12.5px);
+                      timestamp 12px (bukan 11px, warna sudah cocok C.textFaint);
+                      wrapper gap 8 align baseline (bukan gap 7 align center). */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{author?.full_name || '—'}</span>
+                    <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
                       {timeAgo(c.created_at)}{c.updated_at ? ' · (diedit)' : ''}
                     </span>
                   </div>
@@ -407,7 +417,13 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                     </div>
                   ) : (
                     <>
-                      <div style={{ marginTop: 3, fontFamily: BODY, fontSize: 13, color: C.text, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
+                      {/* [Putaran 16 Tahap 7, Task 6] lineHeight 1.45 diukur
+                          mockup (span pembungkus parts, Detail/Comments) --
+                          fontSize 13 DIPERTAHANKAN (mockup nol font-size
+                          eksplisit di span badan teks, hanya mewarisi; nilai
+                          pasti tak bisa diukur, TIDAK PASTI, dilaporkan bukan
+                          ditebak). */}
+                      <div style={{ marginTop: 3, fontFamily: BODY, fontSize: 13, color: C.text, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
                       {isMine && (
                         <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                           <button type="button" onClick={() => startEdit(c)} style={ghostBtn(false)}><Pencil size={12} />Edit</button>

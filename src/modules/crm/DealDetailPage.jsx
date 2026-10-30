@@ -1073,6 +1073,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     locations.forEach((l) => { m[l.id] = l; });
     return m;
   }, [locations]);
+  // [Putaran 16 Tahap 7, Task 1] nilai TURUNAN dari locationById yang SUDAH
+  // ADA di atas (nol query baru) -- bentuk {id: type} yang dibutuhkan prop
+  // baru LaneTable.locationTypeById (Lane Editor mode baca, kolom Flag).
+  // SUMBER SAMA dgn isLocationFtz/isInquiryFtz di bawah -- hanya bentuknya
+  // beda (per-lane granular di LaneTable vs boolean per-inquiry di sini).
+  const locationTypeById = useMemo(() => {
+    const m = {};
+    locations.forEach((l) => { m[l.id] = l.type; });
+    return m;
+  }, [locations]);
   // FTZ -- keputusan Mas (Putaran 9): FTZ bila POL, POD, ATAU Via pada
   // SALAH SATU lane bertipe FTZ (mockup base() :723, `r.lanes ? ... :
   // [pol,pod,via]`); kalau inquiry tidak punya lane, pakai pol/pod milik
@@ -1861,8 +1871,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       {/* .cd-tab:hover di sini SUPAYA hover tab konsisten dengan CustomerDetailPage —
           Tab (dari DealPanels.jsx) sama-sama merender className="cd-tab" di kedua
           halaman, tapi rule hover-nya sendiri hanya hidup di mana pun <style> ini
-          dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
-      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}`}</style>
+          dirender (CustomerDetailPage punya rule identik di file-nya sendiri).
+          [Putaran 16 Tahap 7, Task 3] .kebab-item:hover -- mockup (scp1:hover)
+          memberi latar ROW_HOVER (C.navySoft) ke item menu kebab yang aktif;
+          `:not(:disabled)` supaya item terkunci (Change Account/Cancel Inquiry
+          saat diblok) TIDAK ikut hover -- disabled-nya sendiri sudah dibedakan
+          lewat opacity+cursor, bukan ditambah di sini. */}
+      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}.kebab-item:hover:not(:disabled){background:${C.navySoft} !important;}`}</style>
 
       {/* Batch B1 — seluruh halaman dibungkus FormSheet. Grid dua kolomnya
           (1.7fr/1fr, header membentang penuh) + collapse di bawah 1024px lewat
@@ -2005,7 +2020,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       (sudah persis nilai mockup, belum tertelusur ke kit) -- kini C.shadowPopover. */}
                   <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: C.shadowPopover, padding: 4, display: 'flex', flexDirection: 'column', zIndex: 95 }}>
                     {canReassignOwner && (
-                      <button type="button"
+                      <button type="button" className="kebab-item"
                         onClick={() => { setKebabOpen(false); setOwnerAssignOpen(true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.text, cursor: 'pointer', textAlign: 'left' }}>
                         <UserCog size={14} />Reassign Owner
@@ -2016,7 +2031,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         (pola Putaran 10, PRFDetailPage.jsx:929). RPC
                         change_inquiry_account tetap penjaga sebenarnya. */}
                     {canChangeAccount && (
-                      <button type="button"
+                      <button type="button" className="kebab-item"
                         disabled={!!changeAccountBlockReason}
                         title={changeAccountBlockReason || undefined}
                         onClick={() => { setKebabOpen(false); setChangeAccountOpen(true); }}
@@ -2031,7 +2046,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       <div style={{ height: 1, background: C.lineSoft, margin: '4px 0' }} />
                     )}
                     {canMarkLost && (
-                      <button type="button" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
+                      <button type="button" className="kebab-item" onClick={() => { setKebabOpen(false); setLossOpen(true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: 0, borderRadius: 8, background: 'transparent', fontFamily: BODY, fontSize: 13.5, color: C.red, cursor: 'pointer', textAlign: 'left' }}>
                         <XCircle size={14} />Mark as Lost
                       </button>
@@ -2045,7 +2060,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                       // AKTIF (C.red) -- bukan C.textMute/INK_SOFT netral;
                       // disabled TETAP C.textFaint (nol pasangan mockup utk
                       // state terkunci, dipertahankan apa adanya).
-                      <button type="button"
+                      <button type="button" className="kebab-item"
                         disabled={!!cancelBlockReason}
                         title={cancelBlockReason || undefined}
                         onClick={() => { setKebabOpen(false); setCancelOpen(true); }}
@@ -2586,6 +2601,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               canManageLocations={canManageLocations} openLocationMaster={openLocationMaster} requestNewLocation={requestNewLocation}
               readOnly={editingSection !== 'RouteOptions'}
               onUpdate={updateDetailLane} onRemove={removeDetailLane} onAdd={addDetailLane} onMove={moveDetailLane}
+              // [Putaran 16 Tahap 7, Task 1] locationTypeById SUDAH ADA di atas
+              // (nol query baru); ftzFeasibilityNote diukur mockup (laneFlagTxt,
+              // :1155) -- satu kalimat tergantung service_type, byte-per-byte
+              // termasuk tanda baca/spasi, pola cek SAMA persis `['door_to_door',
+              // 'customs'].includes(inquiry?.service_type)` yg sudah dipakai di
+              // file ini (:2347, Pricing Basis). Kedua prop ini inert di mode
+              // edit (LaneTable hanya memakainya saat readOnly=true).
+              locationTypeById={locationTypeById}
+              ftzFeasibilityNote={
+                ['door_to_door', 'customs'].includes(inquiry?.service_type)
+                  ? 'Feasibility is required for these lanes.'
+                  : 'Feasibility applies to these lanes when the service is Door to Door or Customs Clearance.'
+              }
             />
           </div>
         </div>
