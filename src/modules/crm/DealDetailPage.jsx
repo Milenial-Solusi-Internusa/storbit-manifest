@@ -30,10 +30,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
   FileText, ChevronLeft, RefreshCw,
-  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
+  Loader2, AlertCircle, ListChecks, XCircle,
   Ban, UserCog, UserCheck, CheckCircle2, MoreVertical, PlaneLanding, PlaneTakeoff, Truck,
   Lock, Check, RefreshCcw,
 } from 'lucide-react';
+import InquiryActivityTimeline from './InquiryActivityTimeline';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { markInquiryWonWithEvidence } from '../../lib/db';
@@ -155,12 +156,6 @@ const SOURCE_LABEL = {
   linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website',
   walk_in: 'Walk In', other: 'Other',
 };
-
-const ACT_ICON = {
-  call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
-  email: Mail, followup: ListChecks,
-};
-
 
 // Papan Pipeline nanti butuh daftar tahap yang SAMA PERSIS dengan ini; konsolidasinya
 // (ke tokens.js atau modul bersama) menunggu Batch B3 — jangan disatukan sekarang.
@@ -908,11 +903,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       let acts = [];
       if (inq.prospect_id) {
+        // [Putaran 16 Tahap 9] limit dinaikkan 5 -> 200 (pola sama
+        // inquiry_status_history/inquiry_owner_history di atas, dan
+        // listLeadActivities di leadActivity.js, skema identik) -- ditemukan
+        // saat audit: inquiry 0051 (data uji resmi tahap ini) punya 8
+        // aktivitas, limit lama memotongnya jadi 5 tanpa indikasi apa pun di
+        // UI. `created_by`/`next_action` BARU di-select -- kolom SUDAH ADA
+        // di skema (bukan migrasi baru), dibutuhkan utk field "by" (penulis)
+        // dan detail expand/collapse mockup yang sebelumnya tak pernah
+        // ditarik oleh query ini.
         const { data } = await supabase
           .from('activities')
-          .select('id, type, status, notes, outcome, contact_name, prospect_name, scheduled_for, created_at')
+          .select('id, type, status, notes, outcome, next_action, contact_name, prospect_name, scheduled_for, created_at, created_by')
           .eq('account_id', inq.prospect_id).is('deleted_at', null)
-          .order('created_at', { ascending: false }).limit(5);
+          .order('created_at', { ascending: false }).limit(200);
         acts = data || [];
       }
 
@@ -929,6 +933,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         ...(ownerHistoryRows || []).flatMap((h) => [h.from_owner_id, h.to_owner_id, h.changed_by]),
         ...prfsAugmented.flatMap((p) => [p.created_by, p.acknowledged_by, p.answered_by, p.selected_by]),
         ...(quos || []).map((q) => q.created_by),
+        // [Putaran 16 Tahap 9] penulis aktivitas ("by" mockup) -- satu query
+        // profiles yang sama, bukan .in() kedua.
+        ...acts.map((a) => a.created_by),
       ].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
@@ -3260,48 +3267,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           {
             id: 'aktivitas',
             label: 'Activity',
-            render: () => (
-              <Card title="Related Activity" icon={<ListChecks size={17} />}>
-                {activities.length === 0 ? (
-                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this inquiry yet.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {activities.map((a) => {
-                      const AIcon = ACT_ICON[a.type] || ListChecks;
-                      return (
-                        // [Putaran 16 Tahap 8, Task 5] diukur mockup (Detail/
-                        // Activity, :421 -- `e`): avatar lingkaran PENUH
-                        // (border-radius:16px utk kotak 32px, bukan 9 --
-                        // sebelumnya bukan lingkaran); label tipe aktivitas
-                        // Montserrat 700 (bukan Inter/BODY 600 -- `e.type`
-                        // mockup: font:700 13.5px Montserrat); timestamp
-                        // 12px (bukan 11.5 -- `e.when` mockup: font:400 12px
-                        // Inter, warna C.textFaint SUDAH cocok #838E7A).
-                        // Deskripsi (`{{e.desc}}`, notes/outcome di sini)
-                        // SENGAJA TIDAK disentuh -- mockup nol style eksplisit
-                        // di elemen itu (TIDAK PASTI, dilaporkan bukan
-                        // ditebak). Garis penghubung vertikal + kartu
-                        // bertepi per-entri + warna ikon per-tipe + badge
-                        // "Upcoming" + tombol expand/collapse + pil "From X"
-                        // di mockup TIDAK dibangun (STRUKTUR, dilaporkan).
-                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                          <span style={{ width: 32, height: 32, borderRadius: 16, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontFamily: HEAD, fontSize: 13.5, fontWeight: 700, color: C.text }}>
-                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                              </div>
-                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                            </div>
-                            <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            ),
+            // [Putaran 16 Tahap 9] struktur dipindah ke InquiryActivityTimeline.jsx
+            // (berkas baru, lihat komentarnya utk audit Fase A lengkap). Card
+            // pembungkus "Related Activity" DICABUT -- mockup (Detail/Activity,
+            // :421) merender timeline LANGSUNG di body tab (`padding:16px`
+            // polos), NOL judul/card kedua -- sama persis pola Rate Requests/
+            // Vendor Offers tab Procurement (Putaran 16 Tahap 8, h3 polos tanpa
+            // Card kedua). `profMap` diteruskan sbg actorMap -- created_by
+            // aktivitas sudah ikut query profiles yang sama (lihat efek fetch).
+            render: () => <InquiryActivityTimeline activities={activities} actorMap={profMap} />,
           },
           {
             id: 'statusHistory',
