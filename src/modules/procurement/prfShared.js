@@ -39,3 +39,15 @@ export const ADD_ONS = [
 ];
 export const COMMODITY_LABEL = Object.fromEntries(COMMODITIES.map((c) => [c.value, c.label]));
 export const ADD_ON_LABEL = Object.fromEntries(ADD_ONS.map((a) => [a.value, a.label]));
+
+// Dokumen Pendukung (PI/LS/MSDS/Lainnya) — menggantikan msds_available
+// (migrasi 20261101000006). Satu daftar dipakai PRFFormPage.jsx (selector
+// tulis) dan PRFDetailPage.jsx (label baca + modal ubah), supaya domain
+// nilainya tidak bisa diam-diam melenceng antara form dan detail.
+export const DOC_STATUS_OPTIONS = [
+  { value: 'tidak_perlu', label: 'Tidak perlu' },
+  { value: 'tersedia', label: 'Tersedia' },
+  { value: 'belum_tersedia', label: 'Belum tersedia' },
+  { value: 'belum_diketahui', label: 'Belum diketahui' },
+];
+export const DOC_STATUS_LABEL = Object.fromEntries(DOC_STATUS_OPTIONS.map((o) => [o.value, o.label]));

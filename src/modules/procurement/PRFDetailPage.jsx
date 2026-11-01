@@ -23,7 +23,7 @@ import { isManagerOrAbove, isProcurement, isSuperAdmin } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import PRFVendorOfferModal from './PRFVendorOfferModal';
-import { fmtDate, SERVICE_LABEL, COMMODITY_LABEL, ADD_ON_LABEL } from './prfShared';
+import { fmtDate, SERVICE_LABEL, COMMODITY_LABEL, ADD_ON_LABEL, DOC_STATUS_OPTIONS, DOC_STATUS_LABEL } from './prfShared';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -67,7 +67,7 @@ function containerSummary(types, qty) {
 // True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
 const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
 
-const PRF_SELECT = 'id, prf_no, status, created_at, created_by, submitted_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, goods_name, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, selected_by, selected_at, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code, address), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
+const PRF_SELECT = 'id, prf_no, status, created_at, created_by, submitted_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, goods_name, hs_code, doc_pi_status, doc_ls_status, doc_msds_status, doc_other_status, doc_other_name, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, selected_by, selected_at, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code, address), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation, onEditDraft }) {
@@ -114,6 +114,9 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // Batch 3C — "Nyatakan Penawaran Siap" (ACKNOWLEDGED → QUOTED, prf_mark_quoted).
   const [markQuotedBusy, setMarkQuotedBusy] = useState(false);
   const [waiverModalOpen, setWaiverModalOpen] = useState(false); // dialog alasan saat penawaran < 3
+  // Dokumen Pendukung (PI/LS/MSDS/Lainnya) — modal ubah + RPC prf_update_supporting_docs.
+  const [docsModalOpen, setDocsModalOpen] = useState(false);
+  const [docsBusy, setDocsBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -500,6 +503,38 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     handleMarkQuoted(null);
   };
 
+  // Dokumen Pendukung — RPC menegakkan izin + status terminal sendiri
+  // (SECURITY DEFINER); gate render (canShowSupportingDocsAction) hanya
+  // menyembunyikan tombol saat pasti akan RAISE.
+  const handleUpdateSupportingDocs = async (docs) => {
+    setDocsBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_update_supporting_docs', {
+        p_prf_id: prfId,
+        p_doc_pi_status: docs.doc_pi_status,
+        p_doc_ls_status: docs.doc_ls_status,
+        p_doc_msds_status: docs.doc_msds_status,
+        p_doc_other_status: docs.doc_other_status,
+        p_doc_other_name: docs.doc_other_name || null,
+      });
+      if (e) throw e;
+      showToast?.('Dokumen pendukung berhasil diperbarui.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.UPDATE_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: 'Ubah dokumen pendukung (PI/LS/MSDS/Lainnya).',
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      setDocsModalOpen(false);
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setDocsBusy(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!canEdit) return;
     // Cegah RAISE dari guard RPC + cegah biaya vendor tersimpan senyap sebagai
@@ -645,6 +680,14 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // hanya pemilik (created_by=auth.uid()) ATAU super_admin, TANPA bypass manager
   // (beda dari canRelease di atas — prf_update_draft memang tak punya klausa itu).
   const canEditDraft = typeof onEditDraft === 'function' && prf.status === 'DRAFT' && (prf.created_by === profile?.id || erpRole === 'super_admin');
+  // Dokumen Pendukung — gate TOMBOL saja, cermin PERSIS guard RPC
+  // prf_update_supporting_docs (super_admin ATAU created_by ATAU
+  // acknowledged_by ATAU manager+ di company PRF) + status bukan terminal.
+  const canEditSupportingDocs = isSuperAdmin(erpRoles)
+    || prf.created_by === profile?.id
+    || prf.acknowledged_by === profile?.id
+    || isManagerOrAbove(erpRoles);
+  const canShowSupportingDocsAction = canEditSupportingDocs && !['CANCELLED', 'EXPIRED'].includes(prf.status);
 
   // Batch penutup — gerbang "Buat Quotation" kini punya DUA jalur independen
   // yang harus hidup berdampingan (harga jual pindah jadi wilayah SALES, bukan
@@ -813,7 +856,17 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     }
   })();
   const KNOWN_MODES = ['sea', 'air', 'inland', 'custom', 'project'];
-  const showDG = !!(prf.un_number || prf.imo_class || prf.msds_available);
+  const showDG = !!(prf.un_number || prf.imo_class);
+  // Dokumen Pendukung — halaman detail SELALU menampilkan keempat baris
+  // (beda dari kartu Space yang menyembunyikan "tidak_perlu"/NULL demi
+  // ringkas) karena halaman ini untuk transparansi penuh, bukan notifikasi.
+  // NULL (PRF lama sebelum migrasi 20261101000006) ditampilkan "—", TIDAK
+  // dikoersi diam-diam jadi "Tidak perlu".
+  const docStatusText = (status, name) => {
+    if (status == null) return '—';
+    const label = DOC_STATUS_LABEL[status] || status;
+    return name ? `${label} — ${name}` : label;
+  };
 
   // Pasangan [label,value] Detail Layanan per-moda — dikonsumsi packedRows() (semua
   // field pendek). Hanya moda AKTIF yang punya isi; moda lain array kosong.
@@ -954,7 +1007,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
             <Check size={13} />PENAWARAN SIAP DIKUTIP
           </div>
         )}
-        {(canClaim || canRelease || canMarkQuoted || canEditDraft) && (
+        {(canClaim || canRelease || canMarkQuoted || canEditDraft || canShowSupportingDocsAction) && (
           <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
             {canEditDraft && (
               <button type="button" onClick={() => onEditDraft(prf.id)}
@@ -978,6 +1031,12 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
               <button type="button" onClick={handleMarkQuotedClick} disabled={markQuotedBusy}
                 style={{ ...ghostBtn, height: 38, cursor: markQuotedBusy ? 'not-allowed' : 'pointer', opacity: markQuotedBusy ? 0.7 : 1 }}>
                 {markQuotedBusy ? 'Memproses…' : 'Nyatakan Penawaran Siap'}
+              </button>
+            )}
+            {canShowSupportingDocsAction && (
+              <button type="button" onClick={() => setDocsModalOpen(true)}
+                style={{ ...ghostBtn, height: 38 }}>
+                <FileText size={15} />Ubah Dokumen Pendukung
               </button>
             )}
           </div>
@@ -1074,14 +1133,15 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         </div>
       </section>
 
-      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
+      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG.
+          MSDS PINDAH ke section "Dokumen Pendukung" di bawah — section ini
+          tinggal UN Number/IMO Class. ── */}
       {showDG && (
         <section style={dgCard}>
           <div style={secBar}><div style={secNum}>05</div><div style={secTitle}>Dangerous Goods (DG)</div></div>
           <div style={secBody}>
             <div style={fieldGrid}>
               {packedRows([
-                ['MSDS Tersedia', prf.msds_available ? 'Ya' : 'Tidak'],
                 ['UN Number', prf.un_number],
                 ['IMO Class', prf.imo_class],
               ])}
@@ -1090,10 +1150,27 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         </section>
       )}
 
+      {/* ── Dokumen Pendukung — SELALU tampil (tak lagi khusus DG), 4 baris
+          tetap (PI/LS/MSDS/Lainnya), plus tombol "Ubah Dokumen Pendukung" di
+          header kalau canShowSupportingDocsAction. ── */}
+      <section style={card}>
+        <div style={secBar}><div style={secNum}>06</div><div style={secTitle}>Dokumen Pendukung</div></div>
+        <div style={secBody}>
+          <div style={fieldGrid}>
+            {packedRows([
+              ['PI (Persetujuan Impor)', docStatusText(prf.doc_pi_status)],
+              ['LS (Laporan Surveyor)', docStatusText(prf.doc_ls_status)],
+              ['MSDS', docStatusText(prf.doc_msds_status)],
+              ['Lainnya', docStatusText(prf.doc_other_status, prf.doc_other_name)],
+            ])}
+          </div>
+        </div>
+      </section>
+
       {/* ── Niaga & Catatan — Add-On diterjemahkan; Catatan pindah dari section
           Rute & Ringkasan Kargo lama. ── */}
       <section style={card}>
-        <div style={secBar}><div style={secNum}>06</div><div style={secTitle}>Niaga &amp; Catatan</div></div>
+        <div style={secBar}><div style={secNum}>07</div><div style={secTitle}>Niaga &amp; Catatan</div></div>
         <div style={secBody}>
           <div style={fieldGrid}>
             {wideRow('Add-On Services', addOnDisplay)}
@@ -1222,6 +1299,15 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           offerCount={vendorOffers.length}
           onClose={() => setWaiverModalOpen(false)}
           onConfirm={handleMarkQuoted}
+        />
+      )}
+
+      {docsModalOpen && (
+        <SupportingDocsModal
+          prf={prf}
+          busy={docsBusy}
+          onClose={() => setDocsModalOpen(false)}
+          onConfirm={handleUpdateSupportingDocs}
         />
       )}
 
@@ -1509,6 +1595,68 @@ function MinOffersWaiverModal({ offerCount, onClose, onConfirm }) {
           <button type="button" onClick={handleConfirm} disabled={!ok || loading}
             style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: ORANGE, color: 'white', fontSize: 14, fontWeight: 600, cursor: (!ok || loading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!ok || loading) ? 0.6 : 1 }}>
             {loading ? 'Memproses…' : 'Nyatakan Siap'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal "Ubah Dokumen Pendukung" — satu Simpan menulis keempat status +
+// nama "Lainnya" sekaligus lewat RPC prf_update_supporting_docs (pola
+// "Simpan Semua", bukan 4 RPC kecil). Nilai awal dari prf.doc_*_status: NULL
+// (PRF lama belum pernah dideklarasikan) dipetakan ke 'tidak_perlu' HANYA di
+// modal ini (berbeda dari PRFFormPage.jsx yang membiarkan draft lama '—') —
+// modal ini SELALU mengirim keempat status eksplisit ke RPC, jadi tidak ada
+// tempat untuk nilai "belum dideklarasikan" bertahan lebih lama lagi begitu
+// user membuka modal ini dan menekan Simpan.
+const selStyle = { height: 38, width: '100%', borderRadius: 9, border: `1px solid ${BORDER}`, padding: '0 10px', fontSize: 13, fontFamily: BODY, color: INK, boxSizing: 'border-box', outline: 'none', background: '#fff', appearance: 'none', cursor: 'pointer' };
+function SupportingDocsModal({ prf, busy, onClose, onConfirm }) {
+  const [docs, setDocs] = useState({
+    doc_pi_status: prf.doc_pi_status || 'tidak_perlu',
+    doc_ls_status: prf.doc_ls_status || 'tidak_perlu',
+    doc_msds_status: prf.doc_msds_status || 'tidak_perlu',
+    doc_other_status: prf.doc_other_status || 'tidak_perlu',
+    doc_other_name: prf.doc_other_name || '',
+  });
+  const setField = (k) => (e) => setDocs((d) => ({ ...d, [k]: e.target.value }));
+
+  const row = (label, key) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ fontSize: 12.5, fontWeight: 600, color: MUTE, display: 'block', marginBottom: 5 }}>{label}</label>
+      <select value={docs[key]} onChange={setField(key)} style={selStyle}>
+        {DOC_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 28, maxWidth: 440, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontFamily: HEAD, fontSize: 17, fontWeight: 800, color: NAVY, margin: '0 0 16px' }}>Ubah Dokumen Pendukung</h2>
+        {row('PI (Persetujuan Impor)', 'doc_pi_status')}
+        {row('LS (Laporan Surveyor)', 'doc_ls_status')}
+        {row('MSDS', 'doc_msds_status')}
+        {row('Lainnya', 'doc_other_status')}
+        {docs.doc_other_status !== 'tidak_perlu' && (
+          <div style={{ marginBottom: 4 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: MUTE, display: 'block', marginBottom: 5 }}>Nama Dokumen Lainnya</label>
+            <input
+              value={docs.doc_other_name}
+              onChange={(e) => setDocs((d) => ({ ...d, doc_other_name: e.target.value }))}
+              placeholder="cth: Sertifikat Fumigasi"
+              style={{ height: 38, width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${BORDER}`, padding: '0 10px', fontSize: 13, fontFamily: BODY, color: INK, outline: 'none' }}
+            />
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button type="button" onClick={onClose} disabled={busy}
+            style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            Batal
+          </button>
+          <button type="button" onClick={() => onConfirm(docs)} disabled={busy}
+            style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: ORANGE, color: 'white', fontSize: 14, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: busy ? 0.6 : 1 }}>
+            {busy ? 'Menyimpan…' : 'Simpan'}
           </button>
         </div>
       </div>

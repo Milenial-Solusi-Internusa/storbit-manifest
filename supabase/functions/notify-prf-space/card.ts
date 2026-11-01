@@ -81,6 +81,21 @@ function commodityLabel(v: string | null): string | null {
   return COMMODITY_LABELS[v] ?? v
 }
 
+// Label status Dokumen Pendukung (PI/LS/MSDS/Lainnya) -- domain sama dengan
+// DOC_STATUS_OPTIONS/DOC_STATUS_LABEL di prfShared.js (FE), disalin di sini
+// karena card.ts (Edge Function Deno) tidak bisa mengimpor dari src/.
+const DOC_STATUS_LABELS: Record<string, string> = {
+  tidak_perlu: 'Tidak perlu',
+  tersedia: 'Tersedia',
+  belum_tersedia: 'Belum tersedia',
+  belum_diketahui: 'Belum diketahui',
+}
+
+function docStatusLabel(v: string | null): string | null {
+  if (!v) return null
+  return DOC_STATUS_LABELS[v] ?? v
+}
+
 // Layanan: Air Freight -> AIRPLANE, Inland/Trucking -> BUS, selain itu TICKET.
 function layananIcon(serviceType: string | null): KnownIcon {
   if (serviceType === 'air') return 'AIRPLANE'
@@ -114,6 +129,11 @@ export type PrfRow = {
   un_number: string | null
   imo_class: string | null
   msds_available: boolean | null
+  doc_pi_status: string | null
+  doc_ls_status: string | null
+  doc_msds_status: string | null
+  doc_other_status: string | null
+  doc_other_name: string | null
   commercial_currency: string | null
   commercial_value: number | null
   sea_container_types: string[] | null
@@ -312,16 +332,6 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const komoditas = commodityLabel(prf.commodity)
   const hsCode = prf.hs_code
   const barangBerbahaya = dangerousGoodsText(prf.un_number, prf.imo_class)
-  // MSDS hanya relevan (ditampilkan) kalau: commodity='dg' ATAU un_number/
-  // imo_class terisi ATAU msds_available=true -- msds_available sendiri
-  // DEFAULT false dan FE selalu mengirim nilai eksplisit (tidak pernah
-  // benar-benar NULL), jadi "terisi" literal akan selalu true dan baris ini
-  // akan selalu tampil bahkan utk PRF yang bukan dangerous-goods. Keputusan
-  // Den: gerbang relevansi di atas, bukan literal "kolom != null". Cek
-  // commodity='dg' memakai NILAI MENTAH (bukan label), nol dampak dari
-  // commodityLabel().
-  const msdsRelevant = prf.commodity === 'dg' || Boolean(prf.un_number) || Boolean(prf.imo_class) || prf.msds_available === true
-  const msds = msdsRelevant ? (prf.msds_available ? 'Tersedia' : 'Tidak tersedia') : null
   const nilaiKomersial =
     SHOW_COMMERCIAL_VALUE && prf.commercial_value !== null && prf.commercial_value !== undefined
       ? `${prf.commercial_currency ? prf.commercial_currency + ' ' : ''}${fmtIdNumber(prf.commercial_value)}`
@@ -332,8 +342,40 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
     row('Komoditas', komoditas, 'SHOPPING_CART'),
     row('HS Code', hsCode, 'DESCRIPTION'),
     row('Barang berbahaya', barangBerbahaya, 'STAR'),
-    row('MSDS', msds, 'DESCRIPTION'),
     row('Nilai komersial', nilaiKomersial, 'DOLLAR'),
+  ])
+
+  // d2. Dokumen Pendukung -- section TERPISAH (bukan baris di dalam Barang),
+  // diletakkan SESUDAH Barang. Hanya menampilkan dokumen berstatus SELAIN
+  // tidak_perlu/NULL (nol baris -> section() otomatis menyembunyikan section
+  // ini seluruhnya -- PRF barang umum yang keempat dokumennya 'tidak_perlu'
+  // tidak menampilkan section ini sama sekali).
+  function docRowValue(status: string | null): string | null {
+    if (!status || status === 'tidak_perlu') return null
+    return docStatusLabel(status)
+  }
+  // MSDS -- fallback KHUSUS kolom ini: kalau doc_msds_status masih NULL (PRF
+  // lama belum ter-backfill, atau backfill migrasi 20261101000006 belum
+  // dijalankan), jatuh ke gerbang relevansi LAMA (persis logika msdsRelevant
+  // sebelum migrasi ini) supaya PRF lama tidak diam-diam kehilangan sinyal
+  // MSDS-nya. PI/LS/Lainnya TIDAK punya fallback -- konsep baru, NULL cukup
+  // berarti "tidak tampil", titik.
+  const msdsFallbackRelevant = prf.commodity === 'dg' || Boolean(prf.un_number) || Boolean(prf.imo_class) || prf.msds_available === true
+  const msdsValue = prf.doc_msds_status != null
+    ? docRowValue(prf.doc_msds_status)
+    : (msdsFallbackRelevant ? (prf.msds_available ? 'Tersedia' : 'Tidak tersedia') : null)
+  const piValue = docRowValue(prf.doc_pi_status)
+  const lsValue = docRowValue(prf.doc_ls_status)
+  const lainnyaBase = docRowValue(prf.doc_other_status)
+  const lainnyaValue = lainnyaBase
+    ? (prf.doc_other_name ? `${lainnyaBase} — ${prf.doc_other_name}` : lainnyaBase)
+    : null
+
+  const sectionDokumen = section('Dokumen pendukung', [
+    row('PI (Persetujuan Impor)', piValue, 'DESCRIPTION'),
+    row('LS (Laporan Surveyor)', lsValue, 'DESCRIPTION'),
+    row('MSDS', msdsValue, 'DESCRIPTION'),
+    row('Lainnya', lainnyaValue, 'DESCRIPTION'),
   ])
 
   // e. Muatan -- tampilkan hanya yang terisi, apa pun service_type-nya.
@@ -377,7 +419,7 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   }
 
   const sections: Array<{ header?: string; widgets: unknown[] }> = [
-    sectionPemohon, sectionCustomer, sectionPengiriman, sectionBarang, sectionMuatan, sectionTambahan,
+    sectionPemohon, sectionCustomer, sectionPengiriman, sectionBarang, sectionDokumen, sectionMuatan, sectionTambahan,
   ].filter((s): s is { header?: string; widgets: Row[] } => s !== null)
   sections.push(sectionAksi)
 

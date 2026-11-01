@@ -14,7 +14,7 @@ import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import InquiryPicker from '../../components/InquiryPicker';
-import { COMMODITIES, ADD_ONS } from './prfShared';
+import { COMMODITIES, ADD_ONS, DOC_STATUS_OPTIONS } from './prfShared';
 // IMO_CLASSES dipindah ke inquiryOptions.js (Irisan Inquiry Putaran 15, Task 2) —
 // satu sumber kebenaran bersama InquiryIntakeWizardPage.jsx/DealDetailPage.jsx,
 // bukan salinan lokal yang harus disinkronkan manual.
@@ -170,7 +170,9 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
   const [form, setForm] = useState({
     customer_source: 'inquiry', account_id: '', inquiry_id: '',
     stream: '', deadline_quotation: '',
-    direction: '', commodity: '', goods_name: '', hs_code: '', msds_available: false,
+    direction: '', commodity: '', goods_name: '', hs_code: '',
+    doc_pi_status: 'tidak_perlu', doc_ls_status: 'tidak_perlu',
+    doc_msds_status: 'tidak_perlu', doc_other_status: 'tidak_perlu', doc_other_name: '',
     un_number: '', imo_class: '',
     service_type: '', incoterms: '', commercial_value: '', commercial_currency: '',
     origin: '', destination: '', pickup_address: '', delivery_address: '',
@@ -298,7 +300,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
     if (!editPrfId) return undefined;
     let cancelled = false;
     supabase.from('prf')
-      .select('id, prf_no, status, created_by, company_id, submitted_at, customer_source, account_id, account_name_manual, inquiry_id, stream, deadline_quotation, direction, commodity, goods_name, hs_code, msds_available, un_number, imo_class, service_type, incoterms, commercial_value, commercial_currency, origin, destination, pickup_address, delivery_address, add_on_services, add_on_others, cargo_ready_date, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, project_freight_types, project_qty, notes, inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)')
+      .select('id, prf_no, status, created_by, company_id, submitted_at, customer_source, account_id, account_name_manual, inquiry_id, stream, deadline_quotation, direction, commodity, goods_name, hs_code, doc_pi_status, doc_ls_status, doc_msds_status, doc_other_status, doc_other_name, un_number, imo_class, service_type, incoterms, commercial_value, commercial_currency, origin, destination, pickup_address, delivery_address, add_on_services, add_on_others, cargo_ready_date, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, project_freight_types, project_qty, notes, inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)')
       .eq('id', editPrfId).is('deleted_at', null).maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
@@ -311,7 +313,14 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
           customer_source: 'inquiry', account_id: data.account_id || '', inquiry_id: data.inquiry_id || '',
           stream: data.stream || '', deadline_quotation: data.deadline_quotation || '',
           direction: data.direction || '', commodity: data.commodity || '', goods_name: data.goods_name || '',
-          hs_code: data.hs_code || '', msds_available: !!data.msds_available,
+          hs_code: data.hs_code || '',
+          // NULL (PRF/draft lama sebelum migrasi 20261101000006) TIDAK
+          // dikoersi diam-diam jadi 'tidak_perlu' -- dibiarkan '' supaya
+          // select menampilkan "belum dideklarasikan" dan user memilih
+          // sendiri, bukan diam-diam dianggap sudah diputuskan "tidak perlu".
+          doc_pi_status: data.doc_pi_status ?? '', doc_ls_status: data.doc_ls_status ?? '',
+          doc_msds_status: data.doc_msds_status ?? '', doc_other_status: data.doc_other_status ?? '',
+          doc_other_name: data.doc_other_name || '',
           un_number: data.un_number || '', imo_class: data.imo_class || '',
           service_type: data.service_type || '', incoterms: data.incoterms || '',
           commercial_value: data.commercial_value != null ? String(data.commercial_value) : '',
@@ -380,6 +389,22 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
         : f.add_on_services,
     }));
   };
+  // Commodity change: SARAN otomatis (bukan paksaan) untuk dokumen pendukung
+  // yang relevan — hanya mengubah field yang MASIH 'tidak_perlu' (belum
+  // disentuh user secara eksplisit), tidak pernah menimpa pilihan user.
+  // 'dg' -> MSDS disarankan 'belum_diketahui'; 'special_permit' -> PI & LS
+  // disarankan 'belum_diketahui'. Commodity lain tidak memberi saran apa pun
+  // (tidak ada auto-revert balik ke 'tidak_perlu' kalau user pindah commodity).
+  const onCommodityChange = (e) => {
+    const commodity = e.target.value;
+    setForm(f => ({
+      ...f,
+      commodity,
+      doc_msds_status: (commodity === 'dg' && f.doc_msds_status === 'tidak_perlu') ? 'belum_diketahui' : f.doc_msds_status,
+      doc_pi_status: (commodity === 'special_permit' && f.doc_pi_status === 'tidak_perlu') ? 'belum_diketahui' : f.doc_pi_status,
+      doc_ls_status: (commodity === 'special_permit' && f.doc_ls_status === 'tidak_perlu') ? 'belum_diketahui' : f.doc_ls_status,
+    }));
+  };
   // Inquiry pick: store inquiry_id + auto-fill account_id + prefill field AMAN (fill-empty-only).
   const onInquiryPick = (inq) => {
     setForm(f => applyInquiryData({ ...f, inquiry_id: inq?.id || '', account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }, inq));
@@ -411,7 +436,9 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
     if (!form.direction) e.direction = 'Wajib diisi';
     if (!form.commodity) e.commodity = 'Wajib diisi';
     if (isImpExp && form.hs_code.length !== 8) e.hs_code = 'HS Code wajib 8 digit untuk import/export';
-    if (isDG && !form.msds_available) e.msds_available = 'MSDS wajib untuk Dangerous Good';
+    if (isDG && form.doc_msds_status !== 'tersedia' && form.doc_msds_status !== 'belum_tersedia') {
+      e.doc_msds_status = 'MSDS wajib dinyatakan "Tersedia" atau "Belum tersedia" untuk Dangerous Good';
+    }
     if (!form.service_type) e.service_type = 'Wajib diisi';
     if (!form.incoterms) e.incoterms = 'Wajib diisi';
     if (pickupReq && !form.pickup_address.trim()) e.pickup_address = 'Wajib untuk incoterm ini';
@@ -518,9 +545,19 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
         commodity: form.commodity || null,
         goods_name: form.goods_name || null,
         hs_code: form.hs_code || null,
-        msds_available: isDG ? !!form.msds_available : false,
-        // UN/IMO hanya disimpan saat kargo DG (mirror msds_available) — konsisten dgn field
-        // yang hanya tampil saat commodity=dg.
+        // Dokumen Pendukung — ditulis apa adanya untuk SEMUA PRF (bukan
+        // hanya saat DG; PI/LS/Lainnya tidak terkait commodity tertentu).
+        // msds_available (kolom lama) SENGAJA TIDAK ditulis lagi dari sini —
+        // doc_msds_status adalah sumber kebenaran baru (aturan "berhenti
+        // baca/tulis kolom lama dulu, baru drop" — drop-nya migrasi
+        // terpisah setelah ini terkonfirmasi live).
+        doc_pi_status: form.doc_pi_status || 'tidak_perlu',
+        doc_ls_status: form.doc_ls_status || 'tidak_perlu',
+        doc_msds_status: form.doc_msds_status || 'tidak_perlu',
+        doc_other_status: form.doc_other_status || 'tidak_perlu',
+        doc_other_name: (form.doc_other_status || 'tidak_perlu') === 'tidak_perlu' ? null : (form.doc_other_name.trim() || null),
+        // UN/IMO hanya disimpan saat kargo DG — konsisten dgn field yang
+        // hanya tampil saat commodity=dg.
         un_number: isDG ? (form.un_number || null) : null,
         imo_class: isDG ? (form.imo_class || null) : null,
         service_type: form.service_type || null,
@@ -597,6 +634,20 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
   const badgePreview = `PRF/${companyCode || '—'}/${year}/${monthRoman}/XXX`;
 
   const errText = (k) => errors[k] && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors[k]}</span>;
+
+  // Dokumen Pendukung — satu selector dipakai 3x (PI/LS/MSDS), "Lainnya"
+  // dirender terpisah di JSX karena punya input nama tambahan.
+  const docStatusField = (label, key, { required } = {}) => (
+    <Field label={label} required={required}>
+      <div style={{ position: 'relative' }}>
+        <select value={form[key]} onChange={set(key)} style={{ ...selInput, borderColor: errors[key] ? C.error : selInput.borderColor }}>
+          {form[key] === '' && <option value="">— (belum dideklarasikan) —</option>}
+          {DOC_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select><Chevron />
+      </div>
+      {errText(key)}
+    </Field>
+  );
 
   if (isEdit && editLoading) {
     return (
@@ -706,7 +757,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
                 </Field>
                 <Field label="Commodity" required>
                   <div style={{ position: 'relative' }}>
-                    <select value={form.commodity} onChange={set('commodity')} style={selInput}>
+                    <select value={form.commodity} onChange={onCommodityChange} style={selInput}>
                       <option value="">— Pilih commodity —</option>
                       {COMMODITIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select><Chevron />
@@ -727,15 +778,6 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
                   <input value={form.hs_code} onChange={(e) => setForm(f => ({ ...f, hs_code: e.target.value.replace(/\D/g, '').slice(0, 8) }))} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="00000000" inputMode="numeric" />
                   {errText('hs_code')}
                 </Field>
-                {isDG && (
-                  <Field label="MSDS" required>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 14px', borderRadius: 10, border: '1px solid ' + (errors.msds_available ? C.error : C.border), background: '#fff', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={form.msds_available} onChange={(e) => setForm(f => ({ ...f, msds_available: e.target.checked }))} style={{ width: 16, height: 16, accentColor: C.navy }} />
-                      <span style={{ fontSize: 14, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} color={C.orange} /> MSDS tersedia (wajib untuk Dangerous Good)</span>
-                    </label>
-                    {errText('msds_available')}
-                  </Field>
-                )}
               </div>
 
               {isDG && (
@@ -750,6 +792,30 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
                         {IMO_CLASSES.map(o => <option key={o} value={o}>{o}</option>)}
                       </select><Chevron />
                     </div>
+                  </Field>
+                </div>
+              )}
+
+              {/* Dokumen Pendukung — SELALU tampil (tak lagi khusus DG). PI/LS
+                  disarankan otomatis saat commodity='special_permit', MSDS
+                  saat commodity='dg' (lihat onCommodityChange) -- saran itu
+                  tidak pernah menimpa pilihan user yang sudah diubah. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <AlertTriangle size={14} color={C.orange} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: "'Montserrat',sans-serif" }}>Dokumen Pendukung</span>
+              </div>
+              <div style={grid2}>
+                {docStatusField('PI (Persetujuan Impor)', 'doc_pi_status')}
+                {docStatusField('LS (Laporan Surveyor)', 'doc_ls_status')}
+              </div>
+              <div style={grid2}>
+                {docStatusField('MSDS', 'doc_msds_status', { required: isDG })}
+                {docStatusField('Lainnya', 'doc_other_status')}
+              </div>
+              {form.doc_other_status !== 'tidak_perlu' && form.doc_other_status !== '' && (
+                <div style={grid2}>
+                  <Field label="Nama Dokumen Lainnya">
+                    <input value={form.doc_other_name} onChange={set('doc_other_name')} style={S.input} placeholder="cth: Sertifikat Fumigasi" />
                   </Field>
                 </div>
               )}
