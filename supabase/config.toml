@@ -24,3 +24,8 @@ entrypoint = "./functions/bnf-overdue-reminder/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/notify-sp-milestone/index.ts"
+
+[functions.notify-prf-space]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/notify-prf-space/index.ts"
