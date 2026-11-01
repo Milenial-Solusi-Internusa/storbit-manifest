@@ -18,6 +18,23 @@
 // Google Chat (tidak mendukung markup seperti decoratedText.text yang
 // mendukung <br>/<b>/dst) -- SENGAJA TIDAK di-escape di mana pun, termasuk
 // bagian `entitas` yang disisipkan ke subtitle.
+//
+// ── IKON WAJIB DI SETIAP BARIS ───────────────────────────────────────────────
+// SEMUA baris decoratedText WAJIB punya startIcon (rata kiri seragam) --
+// row() mensyaratkan parameter icon (tidak lagi opsional), diketik KnownIcon
+// (union literal, BUKAN string bebas) supaya nama ikon di luar daftar resmi
+// Google Chat GAGAL di `deno check` sebelum sempat jadi bug runtime (Google
+// menolak SELURUH kartu dengan HTTP 400 kalau satu nama ikon saja salah).
+// KNOWN_ICONS di bawah = daftar resmi yang diizinkan.
+const KNOWN_ICONS = [
+  'AIRPLANE', 'BOOKMARK', 'BUS', 'CAR', 'CLOCK', 'CONFIRMATION_NUMBER_ICON',
+  'DESCRIPTION', 'DOLLAR', 'EMAIL', 'EVENT_SEAT', 'FLIGHT_ARRIVAL',
+  'FLIGHT_DEPARTURE', 'HOTEL', 'HOTEL_ROOM_TYPE', 'INVITE', 'MAP_PIN',
+  'MEMBERSHIP', 'MULTIPLE_PEOPLE', 'PERSON', 'PHONE', 'RESTAURANT_ICON',
+  'SHOPPING_CART', 'STAR', 'STORE', 'TICKET', 'TRAIN', 'VIDEO_CAMERA',
+  'VIDEO_PLAY',
+] as const
+type KnownIcon = typeof KNOWN_ICONS[number]
 
 // Ubah ke false untuk menyembunyikan baris "Nilai komersial" dari kartu --
 // satu titik kontrol, bukan keputusan yang di-hardcode di tengah kode.
@@ -34,6 +51,41 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   custom: 'Customs Clearance',
   customs: 'Customs Clearance',
   project: 'Project Cargo',
+}
+
+// Label ramah direction. Nilai mentah dikonfirmasi 'import'/'export'/
+// 'domestic' (PRFFormPage.jsx DIRECTIONS). Nilai tak dikenal tampil apa adanya.
+const DIRECTION_LABELS: Record<string, string> = {
+  import: 'Import',
+  export: 'Ekspor',
+  domestic: 'Domestik',
+}
+
+// Label ramah commodity. Nilai tak dikenal tampil apa adanya.
+const COMMODITY_LABELS: Record<string, string> = {
+  general: 'General Cargo',
+  dg: 'Dangerous Goods',
+  special_permit: 'Special Permit (Lartas)',
+  perishable: 'Perishable',
+  valuable: 'Valuable',
+  pharma: 'Pharma',
+}
+
+function directionLabel(v: string | null): string | null {
+  if (!v) return null
+  return DIRECTION_LABELS[v] ?? v
+}
+
+function commodityLabel(v: string | null): string | null {
+  if (!v) return null
+  return COMMODITY_LABELS[v] ?? v
+}
+
+// Layanan: Air Freight -> AIRPLANE, Inland/Trucking -> BUS, selain itu TICKET.
+function layananIcon(serviceType: string | null): KnownIcon {
+  if (serviceType === 'air') return 'AIRPLANE'
+  if (serviceType === 'inland') return 'BUS'
+  return 'TICKET'
 }
 
 export type PrfRow = {
@@ -112,9 +164,18 @@ function fmtDateOnly(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { dateStyle: 'medium' })
 }
 
-// Timestamptz -- WIB eksplisit, bukan default zona server.
+// Timestamptz -- WIB eksplisit. Jam:menit dibangun manual via
+// formatToParts (bukan toLocaleString time-style) supaya pemisahnya PASTI
+// titik dua ("16:09"), bukan titik ("16.09") seperti default locale id-ID.
 function fmtDateTimeWib(iso: string): string {
-  return new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' }) + ' WIB'
+  const d = new Date(iso)
+  const datePart = d.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium' })
+  const parts = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d)
+  const hh = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const mm = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${datePart}, ${hh}:${mm} WIB`
 }
 
 function truncate(s: string, max: number): string {
@@ -122,22 +183,24 @@ function truncate(s: string, max: number): string {
   return t.length > max ? t.slice(0, max).trimEnd() + '…' : t
 }
 
-type Row = { decoratedText: { topLabel: string; text: string; wrapText: true; startIcon?: { knownIcon: string } } }
+type Row = { decoratedText: { topLabel: string; text: string; wrapText: true; startIcon: { knownIcon: KnownIcon } } }
 
 // Baris dengan nilai kosong/null TIDAK ditampilkan -- return null, disaring
 // oleh section(). Escape (&, <, >) terjadi DI SINI, satu kali, atas teks
-// MENTAH yang diteruskan pemanggil -- lihat catatan di kepala berkas.
-function row(topLabel: string, text: string | null, icon?: string): Row | null {
+// MENTAH yang diteruskan pemanggil -- lihat catatan di kepala berkas. icon
+// WAJIB diisi (bukan opsional) supaya SEMUA baris rata kiri seragam.
+function row(topLabel: string, text: string | null, icon: KnownIcon): Row | null {
   if (text === null || text === undefined) return null
   const t = String(text).trim()
   if (!t) return null
-  const decoratedText: Row['decoratedText'] = {
-    topLabel: escapeHtml(topLabel),
-    text: escapeHtml(t),
-    wrapText: true,
+  return {
+    decoratedText: {
+      topLabel: escapeHtml(topLabel),
+      text: escapeHtml(t),
+      wrapText: true,
+      startIcon: { knownIcon: icon },
+    },
   }
-  if (icon) decoratedText.startIcon = { knownIcon: icon }
-  return { decoratedText }
 }
 
 // Section yang SEMUA barisnya kosong TIDAK ditampilkan sama sekali.
@@ -186,6 +249,14 @@ function addOnsText(services: string[] | null, others: string | null): string | 
   return parts.length ? parts.join(' ') : null
 }
 
+// "UN 1263 · IMO kelas 3" -- tiap bagian hanya tampil kalau terisi.
+function dangerousGoodsText(unNumber: string | null, imoClass: string | null): string | null {
+  const parts: string[] = []
+  if (unNumber) parts.push(`UN ${unNumber}`)
+  if (imoClass) parts.push(`IMO kelas ${imoClass}`)
+  return parts.length ? parts.join(' · ') : null
+}
+
 // Fungsi MURNI -- nol I/O, nol jaringan. entitas/inquiryNo/linkUrl sudah
 // diresolusi pemanggil (companies/inquiries dibaca terpisah, non-fatal).
 // Seluruh teks di bawah diteruskan MENTAH ke row() -- escape terjadi di sana.
@@ -203,7 +274,7 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
 
   // b. Customer
   const akun = firstFilled(prf.accounts?.name, prf.account_name_manual)
-  const arusParts = [prf.direction, prf.stream].filter(Boolean) as string[]
+  const arusParts = [directionLabel(prf.direction), prf.stream].filter(Boolean) as string[]
   const arus = arusParts.length ? arusParts.join(' · ') : null
   const sumber = prf.customer_source
   const inquiryText = inquiryNo
@@ -211,7 +282,7 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const sectionCustomer = section('Customer', [
     row('Akun', akun, 'STORE'),
     row('Arus', arus, 'BOOKMARK'),
-    row('Sumber', sumber),
+    row('Sumber', sumber, 'MULTIPLE_PEOPLE'),
     row('Inquiry terkait', inquiryText, 'DESCRIPTION'),
   ])
 
@@ -227,27 +298,28 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const deadlineQuote = prf.deadline_quotation ? fmtDateOnly(prf.deadline_quotation) : null
 
   const sectionPengiriman = section('Pengiriman', [
-    row('Layanan', layanan, 'AIRPLANE'),
+    row('Layanan', layanan, layananIcon(prf.service_type)),
     row('Rute', rute, 'MAP_PIN'),
-    row('Alamat jemput', alamatJemput),
-    row('Alamat tujuan', alamatTujuan),
-    row('Incoterms', incoterms),
+    row('Alamat jemput', alamatJemput, 'MAP_PIN'),
+    row('Alamat tujuan', alamatTujuan, 'MAP_PIN'),
+    row('Incoterms', incoterms, 'DESCRIPTION'),
     row('Cargo ready', cargoReady, 'CLOCK'),
     row('Deadline quote', deadlineQuote, 'CLOCK'),
   ])
 
   // d. Barang
-  const barang = firstFilled(prf.goods_name, prf.commodity)
-  const komoditas = prf.commodity
+  const barang = firstFilled(prf.goods_name, commodityLabel(prf.commodity))
+  const komoditas = commodityLabel(prf.commodity)
   const hsCode = prf.hs_code
-  const dgParts = [prf.un_number, prf.imo_class].filter(Boolean) as string[]
-  const barangBerbahaya = dgParts.length ? dgParts.join(' · ') : null
+  const barangBerbahaya = dangerousGoodsText(prf.un_number, prf.imo_class)
   // MSDS hanya relevan (ditampilkan) kalau: commodity='dg' ATAU un_number/
   // imo_class terisi ATAU msds_available=true -- msds_available sendiri
   // DEFAULT false dan FE selalu mengirim nilai eksplisit (tidak pernah
   // benar-benar NULL), jadi "terisi" literal akan selalu true dan baris ini
   // akan selalu tampil bahkan utk PRF yang bukan dangerous-goods. Keputusan
-  // Den: gerbang relevansi di atas, bukan literal "kolom != null".
+  // Den: gerbang relevansi di atas, bukan literal "kolom != null". Cek
+  // commodity='dg' memakai NILAI MENTAH (bukan label), nol dampak dari
+  // commodityLabel().
   const msdsRelevant = prf.commodity === 'dg' || Boolean(prf.un_number) || Boolean(prf.imo_class) || prf.msds_available === true
   const msds = msdsRelevant ? (prf.msds_available ? 'Tersedia' : 'Tidak tersedia') : null
   const nilaiKomersial =
@@ -257,10 +329,10 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
 
   const sectionBarang = section('Barang', [
     row('Barang', barang, 'SHOPPING_CART'),
-    row('Komoditas', komoditas),
-    row('HS Code', hsCode),
-    row('Barang berbahaya', barangBerbahaya),
-    row('MSDS', msds),
+    row('Komoditas', komoditas, 'SHOPPING_CART'),
+    row('HS Code', hsCode, 'DESCRIPTION'),
+    row('Barang berbahaya', barangBerbahaya, 'STAR'),
+    row('MSDS', msds, 'DESCRIPTION'),
     row('Nilai komersial', nilaiKomersial, 'DOLLAR'),
   ])
 
@@ -274,13 +346,13 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const projectCargo = projectText(prf.project_freight_types, prf.project_qty)
 
   const sectionMuatan = section('Muatan', [
-    row('Kontainer', kontainer),
-    row('LCL', lcl),
-    row('Air cargo', airCargo),
-    row('Armada/berat', armada),
-    row('Dimensi', dimensi),
-    row('Jenis dokumen', jenisDokumen),
-    row('Project cargo', projectCargo),
+    row('Kontainer', kontainer, 'SHOPPING_CART'),
+    row('LCL', lcl, 'SHOPPING_CART'),
+    row('Air cargo', airCargo, 'SHOPPING_CART'),
+    row('Armada/berat', armada, 'BUS'),
+    row('Dimensi', dimensi, 'SHOPPING_CART'),
+    row('Jenis dokumen', jenisDokumen, 'TICKET'),
+    row('Project cargo', projectCargo, 'TICKET'),
   ])
 
   // f. Tambahan
@@ -288,11 +360,12 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const catatan = prf.notes && prf.notes.trim() ? truncate(prf.notes, 200) : null
 
   const sectionTambahan = section('Tambahan', [
-    row('Layanan tambahan', layananTambahan),
-    row('Catatan', catatan),
+    row('Layanan tambahan', layananTambahan, 'CONFIRMATION_NUMBER_ICON'),
+    row('Catatan', catatan, 'DESCRIPTION'),
   ])
 
-  // g. Section terakhir -- tombol saja, nol header.
+  // g. Section terakhir -- tombol saja, nol header, bukan decoratedText
+  // (buttonList tidak kena syarat startIcon).
   const sectionAksi = {
     widgets: [
       {

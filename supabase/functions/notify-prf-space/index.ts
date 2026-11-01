@@ -145,11 +145,22 @@ async function handler(req: Request): Promise<Response> {
 
     let sendError: string | null = null
     try {
-      const res = await fetch(webhookUrl, {
+      let res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cardPayload),
       })
+      if (res.status === 429) {
+        // Rate-limited oleh Google Chat -- tunggu sebentar, coba SEKALI lagi.
+        // HANYA 429 yang di-retry; status error lain langsung dilaporkan
+        // seperti sebelumnya, nol retry lain di luar ini.
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        res = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cardPayload),
+        })
+      }
       if (!res.ok) {
         // Sengaja TIDAK membaca/membocorkan body respons Google (bisa memuat
         // detail konfigurasi webhook) -- status code cukup untuk diagnosis.
