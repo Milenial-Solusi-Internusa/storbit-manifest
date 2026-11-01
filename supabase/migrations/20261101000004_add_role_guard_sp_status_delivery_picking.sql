@@ -67,14 +67,24 @@
 --          md5(prosrc) AS md5_live,
 --          md5(prosrc) <> expected AS mismatch
 --     FROM pg_proc, (VALUES
---       ('set_sp_status',     'd2626e9fcd5839083cf7eb6e644aaaf2'),
---       ('cancel_delivery',   '7d3ce25f47a65f7e8af85027824e6cf8'),
---       ('cancel_picking',    '1d8c4448997f85a63ca7b29e7928e5e4'),
---       ('dispatch_delivery', 'ede9f612f13f498748c42477c2a0ec36')
+--       ('set_sp_status',     '87b289bb50e133933c1ce0c792cbbe68'),
+--       ('cancel_delivery',   'ab427ff2e91e54535808d4ed15941983'),
+--       ('cancel_picking',    '6cca7bdbd59a6a7ccae20690447874b5'),
+--       ('dispatch_delivery', 'fe4390f9cf6a2dcbc352a0a1e2350329')
 --     ) AS basis(fn, expected)
 --    WHERE pronamespace = 'public'::regnamespace AND proname = basis.fn;
 --   -- Diharapkan: 4 baris, mismatch = false di SEMUANYA.
 --
+--   [Koreksi 1 Nov 2026] Keempat nilai di atas SUDAH DIGANTI -- nilai
+--   sebelumnya (d2626e9f.../7d3ce25f.../1d8c4448.../ede9f612...) SALAH.
+--   Nilai lama itu dihitung dari teks badan yang diekstrak dari
+--   schema_snapshot.sql (asumsi: teks di dump = prosrc verbatim), BUKAN
+--   dari md5(prosrc) yang sesungguhnya dijalankan ke staging/produksi --
+--   normalisasi spasi/whitespace hasil ekstraksi teks dump itu berbeda
+--   dari prosrc asli yang tersimpan di pg_proc, sehingga md5-nya ikut
+--   berbeda walau isi SQL-nya sama secara visual. Nilai BARU di atas
+--   sudah diverifikasi cocok dengan md5(prosrc) badan LIVE di KEDUA
+--   environment (staging dan produksi).
 -- Depends:   20261101000002/000003 (ACL) -- tidak wajib urutan eksekusi,
 --            tapi guard ini jadi SATU-SATUNYA pagar peran selama ACL belum
 --            diterapkan (anon/PUBLIC masih bisa memanggil tanpa ACL fix).
