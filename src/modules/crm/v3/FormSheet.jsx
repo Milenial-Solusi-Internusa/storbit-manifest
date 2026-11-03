@@ -36,8 +36,22 @@
        `children` hidup di dalam `<main>`, yang cuma kolom kiri, jadi
        `gridColumn:1/-1` di DALAM `<main>` tidak melebar apa-apa).
 
+   [Putaran D2 Inquiry] Prop BARU `headerCard` (boolean, default `false`,
+   byte-identik utk `CrmV3DemoPage.jsx` yang tak mengopernya). `true`
+   membungkus {kicker, judul+actions, toolbar/status} dalam SATU kartu
+   putih berbingkai -- nilai diukur LANGSUNG ke render mockup (bukan
+   ditebak): `background:#FFFFFF` (=`CARD`), `border:1px solid #D8E0D2`
+   (=`LINE`), `border-radius:14px` (=`RADIUS.lg`), `padding:16px` (=`SP.s4`),
+   `gap:16px` (=`SP.s4`) antar-blok di dalamnya. `{breadcrumb}` TETAP DI
+   LUAR kartu (dikonfirmasi markup mockup: breadcrumb + "Back to list"
+   muncul SEBELUM section berbingkai itu) -- jarak breadcrumb-ke-kartu
+   diukur TERPISAH = 20px (=`SP.s5`), BUKAN `SP.s3`(12px) yang dipakai
+   `<header>` saat `headerCard=false` (gap internal antar breadcrumb/
+   kicker/judul/toolbar/status tanpa kartu).
+
    ANATOMI (enam slot, semuanya opsional kecuali body):
      header      → nomor dokumen · judul · StatusBar/badge · aksi utama · toolbar
+                   (opsional dibungkus kartu putih via `headerCard`)
      headerAside → kolom kanan sejajar header, isi tergantung tab aktif (pemanggil)
      body        → slot Notebook (atau konten bebas)
      aside       → slot Chatter (kolom kanan persisten lintas tab) -- LAMA, tak diubah
@@ -98,12 +112,13 @@ import { DocNo } from './kit';
  * @param {Node}   [props.headerAside] - kolom kanan SEJAJAR HEADER, tidak sticky, isi tergantung tab aktif (pemanggil yang memutuskan)
  * @param {Node}   [props.footer]      - baris full-width paling bawah (mis. Comments)
  * @param {number|string} [props.maxWidth] - default 1240 (perilaku lama)
+ * @param {boolean} [props.headerCard] - [D2] bungkus header (minus breadcrumb) dalam kartu putih
  * @param {Node}   [props.breadcrumb]
  */
 export default function FormSheet({
   docNo, title, kicker, status, actions, meta,
   children, aside = null, headerAside = null, footer = null,
-  breadcrumb = null, toolbar = null, maxWidth = 1240,
+  breadcrumb = null, toolbar = null, maxWidth = 1240, headerCard = false,
   // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): urutan status/
   // toolbar di bawah ini selalu status-dulu -- cocok utk pemakai lama, tapi
   // mockup Inquiry Management.dc.html menaruh metric-row (slot `toolbar`
@@ -129,61 +144,84 @@ export default function FormSheet({
              (supaya kolom kanan lama, `aside`, tetap sejajar BODY -- pola
              SalesOrderDetailPage). Kalau `headerAside` terisi, header
              menyusut jadi kolom kiri saja supaya `headerAside` bisa duduk
-             sejajarnya di kolom kanan, baris yang sama. ── */}
-      <header style={{ gridColumn: headerAside ? 'auto' : '1 / -1', display: 'flex', flexDirection: 'column', gap: SP.s3, minWidth: 0 }}>
+             sejajarnya di kolom kanan, baris yang sama.
+             [D2] `gap` berubah 12px→20px (`SP.s3`→`SP.s5`) HANYA saat
+             `headerCard=true` -- jarak breadcrumb-ke-kartu di mockup BEDA
+             dari jarak antar-blok di dalam header lama (lihat komentar
+             anatomi `headerCard` di atas file). ── */}
+      <header style={{ gridColumn: headerAside ? 'auto' : '1 / -1', display: 'flex', flexDirection: 'column', gap: headerCard ? SP.s5 : SP.s3, minWidth: 0 }}>
         {breadcrumb}
 
-        {kicker && (
-          <div style={{
-            fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700,
-            letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT,
-          }}>
-            {kicker}
-          </div>
-        )}
+        {/* [D2] `headerInner` = SATU sumber kebenaran utk isi header selain
+            breadcrumb -- dibungkus kartu putih saat `headerCard=true`
+            (nilai diukur mockup, lihat komentar anatomi di atas file),
+            atau dirender APA ADANYA (Fragment, nol DOM tambahan) saat
+            `false` -- byte-identik dgn perilaku SEBELUM `headerCard` ada. */}
+        {(() => {
+          const headerInner = (
+            <>
+              {kicker && (
+                <div style={{
+                  fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700,
+                  letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT,
+                }}>
+                  {kicker}
+                </div>
+              )}
 
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s4, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <h1 style={{
-              margin: 0, fontFamily: FONT_HEAD, fontSize: 30, fontWeight: 700,
-              letterSpacing: '-.01em', color: INK, lineHeight: 1.15,
-            }}>
-              {title}
-            </h1>
-            {(docNo || meta) && (
-              <div style={{ marginTop: SP.s2, display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
-                {docNo && <DocNo>{docNo}</DocNo>}
-                {meta}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s4, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  <h1 style={{
+                    margin: 0, fontFamily: FONT_HEAD, fontSize: 30, fontWeight: 700,
+                    letterSpacing: '-.01em', color: INK, lineHeight: 1.15,
+                  }}>
+                    {title}
+                  </h1>
+                  {(docNo || meta) && (
+                    <div style={{ marginTop: SP.s2, display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
+                      {docNo && <DocNo>{docNo}</DocNo>}
+                      {meta}
+                    </div>
+                  )}
+                </div>
+
+                {actions && (
+                  <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {actions}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {actions && (
-            <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
-              {actions}
+              {/* ── `toolbar` — SLOT BARU, 4 September 2026 ───────────────────────
+                  Baris aksi dokumen. Ditaruh di dalam <header> (yang membentang DUA
+                  kolom) dan BUKAN di `children`, karena `children` hanya menempati
+                  kolom kiri: dengan `aside` terpasang, lebarnya cuma ~766px dari 1240px
+                  header. Diukur langsung di browser: satu baris tujuh tombol aksi
+                  Detail Deal butuh 986px, sehingga di kolom kiri ia SELALU pecah dua
+                  baris — di lebar layar mana pun, bukan hanya layar sempit. Mengecilkan
+                  tombol tak menolong: varian paling agresif (nol ikon, padding 10,
+                  font 12) masih 768px.
+                  `actions` TIDAK bisa dipakai untuk ini — slot itu duduk sebaris dengan
+                  judul dan berbagi lebar dengannya. Dua slot ini memang beda peran:
+                  `actions` untuk beberapa aksi pendek di sebelah judul, `toolbar` untuk
+                  baris aksi selebar dokumen. ──
+                  Urutan terhadap `status` di bawah ini DUA ARAH, lihat `toolbarFirst`
+                  di signature komponen -- defaultnya status dulu (perilaku lama),
+                  dibalik hanya kalau pemanggil eksplisit minta. ── */}
+              {toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+              {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
+              {!toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+            </>
+          );
+          return headerCard ? (
+            <div style={{
+              background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.lg,
+              padding: SP.s4, display: 'flex', flexDirection: 'column', gap: SP.s4,
+            }}>
+              {headerInner}
             </div>
-          )}
-        </div>
-
-        {/* ── `toolbar` — SLOT BARU, 4 September 2026 ───────────────────────
-            Baris aksi dokumen. Ditaruh di dalam <header> (yang membentang DUA
-            kolom) dan BUKAN di `children`, karena `children` hanya menempati
-            kolom kiri: dengan `aside` terpasang, lebarnya cuma ~766px dari 1240px
-            header. Diukur langsung di browser: satu baris tujuh tombol aksi
-            Detail Deal butuh 986px, sehingga di kolom kiri ia SELALU pecah dua
-            baris — di lebar layar mana pun, bukan hanya layar sempit. Mengecilkan
-            tombol tak menolong: varian paling agresif (nol ikon, padding 10,
-            font 12) masih 768px.
-            `actions` TIDAK bisa dipakai untuk ini — slot itu duduk sebaris dengan
-            judul dan berbagi lebar dengannya. Dua slot ini memang beda peran:
-            `actions` untuk beberapa aksi pendek di sebelah judul, `toolbar` untuk
-            baris aksi selebar dokumen. ──
-            Urutan terhadap `status` di bawah ini DUA ARAH, lihat `toolbarFirst`
-            di signature komponen -- defaultnya status dulu (perilaku lama),
-            dibalik hanya kalau pemanggil eksplisit minta. ── */}
-        {toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
-        {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
-        {!toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+          ) : headerInner;
+        })()}
       </header>
 
       {/* ── Header-aside: sejajar <header>, BUKAN sticky (lihat komentar

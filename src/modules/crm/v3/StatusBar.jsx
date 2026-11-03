@@ -13,6 +13,17 @@
    NOTCH, logika isPast/isNow/allDone, early-return `closed` yang SUDAH
    dicabut 4 Sep tetap tercabut).
 
+   [Putaran D2 Inquiry] Prop BARU `plain` (default `false`, byte-identik
+   untuk pemanggil yang tak mengopernya -- `CrmV3DemoPage.jsx`). `plain=true`
+   dipakai `DealDetailPage.jsx` supaya cocok mockup Inquiry Management.dc.html
+   (segmen `stagesBar` di sana HANYA merender `{{g.name}}`, tanpa nomor/
+   centang; dan slot penutup TIDAK PERNAH menampilkan placeholder apa pun
+   saat `showEndStage` false -- beda dari default lama yang selalu menulis
+   "Not closed"). Efeknya DUA: (1) span nomor/centang per segmen tidak
+   dirender -- HANYA label; (2) saat `closed` kosong, slot penutup (dan
+   garis pemisahnya) tidak dirender SAMA SEKALI, bukan diganti teks lain.
+   Kontrak (`stages`/`current`/`closed`/`compact`) TIDAK berubah.
+
    TIGA KEADAAN SEGMEN (nilai baru, pola identik src/kit/Data.jsx StatusBar):
      dilewati → latar ACCENT, teks INK, penanda centang
      aktif    → latar ACCENT_2, teks INK, penanda nomor urut, ber-drop-shadow
@@ -65,7 +76,19 @@ const NOTCH = { normal: 18, compact: 14 };
    kosakata penutupan tetap terkumpul di satu tempat, tidak berserak ke badan
    render. Penutupan TANPA `done` (kalah/batal) membiarkan segmen apa adanya.
 
+   ⚠️ [Putaran D2 Inquiry] `CLOSED_STYLE.WON` di bawah TIDAK LAGI dipakai
+   `DealDetailPage.jsx` -- sejak D2, WON direpresentasikan sebagai segmen
+   KE-5 ("Won") yang aktif (`current:'WON'`, `closed:null`), persis mockup
+   (`stagesBar` di sana TIDAK punya penanda penutupan terpisah untuk Won,
+   hanya LOST/CANCELLED -- lihat `showEndStage: st==='Lost'||st==='Cancelled'`).
+   Entri `WON` DIPERTAHANKAN di `CLOSED_STYLE` (komponen generik, kontrak
+   `closed.stage` tetap menerima nilai apa pun) -- hanya pemanggil
+   produksinya yang berhenti mengirim `closed` berisi WON.
+
    ⚠️ ASIMETRI WON vs LOST/CANCELLED — DISENGAJA, BUKAN INKONSISTENSI.
+   (Paragraf di bawah historis, menjelaskan `CLOSED_STYLE.WON` SEBELUM D2 --
+   dipertahankan karena jalur `closed.stage==='WON'` tetap bagian kontrak
+   generik komponen, sekalipun tidak dipakai lagi hari ini.)
    WON merender keempat segmen TUNTAS; LOST dan CANCELLED merender keempatnya
    BELUM-DIJANGKAU. Bedanya bukan kelalaian, melainkan beda jenis pernyataan:
      - WON menyatakan HASIL — rantainya selesai. Itu sah tanpa data riwayat
@@ -90,8 +113,10 @@ const CLOSED_STYLE = {
  * @param {Object}   [props.closed] - { stage, label } bila sumbu sudah ditutup.
  *                                    `stage` dipakai untuk mencari gaya penanda.
  * @param {boolean}  [props.compact] - versi rapat untuk header padat
+ * @param {boolean}  [props.plain]   - [D2] tanpa nomor/centang per segmen,
+ *                                     dan tanpa placeholder "Not closed"
  */
-export default function StatusBar({ stages = [], current, closed = null, compact = false }) {
+export default function StatusBar({ stages = [], current, closed = null, compact = false, plain = false }) {
   const notch = compact ? NOTCH.compact : NOTCH.normal;
   const height = compact ? 40 : 52;
   const labelSize = compact ? 10 : 11;
@@ -143,12 +168,14 @@ export default function StatusBar({ stages = [], current, closed = null, compact
               filter: isNow ? SHADOW_DROP : undefined,
             }}
           >
-            <span
-              aria-hidden="true"
-              style={{ fontFamily: FONT_HEAD, fontSize: markSize, fontWeight: 700, lineHeight: 1 }}
-            >
-              {isPast ? '✓' : i + 1}
-            </span>
+            {!plain && (
+              <span
+                aria-hidden="true"
+                style={{ fontFamily: FONT_HEAD, fontSize: markSize, fontWeight: 700, lineHeight: 1 }}
+              >
+                {isPast ? '✓' : i + 1}
+              </span>
+            )}
             <span
               style={{
                 fontFamily: FONT_HEAD, fontSize: labelSize, fontWeight: tone.weight,
@@ -161,8 +188,11 @@ export default function StatusBar({ stages = [], current, closed = null, compact
         );
       })}
 
-      {/* Pemisah — hanya berarti kalau memang ada segmen di kirinya. */}
-      {stages.length > 0 && (
+      {/* Pemisah — hanya berarti kalau memang ada segmen di kirinya DAN ada
+          sesuatu di kanannya untuk dipisah. [D2] `plain` + `closed` kosong =
+          mockup tidak merender apa pun di slot ini (bukan "Not closed") --
+          pemisahnya pun ikut tidak dirender, supaya tidak menggantung. */}
+      {stages.length > 0 && (closed || !plain) && (
         <span aria-hidden="true" style={{ width: 1, height: height - 16, background: LINE, margin: '0 14px' }} />
       )}
 
@@ -178,7 +208,7 @@ export default function StatusBar({ stages = [], current, closed = null, compact
         >
           {closed.label}
         </span>
-      ) : (
+      ) : !plain ? (
         <span
           style={{
             fontFamily: FONT_HEAD, fontSize: closeSize, fontWeight: 600,
@@ -187,7 +217,7 @@ export default function StatusBar({ stages = [], current, closed = null, compact
         >
           Not closed
         </span>
-      )}
+      ) : null}
     </div>
   );
 }

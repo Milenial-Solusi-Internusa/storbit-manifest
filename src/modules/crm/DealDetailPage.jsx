@@ -159,16 +159,26 @@ const SOURCE_LABEL = {
 
 // Papan Pipeline nanti butuh daftar tahap yang SAMA PERSIS dengan ini; konsolidasinya
 // (ke tokens.js atau modul bersama) menunggu Batch B3 — jangan disatukan sekarang.
-// Empat tahap AKTIF sumbu deal (`inquiries.status`). WON/LOST/CANCELLED sengaja TIDAK
-// di sini: ketiganya penanda penutupan di ujung kanan StatusBar, bukan segmen.
-// DEAL_STATUS_ORDER di v3/tokens.js TIDAK dipakai — isinya lima, termasuk WON.
+// [Putaran D2 Inquiry, KOREKSI atas komentar lama] LIMA tahap, TERMASUK WON --
+// diukur langsung ke mockup Inquiry Management.dc.html (`PATH` = Open/In Review/
+// Quoted/Negotiation/Won, `stagesBar = PATH.map(...)`). WON dulu di sini sengaja
+// DIKELUARKAN karena dianggap "penanda penutupan", tapi mockup TIDAK memperlakukan
+// Won begitu: `showEndStage` (badge ujung kanan) HANYA `st==='Lost'||st==='Cancelled'`
+// -- Won TIDAK PERNAH memicu badge, ia cuma segmen ke-5 yang jadi "current" saat
+// tercapai, persis segmen lain. LOST/CANCELLED TETAP di luar array ini (lihat
+// DEAL_CLOSED_STATUS) -- keduanya tetap penanda penutupan terpisah, TIDAK diubah.
+// DEAL_STATUS_ORDER di v3/tokens.js TIDAK dipakai — isinya lima juga, tapi sumber beda.
 const DEAL_STAGE_SEGMENTS = [
   { id: 'OPEN',        label: STATUS_LABEL.OPEN },
   { id: 'IN_REVIEW',   label: STATUS_LABEL.IN_REVIEW },
   { id: 'QUOTED',      label: STATUS_LABEL.QUOTED },
   { id: 'NEGOTIATION', label: STATUS_LABEL.NEGOTIATION },
+  { id: 'WON',         label: STATUS_LABEL.WON },
 ];
-const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
+// [Putaran D2] WON DICABUT dari sini -- lihat komentar DEAL_STAGE_SEGMENTS di atas.
+// `closed` jadi otomatis `null` untuk WON begitu array ini mengecil (nol perubahan
+// tambahan diperlukan di titik pemanggilan <StatusBar closed={...}/> di bawah).
+const DEAL_CLOSED_STATUS = ['LOST', 'CANCELLED'];
 
 // TD-318 Irisan 2 Inquiry, commit 2: "Inquiry Age" metric row. Fungsi MODUL
 // (bukan di badan komponen) -- pola persis `ageDays()` InquiryListPage.jsx:96,
@@ -1924,10 +1934,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       )}
     </div>
   );
+  // [Putaran D2] Teks disamakan PERSIS mockup (:405, `noQuotes`) -- satu
+  // kalimat, bukan dua baris judul+sub seperti sebelumnya.
   const quotationsEmptyTextEl = (
-    <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY }}>
-      <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>No quotations yet</div>
-      <div style={{ fontSize: 12.5, marginTop: 4 }}>Quotations created from this inquiry will appear here.</div>
+    <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY, fontSize: 13.5 }}>
+      No quotation has been created for this inquiry yet.
     </div>
   );
 
@@ -2016,9 +2027,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           (bukan cuma dibaca dari markup `.dc.html`, yang tag-nya tak selalu
           merepresentasikan posisi visual CSS grid-area). Collapse di bawah
           1024px tetap lewat `.nx-grid-2`/`.nx-stack` (kit, nol CSS baru) --
-          `headerAside`/`footer` ikut mekanisme yang sama. */}
+          `headerAside`/`footer` ikut mekanisme yang sama.
+          [Putaran D2] `headerCard` -- header (judul s/d Next step) kini
+          dibungkus kartu putih berbingkai, nilai diukur mockup (lihat
+          komentar `headerCard` di FormSheet.jsx). */}
       <FormSheet
         maxWidth="none"
+        headerCard
         headerAside={headerAsideContent}
         breadcrumb={<Breadcrumb onBack={onBack} />}
         // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): mockup
@@ -2032,9 +2047,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            FormSheet 30px/700/sans) -- dioverride lewat span sendiri di
            dalam h1 kit, nol perubahan ke FormSheet.jsx (satu-satunya
            pemakai produksi hari ini, tapi kontraknya tetap dijaga generik).
-           Warna navy (brand task ini), BUKAN sage mockup -- CRM belum
-           migrasi kit (CLAUDE.md), dan instruksi eksekusi ini eksplisit
-           minta navy/orange/cream. `kicker` = label "INQUIRY" di atas h1
+           [Putaran D2, KOREKSI] Warna `C.navy` dulu dicatat di sini sebagai
+           "BUKAN sage mockup" -- itu BASI sejak Putaran 16a: `C` = `DEAL_C`
+           dari `inquiryTheme.js`, dan `DEAL_C.navy` dipetakan ke `INK` (token
+           sage, `#33422B`) -- SAMA PERSIS warna H1 mockup (`:279`,
+           `color:#33422B`). Warnanya SUDAH sage sejak itu; nama variabel
+           `navy` hanya sisa penamaan lama, nol dampak visual. `kicker` = label "INQUIRY" di atas h1
            (mockup :278, data-rule="7") -- slot FormSheet yang sudah ada,
            sebelumnya tidak dipakai. `docNo` dicabut -- nomornya sudah
            pindah ke title, menampilkannya dua kali akan duplikasi. */
@@ -2337,7 +2355,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            `inquiry_status_history`, dan menyimpulkannya
            dari keberadaan quotation adalah jawaban separuh — keempat segmennya
            dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
-           WON menutup dengan `done` sehingga keempatnya tercentang.
+           ⚠️ [Putaran D2, KOREKSI] Kalimat "WON menutup dengan `done` sehingga
+           keempatnya tercentang" SUDAH TIDAK BERLAKU -- WON kini segmen KE-5
+           (`DEAL_STAGE_SEGMENTS`), bukan lagi lewat `closed`/`done`. `closed`
+           sekarang HANYA terisi untuk LOST/CANCELLED (lihat `DEAL_CLOSED_STATUS`)
+           -- paragraf berikutnya soal LOST/CANCELLED TETAP berlaku apa adanya.
            ⚠️ Komentar ini SEMPAT menyebut `inquiry_status_history` "staging-only
            (TD-225)". Sudah TIDAK BERLAKU: tabel + trigger `trg_z_log_inquiry_status_change`
            LIVE di produksi sejak 7 Sep 2026 (migrasi `20260828000001`). Dikoreksi
@@ -2345,10 +2367,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            jadi deal lama tetap tak punya jejak transisi. */
         status={(
           <>
+            {/* [Putaran D2] `plain` -- tanpa nomor/centang per segmen, tanpa
+                teks "Not closed", persis mockup (lihat komentar `plain` di
+                StatusBar.jsx). `closed` kini otomatis `null` untuk WON begitu
+                `DEAL_CLOSED_STATUS` mengecil jadi LOST/CANCELLED saja. */}
             <StatusBar
               stages={DEAL_STAGE_SEGMENTS}
               current={dealStatus}
               closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: STATUS_LABEL[dealStatus] || dealStatus } : null}
+              plain
             />
             {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: DocumentFlow
                 DIPINDAH ke sini dari dalam tab Overview -- terbukti dari
@@ -3525,8 +3552,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           posisi lama -- dikonfirmasi render mockup berdata juga (satu kolom
           penuh, Related Documents di bawah, rata kiri). `relatedDocsEl`
           dipakai di SINI dan di `headerAside` supaya satu sumber kebenaran,
-          nol duplikasi definisi JSX. */}
-      {tab !== 'overview' && relatedDocsEl}
+          nol duplikasi definisi JSX.
+          [Putaran D2] `alignSelf:'flex-start'` -- kartu ini di mockup TIDAK
+          melebar (nol `width`/`flex` eksplisit di style-nya, diukur
+          `getBoundingClientRect`: lebarnya murni mengikuti konten, ~497px
+          utk record berisi quotation @1593px, BUKAN angka tetap). `children`
+          pembungkusnya (div di atas, `flexDirection:'column'`) ber-
+          `alignItems` default `stretch`, yang memaksa kartu ini melebar
+          penuh -- `alignSelf` di SINI menimpanya TANPA menyentuh
+          `RelatedDocuments.jsx` (yang stylingnya sendiri, border/radius/
+          padding/grid Upstream-Downstream, SUDAH benar apa adanya -- grid
+          `auto-fit minmax(340px,1fr)`-nya otomatis jatuh SATU kolom begitu
+          kartu tak lagi dipaksa lebar, persis "Upstream di atas Downstream"
+          yang diminta, nol perubahan di file itu). */}
+      {tab !== 'overview' && (
+        <div style={{ alignSelf: 'flex-start' }}>{relatedDocsEl}</div>
+      )}
       </div>
       </FormSheet>
       {/* Ganti penawaran vendor terpilih — konfirmasi HANYA saat mengganti pilihan lama */}
