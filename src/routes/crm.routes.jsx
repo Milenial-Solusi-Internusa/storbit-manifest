@@ -85,7 +85,6 @@ const RiwayatVisitPage       = lazy(() => import('@/modules/crm/RiwayatVisitPage
 const LeadAssignmentPage     = lazy(() => import('@/modules/crm/lead/pages/LeadAssignmentPage'));
 const CRMReportPage          = lazy(() => import('@/modules/crm/CRMReportPage'));
 const RateListPage           = lazy(() => import('@/modules/crm/RateListPage'));
-const OptionRequestsPage     = lazy(() => import('@/modules/crm/OptionRequestsPage'));
 const PRFFormPage            = lazy(() => import('@/modules/procurement/PRFFormPage'));
 const PRFDetailPage          = lazy(() => import('@/modules/procurement/PRFDetailPage'));
 const SalesOrderDocListPage   = lazy(() => import('@/modules/sales-order/SalesOrderDocListPage'));
@@ -191,16 +190,6 @@ function CrmReportRoute() {
 function RateListRoute() {
   const { showToast } = useAppShell();
   return <Boundary title="Rate List temporarily unavailable"><RateListPage showToast={showToast} /></Boundary>;
-}
-
-// Option Requests (Irisan 5) -- gate halaman (NoAccess vs hasAccess)
-// dihitung DI DALAM OptionRequestsPage lewat isManagerOrAbove(erpRoles) via
-// useAuth() langsung (plan §10.9) -- wrapper ini hanya meneruskan showToast,
-// pola sama RateListRoute. ModuleShell (gate konten sidebar/deep-link) sudah
-// benar lewat canAccessActiveMenu (App.jsx, threading isManagerOrAboveUser).
-function OptionRequestsRoute() {
-  const { showToast } = useAppShell();
-  return <Boundary title="Option Requests temporarily unavailable"><OptionRequestsPage showToast={showToast} /></Boundary>;
 }
 
 // ============================================================================
@@ -772,7 +761,6 @@ export const crmRoutes = [
 
       { path: MENU_PATHS['reporting-sales'],        handle: { menuId: 'reporting-sales' },        element: <CrmReportRoute /> },
       { path: MENU_PATHS['crm-rate-list'],          handle: { menuId: 'crm-rate-list' },          element: <RateListRoute /> },
-      { path: MENU_PATHS['crm-option-requests'],    handle: { menuId: 'crm-option-requests' },    element: <OptionRequestsRoute /> },
 
       { path: P_SO,                                 handle: { menuId: 'crm-sales-order' },        element: <SalesOrderDocListRoute /> },
       { path: `${P_SO}/new`,                        handle: { menuId: 'crm-sales-order' },        element: <SalesOrderDocFormRoute /> },

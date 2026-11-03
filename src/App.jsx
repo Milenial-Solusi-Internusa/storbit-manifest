@@ -448,15 +448,6 @@ const CRM_MENU_ITEMS = [
   { id: 'crm-inquiry-owner-assignment', label: 'Inquiry Owner Assignment', icon: Users },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
-  // Option Requests (Irisan 5, TD-318 item #18) — gate BUKAN hasMenuPermission
-  // key (keputusan Den, plan Irisan 5 §10.9: role-level langsung, supaya
-  // SEMUA manager ke atas otomatis bisa membuka tanpa seeding izin per-user
-  // ke role_menu_permissions). `public: true` di sini TIDAK membuat halaman
-  // ini publik — ia hanya membuat navHasGate() mengenali id ini sebagai
-  // "gated" sehingga diserahkan ke canSeeMenuItem, yang lalu meng-override-nya
-  // dengan isManagerOrAboveUser SEBELUM mencapai cabang public:true generik.
-  // Pola persis BNF/Meeting Mingguan (lihat komentar id:'bnf' di atas).
-  { id: 'crm-option-requests', label: 'Option Requests', icon: ClipboardCheck, public: true },
   // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —
   // sekarang grup top-level tersendiri 'Shared Reference' di ERP_MENU_GROUPS,
   // dirender sbg leaf 'nav-rate-list' di NEXUS_NAV 'Shared Services'.
@@ -1253,6 +1244,12 @@ const DETAIL_OVERLAY_IDS = ['assets-detail', 'product-detail'];
 // 20260911000003). Jangan tambahkan properti `role` pada item menu lagi;
 // ia tidak akan dievaluasi.
 // Item tanpa gate apa pun (tanpa public/menuKey) disembunyikan.
+// isManagerOrAboveUser kini tanpa konsumen di badan fungsi ini (satu-satunya
+// cabang yang memakainya, id:'crm-option-requests', dihapus bersama halaman
+// Option Requests) -- parameter DIPERTAHANKAN karena dialirkan luas lewat
+// navChildGate/navModuleVisible/navModuleHasLivePage/isMenuAccessible (pola
+// sama isBnfAuthorized) untuk gate role-level berikutnya yang serupa BNF.
+// eslint-disable-next-line no-unused-vars
 const canSeeMenuItem = (item, hasMenuPermission, isBnfAuthorized, isManagerOrAboveUser) => {
   if (item.section) return true;
   // BNF (2026-08-11) + Meeting Mingguan (2026-08-12): public:true alone is
@@ -1261,10 +1258,6 @@ const canSeeMenuItem = (item, hasMenuPermission, isBnfAuthorized, isManagerOrAbo
   // purely so navHasGate() still recognizes them as gated; see their
   // comments in ERP_MENU_GROUPS.
   if (item.id === 'bnf' || item.id === 'meeting-mingguan') return !!isBnfAuthorized;
-  // Option Requests (Irisan 5) — pola PERSIS BNF di atas: `public:true`
-  // hanya supaya navHasGate() mengenalinya sbg gated, keputusan sebenarnya
-  // role-level langsung (isManagerOrAbove di lib/roles.js), bukan menu key.
-  if (item.id === 'crm-option-requests') return !!isManagerOrAboveUser;
   // Item ber-flag public terlihat untuk semua authenticated user.
   if (item.public === true) return true;
   // Sistema baru: per-user menu permission check
@@ -1453,7 +1446,6 @@ function NexusSidebar({
   profile, currentRoleLabel, isSuperAdminUser = false, isManagerOrAboveUser = false,
   asDrawer = false, isOpen = false, onClose,
   leadPoolPendingCount = 0,
-  optionRequestsPendingCount = 0,
 }) {
   // An item is "gated" only if it carries an explicit access rule (public flag
   // or a MENU_KEY_MAP entry — sejak 11 Sep 2026 tidak ada rezim lain). The OLD sidebar
@@ -1593,15 +1585,6 @@ function NexusSidebar({
                 {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
               </span>
             )}
-            {/* Badge Level 2 "Option Requests" (Irisan 5, pola PERSIS Lead
-                Pool di atas) -- id Level 2 = l2-1-11 (code "1.11"). Cross-
-                entity (plan §5b/§6b): TANPA scoping company, beda dari Lead
-                Pool yang di-scope per entitas pemegang izin. */}
-            {c.id === 'l2-1-11' && optionRequestsPendingCount > 0 && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
-                {optionRequestsPendingCount > 99 ? '99+' : optionRequestsPendingCount}
-              </span>
-            )}
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
@@ -1634,13 +1617,6 @@ function NexusSidebar({
         {c.id === 'crm-lead-pool' && leadPoolPendingCount > 0 && (
           <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
             {leadPoolPendingCount > 99 ? '99+' : leadPoolPendingCount}
-          </span>
-        )}
-        {/* Badge Level 3 "Option Requests" (Irisan 5) -- cross-entity, lihat
-            komentar badge Level 2 di atas. */}
-        {c.id === 'crm-option-requests' && optionRequestsPendingCount > 0 && (
-          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 8, background: '#F8ECCF', color: '#8E620D', flexShrink: 0 }}>
-            {optionRequestsPendingCount > 99 ? '99+' : optionRequestsPendingCount}
           </span>
         )}
       </button>
@@ -2089,54 +2065,6 @@ export default function StorbitManifest() {
     };
   }, [profile?.id, authErpRoles, hasMenuPermission]);
 
-  // ── Sidebar badge: Option Requests pending count (Irisan 5) ────────────────
-  // Gate = isManagerOrAboveUser (role-level langsung, plan §10.9) -- BUKAN
-  // hasMenuPermission key seperti Lead Pool di atas, jadi nol RPC per-entitas
-  // diperlukan: hitung LANGSUNG dari dropdown_option_requests TANPA filter
-  // company (cross-entity, plan §5b/§6b -- daftar request itu sendiri tak
-  // dibatasi per entitas, RLS SELECT-nya pun begitu). Pola polling/event/
-  // visibilitychange PERSIS Lead Pool di atas.
-  const [optionRequestsPendingCount, setOptionRequestsPendingCount] = useState(0);
-  const optionRequestsCountRef = useRef(null);
-  useEffect(() => {
-    if (!profile?.id || !isManagerOrAboveUser) {
-      if (optionRequestsCountRef.current !== 0) { optionRequestsCountRef.current = 0; setOptionRequestsPendingCount(0); }
-      return undefined;
-    }
-    let cancelled = false;
-    const applyCount = (n) => {
-      if (cancelled) return;
-      if (n !== optionRequestsCountRef.current) { optionRequestsCountRef.current = n; setOptionRequestsPendingCount(n); }
-    };
-    const fetchCount = async () => {
-      try {
-        const { count, error } = await supabase.from('dropdown_option_requests')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'pending');
-        if (error) throw error;
-        applyCount(count || 0);
-      } catch (e) {
-        console.debug('[optionRequestsBadge] count failed:', e?.message || e);
-        applyCount(0);
-      }
-    };
-    fetchCount();
-    const iv = setInterval(fetchCount, 60000);
-    // Hitung ulang SEGERA sesudah submit/approve/reject -- pola sama
-    // 'nexus:lead-pool-changed' di atas (lihat handleApprove/handleReject,
-    // OptionRequestsPage.jsx).
-    const onChanged = () => fetchCount();
-    window.addEventListener('nexus:option-requests-changed', onChanged);
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchCount(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      cancelled = true;
-      clearInterval(iv);
-      window.removeEventListener('nexus:option-requests-changed', onChanged);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [profile?.id, isManagerOrAboveUser]);
-
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
   const navigateTo = useCallback((menuId) => {
@@ -2488,9 +2416,16 @@ export default function StorbitManifest() {
                // berdasarkan ada/tiadanya akun lifecycle_stage='customer'.
                : n.reference_type === 'unowned_customers' ? 'crm-customers'
                : n.reference_type === 'unowned_leads'     ? 'crm-prospects'
-               // Notifikasi submit/approve/reject Option Requests (Irisan 5,
-               // migrasi 20261020000001) -- satu menu untuk ketiga event_type.
-               : n.reference_type === 'dropdown_option_request' ? 'crm-option-requests'
+               // Notifikasi pengajuan opsi dropdown (migrasi 20261020000001,
+               // dipersempit ke super_admin oleh 20261103000001) -- halaman
+               // approval CRM sudah dihapus, jadi HANYA event 'submitted'
+               // (penerima = super_admin) diarahkan, ke Admin Hub / General
+               // Preferences (tab "Dropdown Management" satu klik dari sana).
+               // event 'approved'/'rejected' (penerima = pengaju asli, bisa
+               // role apa pun) TIDAK memiliki tujuan yang aman -- sama
+               // seperti reference_type 'location_request', jatuh ke null.
+               : n.reference_type === 'dropdown_option_request'
+                 ? (n.event_type === 'dropdown_option_request_submitted' ? 'admin-settings-general' : null)
                : null;
     if (dest) navigateTo(dest);
   }, [navigate, navigateTo, showToast]);
@@ -2882,7 +2817,6 @@ export default function StorbitManifest() {
           isSuperAdminUser={isSuperAdmin(authErpRoles)}
           isManagerOrAboveUser={isManagerOrAboveUser}
           leadPoolPendingCount={leadPoolPendingCount}
-          optionRequestsPendingCount={optionRequestsPendingCount}
         />
 
         {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
@@ -2910,7 +2844,6 @@ export default function StorbitManifest() {
             isSuperAdminUser={isSuperAdmin(authErpRoles)}
             isManagerOrAboveUser={isManagerOrAboveUser}
             leadPoolPendingCount={leadPoolPendingCount}
-            optionRequestsPendingCount={optionRequestsPendingCount}
           />
         </>
 
