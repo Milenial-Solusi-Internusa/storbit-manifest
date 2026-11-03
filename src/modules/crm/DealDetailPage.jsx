@@ -1882,6 +1882,114 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     );
   }
 
+  // ── Putaran D1 (restrukturisasi layout Detail, 3 Nov 2026) ──────────────
+  // Kondisi kosong/berdata dipakai DUA kali: sekali memutuskan isi
+  // `headerAside`, sekali menyembunyikan blok yang sama di `children` --
+  // supaya nol duplikasi render. "Berdata" = SELURUH seksi (judul+tombol+
+  // daftar) tetap di `children` SAMA PERSIS seperti sebelum Putaran D1 ada,
+  // `headerAside` kosong. Dibuktikan dengan merender mockup sungguhan
+  // berisi data (bukan hanya screenshot kosong) -- Mas Den, 3 Nov 2026:
+  // tab Quotations/Procurement berdata = satu kolom penuh di mockup juga,
+  // bukan terpisah kolom kanan.
+  const quotationsEmpty = quotations.length === 0;
+  const procurementEmpty = prfs.length === 0 && allVendorOffers.length === 0;
+
+  // Diangkat dari dalam render tab Quotations (byte-sama) supaya satu
+  // sumber kebenaran dipakai baik oleh `children` (saat berdata) maupun
+  // `headerAside` (saat kosong) -- lihat D-72..D-74 di tab Quotations utk
+  // konteks `locked`.
+  const locked = dealStatus === 'WON' || !!inquiry?.duplicate_of_id;
+  const lockedLabel = inquiry?.duplicate_of_id
+    ? `Locked, inquiry closed as duplicate of ${duplicateOfNo || '—'}`
+    : 'Won, quotation locked';
+
+  const quotationsToolbarEl = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: quotationsEmpty ? 0 : 16 }}>
+      <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
+        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+          cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
+        {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
+      </button>
+      <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
+        style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
+          background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
+          cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
+        {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
+      </button>
+      {locked && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
+          <Lock size={14} />{lockedLabel}
+        </span>
+      )}
+    </div>
+  );
+  const quotationsEmptyTextEl = (
+    <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>No quotations yet</div>
+      <div style={{ fontSize: 12.5, marginTop: 4 }}>Quotations created from this inquiry will appear here.</div>
+    </div>
+  );
+
+  const rateRequestsHeaderEl = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text, flex: 1 }}>Rate Requests</h3>
+      {canCreatePRF && (
+        <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text }}>
+          <FileText size={14} />Create PRF
+        </button>
+      )}
+    </div>
+  );
+  const rateRequestsEmptyTextEl = (
+    <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No rate requests for this inquiry.</span>
+  );
+  const vendorOffersHeaderEl = (
+    <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: C.text }}>Vendor Offers</h3>
+  );
+  const vendorOffersEmptyTextEl = (
+    <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No vendor offers yet.</span>
+  );
+
+  // Diangkat dari sesudah `</Notebook>` (byte-sama) -- Overview memakainya
+  // via `headerAside`, tab lain tetap merendernya di `children` seperti
+  // sebelumnya (lihat penanda `tab !== 'overview'` di bawah `</Notebook>`).
+  const relatedDocsEl = (
+    <RelatedDocuments
+      upstream={relatedDocsUpstream}
+      downstream={relatedDocsDownstream}
+      tokens={{
+        border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
+        fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO, neutralBg: C.surfaceAlt,
+      }}
+    />
+  );
+
+  // Kolom kanan SEJAJAR HEADER, isi tergantung tab aktif -- keputusan Mas
+  // Den 3 Nov 2026 (dibuktikan merender mockup berdata, bukan ditebak).
+  // Activity SENGAJA headerAside=null (Related Documents tetap di
+  // `children`, sama seperti tab berdata lain): di mockup Related Documents
+  // sejajar timeline Activity, tapi itu BUTUH slot layout KETIGA
+  // (`headerAside` beda posisi, sejajar isi tab bukan sejajar header) --
+  // sengaja tidak diikuti supaya FormSheet tidak bertambah kompleks untuk
+  // satu tab saja. Status History juga headerAside=null (satu kolom penuh
+  // di semua keadaan, terkonfirmasi render mockup berdata).
+  const headerAsideContent =
+    tab === 'overview' ? relatedDocsEl
+    : tab === 'quotation' && quotationsEmpty ? (
+      <>{quotationsToolbarEl}{quotationsEmptyTextEl}</>
+    )
+    : tab === 'prf' && procurementEmpty ? (
+      <>
+        {rateRequestsHeaderEl}
+        {rateRequestsEmptyTextEl}
+        <div style={{ height: 1, background: C.lineSoft, margin: '12px 0' }} />
+        {vendorOffersHeaderEl}
+        {vendorOffersEmptyTextEl}
+      </>
+    )
+    : null;
+
   return (
     <div style={{ padding: '24px 24px 48px', fontFamily: BODY, color: C.text }}>
       {/* .cd-tab:hover di sini SUPAYA hover tab konsisten dengan CustomerDetailPage —
@@ -1895,13 +2003,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           lewat opacity+cursor, bukan ditambah di sini. */}
       <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}.kebab-item:hover:not(:disabled){background:${C.navySoft} !important;}`}</style>
 
-      {/* Batch B1 — seluruh halaman dibungkus FormSheet. Grid dua kolomnya
-          (1.7fr/1fr, header membentang penuh) + collapse di bawah 1024px lewat
-          `.nx-grid-2`/`.nx-stack` datang dari kit, jadi wrapper `.nx-stack`
-          lokal yang dulu ada di sini dicabut — nol CSS baru, nol duplikasi.
-          Chatter masuk slot `aside` (DI LUAR `children`), sehingga ia menetap
-          saat tab di body berganti. */}
+      {/* Batch B1 — seluruh halaman dibungkus FormSheet.
+          [Putaran D1, 3 Nov 2026 — restrukturisasi, menggantikan komentar
+          lama di atas] Mockup Inquiry Management.dc.html merender `<main>`
+          TANPA cap lebar dan `<header>` hanya kolom kiri (headerAside
+          sejajarnya, BUKAN sejajar body) -- dua hal yang byte-identik-nya
+          lama ("1.7fr/1fr, header membentang penuh") sudah tidak berlaku.
+          `maxWidth="none"` meniru `<main>` mockup yang tak ber-cap. Chatter
+          PINDAH dari slot `aside` (sticky-kanan, lintas tab) ke `footer`
+          (full-width, paling bawah, sama di semua tab) -- posisi lama
+          terbukti SALAH setelah dicek ke screenshot render mockup langsung
+          (bukan cuma dibaca dari markup `.dc.html`, yang tag-nya tak selalu
+          merepresentasikan posisi visual CSS grid-area). Collapse di bawah
+          1024px tetap lewat `.nx-grid-2`/`.nx-stack` (kit, nol CSS baru) --
+          `headerAside`/`footer` ikut mekanisme yang sama. */}
       <FormSheet
+        maxWidth="none"
+        headerAside={headerAsideContent}
         breadcrumb={<Breadcrumb onBack={onBack} />}
         // Irisan 2 Inquiry, lanjutan audit mockup (Pekerjaan A): mockup
         // menaruh metric-row SEBELUM StageBar -- lihat komentar prop ini
@@ -2259,7 +2377,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <NextStepHint status={dealStatus} />
           </>
         )}
-        aside={(
+        // Putaran D1: Comments PINDAH ke `footer` (full-width, bawah, sama
+        // di semua tab) -- lihat komentar di atas `<FormSheet` untuk alasan.
+        footer={(
           <InquiryChatter
             inquiryId={inquiry.id}
             companyId={profile?.company_id}
@@ -2975,17 +3095,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               // seperti sebelumnya. Chip terkunci tetap tampil BERDAMPINGAN
               // dengan kedua tombol (TIDAK menggantikannya).
               //
-              // "locked" menggabungkan DUA kondisi yang (sesuai komentar lama
-              // yang dipertahankan di bawah) tidak pernah tumpang tindih: Won
-              // (TD-318 Irisan 3) dan ditutup sebagai duplikat (Irisan 4
-              // Lingkup B, teks dari mockup Quotation Management.dc.html --
-              // mockup Inquiry Management ini sendiri tidak punya kasus ini).
-              const locked = dealStatus === 'WON' || !!inquiry?.duplicate_of_id;
-              const lockedLabel = inquiry?.duplicate_of_id
-                ? `Locked, inquiry closed as duplicate of ${duplicateOfNo || '—'}`
-                : 'Won, quotation locked';
+              // "locked"/"lockedLabel" dan toolbar-nya (`quotationsToolbarEl`)
+              // kini didefinisikan SATU KALI di luar `<FormSheet>` (Putaran D1)
+              // supaya `headerAside` bisa memakai salinan yang SAMA saat
+              // `quotationsEmpty` -- lihat komentar di titik definisinya.
               return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Putaran D1 (3 Nov 2026, keputusan Mas Den berbasis render
+                    mockup berdata): saat quotationsEmpty, toolbar+teks-kosong
+                    SUDAH dirender via `headerAside` (kolom kanan sejajar
+                    header) -- blok di bawah ini HANYA tampil saat berdata,
+                    SAMA PERSIS seperti sebelum Putaran D1 (nol logic baru,
+                    cuma digerbang supaya tidak dobel-render). */}
+                {!quotationsEmpty && (
+                <>
                 {/* `onSearch` sengaja TIDAK dioper: daftar quotation satu deal
                     isinya sedikit, dan sejak guard baru di ListView, kotak
                     pencarian memang tak dirender kalau tak disediakan.
@@ -3012,37 +3135,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     (tombol/gate/style byte-sama, cuma dipindah lokasi render) --
                     marginBottom 16 menggantikan SP.s4 FilterBar yang sebelumnya
                     membungkusnya supaya jarak ke tabel/blok kosong tak berubah. */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
-                  <button onClick={() => onCreateQuotation(inquiryId)} disabled={!!activeQuotation || locked}
-                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
-                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                      cursor: (!!activeQuotation || locked) ? 'not-allowed' : 'pointer', opacity: (!!activeQuotation || locked) ? 0.5 : 1 }}>
-                    {locked && <Lock size={14} />}<FileText size={14} />Create Quotation
-                  </button>
-                  <button onClick={() => setReviseOpen(true)} disabled={!activeQuotation || locked || revising}
-                    style={{ ...ACT_BTN, height: 32, padding: '0 12px', borderRadius: 10, fontSize: 13.5,
-                      background: 'transparent', border: `1px solid ${C.borderStrong}`, color: C.text,
-                      cursor: (!activeQuotation || locked || revising) ? 'not-allowed' : 'pointer', opacity: (!activeQuotation || locked || revising) ? 0.5 : 1 }}>
-                    {locked && <Lock size={14} />}<FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
-                  </button>
-                  {locked && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700, lineHeight: 'normal', padding: '2px 9px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.textMute, whiteSpace: 'nowrap' }}>
-                      <Lock size={14} />{lockedLabel}
-                    </span>
-                  )}
-                </div>
+                {quotationsToolbarEl}
                 {/* [Putaran 16 Tahap 8, Task 4] EmptyState kit (src/modules/crm/v3/
                     kit.jsx) TIDAK BISA ditimpa gayanya (dikonfirmasi Tahap 7) --
                     blok kosong buatan sendiri menggantikan ListView+EmptyState KHUSUS
                     saat kosong, diukur mockup (noQuotes, :405): padding 32px 16px,
                     text-align center, color #5C6B52 (C.textMute). Teks DIPERTAHANKAN
                     apa adanya (judul+sub lama) -- mockup cuma satu baris, disusun dua
-                    baris center supaya isi lama tidak hilang. */}
+                    baris center supaya isi lama tidak hilang.
+                    [Putaran D1] Ternary ini kini TIDAK PERNAH jatuh ke cabang
+                    kosong di sini (digerbang `!quotationsEmpty` di atas) --
+                    dipertahankan apa adanya (bukan disederhanakan jadi selalu
+                    ListView) supaya diff sekecil mungkin dan robust kalau
+                    `quotationsEmpty` lepas sinkron dari `quotations.length`
+                    suatu saat nanti. */}
                 {quotations.length === 0 ? (
-                  <div style={{ padding: '32px 16px', textAlign: 'center', color: C.textMute, fontFamily: BODY }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>No quotations yet</div>
-                    <div style={{ fontSize: 12.5, marginTop: 4 }}>Quotations created from this inquiry will appear here.</div>
-                  </div>
+                  quotationsEmptyTextEl
                 ) : (
                   <ListView
                     mode="table"
@@ -3051,6 +3159,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
                     columns={QUOTATION_COLUMNS}
                   />
+                )}
+                </>
                 )}
                 {/* D-72..D-74 keputusan Mas: QuotationItemsCard + PriceSummaryCard
                     DIPERTAHANKAN walau tidak ada di mockup Detail/Quotations --
@@ -3076,6 +3186,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             label: 'Procurement',
             render: () => (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* Putaran D1 (3 Nov 2026, keputusan Mas Den berbasis render
+                    mockup berdata): saat procurementEmpty (prfs DAN
+                    allVendorOffers sama-sama kosong), judul "Rate Requests"/
+                    "Vendor Offers" + tombol Create PRF + kedua teks kosong
+                    SUDAH dirender via `headerAside` -- seluruh blok di bawah
+                    HANYA tampil saat salah satu ADA data, SAMA PERSIS seperti
+                    sebelum Putaran D1 (nol logic baru, cuma digerbang). */}
+                {!procurementEmpty && (
+                <>
                 {/* D-79 (Putaran 10, rekonstruksi audit mockup
                     Detail/Procurement rReqs): "Rate Requests" -- tabel
                     ListView -> kartu per-PRF + stepper 3 tahap (Submitted/
@@ -3261,6 +3380,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     })}
                   </div>
                 )}
+                </>
+                )}
               </div>
             ),
           },
@@ -3394,27 +3515,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           },
         ]}
       />
-      {/* TD-318 Irisan 2 Inquiry, bug fix round, Task 4: RelatedDocuments
-          DIPINDAH ke sini dari dalam tab Overview -- terbukti dari mockup
-          (byte offset diverifikasi langsung di file sumber) RelatedDocuments
-          adalah SECTION TERPISAH, sibling dari section Header DAN section
-          tab, dirender SESUDAH seluruh blok tab (Overview/Quotations/
-          Procurement/Activity/Status History) SELESAI, bukan isi salah
-          satu tab -- selalu tampil lintas tab, bukan hilang saat pindah tab. */}
-      <RelatedDocuments
-        upstream={relatedDocsUpstream}
-        downstream={relatedDocsDownstream}
-        // [Putaran 16a Tahap 0] diukur mockup (pembatas antar-baris grup
-        // Upstream/Downstream): border-bottom LINE_SOFT #ECF0E9 -- bukan
-        // HEAD_BG #EFF3ED (C.surfaceAlt). [Putaran 16 Tahap 8, Task 2]
-        // `neutralBg` BARU -- latar badge status netral (mockup #EFF3ED),
-        // dipakai RelatedDocuments.jsx hanya saat baris tak mengoper
-        // `statusTone` sendiri (PRF/akun).
-        tokens={{
-          border: C.border, borderSoft: C.lineSoft, text: C.text, textMute: C.textMute, textFaint: C.textFaint,
-          fontHead: HEAD, fontBody: BODY, fontMono: FONT_MONO, neutralBg: C.surfaceAlt,
-        }}
-      />
+      {/* [Putaran D1, 3 Nov 2026 -- menggantikan komentar lama "DIPINDAH ke
+          sini dari dalam tab Overview"] Posisi lama (selalu di sini, lintas
+          tab) terbukti SALAH untuk tab Overview setelah dicek ke render
+          mockup berdata: Overview menaruh Related Documents di kolom kanan
+          SEJAJAR HEADER (`headerAside`, lihat definisi `relatedDocsEl` di
+          atas `<FormSheet>`), bukan di bawah sini. Tab lain (Quotations/
+          Procurement/Activity/Status History) TETAP di sini, byte-identik
+          posisi lama -- dikonfirmasi render mockup berdata juga (satu kolom
+          penuh, Related Documents di bawah, rata kiri). `relatedDocsEl`
+          dipakai di SINI dan di `headerAside` supaya satu sumber kebenaran,
+          nol duplikasi definisi JSX. */}
+      {tab !== 'overview' && relatedDocsEl}
       </div>
       </FormSheet>
       {/* Ganti penawaran vendor terpilih — konfirmasi HANYA saat mengganti pilihan lama */}
