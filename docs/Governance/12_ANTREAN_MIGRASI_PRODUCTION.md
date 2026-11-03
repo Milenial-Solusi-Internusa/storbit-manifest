@@ -19,6 +19,12 @@
 >
 > ⛔ **Koreksi 13 Okt 2026: kedua tanggal di atas (14 dan 15 Oktober) MUNDUR ke awal November 2026, tanggal pasti menyusul** — keputusan Den, lihat §Naskah Eksekusi Malam Rilis dan §Persiapan H-1 di bawah untuk detail lengkap. Pola "jendela eksekusi malam vs efektif pagi besoknya" TETAP berlaku, hanya tanggalnya yang berubah.
 >
+> 👉 **Pembagian rilis `pra` / `launching` untuk 96 migrasi yang sudah ada dikelola di
+> Register Rilis Migrasi di luar repo, bukan di dokumen ini. Istilah "Paket 1" dan
+> "Paket 2" di dokumen ini adalah fase batch Lead Management, BUKAN paket rilis.
+> Migrasi BARU (>= `20261103000000`) membawa labelnya sendiri di header file
+> (`RELEASE-PACKAGE`, lihat `02_RULES_GOVERNANCE.md` §4).**
+>
 > 👉 **Naskah urut siap pakai untuk malam eksekusi itu: §Naskah Eksekusi Malam Rilis — 14 Oktober 2026**, di bagian akhir dokumen ini (sesudah §Koreksi Data dan Akses Manual) — berisi **§Persiapan H-1** (pratinjau read-only sehari sebelumnya, boleh dijalankan hari ini — termasuk H-1.0 cek akun penyetuju invoice — ~~per 7 Okt 2026 BELUM ADA `finance_controller` aktif di production~~ **[✅ TERPENUHI 9 Okt 2026, lihat H-1.0 & §Koreksi Data dan Akses Manual]**), urutan lengkap Langkah 0-5 (termasuk pembekuan input Finance/Gudang di 0.6, dan smoke test non-Finance di Langkah 4.5-4.8), tabel migrasi yang TIDAK aman untuk kode lama (Langkah 2), **§Kriteria batal dan titik tanpa jalan mundur** (titik baliknya = commit butir 9), titik berhenti wajib di butir 37, dan penegasan TD-300 Group E di luar jendela ini.
 >
 > 👉 **Naskah terpisah untuk rilis Lead Management (TD-318 Paket 1+2): §Runbook Rilis Lead Management (TD-318 Paket 1+2) — awal November 2026**, ditulis 17 Okt 2026 (sesudah §Paket 2 Lead Pool, sebelum §Cara merawat dokumen ini) — cakupan butir 47-64, malam EKSEKUSI terpisah dari naskah AR di atas (rekomendasi Den: AR dulu, Lead Management beberapa hari sesudahnya).

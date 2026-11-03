@@ -156,6 +156,40 @@
   commit `0c736fb`…`d10e09a` (31 Agu–5 Sep 2026) tetap memuat data itu di
   riwayat Git.
 
+- **[3 Nov 2026] Migrasi BARU (file bertanggal ≥ `20261103000000`) WAJIB membawa tag header `RELEASE-PACKAGE`/`DEPENDS-ON`/`PROBE`.** Register 96 migrasi LAMA dikelola di luar repo — **sengaja TIDAK di-backfill**. Tiga baris, ditaruh TEPAT sesudah baris `-- Status:` di header migrasi:
+
+  ```
+  -- RELEASE-PACKAGE:  pra | launching | staging-only
+  -- DEPENDS-ON:       <nama file migrasi lain yang WAJIB sudah live>, atau: tidak ada
+  -- PROBE:            <satu baris SELECT yang mengembalikan true bila migrasi sudah terpasang>
+  ```
+
+  **Arti nilai `RELEASE-PACKAGE`:**
+  - `pra` — boleh naik produksi KAPAN SAJA sebelum launching, tanpa mengganggu FE `main` yang sedang live.
+  - `launching` — WAJIB naik bersama FE `develop` dalam satu rentetan malam rilis.
+  - `staging-only` — TIDAK BOLEH dijalankan di produksi sama sekali.
+
+  **Kriteria `pra` (KELIMA harus benar — satu gagal, atau ragu, pilih `launching`):**
+  1. Tidak mengubah signature atau perilaku fungsi yang dipanggil FE `main`.
+  2. Tidak DROP/RENAME/ubah tipe kolom, dan tidak menambah NOT NULL/CHECK/UNIQUE pada tabel yang dipakai FE `main`.
+  3. Tidak mengetatkan atau mengubah RLS policy pada tabel yang dipakai FE `main`.
+  4. Tidak mengubah hasil bisnis yang dilihat user hari ini (backfill/UPDATE data lama, perubahan filter, perhitungan, atau hak akses).
+  5. Tidak bergantung pada migrasi `launching` (lihat `DEPENDS-ON`).
+
+  Sebelum launching pertama, "FE `main`" = FE yang live di produksi dari branch `main`. Setelah `develop` digabung ke `main`, baca kriteria ini terhadap FE yang sedang live di produksi saat migrasi dijalankan.
+
+  **Contoh `pra`** — `20260926000001_set_delivery_signed_date.sql`: 2 `ADD COLUMN IF NOT EXISTS` + 1 fungsi baru berdiri sendiri; header file sendiri: "perilaku penagihan TIDAK berubah... boleh naik sendiri". `DEPENDS-ON: tidak ada`.
+
+  **Contoh `launching`** — `20260926000002_ar_single_issue_path.sql`: menulis ulang `create_invoice`/`create_invoice_for_sp` (dipanggil FE `main`) + 3 guard baru yang menyempit SP yang bisa ditagih hari itu, dan DROP overload `mark_delivery_delivered(uuid)`. `DEPENDS-ON: 20260925000001_dni_sp_order_item_link.sql, 20260925000002_sp_order_items_legacy_unique.sql, 20260926000001_set_delivery_signed_date.sql`.
+
+  **Deteksi migrasi baru yang belum bertag** (baca-saja; hanya memeriksa file bertanggal ≥ `20261103000000` supaya 96 file lama tidak ikut terhitung):
+  ```bash
+  comm -23 \
+    <(git diff --name-only origin/main origin/develop -- supabase/migrations | sed 's#.*/##' | awk '$0 >= "20261103000000"' | sort) \
+    <(git grep -l "^-- RELEASE-PACKAGE:" origin/develop -- supabase/migrations | sed 's#.*/##' | sort)
+  ```
+  Harus mengeluarkan NOL baris. Baris apa pun yang muncul = migrasi baru yang belum ditag.
+
 ---
 
 ## 5. Brand & Design System — palet APLIKASI (keputusan Den 19 Sep 2026)
