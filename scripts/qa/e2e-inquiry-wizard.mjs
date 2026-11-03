@@ -134,6 +134,20 @@ const ONLY_3 = ONLY === '3';
 // dilewati gate baru ini -- keduanya TIDAK akan pernah diminta. Tanpa
 // argumen ini, perilaku skrip TIDAK berubah.
 const ONLY_1 = ONLY === '1';
+// --only d2d (pola spasi SAMA dgn --only 4/p14/3/1 di atas; diagnostik
+// Putaran E1 -- isolasi skenario D2D tanpa menjalankan ulang seluruh suite,
+// BUKAN untuk dicommit sebagai bagian isi E1) -- HANYA Flow 1 (Single
+// Shipment) lalu D2D dijalankan: P13b/Putaran 14 (P14)/Flow 2 (RS)/Flow 3
+// (MGR)/Flow 4 (ACC) dilewati lewat gate ADITIF `&& !ONLY_D2D` di gate
+// masing-masing (pola sama persis `--only 1` di atas). Flow 1 TIDAK ikut
+// dilewati -- D2D butuh Flow 1 jalan duluan (akun fixture yang sama,
+// "PT Agro Sawit Kalimantan"); gate Flow 1/D2D SENDIRI TIDAK disentuh
+// (tetap `if (!ONLY_P14 && !ONLY_3)` / `if (!ONLY_P14 && !ONLY_3 && !ONLY_1)`,
+// byte-identik -- `ONLY_D2D` tidak pernah disebut di keduanya, jadi
+// otomatis tetap jalan). HANYA password test@msi.com (QA_PASSWORD)
+// diminta -- Flow 3/Flow 4 (QA_PASSWORD_MANAGER/QA_PASSWORD_SALES) ikut
+// dilewati gate baru ini. Tanpa argumen ini, perilaku skrip TIDAK berubah.
+const ONLY_D2D = ONLY === 'd2d';
 
 // Input tersembunyi raw-stdin (tanpa dependency baru) -- dipakai HANYA saat
 // QA_PASSWORD kosong DAN stdin adalah TTY (lihat resolvePassword di bawah).
@@ -582,6 +596,7 @@ function dealFieldValue(page, label) {
   // LANGSUNG, beda dari Flow 3/Flow 4 yang login akun lain), murni label
   // tambahan di run log.
   if (ONLY === '1') console.log(`e2e-inquiry-wizard -- Flow 1 SAJA (--only 1) -- ${BASE} · project ${REF}\n`);
+  if (ONLY === 'd2d') console.log(`e2e-inquiry-wizard -- Flow 1 + D2D SAJA (--only d2d) -- ${BASE} · project ${REF}\n`);
 
   // Putaran 13a Task 3 -- Flow 1 dibungkus try/catch sendiri (lihat
   // recordFlowFailure di atas): kalau langkah apa pun di bawah throw, D2D/
@@ -1140,7 +1155,9 @@ function dealFieldValue(page, label) {
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D.
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D di atas.
   // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama Flow 1/D2D di atas.
-  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
+  // [Diagnostik E1] `&& !ONLY_D2D` ADITIF (flag `--only d2d`) -- lihat
+  // komentar `ONLY_D2D` di atas.
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1 && !ONLY_D2D) {
   try {
   console.log('\n— Skenario tambahan (Putaran 13b): W-14/W-16/W-21/W-33/W-34/W-40/W-44/W-64 —\n');
   await page.goto(`${BASE}/crm/inquiry/new`, { waitUntil: 'domcontentloaded' });
@@ -1344,7 +1361,9 @@ function dealFieldValue(page, label) {
   // dilewati lewat outer gate, tidak berubah.
   // [Putaran 16a] `&& !ONLY_1` ADITIF (flag `--only 1`, pola sama) -- blok
   // ini JUGA harus dilewati saat "only 1" (HANYA Flow 1 yang dimaksud).
-  if (!ONLY_3 && !ONLY_1) {
+  // [Diagnostik E1] `&& !ONLY_D2D` ADITIF (flag `--only d2d`), pola sama --
+  // blok ini JUGA harus dilewati saat "only d2d" (HANYA Flow 1+D2D).
+  if (!ONLY_3 && !ONLY_1 && !ONLY_D2D) {
   try {
   console.log('\n— Skenario tambahan (Putaran 14): General Trading (W-10/W-60) + Pricing Basis Customs (W-41) —\n');
   const p14Nonce = Date.now();
@@ -1719,7 +1738,8 @@ function dealFieldValue(page, label) {
   // Putaran 14 Tahap 4 -- dibungkus `if (!ONLY_P14)`, pola sama Flow 1/D2D/P13b.
   // [Putaran 16a] `&& !ONLY_3` ADITIF, pola sama Flow 1/D2D/P13b di atas.
   // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama Flow 1/D2D/P13b di atas.
-  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
+  // [Diagnostik E1] `&& !ONLY_D2D` ADITIF (flag `--only d2d`), pola sama.
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1 && !ONLY_D2D) {
   try {
   // =========================================================================
   // FLOW KEDUA -- Putaran 4 Tahap 4C, mode "Rate Sheet Request". Browser/
@@ -2054,7 +2074,9 @@ function dealFieldValue(page, label) {
   // [Putaran 16a] `&& !ONLY_1` ADITIF (flag `--only 1`) -- Flow 3 ikut
   // dilewati saat "only 1" (HANYA Flow 1 yang dimaksud); gate ini TETAP
   // tidak menyebut `ONLY_3` (Flow 3 memang harus jalan saat `--only 3`).
-  if (!ONLY_P14 && !ONLY_1) {
+  // [Diagnostik E1] `&& !ONLY_D2D` ADITIF (flag `--only d2d`) -- Flow 3
+  // ikut dilewati saat "only d2d" (HANYA Flow 1+D2D yang dimaksud).
+  if (!ONLY_P14 && !ONLY_1 && !ONLY_D2D) {
   let ctx2, page2;
   try {
   // =========================================================================
@@ -2212,7 +2234,9 @@ function dealFieldValue(page, label) {
   // `--only 3` (HANYA Flow 3 yang dimaksud "only 3").
   // [Putaran 16a] `&& !ONLY_1` ADITIF, pola sama -- Flow 4 ikut dilewati saat
   // `--only 1` (HANYA Flow 1 yang dimaksud).
-  if (!ONLY_P14 && !ONLY_3 && !ONLY_1) {
+  // [Diagnostik E1] `&& !ONLY_D2D` ADITIF, pola sama -- Flow 4 ikut
+  // dilewati saat `--only d2d` (HANYA Flow 1+D2D yang dimaksud).
+  if (!ONLY_P14 && !ONLY_3 && !ONLY_1 && !ONLY_D2D) {
   // =========================================================================
   // FLOW KEEMPAT -- Putaran 5 K1d. "Mark Accepted dengan bukti" dari sisi
   // pengguna, sesudah migrasi 20261026000004 LIVE di staging dan lulus
