@@ -148,11 +148,19 @@ const STEP_LABEL = {
 };
 
 const S = {
-  page: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
-  headerCard: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', padding: '22px 26px', marginBottom: 18 },
-  hTitle: { fontFamily: "'Montserrat',sans-serif", fontSize: 25, fontWeight: 800, letterSpacing: -0.6, color: C.text, margin: 0, lineHeight: 1.1 },
-  pillBar: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18, overflowX: 'auto' },
-  card: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', marginBottom: 18, overflow: 'hidden' },
+  // [Putaran E1] `maxWidth`/`margin` DICABUT -- mockup `<main>` nol cap
+  // lebar (diukur: 1345px @1593px viewport, penuh sisa sesudah sidebar),
+  // konsisten Detail Inquiry (`FormSheet` `maxWidth="none"`).
+  page: { padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
+  // `headerCard` DICABUT (Putaran E1) -- mockup tidak membungkus H1 dalam
+  // kartu sama sekali, lihat komentar di render H1 untuk rincian.
+  hTitle: { fontFamily: "'Montserrat',sans-serif", fontSize: 24, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.1 },
+  pillBar: { display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 18, overflowX: 'auto' },
+  // borderRadius 14 (Putaran E1) -- diukur mockup langsung; nol pemakai
+  // S.card lain di file ini (grep dikonfirmasi: satu-satunya titik pakai =
+  // <section style={S.card}> kartu utama wizard), jadi diubah global di sini,
+  // bukan override per-call-site.
+  card: { background: C.card, border: '1px solid ' + C.border, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,.08)', marginBottom: 18, overflow: 'hidden' },
   secBody: { padding: 28 },
   // Judul step di body card (mockup baris 49, h3 "{{stepN}}. {{SNAME[sKey]}}"
   // -- di atas isi tiap langkah, berdampingan dgn label yg sudah tampil di pill).
@@ -177,8 +185,12 @@ const S = {
   // titik lain sudah override sendiri di call-site-nya.
   btnGhost: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + C.muted, background: 'transparent', color: C.text, fontFamily: "'Montserrat',sans-serif", fontWeight: 600, fontSize: 13.5, cursor: 'pointer' },
 };
-const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '18px 20px' };
-const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px 16px' };
+// [Putaran E1] gap diseragamkan 16px (row+col) -- diukur mockup di SELURUH
+// langkah (Single Shipment 7 langkah + General Trading step "Delivery"),
+// seragam 16px kecuali satu grid kosong fitur belum dibangun (Delivery
+// Destinations, di luar scope grid2/grid3 ini).
+const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '16px' };
+const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '16px' };
 const selInput = { ...S.input, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 38, cursor: 'pointer' };
 
 function Field({ label, required, span, children, hint }) {
@@ -1297,44 +1309,59 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
   };
 
   return (
-    <div style={{ background: C.pageBg, padding: '8px 8px 40px', borderRadius: 16 }}>
-      <div style={S.page}>
-        <div style={S.headerCard}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
-            <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>Inquiry Intake Form</h1>
-            </div>
-          </div>
-        </div>
+    <div style={S.page}>
+      {/* [Putaran E1] Judul POLOS, di luar kartu apa pun -- mockup tidak
+          membungkus H1 dalam kartu sama sekali (diukur: ancestor chain H1
+          sampai <body> nol background/border). `S.headerCard` DICABUT
+          (dulu kartu terpisah khusus judul, tidak ada padanannya di
+          mockup). Wrapper `background:pageBg/padding:'8px 8px 40px'` JUGA
+          DICABUT -- mockup `<main>` langsung ber-padding sendiri, nol
+          wrapper tambahan yang membuat kartu menjorok (`S.page` sendiri
+          masih dipakai, hanya `maxWidth`/`margin`-nya yang dicabut --
+          lihat definisi `S.page` -- supaya halaman memakai lebar penuh
+          seperti Detail Inquiry, font/warna/padding dasarnya tetap). */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <h1 style={S.hTitle}>Inquiry Intake Form</h1>
+      </div>
 
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div style={{ flex: '2 1 560px', minWidth: 0 }}>
-        {/* step pills — klik bebas, TANPA validasi (mockup steps[i].go baris
-            766 juga tidak memvalidasi navigasi pill). */}
-        <div style={S.pillBar}>
-          {SK.map((k, i) => (
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 20 }}>
+      <div style={{ flex: '2 1 560px', minWidth: 0 }}>
+      <section style={S.card}>
+        {/* [Putaran E1] Step pills PINDAH ke DALAM kartu utama (dulu di
+            luar `<section style={S.card}>`) -- diukur mockup: pillBar
+            adalah child PERTAMA section yang SAMA dengan konten step,
+            padding:16 + border-bottom 1px solid LINE_SOFT (#ECF0E9)
+            memisahkannya dari isi. Klik bebas, TANPA validasi (mockup
+            steps[i].go baris 766 juga tidak memvalidasi navigasi pill). */}
+        <div style={{ ...S.pillBar, padding: 16, borderBottom: '1px solid ' + C.lineSoft, marginBottom: 0 }}>
+          {SK.map((k, i) => {
+            const active = i + 1 === stepIdx;
+            return (
             <button key={k} type="button" onClick={() => setStep(i + 1)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 999, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 12.5,
-                border: '1px solid ' + (i + 1 === stepIdx ? C.navy : C.border), background: i + 1 === stepIdx ? C.navySoft : C.card, color: C.text,
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", fontWeight: active ? 700 : 600, fontSize: 12.5,
+                border: '1px solid ' + (active ? C.navyDark : 'transparent'), background: active ? C.navySoft : 'transparent', color: active ? C.text : C.sub,
               }}>
-              <span style={{ width: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i + 1 === stepIdx ? C.orange : C.headBg, color: C.text, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
+              <span style={{ width: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? C.orange : C.headBg, color: C.text, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
               {STEP_LABEL[k]}
             </button>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Banner prefill generik (D6) — "Visit Prefill" (D5) tidak dibangun. */}
-        {prefillBanner && (
-          <div style={{ margin: '0 0 16px', padding: '8px 12px', background: C.headBg, border: '1px solid ' + C.border, borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: C.text }}>
-            <AlertTriangle size={14} color={C.sub} style={{ flex: '0 0 14px' }} />
-            <span style={{ flex: 1 }}>{prefillBanner.text}</span>
-            <button type="button" onClick={clearPrefill} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontWeight: 700, color: C.text }}>Clear</button>
-          </div>
-        )}
-
-        <section style={S.card}>
           <div style={S.secBody}>
+
+            {/* Banner prefill generik (D6) — "Visit Prefill" (D5) tidak
+                dibangun. Posisi relatif dipertahankan (sesudah pillBar,
+                sebelum konten step) -- murni ikut pillBar pindah ke dalam
+                section, isi/logic TIDAK berubah. */}
+            {prefillBanner && (
+              <div style={{ margin: '0 0 16px', padding: '8px 12px', background: C.headBg, border: '1px solid ' + C.border, borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: C.text }}>
+                <AlertTriangle size={14} color={C.sub} style={{ flex: '0 0 14px' }} />
+                <span style={{ flex: 1 }}>{prefillBanner.text}</span>
+                <button type="button" onClick={clearPrefill} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontWeight: 700, color: C.text }}>Clear</button>
+              </div>
+            )}
 
             <h3 style={S.stepHeading}>{stepIdx}. {STEP_LABEL[stepKey]}</h3>
 
@@ -1974,7 +2001,6 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
         <RecentInquiriesAside items={recentInquiries} onOpen={(id) => navigate(`${MENU_PATHS['crm-inquiry']}/${id}`)} />
         </div>
       </div>
-    </div>
   );
 }
 
