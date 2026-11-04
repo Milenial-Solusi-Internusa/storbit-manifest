@@ -40,6 +40,15 @@ type KnownIcon = typeof KNOWN_ICONS[number]
 // satu titik kontrol, bukan keputusan yang di-hardcode di tengah kode.
 const SHOW_COMMERCIAL_VALUE = true
 
+// Saklar layout kartu. true (default) = Pasangan A (Pemohon | Customer) ->
+// Pengiriman lebar penuh -> Pasangan C (Barang | Muatan) -> Pasangan D
+// (Dokumen pendukung | Tambahan) -> tombol. false = susunan LAMA (tumpukan
+// section satu kolom, byte-identik commit 7c87a18: Pemohon, Customer,
+// Pengiriman, Barang, Dokumen, Muatan, Tambahan, tombol) -- fallback kalau
+// webhook Google Chat ternyata tidak mendukung widget `columns` (belum
+// diuji staging, lihat assembleSections()).
+const USE_COLUMNS = true
+
 // Label ramah service_type. Nilai sebenarnya di DB adalah 'custom' (lihat
 // src/modules/procurement/PRFFormPage.jsx, SERVICE_TYPES) -- 'customs'
 // disertakan sebagai alias jaga-jaga (keputusan Den) kalau nilainya pernah
@@ -333,10 +342,105 @@ function dangerousGoodsText(unNumber: string | null, imoClass: string | null): s
   return parts.length ? parts.join(' · ') : null
 }
 
+type SectionLike = { header?: string; widgets: Row[] }
+
+// Judul kolom = widget textParagraph tebal -- teks KONSTAN kita sendiri
+// (nama section), bukan data DB, jadi TIDAK lewat escapeHtml()/row().
+function colTitle(label: string) {
+  return { textParagraph: { text: `<b>${label}</b>` } }
+}
+
+// Satu pasangan kolom (widget `columns` Google Chat maksimal 2 kolom/baris,
+// tinggi baris ikut kolom yang lebih panjang, isi tidak disejajarkan per
+// baris -- batasan platform, bukan pilihan kita).
+// - KEDUA sisi punya baris -> satu section TANPA header, isinya SATU widget
+//   `columns` dengan 2 columnItems; tiap columnItems diawali judul kolom
+//   lalu baris-baris section itu APA ADANYA (dari row()/section() yang
+//   sama, nol duplikasi logika baris).
+// - HANYA SATU sisi punya baris -> sisi itu dikembalikan APA ADANYA sebagai
+//   section biasa lebar penuh dengan header aslinya (objek section() lama,
+//   byte-identik) -- supaya tidak ada kotak kolom bolong di sebelahnya.
+// - KEDUA sisi kosong (null) -> null, pasangan ini tidak dirender sama
+//   sekali.
+function columnPair(
+  leftTitle: string,
+  leftSection: SectionLike | null,
+  rightTitle: string,
+  rightSection: SectionLike | null,
+): { header?: string; widgets: unknown[] } | null {
+  if (leftSection && rightSection) {
+    return {
+      widgets: [
+        {
+          columns: {
+            columnItems: [
+              {
+                horizontalSizeStyle: 'FILL_AVAILABLE_SPACE',
+                horizontalAlignment: 'START',
+                verticalAlignment: 'TOP',
+                widgets: [colTitle(leftTitle), ...leftSection.widgets],
+              },
+              {
+                horizontalSizeStyle: 'FILL_AVAILABLE_SPACE',
+                horizontalAlignment: 'START',
+                verticalAlignment: 'TOP',
+                widgets: [colTitle(rightTitle), ...rightSection.widgets],
+              },
+            ],
+          },
+        },
+      ],
+    }
+  }
+  if (leftSection) return leftSection
+  if (rightSection) return rightSection
+  return null
+}
+
+// Penyusun layout AKHIR -- SATU-SATUNYA tempat yang tahu urutan/bentuk
+// section, dipanggil buildCard() dengan `useColumns` (lihat USE_COLUMNS).
+// Sengaja TIDAK diekspor (lihat opts.useColumns di buildCard() utk cara
+// mode lama tetap bisa dites tanpa mengubah konstanta modul saat runtime).
+function assembleSections(
+  sectionPemohon: SectionLike | null,
+  sectionCustomer: SectionLike | null,
+  sectionPengiriman: SectionLike | null,
+  sectionBarang: SectionLike | null,
+  sectionDokumen: SectionLike | null,
+  sectionMuatan: SectionLike | null,
+  sectionTambahan: SectionLike | null,
+  sectionAksi: { widgets: unknown[] },
+  useColumns: boolean,
+): Array<{ header?: string; widgets: unknown[] }> {
+  if (!useColumns) {
+    const flat = [
+      sectionPemohon, sectionCustomer, sectionPengiriman, sectionBarang, sectionDokumen, sectionMuatan, sectionTambahan,
+    ].filter((s): s is SectionLike => s !== null)
+    return [...flat, sectionAksi]
+  }
+  const pairA = columnPair('Pemohon', sectionPemohon, 'Customer', sectionCustomer)
+  const pairC = columnPair('Barang', sectionBarang, 'Muatan', sectionMuatan)
+  const pairD = columnPair('Dokumen pendukung', sectionDokumen, 'Tambahan', sectionTambahan)
+  const rows = [pairA, sectionPengiriman, pairC, pairD].filter((s): s is { header?: string; widgets: unknown[] } => s !== null)
+  return [...rows, sectionAksi]
+}
+
 // Fungsi MURNI -- nol I/O, nol jaringan. entitas/inquiryNo/linkUrl sudah
 // diresolusi pemanggil (companies/inquiries dibaca terpisah, non-fatal).
 // Seluruh teks di bawah diteruskan MENTAH ke row() -- escape terjadi di sana.
-export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string | null, linkUrl: string) {
+// `opts.useColumns` (opsional) MENIMPA konstanta modul USE_COLUMNS HANYA
+// untuk panggilan ini -- satu-satunya alasan parameter ini ada adalah
+// supaya card.test.ts bisa menguji susunan layout LAMA (flat) tanpa
+// mengubah USE_COLUMNS saat runtime dan TANPA ekspor baru selain buildCard/
+// PrfRow; index.ts (pemanggil produksi) tidak pernah mengirim opts ini,
+// jadi perilaku produksi selalu mengikuti USE_COLUMNS di atas.
+export function buildCard(
+  prf: PrfRow,
+  entitas: string | null,
+  inquiryNo: string | null,
+  linkUrl: string,
+  opts?: { useColumns?: boolean },
+) {
   // a. Pemohon
   const pembuatParts = [prf.profiles?.full_name, prf.profiles?.job_title].filter(Boolean) as string[]
   const pembuat = pembuatParts.length ? pembuatParts.join(' · ') : null
@@ -476,10 +580,10 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
     ],
   }
 
-  const sections: Array<{ header?: string; widgets: unknown[] }> = [
+  const sections = assembleSections(
     sectionPemohon, sectionCustomer, sectionPengiriman, sectionBarang, sectionDokumen, sectionMuatan, sectionTambahan,
-  ].filter((s): s is { header?: string; widgets: Row[] } => s !== null)
-  sections.push(sectionAksi)
+    sectionAksi, opts?.useColumns ?? USE_COLUMNS,
+  )
 
   return {
     cardsV2: [

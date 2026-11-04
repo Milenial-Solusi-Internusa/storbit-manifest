@@ -3,6 +3,20 @@
 // event-builder.test.ts (import jsr:@std/assert, Deno.test(), helper
 // base*(overrides) berisi default lengkap).
 // Jalankan: deno test --allow-none supabase/functions/notify-prf-space/
+//
+// ── CATATAN LAYOUT (USE_COLUMNS) ────────────────────────────────────────────
+// Seluruh test LAMA (sebelum layout berkolom ditambahkan) menguji LOGIKA
+// BARIS (placeholder, nol muatan, kapitalisasi, bold, escape, label add-on,
+// IMO Class) lewat findRow() -- helper itu HANYA mencari di `section.widgets`
+// langsung, TIDAK menyusup ke dalam `columns.columnItems[].widgets`. Karena
+// USE_COLUMNS=true adalah DEFAULT produksi (lihat card.ts), test LAMA kini
+// meneruskan `{ useColumns: false }` sebagai argumen ke-5 `buildCard()` --
+// opsional, TANPA ekspor baru -- supaya tetap menguji susunan FLAT lama
+// (satu kolom, byte-identik commit sebelum fitur kolom) dan findRow() tetap
+// relevan. NOL nilai ekspektasi yang berubah, HANYA argumen ke-5 ditambah.
+// Test BARU khusus layout kolom (menyusul di bawah) SENGAJA memanggil
+// `{ useColumns: true }` secara eksplisit (walau itu default) supaya niatnya
+// terbaca tanpa bergantung nilai default yang bisa berubah.
 import { assertEquals } from 'jsr:@std/assert@1.0.19'
 import { buildCard, type PrfRow } from './card.ts'
 
@@ -115,7 +129,7 @@ Deno.test('perbaikan 1: nilai placeholder (-, en dash, em dash, 0) diperlakukan 
     incoterms: '—',
     sea_lcl_dimension: '0',
   })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Alamat tujuan'), undefined)
   assertEquals(findRow(card, 'Alamat jemput'), undefined)
   assertEquals(findRow(card, 'Incoterms'), undefined)
@@ -124,7 +138,7 @@ Deno.test('perbaikan 1: nilai placeholder (-, en dash, em dash, 0) diperlakukan 
 
 Deno.test('perbaikan 1: nilai asli (bukan placeholder) tetap tampil apa adanya', () => {
   const prf = basePrf()
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Alamat tujuan')?.text, 'Pasir Panjang Terminal, Singapore')
   assertEquals(findRow(card, 'Dimensi')?.text, '120x80x100 cm')
 })
@@ -133,19 +147,19 @@ Deno.test('perbaikan 1: nilai asli (bukan placeholder) tetap tampil apa adanya',
 
 Deno.test('perbaikan 2: weightVolumeKoliText -- gw 880, volume 0, koli 0 -> "880 kg" saja', () => {
   const prf = basePrf({ sea_lcl_gw: 880, sea_lcl_volume: 0, sea_lcl_koli: 0 })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'LCL')?.text, '880 kg')
 })
 
 Deno.test('perbaikan 2: weightVolumeKoliText -- semua nol -> baris LCL tidak tampil (return null tetap berlaku)', () => {
   const prf = basePrf({ sea_lcl_gw: 0, sea_lcl_volume: 0, sea_lcl_koli: 0 })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'LCL'), undefined)
 })
 
 Deno.test('perbaikan 2: fleetText -- gw 0 dilewati sama seperti null', () => {
   const prf = basePrf({ inland_fleet_types: ['Truk'], inland_gw: 0 })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Armada/berat')?.text, 'Truk')
 })
 
@@ -153,14 +167,14 @@ Deno.test('perbaikan 2: fleetText -- gw 0 dilewati sama seperti null', () => {
 
 Deno.test('perbaikan 3: origin/destination/sumber huruf kecil -> dikapitalkan huruf awal tiap kata', () => {
   const prf = basePrf({ origin: 'bangkok', destination: 'jakarta', customer_source: 'inquiry' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Rute')?.text, '<b>Bangkok → Jakarta</b>')
   assertEquals(findRow(card, 'Sumber')?.text, 'Inquiry')
 })
 
 Deno.test('perbaikan 3: teks yang sudah punya huruf besar (kode pelabuhan, nama benar) TIDAK diubah', () => {
   const prf = basePrf({ origin: 'IDJKT', destination: 'SGSIN', customer_source: 'Website Form' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Rute')?.text, '<b>IDJKT → SGSIN</b>')
   assertEquals(findRow(card, 'Sumber')?.text, 'Website Form')
 })
@@ -169,7 +183,7 @@ Deno.test('perbaikan 3: teks yang sudah punya huruf besar (kode pelabuhan, nama 
 
 Deno.test('perbaikan 4: baris Rute dibungkus <b>...</b>, baris lain TIDAK', () => {
   const prf = basePrf()
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   const rute = findRow(card, 'Rute')
   assertEquals(rute?.text, '<b>Jakarta → Singapore</b>')
   assertEquals(findRow(card, 'Akun')?.text.includes('<b>'), false)
@@ -180,13 +194,13 @@ Deno.test('perbaikan 4: baris Rute dibungkus <b>...</b>, baris lain TIDAK', () =
 
 Deno.test('escape ganda: origin berisi "&" TIDAK jadi "&amp;amp;" di baris Rute yang tebal', () => {
   const prf = basePrf({ origin: 'bangkok & co', destination: 'jakarta' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Rute')?.text, '<b>Bangkok &amp; Co → Jakarta</b>')
 })
 
 Deno.test('escape &, <, > pada baris biasa (bukan Rute) tetap benar, satu kali', () => {
   const prf = basePrf({ incoterms: 'FOB <Jakarta> & Co' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Incoterms')?.text, 'FOB &lt;Jakarta&gt; &amp; Co')
 })
 
@@ -194,7 +208,7 @@ Deno.test('escape &, <, > pada baris biasa (bukan Rute) tetap benar, satu kali',
 
 Deno.test('regresi: PRF data normal (nol placeholder, nol nol, sudah berhuruf kapital) -- kartu identik dgn sebelum perubahan, kecuali Rute kini tebal', () => {
   const prf = basePrf()
-  const card = buildCard(prf, 'MSI', 'INQ/MSI/2026/00045', LINK)
+  const card = buildCard(prf, 'MSI', 'INQ/MSI/2026/00045', LINK, { useColumns: false })
 
   const expected = {
     cardsV2: [
@@ -281,7 +295,7 @@ Deno.test('DoD: PRF contoh (origin bangkok, destination jakarta, sumber inquiry,
     sea_lcl_koli: 0,
     sea_lcl_dimension: '0',
   })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Rute')?.text, '<b>Bangkok → Jakarta</b>')
   assertEquals(findRow(card, 'Sumber')?.text, 'Inquiry')
   assertEquals(findRow(card, 'Alamat tujuan'), undefined)
@@ -293,19 +307,19 @@ Deno.test('DoD: PRF contoh (origin bangkok, destination jakarta, sumber inquiry,
 
 Deno.test('layanan tambahan: kode dipetakan ke label ramah, dipisah ", "', () => {
   const prf = basePrf({ add_on_services: ['custom_clearance', 'inland'] })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Custom Clearance, Inland')
 })
 
 Deno.test('layanan tambahan: kode asing (tak dikenal) tampil apa adanya, tidak hilang/error', () => {
   const prf = basePrf({ add_on_services: ['custom_clearance', 'kode_baru_belum_dipetakan'] })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Custom Clearance, kode_baru_belum_dipetakan')
 })
 
 Deno.test('layanan tambahan: add_on_others tetap tampil di belakang sebagai "(...)"', () => {
   const prf = basePrf({ add_on_services: ['insurance'], add_on_others: 'Permintaan khusus' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Insurance (Permintaan khusus)')
 })
 
@@ -313,7 +327,7 @@ Deno.test('layanan tambahan: add_on_others tetap tampil di belakang sebagai "(..
 
 Deno.test('commodity live_animal -> label "Live Animal"', () => {
   const prf = basePrf({ goods_name: null, commodity: 'live_animal' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Komoditas')?.text, 'Live Animal')
   assertEquals(findRow(card, 'Barang')?.text, 'Live Animal')
 })
@@ -322,30 +336,131 @@ Deno.test('commodity live_animal -> label "Live Animal"', () => {
 
 Deno.test('IMO Class: nilai DB sudah diawali "Class" -- tidak ditambah "Class" lagi', () => {
   const prf = basePrf({ un_number: null, imo_class: 'Class 1 — Explosives' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 1 — Explosives')
 })
 
 Deno.test('IMO Class: nilai DB hanya angka -- ditambah "Class"', () => {
   const prf = basePrf({ un_number: null, imo_class: '3' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 3')
 })
 
 Deno.test('IMO Class: angka desimal ("3.1") -- "IMO Class 3.1"', () => {
   const prf = basePrf({ un_number: null, imo_class: '3.1' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 3.1')
 })
 
 Deno.test('IMO Class kosong (null) -- UN tetap tampil sendirian', () => {
   const prf = basePrf({ un_number: '1263', imo_class: null })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Barang berbahaya')?.text, 'UN 1263')
 })
 
 Deno.test('UN dan IMO Class keduanya terisi -- digabung dengan " · "', () => {
   const prf = basePrf({ un_number: '1263', imo_class: 'Class 3 — Flammable Liquids' })
-  const card = buildCard(prf, null, null, LINK)
+  const card = buildCard(prf, null, null, LINK, { useColumns: false })
   assertEquals(findRow(card, 'Barang berbahaya')?.text, 'UN 1263 · IMO Class 3 — Flammable Liquids')
+})
+
+// ── Layout berkolom (USE_COLUMNS=true) ─────────────────────────────────────
+// Fixture "semua terisi": basePrf() + satu field dokumen -- satu-satunya
+// section yang NULL di basePrf() default adalah "Dokumen pendukung" (semua
+// doc_*_status null); menambah satu status membuatnya ikut terisi, supaya
+// KEEMPAT slot (pairA/Pengiriman/pairC/pairD) terisi sekaligus.
+function allFilledPrf(overrides: Partial<PrfRow> = {}): PrfRow {
+  return basePrf({ doc_pi_status: 'tersedia', ...overrides })
+}
+
+Deno.test('kolom (a): PRF semua section terisi -> pairA, Pengiriman lebar penuh, pairC, pairD, tombol', () => {
+  const prf = allFilledPrf()
+  const card = buildCard(prf, 'MSI', 'INQ/MSI/2026/00045', LINK, { useColumns: true }) as any
+  const sections = card.cardsV2[0].card.sections
+  assertEquals(sections.length, 5)
+
+  const pairA = sections[0]
+  assertEquals('header' in pairA, false)
+  assertEquals(pairA.widgets[0].columns.columnItems.length, 2)
+
+  const pengiriman = sections[1]
+  assertEquals(pengiriman.header, 'Pengiriman')
+  assertEquals('columns' in pengiriman.widgets[0], false)
+  assertEquals(pengiriman.widgets[0].decoratedText.topLabel, 'Layanan')
+
+  const pairC = sections[2]
+  assertEquals('header' in pairC, false)
+  assertEquals(pairC.widgets[0].columns.columnItems.length, 2)
+
+  const pairD = sections[3]
+  assertEquals('header' in pairD, false)
+  assertEquals(pairD.widgets[0].columns.columnItems.length, 2)
+
+  const aksi = sections[4]
+  assertEquals(aksi.widgets[0].buttonList.buttons[0].text, 'Lihat di Nexus')
+})
+
+Deno.test('kolom (b): satu sisi pasangan kosong -> sisi lain dirender section biasa lebar penuh dgn header-nya', () => {
+  // basePrf() default: Dokumen pendukung NULL (semua doc_*_status null),
+  // Tambahan terisi (add_on_services/notes) -> pairD kolaps jadi section
+  // Tambahan APA ADANYA, bukan kotak kolom bolong di sebelah Dokumen.
+  const prf = basePrf()
+  const card = buildCard(prf, null, null, LINK, { useColumns: true }) as any
+  const sections = card.cardsV2[0].card.sections
+  assertEquals(sections.length, 5)
+  const fallback = sections[3]
+  assertEquals(fallback.header, 'Tambahan')
+  assertEquals('columns' in fallback.widgets[0], false)
+  assertEquals(fallback.widgets[0].decoratedText.topLabel, 'Layanan tambahan')
+})
+
+Deno.test('kolom (c): kedua sisi pasangan kosong -> pasangan itu TIDAK dirender sama sekali', () => {
+  // Dokumen pendukung sudah null by default; Tambahan dikosongkan juga di
+  // sini -> pairD lenyap total, bukan section kosong yang tetap muncul.
+  const prf = basePrf({ add_on_services: null, add_on_others: null, notes: null })
+  const card = buildCard(prf, null, null, LINK, { useColumns: true }) as any
+  const sections = card.cardsV2[0].card.sections
+  assertEquals(sections.length, 4) // pairA, Pengiriman, pairC, Aksi -- pairD absen
+  const headers = sections.map((s: any) => s.header)
+  assertEquals(headers.includes('Dokumen pendukung'), false)
+  assertEquals(headers.includes('Tambahan'), false)
+})
+
+Deno.test('kolom (d): tombol "Lihat di Nexus" tetap section TERAKHIR, lintas ketiga bentuk fixture di atas', () => {
+  const fixtures = [allFilledPrf(), basePrf(), basePrf({ add_on_services: null, add_on_others: null, notes: null })]
+  for (const prf of fixtures) {
+    const card = buildCard(prf, null, null, LINK, { useColumns: true }) as any
+    const sections = card.cardsV2[0].card.sections
+    const last = sections[sections.length - 1]
+    assertEquals(last.widgets[0].buttonList.buttons[0].text, 'Lihat di Nexus')
+  }
+})
+
+Deno.test('kolom (e): tiap columnItem diawali judul (textParagraph tebal) sebagai widget PERTAMA', () => {
+  const prf = allFilledPrf()
+  const card = buildCard(prf, null, null, LINK, { useColumns: true }) as any
+  const sections = card.cardsV2[0].card.sections
+  const [pairA, , pairC, pairD] = sections
+  assertEquals(pairA.widgets[0].columns.columnItems[0].widgets[0], { textParagraph: { text: '<b>Pemohon</b>' } })
+  assertEquals(pairA.widgets[0].columns.columnItems[1].widgets[0], { textParagraph: { text: '<b>Customer</b>' } })
+  assertEquals(pairC.widgets[0].columns.columnItems[0].widgets[0], { textParagraph: { text: '<b>Barang</b>' } })
+  assertEquals(pairC.widgets[0].columns.columnItems[1].widgets[0], { textParagraph: { text: '<b>Muatan</b>' } })
+  assertEquals(pairD.widgets[0].columns.columnItems[0].widgets[0], { textParagraph: { text: '<b>Dokumen pendukung</b>' } })
+  assertEquals(pairD.widgets[0].columns.columnItems[1].widgets[0], { textParagraph: { text: '<b>Tambahan</b>' } })
+})
+
+Deno.test('kolom (f): jumlah columnItems selalu TEPAT 2 di setiap widget `columns`', () => {
+  const prf = allFilledPrf()
+  const card = buildCard(prf, null, null, LINK, { useColumns: true }) as any
+  const sections = card.cardsV2[0].card.sections
+  let foundColumns = 0
+  for (const s of sections) {
+    for (const w of s.widgets ?? []) {
+      if (w.columns) {
+        foundColumns++
+        assertEquals(w.columns.columnItems.length, 2)
+      }
+    }
+  }
+  assertEquals(foundColumns, 3) // pairA, pairC, pairD -- Pengiriman & Aksi bukan widget columns
 })
