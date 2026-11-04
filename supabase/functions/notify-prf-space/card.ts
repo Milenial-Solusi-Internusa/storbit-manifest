@@ -203,20 +203,41 @@ function truncate(s: string, max: number): string {
   return t.length > max ? t.slice(0, max).trimEnd() + '…' : t
 }
 
+// Kapitalkan huruf awal tiap kata HANYA kalau seluruh teks huruf kecil --
+// teks yang sudah punya huruf besar (kode pelabuhan/bandara seperti IDJKT,
+// atau nama yang sudah benar) dibiarkan apa adanya, tidak disentuh sama
+// sekali.
+function titleCaseIfLower(s: string): string {
+  if (s !== s.toLowerCase()) return s
+  return s.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 type Row = { decoratedText: { topLabel: string; text: string; wrapText: true; startIcon: { knownIcon: KnownIcon } } }
 
-// Baris dengan nilai kosong/null TIDAK ditampilkan -- return null, disaring
-// oleh section(). Escape (&, <, >) terjadi DI SINI, satu kali, atas teks
-// MENTAH yang diteruskan pemanggil -- lihat catatan di kepala berkas. icon
-// WAJIB diisi (bukan opsional) supaya SEMUA baris rata kiri seragam.
-function row(topLabel: string, text: string | null, icon: KnownIcon): Row | null {
+// Nilai placeholder yang diperlakukan SAMA SEPERTI kosong (baris tidak
+// ditampilkan) -- strip manual ('-'/en dash/em dash) atau '0' yang biasanya
+// berarti "belum diisi" utk field teks bebas. Dicek SESUDAH trim, di row()
+// supaya berlaku untuk SEMUA baris tanpa daftar per baris. Field gw/volume/
+// koli punya aturan nolnya sendiri (lihat weightVolumeKoliText/fleetText) --
+// nilai NUMERIK 0 di sana dilewati SEBELUM jadi teks gabungan, jadi tidak
+// pernah mentah "0" yang sampai ke sini.
+const PLACEHOLDER_VALUES = new Set(['-', '–', '—', '0'])
+
+// Baris dengan nilai kosong/null/placeholder TIDAK ditampilkan -- return
+// null, disaring oleh section(). Escape (&, <, >) terjadi DI SINI, satu
+// kali, atas teks MENTAH yang diteruskan pemanggil -- lihat catatan di
+// kepala berkas. icon WAJIB diisi (bukan opsional) supaya SEMUA baris rata
+// kiri seragam. `bold` (opsional, default false) membungkus teks YANG SUDAH
+// di-escape dengan <b></b> -- escape tetap terjadi sekali, nol double-escape.
+function row(topLabel: string, text: string | null, icon: KnownIcon, bold?: boolean): Row | null {
   if (text === null || text === undefined) return null
   const t = String(text).trim()
-  if (!t) return null
+  if (!t || PLACEHOLDER_VALUES.has(t)) return null
+  const escaped = escapeHtml(t)
   return {
     decoratedText: {
       topLabel: escapeHtml(topLabel),
-      text: escapeHtml(t),
+      text: bold ? `<b>${escaped}</b>` : escaped,
       wrapText: true,
       startIcon: { knownIcon: icon },
     },
@@ -240,18 +261,21 @@ function containerText(types: string[] | null, qty: Record<string, number> | nul
   return parts.length ? parts.join(', ') : null
 }
 
+// gw/volume/koli yang SAMA DENGAN 0 dilewati (null tetap dilewati seperti
+// sebelumnya) -- "880 kg" tanpa "· 0 CBM · 0 koli" kalau yang lain nol.
 function weightVolumeKoliText(gw: number | null, vol: number | null, koli: number | null): string | null {
   const parts: string[] = []
-  if (gw !== null && gw !== undefined) parts.push(`${fmtIdNumber(gw)} kg`)
-  if (vol !== null && vol !== undefined) parts.push(`${fmtIdNumber(vol)} CBM`)
-  if (koli !== null && koli !== undefined) parts.push(`${koli} koli`)
+  if (gw !== null && gw !== undefined && gw !== 0) parts.push(`${fmtIdNumber(gw)} kg`)
+  if (vol !== null && vol !== undefined && vol !== 0) parts.push(`${fmtIdNumber(vol)} CBM`)
+  if (koli !== null && koli !== undefined && koli !== 0) parts.push(`${koli} koli`)
   return parts.length ? parts.join(' · ') : null
 }
 
+// gw yang SAMA DENGAN 0 dilewati (null tetap dilewati seperti sebelumnya).
 function fleetText(fleetTypes: string[] | null, gw: number | null): string | null {
   const parts: string[] = []
   if (fleetTypes && fleetTypes.length) parts.push(fleetTypes.join('/'))
-  if (gw !== null && gw !== undefined) parts.push(`${fmtIdNumber(gw)} kg`)
+  if (gw !== null && gw !== undefined && gw !== 0) parts.push(`${fmtIdNumber(gw)} kg`)
   return parts.length ? parts.join(' · ') : null
 }
 
@@ -296,7 +320,7 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const akun = firstFilled(prf.accounts?.name, prf.account_name_manual)
   const arusParts = [directionLabel(prf.direction), prf.stream].filter(Boolean) as string[]
   const arus = arusParts.length ? arusParts.join(' · ') : null
-  const sumber = prf.customer_source
+  const sumber = prf.customer_source ? titleCaseIfLower(prf.customer_source) : null
   const inquiryText = inquiryNo
 
   const sectionCustomer = section('Customer', [
@@ -310,7 +334,9 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
   const layananLabel = prf.service_type ? (SERVICE_TYPE_LABELS[prf.service_type] ?? prf.service_type) : null
   const layananParts = [layananLabel, prf.sea_freight_type ? prf.sea_freight_type.toUpperCase() : null].filter(Boolean) as string[]
   const layanan = layananParts.length ? layananParts.join(' · ') : null
-  const rute = prf.origin && prf.destination ? `${prf.origin} → ${prf.destination}` : null
+  const rute = prf.origin && prf.destination
+    ? `${titleCaseIfLower(prf.origin)} → ${titleCaseIfLower(prf.destination)}`
+    : null
   const alamatJemput = firstFilled(prf.pickup_address, prf.inland_pickup_address)
   const alamatTujuan = firstFilled(prf.delivery_address, prf.inland_delivery_address)
   const incoterms = prf.incoterms
@@ -319,7 +345,7 @@ export function buildCard(prf: PrfRow, entitas: string | null, inquiryNo: string
 
   const sectionPengiriman = section('Pengiriman', [
     row('Layanan', layanan, layananIcon(prf.service_type)),
-    row('Rute', rute, 'MAP_PIN'),
+    row('Rute', rute, 'MAP_PIN', true),
     row('Alamat jemput', alamatJemput, 'MAP_PIN'),
     row('Alamat tujuan', alamatTujuan, 'MAP_PIN'),
     row('Incoterms', incoterms, 'DESCRIPTION'),
