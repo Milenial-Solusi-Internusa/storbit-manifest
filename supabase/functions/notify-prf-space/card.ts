@@ -67,6 +67,7 @@ const COMMODITY_LABELS: Record<string, string> = {
   dg: 'Dangerous Goods',
   special_permit: 'Special Permit (Lartas)',
   perishable: 'Perishable',
+  live_animal: 'Live Animal',
   valuable: 'Valuable',
   pharma: 'Pharma',
 }
@@ -94,6 +95,27 @@ const DOC_STATUS_LABELS: Record<string, string> = {
 function docStatusLabel(v: string | null): string | null {
   if (!v) return null
   return DOC_STATUS_LABELS[v] ?? v
+}
+
+// Label ramah Layanan Tambahan -- DISALIN PERSIS dari ADD_ONS di
+// src/modules/procurement/prfShared.js (card.ts, Edge Function Deno, tidak
+// bisa mengimpor dari src/). Kode tak dikenal tampil apa adanya.
+const ADD_ON_LABELS: Record<string, string> = {
+  custom_clearance: 'Custom Clearance',
+  inland: 'Inland',
+  import_license_undername: 'Import License (Undername)',
+  import_license_pi: 'Import License (PI)',
+  export_license: 'Export License',
+  ls: 'LS',
+  warehouse_umum: 'Warehouse Umum',
+  warehouse_reefer: 'Warehouse Reefer',
+  tkbm: 'TKBM',
+  insurance: 'Insurance',
+  others: 'Others',
+}
+
+function addOnLabel(v: string): string {
+  return ADD_ON_LABELS[v] ?? v
 }
 
 // Layanan: Air Freight -> AIRPLANE, Inland/Trucking -> BUS, selain itu TICKET.
@@ -288,16 +310,26 @@ function projectText(freightTypes: string[] | null, qty: number | null): string 
 
 function addOnsText(services: string[] | null, others: string | null): string | null {
   const parts: string[] = []
-  if (services && services.length) parts.push(services.join(', '))
+  if (services && services.length) parts.push(services.map(addOnLabel).join(', '))
   if (others && others.trim()) parts.push(`(${others.trim()})`)
   return parts.length ? parts.join(' ') : null
 }
 
-// "UN 1263 · IMO kelas 3" -- tiap bagian hanya tampil kalau terisi.
+// Nilai imo_class di DB kadang sudah berbentuk "Class 1 — Explosives"
+// (sudah diawali kata "Class"), kadang cuma angka ("3"/"3.1"). Tambahkan
+// "Class" HANYA kalau nilainya BELUM diawali kata itu -- supaya tidak dobel
+// "kelas Class"/"Class Class".
+function imoClassText(imoClass: string): string {
+  const t = imoClass.trim()
+  return /^class\b/i.test(t) ? `IMO ${t}` : `IMO Class ${t}`
+}
+
+// "UN 1263 · IMO Class 3 — Flammable Liquids" -- tiap bagian hanya tampil
+// kalau terisi.
 function dangerousGoodsText(unNumber: string | null, imoClass: string | null): string | null {
   const parts: string[] = []
   if (unNumber) parts.push(`UN ${unNumber}`)
-  if (imoClass) parts.push(`IMO kelas ${imoClass}`)
+  if (imoClass) parts.push(imoClassText(imoClass))
   return parts.length ? parts.join(' · ') : null
 }
 

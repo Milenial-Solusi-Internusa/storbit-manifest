@@ -288,3 +288,64 @@ Deno.test('DoD: PRF contoh (origin bangkok, destination jakarta, sumber inquiry,
   assertEquals(findRow(card, 'LCL')?.text, '880 kg')
   assertEquals(findRow(card, 'Dimensi'), undefined)
 })
+
+// ── Label ramah Layanan tambahan (ADD_ON_LABELS) ──────────────────────────
+
+Deno.test('layanan tambahan: kode dipetakan ke label ramah, dipisah ", "', () => {
+  const prf = basePrf({ add_on_services: ['custom_clearance', 'inland'] })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Custom Clearance, Inland')
+})
+
+Deno.test('layanan tambahan: kode asing (tak dikenal) tampil apa adanya, tidak hilang/error', () => {
+  const prf = basePrf({ add_on_services: ['custom_clearance', 'kode_baru_belum_dipetakan'] })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Custom Clearance, kode_baru_belum_dipetakan')
+})
+
+Deno.test('layanan tambahan: add_on_others tetap tampil di belakang sebagai "(...)"', () => {
+  const prf = basePrf({ add_on_services: ['insurance'], add_on_others: 'Permintaan khusus' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Layanan tambahan')?.text, 'Insurance (Permintaan khusus)')
+})
+
+// ── Commodity live_animal ──────────────────────────────────────────────────
+
+Deno.test('commodity live_animal -> label "Live Animal"', () => {
+  const prf = basePrf({ goods_name: null, commodity: 'live_animal' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Komoditas')?.text, 'Live Animal')
+  assertEquals(findRow(card, 'Barang')?.text, 'Live Animal')
+})
+
+// ── IMO Class tanpa duplikasi "kelas Class" ────────────────────────────────
+
+Deno.test('IMO Class: nilai DB sudah diawali "Class" -- tidak ditambah "Class" lagi', () => {
+  const prf = basePrf({ un_number: null, imo_class: 'Class 1 — Explosives' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 1 — Explosives')
+})
+
+Deno.test('IMO Class: nilai DB hanya angka -- ditambah "Class"', () => {
+  const prf = basePrf({ un_number: null, imo_class: '3' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 3')
+})
+
+Deno.test('IMO Class: angka desimal ("3.1") -- "IMO Class 3.1"', () => {
+  const prf = basePrf({ un_number: null, imo_class: '3.1' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Barang berbahaya')?.text, 'IMO Class 3.1')
+})
+
+Deno.test('IMO Class kosong (null) -- UN tetap tampil sendirian', () => {
+  const prf = basePrf({ un_number: '1263', imo_class: null })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Barang berbahaya')?.text, 'UN 1263')
+})
+
+Deno.test('UN dan IMO Class keduanya terisi -- digabung dengan " · "', () => {
+  const prf = basePrf({ un_number: '1263', imo_class: 'Class 3 — Flammable Liquids' })
+  const card = buildCard(prf, null, null, LINK)
+  assertEquals(findRow(card, 'Barang berbahaya')?.text, 'UN 1263 · IMO Class 3 — Flammable Liquids')
+})
