@@ -31,6 +31,26 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-11-09 — 2026-11-10
+
+> Ditulis doc-keeper 10 Nov 2026. Seluruh fakta "status production/staging" di entri ini berasal dari pembacaan database (read-only) oleh Vir pada 10 Nov 2026 — doc-keeper tidak punya akses DB, jadi fakta ini ditulis sebagai "per verifikasi database 10 Nov 2026", bukan hasil verifikasi independen doc-keeper terhadap repo.
+
+### Delapan koreksi data manual rekonsiliasi piutang Storbit (9-10 Nov 2026)
+
+Delapan koreksi data manual langsung di production, dijalankan 9-10 Nov 2026 atas dasar keputusan Den 9 Nov 2026 (disetujui Pak Bagus Putra Kurnia): koreksi langsung pada data SP dan invoice dengan jurnal selisih per invoice, selisih kecil ditutup LUNAS sebagai biaya bank, dan tujuh SP lama tanpa invoice dicatat sebagai data lama (status + catatan saja). Bukan migrasi — nol berkas di `supabase/migrations/`; dieksekusi langsung di production (`nexus-msi`) tanpa staging karena staging tidak punya data SP yang relevan (46 `sp_orders` di staging vs 688 di production, per verifikasi database 10 Nov 2026). Tiap koreksi: satu transaksi, pemeriksaan awal dan akhir, tabel cadangan ber-RLS aktif, skrip pembatalan tersedia. Skrip SQL berada di luar repo.
+
+Ringkasan kedelapan koreksi (nama kode, tanggal, isi) — rincian lengkap tiap koreksi: `12_ANTREAN_MIGRASI_PRODUCTION.md` §Koreksi Rekonsiliasi Piutang Storbit (9-10 Nov 2026):
+1. `koreksi_rekon_20261109` (9 Nov) — 44 SP ongkir + 7 baris item barang dikoreksi, 35 invoice tersentuh, 35 jurnal `invoice_adjustment` seimbang total Rp13.287.034.
+2. `tutup_sisa_kecil_20261109` (9 Nov) — 42 invoice ditutup lewat jurnal biaya bank (akun `8-1400`, hanya ada di production) kredit `1-1200` total Rp112.051,08; 42 invoice `paid`, 42 SP LUNAS.
+3. `input_pembayaran_20261109` (9 Nov) — 17 pembayaran baru untuk 21 invoice, kas masuk Bank Rp131.523.866,30, PPh 23 dibayar dimuka Rp6.250, harga SP `2181355` dikoreksi ke Rp487.000.
+4. `input_pembayaran_2086402_20261109` (9 Nov) — invoice `SOA-INV-IX-2026-0016` dibayar Rp57.814.300,48 + biaya bank Rp2.899,52; tanggal bayar 14 Okt 2026 masih asumsi, belum dikonfirmasi Finance.
+5. `koreksi_batam_1881816_20261109` (9 Nov) — invoice `SOA-INV-XII-2025-0073` dikoreksi manual jadi DPP Rp19.008.000/PPN Rp60.944 (hanya atas ongkir)/total Rp19.622.984, `paid`.
+6. `ganti_nomor_sp_20261110` (10 Nov) — 14 SP ganti nomor di lima tabel; nomor lama disimpan di catatan SP, invoice tidak disentuh.
+7. `data_lama_7sp_20261110` (10 Nov) — tujuh SP lunas lama tanpa invoice dicatat status LUNAS + catatan saja.
+8. `koreksi_qty_2280688_20261110` (10 Nov) — qty "PVC Rail Card 6 CM For Hook" turun 4.505→4.504 (diasumsikan keliru tercatat, belum dikonfirmasi) supaya jumlah kirim = jumlah pesan dan invoice bisa terbit.
+
+Total tabel cadangan: 27. Detail: `12_ANTREAN_MIGRASI_PRODUCTION.md` §Koreksi Rekonsiliasi Piutang Storbit (9-10 Nov 2026).
+
 ## 2026-10-30
 
 > Ditulis doc-keeper 30 Okt 2026 dari handover "Jurnal Doc-Keeper Nexus" (Vir, J-001 s.d. J-092, 23-30 Okt 2026) — lihat juga entri `## 2026-10-29`, `## 2026-10-28`, `## 2026-10-27`, `## 2026-10-26`, `## 2026-10-25` di bawah untuk Putaran 4 s.d. 16a. Seluruh hash komit/isi migrasi dikutip APA ADANYA dari handover (sumber sekunder, bukan dibaca langsung oleh doc-keeper dari branch-nya masing-masing — HANYA posisi akhir `develop`@`4191f72` yang diverifikasi doc-keeper langsung ke repo: `git rev-parse`, `git merge-base --is-ancestor`, `npm run build`, `node scripts/qa/lint-baseline.mjs`, `node scripts/qa/check-menu-paths.mjs`, serta isi beberapa berkas migrasi kunci — lihat catatan verifikasi di tiap sub-bagian).

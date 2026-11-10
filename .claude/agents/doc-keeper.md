@@ -42,6 +42,8 @@ Konflik -> kode + schema menang. Dokumen salah diperbaiki agar match kode.
 | Desain / kit UI / token warna-font / komponen bersama (src/kit, kit CRM v3, AdminKit, print kit) / rencana Batch DS | docs/DESIGN_SYSTEM_REFERENCE.md (Bagian A + status tabel A.4.3) + docs/Governance/02_RULES_GOVERNANCE.md §5 (brand) + docs/Governance/06_UI_UX_FLOW.md |
 | Tiap unit kerja selesai (dev log) | PROGRESS.md — APPEND entri baru (jangan rombak lama) |
 | State / recent yang dibaca AI tiap sesi | CLAUDE.md — update bagian state/recent saja |
+| Integrasi API eksternal / Edge Function baru (kode Deno, secret, kontrak API pihak ketiga) | docs/Governance/03_DATA_MODEL.md (trigger/tabel pendukung) + docs/Governance/00_DEV_JOURNEY.md (milestone) |
+| `scripts/qa/*` (baseline/harness QA) | docs/Governance/09_ROADMAP.md atau PROGRESS.md (sesuai dampaknya) |
 
 # CEK KESEGARAN & REMINDER (hal yang KAMU tak bisa kerjakan — ingatkan Den)
 Setelah draft, masukkan ke REMINDER laporan kalau relevan:
