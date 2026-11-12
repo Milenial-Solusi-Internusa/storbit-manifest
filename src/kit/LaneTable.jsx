@@ -103,10 +103,22 @@ export function LaneTable({
     : [showUseColumn ? 'Use' : '#', 'POL', 'POD', 'Via port', 'Mode', 'Load unit', ''];
   // Dipakai banner di bawah tabel DAN badge per-baris -- dihitung SEKALI.
   const ftzLanes = hasFtzColumn ? lanes.filter((l) => laneIsFtz(l, locationTypeById)) : [];
+  // [Putaran E2] mockup (diekspor ulang): heading Rate Sheet Request (mode
+  // `showUseColumn`, SATU-SATUNYA pemakainya di repo adalah
+  // InquiryIntakeWizardPage.jsx `showUseColumn={isRS}` -- diverifikasi grep,
+  // jadi showUseColumn===true SAMA PERSIS isRS===true, nol pemanggil lain
+  // terdampak) = "Lanes (N of N selected)", BUKAN "Route options (N)".
+  // Hitungan "ikut" (N pertama) pakai field SAMA dengan checkbox "Use" di
+  // bawah (`l.on !== false`, baris ~142) supaya angkanya selalu konsisten
+  // dengan yang dilihat user. Mode Single Shipment (showUseColumn falsy)
+  // TIDAK berubah.
+  const laneHeading = showUseColumn
+    ? `Lanes (${lanes.filter((l) => l.on !== false).length} of ${lanes.length} selected)`
+    : `Route options (${lanes.length})`;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h4 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: tokens.text, flex: 1 }}>Route options ({lanes.length})</h4>
+        <h4 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 14, color: tokens.text, flex: 1 }}>{laneHeading}</h4>
         {/* [Putaran 16 Tahap 6] diukur mockup (Intake/Lanes, tombol "Add
             lane"): height 32 (bukan 36), padding '0 12px' (bukan 14px),
             border tokens.placeholder/INK_FAINT (bukan tokens.border/LINE),

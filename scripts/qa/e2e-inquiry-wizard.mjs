@@ -530,8 +530,17 @@ async function loginSession(email, password) {
 // (anak container dikurangi 1 baris header), bukan dari teks heading "(N)"
 // itu sendiri -- heading diturunkan dari state yang SAMA yang mau
 // diverifikasi, jadi menghitung lewat heading saja tautologis.
+// [Putaran E2] h4 LaneTable (src/kit/LaneTable.jsx) kini punya DUA bentuk
+// teks -- "Route options (N)" (Single Shipment & readonly Detail Inquiry,
+// tak berubah) ATAU "Lanes (N of N selected)" (mode Rate Sheet Request di
+// WIZARD yang sedang diedit, `showUseColumn` true -- lihat LaneTable.jsx).
+// xpath cocok KEDUANYA lewat `or` -- cermin langsung percabangan di
+// LaneTable.jsx, bukan dugaan teks. Helper lain yang mencari h4 secara
+// EKSPLISIT per-konteks ("Route options" SAJA, Detail Inquiry readonly
+// selalu nol showUseColumn -- lihat `h4:has-text("Route options")` di
+// baris lain) TIDAK disentuh, tetap benar apa adanya.
 function laneTableContainer(page) {
-  return page.locator('xpath=//h4[starts-with(normalize-space(.), "Route options")]/parent::div/following-sibling::div[1]').first();
+  return page.locator('xpath=//h4[starts-with(normalize-space(.), "Route options") or starts-with(normalize-space(.), "Lanes (")]/parent::div/following-sibling::div[1]').first();
 }
 // Baris index-0 = header (background tokens.bg, bukan baris data) -- lane ke-i
 // (0-based) = anak ke (i+1). `nth()` di-resolve ULANG setiap dipanggil (lazy),
