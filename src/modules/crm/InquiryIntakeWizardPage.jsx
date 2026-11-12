@@ -193,9 +193,15 @@ const grid2 = { display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '16p
 const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '16px' };
 const selInput = { ...S.input, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 38, cursor: 'pointer' };
 
+// [Putaran E2] `span` sekarang menerima angka (span N kolom), bukan cuma
+// boolean -- `span===true` tetap '1 / -1' byte-identik (3 pemakai existing:
+// Inquiry Type/Service Type/Direction, diverifikasi semuanya boolean bare,
+// nol yang mengoper angka), `span` kosong tetap 'auto'. `span={2}` BARU,
+// dipakai Item Name (Cargo, mockup: span 2 dari 3 kolom).
 function Field({ label, required, span, children, hint }) {
+  const gridColumn = span === true ? '1 / -1' : span ? `span ${span}` : 'auto';
   return (
-    <div style={{ minWidth: 0, gridColumn: span ? '1 / -1' : 'auto' }}>
+    <div style={{ minWidth: 0, gridColumn }}>
       <div style={S.label}>{label}{required && <span style={S.req}>*</span>}</div>
       {children}
       {hint && <span style={{ fontSize: 11.5, color: C.muted, marginTop: 5, display: 'block' }}>{hint}</span>}
@@ -281,26 +287,6 @@ function CargoCard({ item, active, onClick }) {
         <span style={{ display: 'block', fontFamily: "Inter, sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>{item.label}</span>
         <span style={{ display: 'block', fontSize: 11.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{item.desc}</span>
       </span>
-    </button>
-  );
-}
-// [Putaran 16 Tahap 5] REBUILD, bukan sekadar diputar horizontal -- diukur
-// mockup (`ech.addl` chip "Additional Services" step, bukan pola kartu
-// `og.*` seperti ServiceCard): bukan kartu ikon sama sekali, melainkan pil
-// kecil TANPA ikon dalam baris flex-wrap. Sumber warna aktif/nonaktif
-// ditelusur dari JS mockup (`ech[g][k] = { bg: on?'#C3D9B8':'#FFFFFF',
-// bd: on?'#AFC9A0':'#D8E0D2' }`) -- persis C.orange/orangeDark/card/border.
-function TagCard({ item, active, onClick }) {
-  return (
-    <button type="button" onClick={onClick}
-      style={{
-        height: 24, padding: '0 9px', borderRadius: 6, cursor: 'pointer',
-        border: '1px solid ' + (active ? C.orangeDark : C.border),
-        background: active ? C.orange : C.card,
-        fontFamily: "'Montserrat',sans-serif", fontWeight: 700, fontSize: 11.5, color: C.text,
-        display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
-      }}>
-      {item.label}
     </button>
   );
 }
@@ -1394,41 +1380,51 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                 {/* D1 -- toggle "Sumber" (Prospect/Customer) DICABUT. Mockup
                     (baris 52-56) cuma punya SATU field "Customer" -- hasilnya
                     gabungan prospect+customer dengan badge stage (AccountPicker
-                    sudah mendukung `lifecycle_stage` apa adanya). */}
+                    sudah mendukung `lifecycle_stage` apa adanya). [Putaran E2]
+                    Customer kini SENDIRI lebar penuh (`span`) -- mockup
+                    (diekspor ulang) mengukur Customer TIDAK dipasangkan dgn
+                    Entity, melainkan Entity dipasangkan dgn Contact di baris
+                    sesudahnya (lihat di bawah). */}
+                <Field label="Customer" required span>
+                  {/* Putaran 14 (W-10, Scope 1, kasus tepi) -- ganti akun
+                      TIDAK boleh meninggalkan service_type='trading'
+                      tertinggal kalau akun barunya bukan SOA (kartu GT
+                      akan hilang dari daftar serviceTypeOpts, tapi
+                      service_type di state masih 'trading' kalau tidak
+                      direset di sini). onChangeText (akun dikosongkan
+                      total) SELALU reset kalau sedang GT -- tanpa akun,
+                      GT pasti tidak valid. onPick (akun BARU dipilih)
+                      hanya reset kalau akun baru BUKAN SOA -- pindah ke
+                      akun SOA lain sambil GT terpilih TETAP valid, tidak
+                      direset (pola "sebaliknya" di instruksi). Field
+                      turunan GT (direction/customer_role) SENGAJA TIDAK
+                      ikut direset -- pola sama field tersembunyi lain di
+                      file ini (pickup_address dkk, W-21): nilainya
+                      harmless sampai dikirim ulang, dan payload sudah
+                      menolkannya sendiri kalau service_type bukan lagi
+                      'trading'. */}
+                  <AccountPicker value={accountText} accounts={accounts} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search account name or account code…"
+                    onChangeText={(v) => {
+                      setAccountText(v);
+                      setF((x) => ({ ...x, account_id: '', contact_id: '', service_type: x.service_type === 'trading' ? '' : x.service_type }));
+                    }}
+                    onPick={(a) => {
+                      setAccountText(a.name);
+                      setF((x) => ({
+                        ...x, account_id: a.id, contact_id: '',
+                        service_type: (x.service_type === 'trading' && a.company_id !== SOA_ID) ? '' : x.service_type,
+                      }));
+                      setAddingContact(false);
+                    }} />
+                  <FieldError>{errors.cust_account}</FieldError>
+                </Field>
+                {/* [Putaran E2] Entity + Contact SEBARIS (mockup) -- Contact
+                    kondisional `resolvedAccountId` SEKARANG dipindah ke level
+                    `Field`/blok "Add new contact" masing-masing (sebelumnya
+                    satu `resolvedAccountId &&` membungkus keduanya sekaligus
+                    lewat `grid2` tersendiri; grid2 itu kini dipakai bersama
+                    Entity, jadi gate dipindah ke tiap isinya, bukan ke grid2). */}
                 <div style={grid2}>
-                  <Field label="Customer" required>
-                    {/* Putaran 14 (W-10, Scope 1, kasus tepi) -- ganti akun
-                        TIDAK boleh meninggalkan service_type='trading'
-                        tertinggal kalau akun barunya bukan SOA (kartu GT
-                        akan hilang dari daftar serviceTypeOpts, tapi
-                        service_type di state masih 'trading' kalau tidak
-                        direset di sini). onChangeText (akun dikosongkan
-                        total) SELALU reset kalau sedang GT -- tanpa akun,
-                        GT pasti tidak valid. onPick (akun BARU dipilih)
-                        hanya reset kalau akun baru BUKAN SOA -- pindah ke
-                        akun SOA lain sambil GT terpilih TETAP valid, tidak
-                        direset (pola "sebaliknya" di instruksi). Field
-                        turunan GT (direction/customer_role) SENGAJA TIDAK
-                        ikut direset -- pola sama field tersembunyi lain di
-                        file ini (pickup_address dkk, W-21): nilainya
-                        harmless sampai dikirim ulang, dan payload sudah
-                        menolkannya sendiri kalau service_type bukan lagi
-                        'trading'. */}
-                    <AccountPicker value={accountText} accounts={accounts} statusLabel={lifecycleLabel} inputStyle={S.input} placeholder="Search account name or account code…"
-                      onChangeText={(v) => {
-                        setAccountText(v);
-                        setF((x) => ({ ...x, account_id: '', contact_id: '', service_type: x.service_type === 'trading' ? '' : x.service_type }));
-                      }}
-                      onPick={(a) => {
-                        setAccountText(a.name);
-                        setF((x) => ({
-                          ...x, account_id: a.id, contact_id: '',
-                          service_type: (x.service_type === 'trading' && a.company_id !== SOA_ID) ? '' : x.service_type,
-                        }));
-                        setAddingContact(false);
-                      }} />
-                    <FieldError>{errors.cust_account}</FieldError>
-                  </Field>
                   {/* Entity (D2) -- read-only, SELALU entitas AKUN terpilih
                       (lihat komentar panjang di dekat `entityCode` soal
                       deviasi dari override mockup utk Customs Clearance). */}
@@ -1438,16 +1434,7 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       <Lock size={14} />
                     </div>
                   </Field>
-                </div>
-                <div style={grid2}>
-                  <Field label="Source" hint="Read-only, from the account record.">
-                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: C.pageBg, color: accountSource ? C.text : C.muted, fontStyle: accountSource ? 'normal' : 'italic' }}>
-                      {accountSource || 'Not set'}
-                    </div>
-                  </Field>
-                </div>
-                {resolvedAccountId && (
-                  <div style={grid2}>
+                  {resolvedAccountId && (
                     <Field label="Contact" required>
                       {!contactsLoaded ? (
                         <span style={{ fontSize: 12, color: C.muted, display: 'block', paddingTop: 6 }}>Loading contacts…</span>
@@ -1469,37 +1456,44 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       )}
                       <FieldError>{errors.cust_contact}</FieldError>
                     </Field>
-                    {/* D3 -- "Add new contact" inline, Name wajib + Position/
-                        Email/Phone opsional. Jalur simpan: handleSaveNewContact. */}
-                    {contactsLoaded && addingContact && (
-                      <div style={{ gridColumn: '1 / -1', border: '1px dashed ' + C.border, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div style={grid2}>
-                          <Field label="Name" required>
-                            <input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} style={S.input} autoFocus />
-                          </Field>
-                          <Field label="Position">
-                            <input value={newContact.position} onChange={(e) => setNewContact((c) => ({ ...c, position: e.target.value }))} style={S.input} />
-                          </Field>
-                        </div>
-                        <div style={grid2}>
-                          <Field label="Email">
-                            <input type="email" value={newContact.email} onChange={(e) => setNewContact((c) => ({ ...c, email: e.target.value }))} style={S.input} />
-                          </Field>
-                          <Field label="Phone">
-                            <input value={newContact.phone} onChange={(e) => setNewContact((c) => ({ ...c, phone: e.target.value }))} style={S.input} />
-                          </Field>
-                        </div>
-                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                          <button type="button" style={S.btnGhost} onClick={() => { setAddingContact(false); setNewContact({ name: '', position: '', email: '', phone: '' }); }}>Cancel</button>
-                          <button type="button" style={{ ...S.btnPrimary, opacity: savingContact || !newContact.name.trim() ? 0.6 : 1, cursor: savingContact || !newContact.name.trim() ? 'not-allowed' : 'pointer' }}
-                            disabled={savingContact || !newContact.name.trim()} onClick={handleSaveNewContact}>
-                            {savingContact ? 'Saving…' : 'Add Contact'}
-                          </button>
-                        </div>
+                  )}
+                  {/* D3 -- "Add new contact" inline, Name wajib + Position/
+                      Email/Phone opsional. Jalur simpan: handleSaveNewContact. */}
+                  {resolvedAccountId && contactsLoaded && addingContact && (
+                    <div style={{ gridColumn: '1 / -1', border: '1px dashed ' + C.border, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div style={grid2}>
+                        <Field label="Name" required>
+                          <input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} style={S.input} autoFocus />
+                        </Field>
+                        <Field label="Position">
+                          <input value={newContact.position} onChange={(e) => setNewContact((c) => ({ ...c, position: e.target.value }))} style={S.input} />
+                        </Field>
                       </div>
-                    )}
-                  </div>
-                )}
+                      <div style={grid2}>
+                        <Field label="Email">
+                          <input type="email" value={newContact.email} onChange={(e) => setNewContact((c) => ({ ...c, email: e.target.value }))} style={S.input} />
+                        </Field>
+                        <Field label="Phone">
+                          <input value={newContact.phone} onChange={(e) => setNewContact((c) => ({ ...c, phone: e.target.value }))} style={S.input} />
+                        </Field>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        <button type="button" style={S.btnGhost} onClick={() => { setAddingContact(false); setNewContact({ name: '', position: '', email: '', phone: '' }); }}>Cancel</button>
+                        <button type="button" style={{ ...S.btnPrimary, opacity: savingContact || !newContact.name.trim() ? 0.6 : 1, cursor: savingContact || !newContact.name.trim() ? 'not-allowed' : 'pointer' }}
+                          disabled={savingContact || !newContact.name.trim()} onClick={handleSaveNewContact}>
+                          {savingContact ? 'Saving…' : 'Add Contact'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div style={grid2}>
+                  <Field label="Source" hint="Read-only, from the account record.">
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: C.pageBg, color: accountSource ? C.text : C.muted, fontStyle: accountSource ? 'normal' : 'italic' }}>
+                      {accountSource || 'Not set'}
+                    </div>
+                  </Field>
+                </div>
               </div>
             )}
 
@@ -1630,12 +1624,6 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                           onRequest={canManageLocations ? undefined : requestNewLocation} />
                       </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                      {/* [Putaran 16 Tahap 5] tombol kecil, diukur mockup terpisah dari
-                          S.btnGhost footer: height 32, padding '0 12px', fontSize 13. */}
-                      <button type="button" onClick={startLanes} style={{ ...S.btnGhost, height: 32, padding: '0 12px', fontSize: 13 }}><Plus size={15} />Add route option</button>
-                      <span style={{ fontSize: 12, color: C.sub }}>Add a second route when the customer wants to compare routes for the same shipment.</span>
-                    </div>
                   </>
                 ) : (
                   <LaneTable
@@ -1730,27 +1718,74 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                       </div>
                     )}
 
+                    {/* [Putaran E2] Cargo ready date PINDAH ke sini (sendiri,
+                        sesudah Pickup/Delivery, SEBELUM tombol Add route
+                        option) -- mockup. Kondisi `!laneTbl` BYTE-IDENTIK
+                        dgn posisi lamanya (dulu dipasangkan dgn Number of
+                        containers di baris paling bawah) -- W-21 (Cargo
+                        ready date hilang saat laneTbl aktif, nol
+                        pengecualian DtD) TIDAK berubah. */}
+                    {!laneTbl && (
+                      <div style={grid2}>
+                        <Field label="Cargo ready date">
+                          <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
+                        </Field>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* [Putaran E2] tombol "Add route option" PINDAH ke sini dari
+                    ternary POL/POD (posisi lama, lihat komentar D4 di atas)
+                    -- mockup menaruhnya SESUDAH Cargo ready date, SEBELUM
+                    Incoterms. Kondisi `!laneTbl` di sini adalah SALINAN
+                    PERSIS kondisi asli di tempat lamanya (ternary `!laneTbl ?
+                    (...tombol...) : (<LaneTable/>)`) -- SENGAJA ditulis
+                    berdiri sendiri, BUKAN disarangkan di dalam blok
+                    `{!isRS && ...}` di atas/bawah, supaya perilakunya tidak
+                    bergantung pada lokasinya. (Walau `laneTbl = isRS ||
+                    f.laneMode` -- lihat definisinya -- secara matematis
+                    membuat `!laneTbl` otomatis mengimplikasikan `!isRS`
+                    juga, jadi hasilnya identik; ditulis eksplisit tetap
+                    supaya tidak ada yang perlu dipercaya soal relasi
+                    keduanya saat dibaca ulang nanti.) */}
+                {!laneTbl && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    {/* [Putaran 16 Tahap 5] tombol kecil, diukur mockup terpisah dari
+                        S.btnGhost footer: height 32, padding '0 12px', fontSize 13. */}
+                    <button type="button" onClick={startLanes} style={{ ...S.btnGhost, height: 32, padding: '0 12px', fontSize: 13 }}><Plus size={15} />Add route option</button>
+                    <span style={{ fontSize: 12, color: C.sub }}>Add a second route when the customer wants to compare routes for the same shipment.</span>
+                  </div>
+                )}
+
+                {!isRS && (
+                  <>
                     <div>
                       <div style={S.label}>Incoterms</div>
-                      <div style={grid3}>{INCOTERMS.map((t) => <Pill key={t} variant="chip" active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
+                      {/* [Putaran E2] mockup: display:flex;flex-wrap:wrap;gap:8 --
+                          BUKAN grid kolom tetap (grid3 menjejalkan chip selebar sel,
+                          mockup chip selebar isi). `Pill variant="chip"` sendiri
+                          sudah byte-identik mockup (32px/radius16/padding '0 12px'),
+                          nol perubahan ke komponennya -- murni wrapper. */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{INCOTERMS.map((t) => <Pill key={t} variant="chip" active={f.incoterms.includes(t)} onClick={() => toggleArr('incoterms', t)}>{t}</Pill>)}</div>
                     </div>
                     <div>
                       <div style={S.label}>Container Type</div>
-                      <div style={grid2}>{CONTAINER_TYPES.map((t) => <Pill key={t} variant="chip" active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{CONTAINER_TYPES.map((t) => <Pill key={t} variant="chip" active={f.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}</div>
                     </div>
+                    {/* [Putaran E2] Number of containers kini SENDIRI (paling
+                        bawah, mockup) -- Cargo ready date yang dulu
+                        dipasangkan di sini sudah dipindah ke atas. Field
+                        ini sendiri TIDAK PERNAH digerbang kondisi
+                        visibilitas apa pun di versi asli (hanya `required`/
+                        `hint` yang berubah menurut `needsNContainers`) --
+                        tetap begitu, nol wrapper kosong karena Field ini
+                        selalu dirender saat blok `{!isRS}` ini aktif. */}
                     <div style={grid2}>
                       <Field label="Number of containers" required={needsNContainers} hint={needsNContainers ? 'Required when an FCL container type is selected.' : undefined}>
                         <input value={f.n_containers} onChange={handleNContainersChange} inputMode="numeric" style={S.input} placeholder="0" />
                         <FieldError>{errors.route_ncont}</FieldError>
                       </Field>
-                      {/* W-21 -- Cargo ready date hilang utk SEMUA service type
-                          saat laneTbl aktif, nol pengecualian DtD (beda dari
-                          Pickup/Delivery di atas). */}
-                      {!laneTbl && (
-                        <Field label="Cargo ready date">
-                          <input type="date" value={f.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
-                        </Field>
-                      )}
                     </div>
                   </>
                 )}
@@ -1795,11 +1830,15 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
 
             {stepKey === 'cargo' && (
               <div style={{ display: 'grid', gap: 20 }}>
-                <div style={grid2}>
-                  <Field label="Item Name (EN)"><input value={f.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
+                {/* [Putaran E2] mockup: Item Name span 2 kolom | HS Code (grid3,
+                    bukan grid2 lebar sama). */}
+                <div style={grid3}>
+                  <Field label="Item Name (EN)" span={2}><input value={f.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
                   <Field label="HS Code"><input value={f.hs_code} onChange={set('hs_code')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="0000.00.00" /></Field>
                 </div>
-                <div style={grid2}>
+                {/* [Putaran E2] mockup: Total Weight | Volume | Dimension SATU
+                    baris 3 kolom (grid3, bukan 2 grid2 terpisah). */}
+                <div style={grid3}>
                   <Field label="Total Weight">
                     <div style={{ position: 'relative' }}>
                       <input value={f.weight_kg} onChange={(e) => handleWeightChange(e.target.value)} onBlur={handleWeightBlur} inputMode="decimal" style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
@@ -1814,8 +1853,6 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
                     </div>
                     {volumeUnrecognized && <FieldError>Angka tidak dikenali</FieldError>}
                   </Field>
-                </div>
-                <div style={grid2}>
                   <Field label="Dimensi (P x L x T)"><input value={f.dimension} onChange={set('dimension')} style={S.input} placeholder="cth: 120 x 80 x 100 cm" /></Field>
                 </div>
                 <div>
@@ -1865,9 +1902,13 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             {stepKey === 'addl' && (
               <div>
                 <div style={S.label}>Additional Services</div>
-                {/* [Putaran 16 Tahap 5] bukan grid3 (dipakai kartu ikon ServiceCard/
-                    CargoCard) -- diukur mockup: `display:flex;gap:8px;flex-wrap:wrap`. */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SERVICES.map((s) => <TagCard key={s.id} item={s} active={f.additional_services.includes(s.id)} onClick={() => toggleArr('additional_services', s.id)} />)}</div>
+                {/* [Putaran E2] mockup diekspor ulang (hari ini) ternyata kartu ikon
+                    besar (264x72, radius 14, ikon lingkaran), pola BYTE-IDENTIK
+                    ServiceCard (Service Type) -- grid 3 kolom tetap, bukan chip.
+                    Komentar lama "Putaran 16 Tahap 5" (flex-wrap chip, nol ikon)
+                    sudah BASI terhadap mockup saat ini, digantikan ini. `ServiceCard`
+                    dipakai ULANG apa adanya (nol perubahan ke komponennya sendiri). */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>{SERVICES.map((s) => <ServiceCard key={s.id} icon={s.Icon} label={s.label} active={f.additional_services.includes(s.id)} onClick={() => toggleArr('additional_services', s.id)} />)}</div>
               </div>
             )}
 
@@ -1983,19 +2024,26 @@ export default function InquiryIntakeWizardPage({ prefillAccountId = null, prefi
             )}
 
           </div>
-        </section>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 8 }}>
-          <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
-          <span style={{ flex: 1 }} />
-          {stepIdx > 1 && <button type="button" style={S.btnGhost} onClick={goPrev}><ChevronLeft size={16} />Back</button>}
-          {stepIdx < SK.length && <button type="button" style={S.btnPrimary} onClick={goNext}>Next<ChevronRight size={16} /></button>}
-          {stepIdx === SK.length && (
-            <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleCreate} disabled={saving}>
-              {saving ? 'Creating…' : 'Create Inquiry'}
-            </button>
-          )}
-        </div>
+          {/* [Putaran E2] baris tombol PINDAH ke dalam kartu -- mockup: child
+              TERAKHIR <section> (sibling dari secBody di atas, BUKAN di
+              dalamnya), padding 16, border-top 1px LINE_SOFT. Berlaku di
+              SEMUA langkah termasuk Review karena ReviewStep dirender di
+              dalam secBody yang sama -- satu pemindahan ini menutup seluruh
+              langkah sekaligus. Isi/teks/perilaku tombol byte-identik,
+              `<span flex:1/>` spacer dipertahankan apa adanya. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: 16, borderTop: '1px solid ' + C.lineSoft }}>
+            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
+            <span style={{ flex: 1 }} />
+            {stepIdx > 1 && <button type="button" style={S.btnGhost} onClick={goPrev}><ChevronLeft size={16} />Back</button>}
+            {stepIdx < SK.length && <button type="button" style={S.btnPrimary} onClick={goNext}>Next<ChevronRight size={16} /></button>}
+            {stepIdx === SK.length && (
+              <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleCreate} disabled={saving}>
+                {saving ? 'Creating…' : 'Create Inquiry'}
+              </button>
+            )}
+          </div>
+        </section>
         </div>
 
         <RecentInquiriesAside items={recentInquiries} onOpen={(id) => navigate(`${MENU_PATHS['crm-inquiry']}/${id}`)} />
@@ -2196,13 +2244,19 @@ function ReviewStep({ f, accountText, contacts, isDoorToDoor, isGTf, isRS, servi
           Services/Notes) atau SEBAGIAN (Undername: cuma flag Yes/No, dan
           hanya utk Door-to-Door -- jalur Customs Clearance+Import nol
           representasi apa pun). Putaran 14 -- grup ini jg disembunyikan
-          total utk General Trading (tidak punya langkah "Cargo"). */}
+          total utk General Trading (tidak punya langkah "Cargo"). [Putaran
+          E2] "5a" di atas memang baru PARSIAL (2 dari 6 field mockup) --
+          4 field sisanya ditambah di sini, urutan sama persis mockup. */}
       {!isGTf && (
         <div>
           <GroupHeader title="Cargo" onClick={() => onEditStep('cargo')} />
           <div style={grid3}>
+            <ReviewRow label="Item Name" value={f.goods_name} />
+            <ReviewRow label="HS Code" value={f.hs_code} />
             <ReviewRow label="Total Weight (KG)" value={f.weight_kg} />
             <ReviewRow label="Volume (CBM)" value={f.volume_cbm} />
+            <ReviewRow label="Dimension" value={f.dimension} />
+            <ReviewRow label="Cargo Type" value={(f.cargo_types || []).map((id) => CARGO_TYPES.find((c) => c.id === id)?.label).filter(Boolean).join(', ')} />
           </div>
         </div>
       )}
