@@ -54,6 +54,13 @@ const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
 // SLA badge for the list row — On Time / Late / Pending / —
 function SlaBadge({ q }) {
+  // Revisi (revision > 1) tidak dihitung SLA sama sekali -- cermin
+  // SlaCard/QuotationDetailPage.jsx. Berlaku utk SEMUA status, termasuk
+  // SENT/ACCEPTED/REJECTED/SUPERSEDED yang biasanya tetap tampil On
+  // Time/Late -- quotation ini bukan lagi induk yang relevan (lihat
+  // komentar SUPERSEDED di bawah, yang bicara soal revisi 1).
+  if (Number(q.revision) > 1) return <span style={{ color: C.inkFaint }}>—</span>;
+
   const targetMs = (SLA_HOURS[q.service_type] || 6) * 3600000;
   /* SUPERSEDED ikut dihitung "pernah terkirim". Quotation yang sudah sampai ke
      customer lalu digantikan revisi TETAP punya angka SLA yang sah — tanpa ini

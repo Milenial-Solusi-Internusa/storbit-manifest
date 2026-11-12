@@ -57,6 +57,12 @@ function fmtDur(ms) {
 
 // SLA indicator card shown below the quotation header.
 function SlaCard({ quot }) {
+  // Revisi (revision > 1) tidak dihitung SLA sama sekali -- pricing_done_at
+  // ikut tersalin dari versi sebelumnya saat create_quotation_revision,
+  // sehingga draft baru bisa langsung tampak overdue padahal belum pernah
+  // dikirim. Keputusan Den: SLA hanya mengukur pengiriman PERTAMA.
+  if (Number(quot.revision) > 1) return null;
+
   const targetH  = SLA_HOURS[quot.service_type] || 6;
   const targetMs = targetH * 3600000;
   const pricing  = quot.pricing_done_at;
