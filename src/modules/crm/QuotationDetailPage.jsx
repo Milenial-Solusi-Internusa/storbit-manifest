@@ -272,7 +272,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone),
-          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no),
+          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no, status),
           accepted_by_profile:profiles!quotations_accepted_by_fkey(full_name)
         `)
         .eq('id', quotationId)
@@ -398,7 +398,16 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
   const canRevise = canAct && isLatestRevision && ['SENT', 'REJECTED'].includes(quot?.status);
   const canRecordOutcome = canAct && isLatestRevision && quot?.status === 'SENT';
-  const canSubmit = canAct && isLatestRevision && quot?.status === 'DRAFT';
+
+  /* Syarat tombol Submit (hotfix INI SAJA — canRevise/canRecordOutcome di atas
+     sengaja tak disentuh, di luar scope). Fail-closed: status inquiry kosong
+     atau embed null dihitung SAMA DENGAN tertutup → tombol disembunyikan,
+     bukan ditampilkan. WON ikut disembunyikan di sini (keputusan hotfix ini);
+     isInquiryClosed di develop cuma LOST/CANCELLED — JANGAN disamakan saat
+     porting, WON di sini sengaja beda. Pengecualian Rate Sheet Request utk
+     WON menyusul di develop, bukan di hotfix ini. */
+  const isInquiryClosedForSubmit = !quot?.inquiry?.status || ['LOST', 'CANCELLED', 'WON'].includes(quot.inquiry.status);
+  const canSubmit = canAct && isLatestRevision && quot?.status === 'DRAFT' && !isInquiryClosedForSubmit;
 
   /* Kurs yang dipakai item (non-IDR) tapi belum ada di tabel kurs header —
      cermin validateSubmit/missingRates di QuotationFormPage.jsx, DIDUPLIKASI
@@ -495,6 +504,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .select('id');
       if (error) throw error;
       if (!data || data.length === 0) {
+        setConfirmSubmit(false);
         showToast?.('Status quotation sudah berubah. Muat ulang halaman.', 'error');
         return;
       }
