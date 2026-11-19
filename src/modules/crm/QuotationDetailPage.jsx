@@ -491,9 +491,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .from('quotations')
         .update({ status: 'SUBMITTED', updated_by: profile.id })
         .eq('id', quotationId)
+        .eq('status', 'DRAFT') // guard layar basi: quotations tak punya CHECK status, ini satu-satunya pengaman
         .select('id');
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Failed to submit: no rows were updated (check access permissions).');
+      if (!data || data.length === 0) {
+        showToast?.('Status quotation sudah berubah. Muat ulang halaman.', 'error');
+        return;
+      }
       setQuot(q => q ? { ...q, status: 'SUBMITTED' } : q);
       setConfirmSubmit(false);
       showToast?.('Quotation submitted');
