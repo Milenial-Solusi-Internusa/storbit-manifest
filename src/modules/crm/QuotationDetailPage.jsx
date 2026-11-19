@@ -1,7 +1,7 @@
 // src/modules/crm/QuotationDetailPage.jsx
 // Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via @react-pdf/renderer (QuotationPDF)
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Edit2, Download, Receipt, Send, Copy, GitBranch, CheckCircle2, XCircle } from 'lucide-react';
+import { ChevronLeft, Edit2, Download, Receipt, Send, Copy, GitBranch, CheckCircle2, XCircle, ClipboardCheck } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -59,6 +59,12 @@ function fmtDur(ms) {
 
 // SLA indicator card shown below the quotation header.
 function SlaCard({ quot }) {
+  // Revisi (revision > 1) tidak dihitung SLA sama sekali -- pricing_done_at
+  // ikut tersalin dari versi sebelumnya saat create_quotation_revision,
+  // sehingga draft baru bisa langsung tampak overdue padahal belum pernah
+  // dikirim. Keputusan Den: SLA hanya mengukur pengiriman PERTAMA.
+  if (Number(quot.revision) > 1) return null;
+
   const targetH  = SLA_HOURS[quot.service_type] || 6;
   const targetMs = targetH * 3600000;
   const pricing  = quot.pricing_done_at;
@@ -232,6 +238,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const [generatingPDF,  setGeneratingPDF]  = useState(false);
   const [confirmSend,    setConfirmSend]    = useState(false);
   const [sending,        setSending]        = useState(false);
+  const [confirmSubmit,  setConfirmSubmit]  = useState(false);
+  const [submitting,     setSubmitting]     = useState(false);
   // Kontak utama akun tujuan quotation ini (prospect ATAU customer) — pengganti
   // accounts.pic_email/pic_phone (batch "kunci pic_*" 26 Jul 2026). Satu quotation
   // = satu detail view, jadi query tambahan tunggal ini aman (bukan risiko N+1
@@ -409,6 +417,26 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const canRevise = canAct && !isInquiryClosed && isLatestRevision && ['SENT', 'REJECTED'].includes(quot?.status);
   const canRecordOutcome = canAct && !isInquiryClosed && isLatestRevision && quot?.status === 'SENT';
 
+  /* Syarat tombol Submit (hotfix INI SAJA — canRevise/canRecordOutcome di atas
+     sengaja tak disentuh, di luar scope). Fail-closed: status inquiry kosong
+     atau embed null dihitung SAMA DENGAN tertutup → tombol disembunyikan,
+     bukan ditampilkan. WON ikut disembunyikan di sini (keputusan hotfix ini);
+     isInquiryClosed di develop cuma LOST/CANCELLED — JANGAN disamakan saat
+     porting, WON di sini sengaja beda. Pengecualian Rate Sheet Request utk
+     WON menyusul di develop, bukan di hotfix ini. */
+  const isInquiryClosedForSubmit = !quot?.inquiry?.status || ['LOST', 'CANCELLED', 'WON'].includes(quot.inquiry.status);
+  const canSubmit = canAct && isLatestRevision && quot?.status === 'DRAFT' && !isInquiryClosedForSubmit;
+
+  /* Kurs yang dipakai item (non-IDR) tapi belum ada di tabel kurs header —
+     cermin validateSubmit/missingRates di QuotationFormPage.jsx, DIDUPLIKASI
+     sengaja (file itu di luar scope hotfix ini). Diletakkan sebelum early
+     return loading/not-found di bawah supaya aturan hook terpenuhi. */
+  const missingSubmitRates = useMemo(() => {
+    const used = {};
+    items.forEach(r => { if (r.currency && r.currency !== 'IDR') used[r.currency] = true; });
+    return Object.keys(used).filter(c => !(Number(quot?.exchange_rates?.[c]) > 0));
+  }, [items, quot?.exchange_rates]);
+
   // ── Revisi baru: RPC menyalin header+item, sumber jadi SUPERSEDED ─────────
   const handleCreateRevision = async () => {
     setActionSaving(true);
@@ -479,6 +507,48 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     }
   };
 
+  // ── Submit Quotation (Detail) — set status SUBMITTED, pola sama dgn
+  // handleSendToCustomer: update kolom langsung, BUKAN RPC save_quotation
+  // (badannya men-DELETE lalu re-INSERT quotation_items; aman dipanggil
+  // minimal dari form yang membawa p_items penuh, TIDAK aman dipanggil
+  // dari Detail yang tak punya representasi item siap-tulis). ─────────────
+  const handleSubmitClick = () => {
+    if (!quot?.inquiry_id) {
+      showToast?.('This quotation has no inquiry linked. Open Edit to select one before submitting.', 'error');
+      return;
+    }
+    if (missingSubmitRates.length > 0) {
+      showToast?.(`Exchange rate for ${missingSubmitRates.join(', ')} is missing. Open Edit to fill in the rate before submitting.`, 'error');
+      return;
+    }
+    setConfirmSubmit(true);
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .update({ status: 'SUBMITTED', updated_by: profile.id })
+        .eq('id', quotationId)
+        .eq('status', 'DRAFT') // guard layar basi: quotations tak punya CHECK status, ini satu-satunya pengaman
+        .select('id');
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setConfirmSubmit(false);
+        showToast?.('Status quotation sudah berubah. Muat ulang halaman.', 'error');
+        return;
+      }
+      setQuot(q => q ? { ...q, status: 'SUBMITTED' } : q);
+      setConfirmSubmit(false);
+      showToast?.('Quotation submitted');
+    } catch (err) {
+      showToast?.('Failed to submit: ' + err.message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // ── PDF generator — @react-pdf/renderer (vector/text, auto pagination) ──────
   const handleDownloadPDF = async () => {
     setGeneratingPDF(true);
@@ -540,6 +610,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           <StatusBadge status={quot.status} />
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          {canSubmit && (
+            <button
+              onClick={handleSubmitClick}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
+            >
+              <ClipboardCheck size={14} /> Submit Quotation
+            </button>
+          )}
           {!isInquiryClosed && quot.status === 'SUBMITTED' && (
             <button
               onClick={() => setConfirmSend(true)}
@@ -1072,6 +1150,17 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         variant="info"
         onConfirm={handleSendToCustomer}
         onCancel={() => setConfirmSend(false)}
+      />
+
+      <ConfirmModal
+        open={confirmSubmit}
+        title="Submit Quotation?"
+        message={`Quotation ${formatQuotationNo(quot.quotation_no, quot.revision)} will be marked SUBMITTED. You can then send it to the customer. Continue?`}
+        confirmLabel={submitting ? 'Submitting…' : 'Yes, Submit'}
+        cancelLabel="Cancel"
+        variant="info"
+        onConfirm={handleSubmit}
+        onCancel={() => setConfirmSubmit(false)}
       />
 
       {/* `key` mengikutkan `rejectOpen` supaya state lokal modal (isi textarea +
