@@ -14,6 +14,15 @@ const VAT_RATE = 0.011;
 
 // id-ID number without the "Rp" prefix (callers add "Rp " where needed).
 const rpN = (n) => (Number(n) || 0).toLocaleString('id-ID');
+// 2-desimal, dipakai utk nominal mata uang asing (USD/EUR/dll, lazim 2 desimal).
+const rpDec = (n) => (Number(n) || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Format nominal + kode mata uang. IDR -> "Rp {n}" (0 desimal, sama dgn rpN di
+// seluruh file ini); selain itu -> "{code} {n}" (2 desimal).
+const fmtAmt = (amount, code) => (code === 'IDR' || !code) ? `Rp ${rpN(amount)}` : `${code} ${rpDec(amount)}`;
+// Nominal NATIVE baris (unit_price × qty, TANPA exchange_rate) -- dipakai
+// Mode 1 (per currency, tanpa konversi). Utk baris IDR ini SELALU identik
+// dgn r.total (exchange_rate IDR = 1), jadi aman dipakai di mode mana pun.
+const nativeAmount = (r) => Math.round((Number(r.unit_price) || 0) * (Number(r.qty) || 0));
 function fmtDateShort(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -97,8 +106,21 @@ const styles = StyleSheet.create({
   footHours: { fontSize: 7.5, color: '#FFB899', marginTop: 3 },
 });
 
-export default function QuotationPDF({ quot, items = [], sections = [], creatorProfile, primaryContact }) {
+export default function QuotationPDF({
+  quot, items = [], sections = [], creatorProfile, primaryContact,
+  // Multi-currency (Keputusan Mas, 12 Nov 2026) -- pdfMode null/undefined =
+  // quotation single-currency ATAU Mode 2 eksplisit, KEDUANYA sengaja
+  // dirender lewat jalur yang SAMA PERSIS seperti sebelum fitur ini ada (nol
+  // baris berubah utk quotation single-currency). perCurrency/singleForeign*
+  // dihitung SEKALI di QuotationDetailPage.jsx (satu sumber kebenaran,
+  // dipakai juga utk gating popup + ringkasan layar Detail).
+  pdfMode, perCurrency = {}, singleForeignCode = null, singleForeignRate = 0,
+}) {
   if (!quot) return null;
+  // 'all_idr' (Mode 2 dipilih eksplisit dari popup) = SECARA MATEMATIS identik
+  // dgn jalur default -- dirender lewat cabang yang sama (lihat pemakaian di
+  // bawah: `pdfMode === 'per_currency'` / `pdfMode === 'all_foreign'` saja
+  // yang membelokkan ke jalur baru).
 
   const clientName = quot.prospect?.name || quot.customer?.name || '-';
   // Kontak utama akun (tabel contacts) — bukan accounts.pic_email/pic_phone lagi
@@ -122,6 +144,18 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const effVat     = Number(quot.vat_rate ?? VAT_RATE); // null (old quotes) → 1.1%
   const tax        = quot.tax_amount   ?? Math.round((subtotal - discountAmount) * effVat);
   const grandTotal = quot.total_amount ?? ((subtotal - discountAmount) + tax);
+
+  /* Mode 3 (Semua dalam mata uang asing) -- Keputusan Mas 12 Nov 2026: PPN
+     TETAP baris IDR terpisah (TIDAK dikonversi -- kewajiban pajak Indonesia
+     berdenominasi IDR, bukan sekadar pilihan tampilan). Subtotal/Diskon/GRAND
+     TOTAL di luar PPN BOLEH dikonversi, caranya pembagian angka IDR yang
+     SUDAH BENAR (di atas) dengan kurs -- BUKAN dihitung ulang dari basis
+     baru (itu akan mencampur unit: subtotal asing + diskon asing + pajak IDR
+     tak bisa dijumlah langsung). Keputusan ini SEMENTARA, masih pertanyaan
+     terbuka menunggu jawaban resmi Finance -- lihat laporan sesi. */
+  const subtotalForeign = singleForeignRate > 0 ? subtotal / singleForeignRate : 0;
+  const discountForeign = singleForeignRate > 0 ? discountAmount / singleForeignRate : 0;
+  const grandTotalForeign = singleForeignRate > 0 ? grandTotal / singleForeignRate : 0;
 
   const salesPhone = creatorProfile?.phone || '';
   const salesEmail = creatorProfile?.email || ''; // profiles has no email column → usually empty (rendered only if present)
@@ -222,57 +256,163 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
                 <Text style={[styles.th, styles.cPrice]}>PRICE</Text>
                 <Text style={[styles.th, styles.cUnit]}>UNIT</Text>
                 <Text style={[styles.th, styles.cQty]}>QTY</Text>
-                <Text style={[styles.th, styles.cTotal]}>TOTAL (IDR)</Text>
+                <Text style={[styles.th, styles.cTotal]}>
+                  {pdfMode === 'per_currency' ? 'TOTAL' : pdfMode === 'all_foreign' ? `TOTAL (${singleForeignCode})` : 'TOTAL (IDR)'}
+                </Text>
               </View>
             </View>
-            {sec.rows.map((r, ri) => (
-              <View key={r.id || ri} wrap={false} style={[styles.row, { backgroundColor: ri % 2 === 0 ? '#fff' : '#fafaf8' }]}>
-                <Text style={[styles.td, styles.cDesc]}>{r.description || '—'}</Text>
-                <Text style={[styles.td, styles.cCur, r.currency === 'USD' ? { color: '#a45a22' } : null]}>{r.currency || 'IDR'}</Text>
-                <Text style={[styles.td, styles.cPrice]}>{rpN(r.unit_price)}</Text>
-                <Text style={[styles.td, styles.cUnit]}>{r.unit_label || '—'}</Text>
-                <Text style={[styles.td, styles.cQty]}>{r.qty || 1}</Text>
-                {r.if_any ? (
-                  <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Oblique', color: '#777' }]}>(if any)</Text>
-                ) : (
-                  <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(r.total)}
-                    {r.currency !== 'IDR' && (
-                      <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, color: '#777' }}>{'\n'}× kurs {rpN(r.exchange_rate)}</Text>
-                    )}
-                  </Text>
-                )}
+            {sec.rows.map((r, ri) => {
+              // Nominal baris utk mode ini saja -- null (mode null/'all_idr')
+              // = jatuh ke cabang lama yang TIDAK disentuh sama sekali.
+              const rowDisp = (!r.if_any && pdfMode === 'per_currency')
+                ? { currency: r.currency || 'IDR', amount: nativeAmount(r) }
+                : (!r.if_any && pdfMode === 'all_foreign')
+                  ? ((r.currency || 'IDR') === singleForeignCode
+                      ? { currency: singleForeignCode, amount: nativeAmount(r) }
+                      : { currency: singleForeignCode, amount: singleForeignRate > 0 ? (Number(r.total) || 0) / singleForeignRate : 0 })
+                  : null;
+              return (
+                <View key={r.id || ri} wrap={false} style={[styles.row, { backgroundColor: ri % 2 === 0 ? '#fff' : '#fafaf8' }]}>
+                  <Text style={[styles.td, styles.cDesc]}>{r.description || '—'}</Text>
+                  <Text style={[styles.td, styles.cCur, r.currency === 'USD' ? { color: '#a45a22' } : null]}>{r.currency || 'IDR'}</Text>
+                  <Text style={[styles.td, styles.cPrice]}>{rpN(r.unit_price)}</Text>
+                  <Text style={[styles.td, styles.cUnit]}>{r.unit_label || '—'}</Text>
+                  <Text style={[styles.td, styles.cQty]}>{r.qty || 1}</Text>
+                  {r.if_any ? (
+                    <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Oblique', color: '#777' }]}>(if any)</Text>
+                  ) : rowDisp ? (
+                    <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>{fmtAmt(rowDisp.amount, rowDisp.currency)}</Text>
+                  ) : (
+                    <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(r.total)}
+                      {r.currency !== 'IDR' && (
+                        <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, color: '#777' }}>{'\n'}× kurs {rpN(r.exchange_rate)}</Text>
+                      )}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+            {pdfMode === 'per_currency' ? (
+              // Section bisa campur mata uang (mis. ORIGIN CHARGES ber-USD DAN
+              // IDR sekaligus) -- satu baris per mata uang yang muncul di
+              // section ini, BUKAN satu angka gabungan (itu persis bug yang
+              // sedang ditutup fitur ini).
+              Object.entries(sec.rows.reduce((m, r) => {
+                if (r.if_any) return m;
+                const code = r.currency || 'IDR';
+                m[code] = (m[code] || 0) + nativeAmount(r);
+                return m;
+              }, {})).map(([code, amt]) => (
+                <View key={code} wrap={false} style={[styles.row, styles.secTotalRow]}>
+                  <Text style={[styles.td, { width: '79%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>{`Section Total (${code}):`}</Text>
+                  <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>{fmtAmt(amt, code)}</Text>
+                </View>
+              ))
+            ) : pdfMode === 'all_foreign' ? (
+              <View wrap={false} style={[styles.row, styles.secTotalRow]}>
+                <Text style={[styles.td, { width: '79%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>Section Total:</Text>
+                <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>
+                  {fmtAmt(sec.rows.reduce((s, r) => {
+                    if (r.if_any) return s;
+                    if ((r.currency || 'IDR') === singleForeignCode) return s + nativeAmount(r);
+                    return s + (singleForeignRate > 0 ? (Number(r.total) || 0) / singleForeignRate : 0);
+                  }, 0), singleForeignCode)}
+                </Text>
               </View>
-            ))}
-            <View wrap={false} style={[styles.row, styles.secTotalRow]}>
-              <Text style={[styles.td, { width: '79%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>Section Total:</Text>
-              <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(sec.total)}</Text>
-            </View>
+            ) : (
+              <View wrap={false} style={[styles.row, styles.secTotalRow]}>
+                <Text style={[styles.td, { width: '79%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>Section Total:</Text>
+                <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(sec.total)}</Text>
+              </View>
+            )}
           </View>
         ))}
 
         {/* [4] Grand summary */}
         <View style={styles.summaryWrap} wrap={false}>
           <View style={styles.summaryTable}>
-            <View style={styles.sumRow}>
-              <Text style={styles.sumLabel}>Subtotal</Text>
-              <Text style={styles.sumVal}>Rp {rpN(subtotal)}</Text>
-            </View>
-            {discountPct > 0 && (
-              <View style={styles.sumRow}>
-                <Text style={styles.sumLabel}>Diskon ({discountPct}%)</Text>
-                <Text style={styles.sumVal}>−Rp {rpN(discountAmount)}</Text>
-              </View>
+            {pdfMode === 'per_currency' ? (
+              <>
+                {Object.entries(perCurrency).map(([code, amt]) => (
+                  <View key={code} style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>{`Subtotal (${code})`}</Text>
+                    <Text style={styles.sumVal}>{fmtAmt(amt, code)}</Text>
+                  </View>
+                ))}
+                <View style={[styles.sumRow, { marginTop: 4 }]}>
+                  <Text style={[styles.sumLabel, { fontFamily: 'Helvetica-Bold' }]}>Ekuivalen IDR</Text>
+                  <Text style={styles.sumVal}> </Text>
+                </View>
+                <View style={styles.sumRow}>
+                  <Text style={styles.sumLabel}>Subtotal</Text>
+                  <Text style={styles.sumVal}>Rp {rpN(subtotal)}</Text>
+                </View>
+                {discountPct > 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>Diskon ({discountPct}%)</Text>
+                    <Text style={styles.sumVal}>−Rp {rpN(discountAmount)}</Text>
+                  </View>
+                )}
+                {effVat !== 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '%'}</Text>
+                    <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
+                  </View>
+                )}
+                <View style={styles.grandRow}>
+                  <Text style={styles.grandLabel}>GRAND TOTAL (IDR)</Text>
+                  <Text style={styles.grandVal}>Rp {rpN(grandTotal)}</Text>
+                </View>
+              </>
+            ) : pdfMode === 'all_foreign' ? (
+              <>
+                <View style={styles.sumRow}>
+                  <Text style={styles.sumLabel}>{`Subtotal (${singleForeignCode})`}</Text>
+                  <Text style={styles.sumVal}>{fmtAmt(subtotalForeign, singleForeignCode)}</Text>
+                </View>
+                {discountPct > 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>Diskon ({discountPct}%)</Text>
+                    <Text style={styles.sumVal}>−{fmtAmt(discountForeign, singleForeignCode)}</Text>
+                  </View>
+                )}
+                {/* PPN SENGAJA TETAP IDR, TIDAK dikonversi -- Keputusan Mas
+                    12 Nov 2026 (sementara, menunggu jawaban resmi Finance). */}
+                {effVat !== 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '% (IDR)'}</Text>
+                    <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
+                  </View>
+                )}
+                <View style={styles.grandRow}>
+                  <Text style={styles.grandLabel}>{`GRAND TOTAL (${singleForeignCode})`}</Text>
+                  <Text style={styles.grandVal}>{fmtAmt(grandTotalForeign, singleForeignCode)}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.sumRow}>
+                  <Text style={styles.sumLabel}>Subtotal</Text>
+                  <Text style={styles.sumVal}>Rp {rpN(subtotal)}</Text>
+                </View>
+                {discountPct > 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>Diskon ({discountPct}%)</Text>
+                    <Text style={styles.sumVal}>−Rp {rpN(discountAmount)}</Text>
+                  </View>
+                )}
+                {effVat !== 0 && (
+                  <View style={styles.sumRow}>
+                    <Text style={styles.sumLabel}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '%'}</Text>
+                    <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
+                  </View>
+                )}
+                <View style={styles.grandRow}>
+                  <Text style={styles.grandLabel}>GRAND TOTAL</Text>
+                  <Text style={styles.grandVal}>Rp {rpN(grandTotal)}</Text>
+                </View>
+              </>
             )}
-            {effVat !== 0 && (
-              <View style={styles.sumRow}>
-                <Text style={styles.sumLabel}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '%'}</Text>
-                <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
-              </View>
-            )}
-            <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>GRAND TOTAL</Text>
-              <Text style={styles.grandVal}>Rp {rpN(grandTotal)}</Text>
-            </View>
           </View>
         </View>
 
