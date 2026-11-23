@@ -40,6 +40,11 @@ const C = {
 const VAT_RATE = 0.011;
 const rp  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const rpN = (n) => (Number(n) || 0).toLocaleString('id-ID'); // no "Rp" prefix — used inside PDF table
+// Native-currency amount, no "Rp" assumption -- IDR dapat prefix "Rp", mata
+// uang lain dapat kode di depan + 2 desimal (lazim utk USD/EUR/SGD/dll).
+const fmtCur = (n, code) => (code === 'IDR' || !code)
+  ? rp(n)
+  : `${code} ${(Number(n) || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ─── Quote SLA (BD-05) ──────────────────────────────────────────────────────
 const SLA_HOURS = { freight_forwarding: 6, customs: 8, trading: 8 };
@@ -175,6 +180,89 @@ function InfoRow({ label, value }) {
    Alasan WAJIB karena set_quotation_outcome() menolak REJECTED tanpa alasan
    dengan exception. Memvalidasi di sini membuat penolakannya terbaca sebagai
    pesan form, bukan sebagai error server. */
+/* ── CurrencyModePopup — LOKAL, pola sama RejectReasonModal ──────────────
+   Muncul SEBELUM generate PDF saat quotation campuran >1 mata uang. Mode 3
+   disembunyikan (bukan disabled) kalau tidak tersedia -- konsisten dgn pola
+   tombol aksi lain di file ini ("tombol mati tanpa penjelasan memaksa user
+   menebak"). Nol state di sini yang pernah ditulis ke DB -- murni pilihan
+   tampilan utk sesi generate PDF ini saja. */
+function CurrencyModePopup({ open, currencyCodes, isMode3Available, singleForeignCode, generating, onConfirm, onCancel }) {
+  // Reset ke default tiap dibuka lewat `key` di call-site (pola sama
+  // RejectReasonModal di file ini) -- BUKAN useEffect, supaya tak menambah
+  // instance baru react-hooks/set-state-in-effect (sudah ada 2 di file ini,
+  // net-zero lint).
+  const [mode, setMode] = useState('per_currency');
+
+  if (!open) return null;
+
+  const options = [
+    {
+      value: 'per_currency',
+      label: 'Per Currency (default)',
+      desc: `Subtotal dipisah per mata uang (${currencyCodes.join(', ')}), tanpa konversi. Masing-masing baris tetap dalam mata uang aslinya.`,
+    },
+    {
+      value: 'all_idr',
+      label: 'Semua dalam IDR',
+      desc: 'Seluruh baris dikonversi ke IDR memakai kurs di header quotation, lalu dijumlah jadi satu total.',
+    },
+  ];
+  if (isMode3Available) {
+    options.push({
+      value: 'all_foreign',
+      label: `Semua dalam ${singleForeignCode}`,
+      desc: `Baris IDR dikonversi ke ${singleForeignCode} memakai kurs header; baris ${singleForeignCode} tetap apa adanya.`,
+    });
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,18,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+      <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '22px 24px', width: 460, maxWidth: '100%', boxShadow: '0 12px 40px rgba(0,0,0,.18)' }}>
+        <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6 }}>Pilih tampilan mata uang</div>
+        <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>
+          Quotation ini memakai lebih dari satu mata uang. Pilih cara total ditampilkan di PDF.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+          {options.map(opt => (
+            <label
+              key={opt.value}
+              style={{
+                display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                padding: '10px 12px', borderRadius: 10,
+                border: `1px solid ${mode === opt.value ? C.accent : C.line}`,
+                background: mode === opt.value ? C.accentSoft : C.surface2,
+              }}
+            >
+              <input
+                type="radio" name="currency-mode" value={opt.value}
+                checked={mode === opt.value}
+                onChange={() => setMode(opt.value)}
+                style={{ marginTop: 3 }}
+              />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>{opt.label}</div>
+                <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{opt.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <button onClick={onCancel} disabled={generating}
+            style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: generating ? 'not-allowed' : 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={() => onConfirm(mode)} disabled={generating}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: generating ? 'not-allowed' : 'pointer', opacity: generating ? .7 : 1 }}>
+            {generating ? 'Generating…' : 'Generate PDF'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RejectReasonModal({ open, quotationNo, saving, onSave, onCancel }) {
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
@@ -240,6 +328,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const [sending,        setSending]        = useState(false);
   const [confirmSubmit,  setConfirmSubmit]  = useState(false);
   const [submitting,     setSubmitting]     = useState(false);
+  const [modePopupOpen,  setModePopupOpen]  = useState(false);
   // Kontak utama akun tujuan quotation ini (prospect ATAU customer) — pengganti
   // accounts.pic_email/pic_phone (batch "kunci pic_*" 26 Jul 2026). Satu quotation
   // = satu detail view, jadi query tambahan tunggal ini aman (bukan risiko N+1
@@ -437,6 +526,34 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     return Object.keys(used).filter(c => !(Number(quot?.exchange_rates?.[c]) > 0));
   }, [items, quot?.exchange_rates]);
 
+  /* ── Multi-currency print/display (Keputusan Mas, 12 Nov 2026) ───────────
+     perCurrency = subtotal NATIVE (unit_price × qty, TANPA exchange_rate)
+     dikelompokkan per currency -- "If Any" di-exclude, cermin aturan
+     subtotal/tax/grandTotal di atas. Dipakai utk (a) deteksi quotation
+     single-currency vs campuran (b) breakdown Mode 1 (c) deteksi satu-satunya
+     mata uang asing utk Mode 3. SENGAJA independen dari `subtotal` (yang
+     memang IDR cross-currency, dipakai utuh sbg "Ekuivalen IDR") --
+     menyentuhnya akan mengubah tampilan quotation single-currency juga. */
+  const perCurrency = useMemo(() => {
+    const map = {};
+    items.forEach(r => {
+      if (r.if_any) return;
+      const code = r.currency || 'IDR';
+      const native = Math.round((Number(r.unit_price) || 0) * (Number(r.qty) || 0));
+      map[code] = (map[code] || 0) + native;
+    });
+    return map;
+  }, [items]);
+  const currencyCodes = useMemo(() => Object.keys(perCurrency), [perCurrency]);
+  // >1 kode = campuran (termasuk "semua USD, nol IDR" -- itu TETAP satu kode,
+  // jadi tetap dianggap single-currency, tampilan tak berubah).
+  const isMultiCurrency = currencyCodes.length > 1;
+  const foreignCurrencyCodes = useMemo(() => currencyCodes.filter(c => c !== 'IDR'), [currencyCodes]);
+  const singleForeignCode = foreignCurrencyCodes.length === 1 ? foreignCurrencyCodes[0] : null;
+  const singleForeignRate = singleForeignCode ? (Number(quot?.exchange_rates?.[singleForeignCode]) || 0) : 0;
+  // Mode 3 cuma valid kalau TEPAT satu mata uang asing DAN kursnya ada di header.
+  const isMode3Available = isMultiCurrency && !!singleForeignCode && singleForeignRate > 0;
+
   // ── Revisi baru: RPC menyalin header+item, sumber jadi SUPERSEDED ─────────
   const handleCreateRevision = async () => {
     setActionSaving(true);
@@ -550,11 +667,21 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   };
 
   // ── PDF generator — @react-pdf/renderer (vector/text, auto pagination) ──────
-  const handleDownloadPDF = async () => {
+  // pdfMode: null (quotation single-currency, PERSIS perilaku lama) atau salah
+  // satu 'per_currency' | 'all_idr' | 'all_foreign' (dipilih dari popup, hanya
+  // utk quotation campuran >1 mata uang).
+  const generatePdfWithMode = async (pdfMode) => {
     setGeneratingPDF(true);
     try {
       const blob = await pdf(
-        <QuotationPDF quot={quot} items={items} sections={sections} creatorProfile={creatorProfile} primaryContact={primaryContact} />
+        <QuotationPDF
+          quot={quot} items={items} sections={sections}
+          creatorProfile={creatorProfile} primaryContact={primaryContact}
+          pdfMode={pdfMode}
+          perCurrency={perCurrency}
+          singleForeignCode={singleForeignCode}
+          singleForeignRate={singleForeignRate}
+        />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -568,6 +695,16 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     } finally {
       setGeneratingPDF(false);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    if (isMultiCurrency) { setModePopupOpen(true); return; }
+    generatePdfWithMode(null);
+  };
+
+  const handleConfirmCurrencyMode = (mode) => {
+    setModePopupOpen(false);
+    generatePdfWithMode(mode);
   };
 
   // ── Loading / not found ───────────────────────────────────────────────
@@ -865,6 +1002,27 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
                 </div>
               </div>
             </div>
+
+            {/* Multi-currency (Keputusan Mas, 12 Nov 2026): subtotal per mata
+                uang, fixed -- TIDAK ikut berubah sesuai mode PDF terakhir
+                dipilih. Quotation single-currency: blok ini nol render, dan
+                blok "Ekuivalen IDR" di bawah tampil PERSIS seperti sebelum
+                perubahan ini (label sama, tanpa heading tambahan). */}
+            {isMultiCurrency && (
+              <>
+                <div style={{ height: 1, background: C.line, marginBottom: 12 }} />
+                <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: C.inkFaint }}>Subtotal per Mata Uang</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                  {currencyCodes.map(code => (
+                    <div key={code} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: code === 'IDR' ? C.inkSoft : C.orange, fontWeight: 600 }}>{code}</span>
+                      <span style={{ fontWeight: 700, color: code === 'IDR' ? C.ink : C.orange }}>{fmtCur(perCurrency[code], code)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: C.inkFaint }}>Ekuivalen IDR</p>
+              </>
+            )}
 
             <div style={{ height: 1, background: C.line, marginBottom: 12 }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -1187,6 +1345,17 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         tokens={C}
         onSave={({ notes, file }) => handleOutcome('ACCEPTED', notes, file)}
         onCancel={() => { setAcceptOpen(false); setUploadError(''); }}
+      />
+
+      <CurrencyModePopup
+        key={`currency-mode-${quotationId}-${modePopupOpen}`}
+        open={modePopupOpen}
+        currencyCodes={currencyCodes}
+        isMode3Available={isMode3Available}
+        singleForeignCode={singleForeignCode}
+        generating={generatingPDF}
+        onConfirm={handleConfirmCurrencyMode}
+        onCancel={() => setModePopupOpen(false)}
       />
     </div>
   );
