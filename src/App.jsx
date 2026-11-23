@@ -1479,6 +1479,11 @@ function NexusSidebar({
 
   const go = (id) => { onNavigate(id); if (asDrawer) onClose?.(); };
 
+  // profileBadgeLabel — badge profil footer: jabatan asli (profiles.job_title)
+  // kalau terisi, fallback ke currentRoleLabel (prop, tidak diubah) kalau
+  // kosong/null. Murni tampilan, cermin logika yang sama di komponen induk.
+  const profileBadgeLabel = (profile?.job_title && profile.job_title.trim()) ? profile.job_title : currentRoleLabel;
+
   const asideClass = asDrawer
     ? 'lg:hidden flex flex-col w-[264px] max-w-[85vw] fixed top-0 left-0 h-screen z-50 transition-transform duration-300 ease-out'
     : 'hidden lg:flex flex-col w-[248px] flex-shrink-0 sticky top-0 h-screen';
@@ -1748,7 +1753,7 @@ function NexusSidebar({
         </div>
         <div style={{ minWidth: 0, lineHeight: 1.3 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || 'User'}</div>
-          <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentRoleLabel}</div>
+          <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profileBadgeLabel}</div>
         </div>
       </div>
     </aside>
@@ -2695,6 +2700,11 @@ export default function StorbitManifest() {
   // eslint-disable-next-line no-unused-vars
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label ?? (role ?? NO_ROLE_LABEL);
+  // profileBadgeLabel — badge profil (dropdown, trigger, tooltip logout) tampilkan
+  // jabatan asli (profiles.job_title) kalau terisi, fallback ke currentRoleLabel
+  // kalau kosong/null. Murni tampilan — currentRoleLabel sendiri TIDAK diubah,
+  // ia masih dipakai untuk logika lain (lihat `shell`/prop ke NexusSidebar/HomeDashboard).
+  const profileBadgeLabel = (profile?.job_title && profile.job_title.trim()) ? profile.job_title : currentRoleLabel;
 
   // Content-level access gate (Fix C / defense-in-depth): only render a module
   // page if the user can access its menu. The sidebar already gates visibility
@@ -2872,7 +2882,7 @@ export default function StorbitManifest() {
               onClick={signOut}
               className="border rounded-full px-3 py-1.5 text-[11px] font-medium flex items-center gap-1.5"
               style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
-              title={`${profile?.full_name || 'User'} · ${currentRoleLabel}`}
+              title={`${profile?.full_name || 'User'} · ${profileBadgeLabel}`}
             >
               <LogOut size={11}/>
               Logout
@@ -3030,7 +3040,7 @@ export default function StorbitManifest() {
                         {profile?.full_name || 'User'}
                       </div>
                       <div className="text-[9px] uppercase tracking-wider truncate" style={{ color: PASTEL.inkMute }}>
-                        {currentRoleLabel}
+                        {profileBadgeLabel}
                       </div>
                     </div>
                     <ChevronRight size={12} className="shrink-0 hidden sm:block ml-auto"
@@ -3060,7 +3070,7 @@ export default function StorbitManifest() {
                                 {profile?.full_name || 'User'}
                               </div>
                               <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
-                                {currentRoleLabel}
+                                {profileBadgeLabel}
                               </div>
                               <div className="text-[10px]" style={{ color: PASTEL.inkMute }}>MSI Group</div>
                             </div>
