@@ -31,6 +31,41 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-11-23
+
+### Hotfix CRM — cetak & tampilan quotation multi-currency (3 mode) + reconcile hotfix lama (G1 SLA, G2 Submit Quotation) ke `develop`
+
+> Ditulis doc-keeper 23 Nov 2026, dipanggil di akhir unit kerja. Fakta commit/diff/lint/build di bagian A dan B DIVERIFIKASI LANGSUNG doc-keeper (`git show`, `node scripts/qa/lint-baseline.mjs`, `npm run build`) di HEAD `develop`@`fd00cb2` — bukan laporan sesi. Hasil uji Vercel Preview (bagian C) DILAPORKAN SESI yang mengerjakan porting; doc-keeper tidak membuka aplikasi/DB sendiri.
+
+**A. Masalah dan isi fitur.** Quotation dengan item lintas mata uang (mis. satu baris IDR + satu baris USD dalam satu quotation) sebelumnya SELALU ditampilkan dan dicetak sebagai SATU total Rupiah gabungan — matematisnya sudah lama benar (tiap baris `quotation_items.total` memang sudah dikonversi ke IDR memakai `exchange_rate` baris itu sendiri), tapi tidak ada cara melihat breakdown per mata uang asli. Commit `main`@`9129321` (lalu `develop`@`fd00cb2`, cherry-pick — lihat bagian B) menambah:
+
+- **Popup 3 mode** (`CurrencyModePopup`, `QuotationDetailPage.jsx`) muncul saat klik Download PDF, **hanya untuk quotation campuran >1 mata uang** (`isMultiCurrency`, dari `useMemo` `perCurrency` — subtotal NATIVE per kode mata uang [`Math.round(unit_price × qty)`, tanpa `exchange_rate`], baris `if_any` dikecualikan; satu sumber ini dipakai juga oleh ringkasan layar Detail dan deteksi ketersediaan Mode 3):
+  - **"Per Currency" (default)** — tanpa konversi, tiap baris/section tetap dalam mata uang aslinya, dijumlah per kode. **GRAND TOTAL akhir PDF tetap satu angka IDR** di bawah ringkasan per-currency — ringkasannya murni tambahan di atas total IDR yang sudah ada, bukan pengganti.
+  - **"Semua dalam IDR"** — = perilaku lama persis (dikonversi pakai kurs header); dirender lewat cabang kode yang SAMA dengan `pdfMode=null` (quotation single-currency), jadi secara matematis identik dan nol baris baru tereksekusi untuk kasus ini.
+  - **"Semua dalam satu mata uang asing"** — hanya tersedia sebagai pilihan (`isMode3Available`) kalau quotation itu tepat punya SATU mata uang asing selain IDR DAN kursnya terisi di header (`quot.exchange_rates[code] > 0`). Subtotal/Diskon/GRAND TOTAL dikonversi dengan MEMBAGI angka IDR yang sudah benar dengan kurs header — bukan dihitung ulang dari basis baru (supaya unit subtotal+diskon+pajak tidak tercampur saat dijumlah).
+- **Blok baru di layar Detail** ("Subtotal per Mata Uang" + "Ekuivalen IDR") — FIXED, TIDAK ikut berubah sesuai mode PDF terakhir dipilih. Quotation satu mata uang (termasuk semua-IDR, kasus paling umum di produksi) **nol render tambahan sama sekali**.
+- ⚠️ **PPN Mode 3 SENGAJA TETAP satu baris IDR terpisah ("PPN X% (IDR)"), TIDAK dikonversi ke mata uang asing** — alasan tertulis di komentar kode: PPN Indonesia berdenominasi IDR, mengonversinya bisa menyesatkan walau baru sebatas quotation (bukan faktur pajak sungguhan). **Keputusan SEMENTARA**, masih pertanyaan terbuka menunggu jawaban resmi Finance → Keputusan Terbuka baru **#87**.
+
+File yang disentuh: `src/modules/crm/QuotationDetailPage.jsx` (popup + ringkasan per-currency, +173/−1 baris) dan `src/modules/crm/QuotationPDF.jsx` (3 varian cetak, +224/−44 baris). ⛔ NOL migrasi/SQL; NOL perubahan skema DB; `QuotationFormPage.jsx` (form input) dan jalur simpan quotation TIDAK disentuh sama sekali.
+
+**Gate (diukur ulang doc-keeper di `develop`@`fd00cb2`):** `npm run build` → **3077 modul** clean. `node scripts/qa/lint-baseline.mjs` → **124 error / 19 warning** vs baseline tertulis `scripts/qa/lint-baseline.json` **126/19** — angka TIDAK berubah oleh commit ini (selisihnya sudah ada sejak hotfix "Submit Quotation" 19 Nov 2026, TD-344; baseline-nya sendiri tetap tidak diperbarui, sengaja).
+
+**B. Reconcile ke `develop` — audit git menemukan hanya 1 dari 3 hotfix quotation yang perlu di-porting.** Tiga hotfix dikerjakan langsung ke `main` (bukan dari `develop`) di sesi-sesi sebelumnya: G1 "SLA revisi" (`03141cf`, 12 Nov 2026 — lihat entri `## 2026-11-12` di bawah), G2 "Submit Quotation" (`c892d49`/`f85dc07`/`c9442cf`, 12 & 19 Nov 2026 — sudah tercatat lengkap di entri `## 2026-11-19` di atas), G3 "multi-currency" (`9129321`, 23 Nov 2026, bagian A di atas). Audit `git log --oneline main`/`develop` 23 Nov 2026 menunjukkan **G1 dan G2 SUDAH masuk `develop` lebih dulu** lewat merge commit `d73da96` ("Merge branch 'main' into develop") yang terjadi SEBELUM sesi ini — jadi hanya **G3** (lahir sesudah merge itu) yang perlu di-porting manual.
+
+Langkah (laporan sesi, diverifikasi doc-keeper lewat `git show --stat`/`git log` di kedua commit hasilnya): branch `feat/g3-multicurrency-to-develop` dari `develop`@`77e11d5` → `git cherry-pick 9129321f`. **1 konflik, 1 file** (`QuotationDetailPage.jsx`), di titik penyisipan modal paling bawah (setelah `<RejectReasonModal/>`). Konfliknya BUKAN benturan logic — `develop` sudah punya `<MarkAcceptedModal/>` di titik yang sama (bagian fitur K1d "Quotation Accepted wajib bukti file", komponen diimpor dari `src/modules/crm/QuotationOutcomeModals.jsx`, HANYA ada di `develop`, tidak ada di `main`), dan G3 menyisipkan `<CurrencyModePopup/>` di titik yang sama persis — dua elemen modal independen yang kebetulan nabrak baris insersi. **Resolusi: simpan KEDUANYA, urutan asli dipertahankan** (`MarkAcceptedModal` lalu `CurrencyModePopup`). `QuotationPDF.jsx` auto-merge BERSIH TOTAL (nol konflik), hasilnya byte-identik dengan versi G3 di `main` — `develop` ternyata sudah punya copy `QuotationPDF.jsx` byte-identik `main` sebelum G3, jadi patch-nya masuk mulus.
+
+Diverifikasi lewat grep SEBELUM dan SESUDAH resolusi *(laporan sesi)*: guard `isInquiryClosed` (fitur develop-only yang menyembunyikan tombol Send to Customer/Mark Accepted/Create Revision kalau inquiry induk LOST/CANCELLED — lihat TD-343, TIDAK ADA padanannya di `main`) **nol tersentuh**, tetap di 7 titik pemakaian yang sama persis. `QuotationOutcomeModals.jsx` **nol tersentuh** sama sekali.
+
+**C. Verifikasi Vercel Preview** *(laporan sesi, `nexus-git-feat-g3-multicurrency-to-develop-msi-group.vercel.app`, Supabase STAGING, dicek manual oleh Mas, dikonfirmasi lewat screenshot ke Den)* — checklist: quotation single-currency nol perubahan (regresi) ✔; quotation multi-currency (data uji `ZZZTEST-MULTICURRENCY-DEV-001`, dihapus lagi setelah cek) popup 3 mode + blok per-currency jalan ✔; tombol Send to Customer tetap taat `isInquiryClosed` ✔; Mark Accepted modal (K1d) tetap jalan normal berdampingan dengan modal baru ✔ — SEMUA LOLOS.
+
+`feat/g3-multicurrency-to-develop` di-fast-forward merge ke `develop` (commit `fd00cb2`, SAMA PERSIS dengan tip branch — bukan merge commit baru), di-push ke `origin/develop`. Branch dihapus (lokal + remote) setelah merge.
+
+**D. Tech debt dan keputusan terbuka baru.**
+- **TD-345** (LOW, `08_TECH_DEBT.md`) — formula nominal native baris (`Math.round(unit_price × qty)`) diimplementasikan dua kali independen: `perCurrency` di `QuotationDetailPage.jsx` dan `nativeAmount` di `QuotationPDF.jsx` — kelas sama TD-338 (validasi kurs terduplikasi, hotfix 19 Nov).
+- **Keputusan Terbuka #87** (`09_ROADMAP.md`) — PPN Mode 3 tetap IDR terpisah, keputusan sementara Mas 12 Nov 2026, menunggu jawaban resmi Finance (lihat bagian A).
+
+**E. Di luar scope sesi doc-keeper ini.** Sesi 23 Nov 2026 juga mengerjakan 4 hal lain yang SENGAJA tidak didokumentasikan di sini (instruksi eksplisit): fix badge profil memakai `job_title` bukan `role` (commit `77e11d5`/`5a6fe48`/`291048e`, merge PR #35 — di luar domain CRM/quotation), audit `code_counters`, housekeeping branch, dan Dev Tracker.
+
 ## 2026-11-19
 
 ### Hotfix CRM — tombol "Submit Quotation" (DRAFT→SUBMITTED) di Detail Quotation + koreksi TD-324 + temuan drift migrasi `20261029000004`
@@ -76,6 +111,18 @@
 - **TD-342** (LOW, teoretis) — `QuotationDetailPage.jsx` terukur memuat data quotation-nya sendiri 2× dalam satu buka halaman untuk status tertentu (diukur lewat penghitung respons REST saat QA; 2× untuk SUBMITTED, 1× untuk DRAFT di `develop`). Guard `let cancelled = false` (`:266`, `:316`, `:381`) hanya menjaga terhadap unmount, bukan terhadap respons yang datang tak berurutan — risiko race teoretis, belum pernah teramati menyebabkan masalah nyata.
 - **TD-343** (MEDIUM, pre-existing, perlu konfirmasi by-design?) — `isInquiryClosed` (`QuotationDetailPage.jsx:406`, gate lama independen dari hotfix ini) hanya mencakup LOST/CANCELLED, TIDAK termasuk WON — komentar kode `:424` sudah mencatat ini. Akibatnya untuk inquiry WON, tombol "Send to Customer", "Edit", "Create Revision" (`canRevise`), "Mark Accepted/Mark Rejected" (`canRecordOutcome`) tetap tampil tanpa banner kunci, padahal trigger DB `trg_fn_lock_quotation_closed_inquiry` sudah menolak keras INSERT/UPDATE pada quotation di bawah inquiry WON non-Rate-Sheet — klik salah satu tombol itu untuk kasus itu kemungkinan RAISE EXCEPTION dari DB, bukan dari UI. TIDAK diperkenalkan hotfix ini (sudah ada sebelumnya); hotfix hanya menambah gate BARU (`isInquiryClosedForSubmit`, khusus Submit, SUDAH mencakup WON) tanpa menyentuh gate lama. Perbaikan kemungkinan ditunda ke Batch DS 3 (bagian C) karena menyentuh banyak tombol lama sekaligus.
 - **TD-344** (LOW) — `scripts/qa/lint-baseline.json` (`generatedAt` 2026-10-12) mencatat baseline **126 error / 19 warning**; hasil nyata saat perbaikan hotfix ini dijalankan (dua kali, sebelum & sesudah masuk `develop`) konsisten **124 error / 19 warning** — baseline tercatat lebih longgar dari kenyataan, sengaja TIDAK diperbarui sebagai bagian hotfix ini (pembaruan baseline harus lewat keputusan sadar `--update`, bukan efek samping commit lain).
+
+## 2026-11-12
+
+### Fix CRM — revisi quotation (`revision > 1`) tidak lagi dihitung SLA sama sekali
+
+> Dicatat SUSULAN 23 Nov 2026 oleh doc-keeper, dipanggil di akhir unit kerja hotfix multi-currency (lihat entri `## 2026-11-23` di atas) yang menemukan fix ini belum pernah terdokumentasi di `PROGRESS.md`/`CLAUDE.md` sama sekali. Isi diverifikasi langsung dari `git show 03141cf` (diff lengkap), bukan laporan sesi.
+
+Commit tunggal `main`@`03141cf` (12 Nov 2026, 10:59 WIB) menutup bug: kolom `pricing_done_at` ikut tersalin dari versi sebelumnya saat RPC `create_quotation_revision` membuat revisi baru (quotation versi ke-2+), sehingga draft revisi baru langsung tampak **overdue** oleh `SlaCard` (Detail) / `SlaBadge` (List) padahal belum pernah dikirim ke customer sama sekali — contoh nyata dari produksi: `QUO/MSI/2026/1018-B`.
+
+Fix: `SlaCard` (`src/modules/crm/QuotationDetailPage.jsx:57`) kini `return null` untuk `Number(quot.revision) > 1`. `SlaBadge` (`src/modules/crm/QuotationListPage.jsx:54`) tampil strip `'-'` (warna `C.inkFaint`) untuk kasus yang sama — berlaku di **SEMUA status**, bukan hanya DRAFT (revisi ke-2+ yang sudah SENT/ACCEPTED/REJECTED/SUPERSEDED pun tidak lagi dinilai SLA-nya, karena quotation itu "bukan lagi induk yang relevan" menurut komentar kode — beda dari SUPERSEDED pada revisi 1, yang tetap dihitung SLA-nya karena tetap "pernah terkirim"). Revisi 1 (quotation yang belum pernah direvisi) sama sekali tidak berubah.
+
+⛔ NOL migrasi/SQL, NOL perubahan DB — murni dua file FE (`QuotationDetailPage.jsx` +6 baris, `QuotationListPage.jsx` +7 baris). ⚠️ NOL laporan tes runtime tertulis untuk commit ini (sesi aslinya 12 Nov 2026 tidak meninggalkan entri dokumentasi apa pun) — status "live" diverifikasi lewat git: `03141cf` adalah ancestor `main` (commit langsung ke `main`, bukan hotfix branch terpisah) dan sudah ikut `develop` sejak merge `d73da96` (19 Nov 2026) — bukan lewat laporan uji. Nol TD/Keputusan Terbuka baru dari fix ini.
 
 ## 2026-11-09 — 2026-11-10
 
