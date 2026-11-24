@@ -40,6 +40,7 @@ import { useState, useMemo } from 'react';
 import { AlertTriangle, XCircle, Ban } from 'lucide-react';
 import { DEAL_C as C } from './inquiryTheme';
 import { HEAD, BODY } from './DealPanels';
+import { Modal } from '../../kit';
 
 /* Kode alasan yang mewajibkan data pesaing. Ini SATU-SATUNYA tempat aturan itu
    tinggal — kalau kelak berubah, ubah di sini, bukan menyebar ke pemanggil.
@@ -49,19 +50,8 @@ import { HEAD, BODY } from './DealPanels';
 // berdampingan dengan komponen melanggar react-refresh/only-export-components.
 const COMPETITOR_REQUIRED_CODES = ['PRICE', 'COMPETITOR'];
 
-// [Putaran 16a Tahap 1] Chrome overlay/sheet diukur mockup
-// data-screen-label="Modal/MarkLost"/"Modal/CancelInquiry": backdrop INK
-// rgba(51,66,43,.35) + sheet NOL border, box-shadow rgba(51,66,43,.22),
-// radius 18.
-const overlay = {
-  position: 'fixed', inset: 0, zIndex: 1000,
-  background: C.backdrop, display: 'flex',
-  alignItems: 'center', justifyContent: 'center', padding: 16,
-};
-const sheet = {
-  width: '100%', maxWidth: 480, background: C.surface,
-  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
-};
+// Batch DS 3 Batch 2: shell dialog custom (overlay/sheet) digantikan `Modal`
+// dari src/kit (dipakai default, closeOnEscape + klik-backdrop aktif).
 // [Putaran 16a Tahap 1] label field diukur mockup: INK_SOFT (textMute),
 // bukan INK_FAINT (textFaint).
 const label = {
@@ -91,47 +81,46 @@ const btnDanger = (disabled) => ({
   display: 'inline-flex', alignItems: 'center', gap: 6,
 });
 
-function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, saving, submitLabel, cancelLabel = 'Cancel' }) {
+function Shell({ open, icon, title, subtitle, err, children, onCancel, onSubmit, saving, submitLabel, cancelLabel = 'Cancel' }) {
   return (
-    <div style={overlay} role="dialog" aria-modal="true">
-      <div style={sheet}>
-        {/* border-bottom diukur mockup: LINE_SOFT, bukan LINE (C.border). */}
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={(
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           {icon}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h3>
-            {subtitle && (
-              <div style={{ marginTop: 2, fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>{subtitle}</div>
-            )}
-          </div>
-        </header>
-
-        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {children}
-          {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (pesan
-              validasi "X Reason is required"): amber (warn), BUKAN
-              merah/danger. */}
-          {err && (
-            <div style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start',
-              padding: '9px 11px', borderRadius: 9,
-              background: C.amberBg, border: `1px solid ${C.amberBd}`,
-              fontFamily: BODY, fontSize: 12.5, color: C.amber,
-            }}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-              {err}
-            </div>
-          )}
+          <span>{title}</span>
         </div>
-
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      )}
+      subtitle={subtitle}
+      footer={(
+        <>
           <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>{cancelLabel}</button>
           <button type="button" style={btnDanger(saving)} onClick={onSubmit} disabled={saving}>
             {saving ? 'Saving…' : submitLabel}
           </button>
-        </footer>
+        </>
+      )}
+      width={480}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {children}
+        {/* [Putaran 16a Tahap 1, GAGAL ditutup] diukur mockup (pesan
+            validasi "X Reason is required"): amber (warn), BUKAN
+            merah/danger. */}
+        {err && (
+          <div style={{
+            display: 'flex', gap: 8, alignItems: 'flex-start',
+            padding: '9px 11px', borderRadius: 9,
+            background: C.amberBg, border: `1px solid ${C.amberBd}`,
+            fontFamily: BODY, fontSize: 12.5, color: C.amber,
+          }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            {err}
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -203,8 +192,6 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
   const selected = useMemo(() => reasons.find((r) => r.id === reasonId) || null, [reasons, reasonId]);
   const needCompetitor = !!selected && COMPETITOR_REQUIRED_CODES.includes(selected.code);
 
-  if (!open) return null;
-
   const submit = () => {
     if (!reasonId) { setErr('A loss reason is required.'); return; }
     if (needCompetitor) {
@@ -228,6 +215,7 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
 
   return (
     <Shell
+      open={open}
       icon={<XCircle size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
       title="Mark as Lost"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
@@ -290,8 +278,6 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel, a
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
 
-  if (!open) return null;
-
   const submit = () => {
     if (!reason.trim()) { setErr('A cancellation reason is required.'); return; }
     setErr('');
@@ -300,6 +286,7 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel, a
 
   return (
     <Shell
+      open={open}
       icon={<Ban size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
       title="Cancel this inquiry?"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}

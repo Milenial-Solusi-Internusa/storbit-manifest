@@ -37,6 +37,7 @@ import { supabase } from '../../lib/supabase';
 import { DEAL_C as C } from './inquiryTheme';
 import { HEAD, BODY } from './DealPanels';
 import AccountPicker from '../../components/AccountPicker';
+import { Modal } from '../../kit';
 
 // Mirror SENGAJA, bukan impor -- InquiryIntakeWizardPage.jsx:113 (LIFECYCLE_LABEL)
 // secara eksplisit TIDAK dipindah ke inquiryOptions.js (Task 2, Putaran 15:
@@ -46,22 +47,9 @@ import AccountPicker from '../../components/AccountPicker';
 const LIFECYCLE_LABEL = { lead: 'Lead', mql: 'MQL', sql: 'SQL', prospect: 'Prospect', customer: 'Customer', free_agent: 'Free Agent' };
 const lifecycleLabel = (s) => LIFECYCLE_LABEL[s] || s || '';
 
-// [Putaran 16a Tahap 1] "Change Account" NOL halaman di mockup Inquiry
-// Management.dc.html (diverifikasi grep) -- chrome di bawah MENGIKUTI pola
-// yang TERBUKTI UNIFORM di EMPAT modal lain yang terukur langsung
-// (Modal/AssignOwner, Modal/MarkWon, Modal/MarkLost, Modal/CancelInquiry:
-// overlay/sheet/label/field/btnGhost byte-sama di keempatnya), BUKAN
-// diukur langsung dari elemen "Change Account" sendiri -- dilaporkan
-// sebagai pengecualian PRINSIP KEBENARAN (nol pasangan mockup langsung).
-const overlay = {
-  position: 'fixed', inset: 0, zIndex: 1000,
-  background: C.backdrop, display: 'flex',
-  alignItems: 'center', justifyContent: 'center', padding: 16,
-};
-const sheet = {
-  width: '100%', maxWidth: 480, background: C.surface,
-  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
-};
+// Batch DS 3 Batch 2: shell dialog custom (overlay/sheet) digantikan
+// `Modal` dari src/kit (dipakai default, closeOnEscape + klik-backdrop
+// aktif) -- field/label/tombol di bawah TIDAK disentuh.
 const label = {
   display: 'block', fontFamily: BODY, fontSize: 11, fontWeight: 700,
   color: C.textMute, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5,
@@ -148,8 +136,6 @@ export default function ChangeAccountModal({
     return () => { cancelled = true; };
   }, [accountId]);
 
-  if (!open) return null;
-
   const submit = () => {
     if (!accountId) { setErr('A new account is required.'); return; }
     if (!contactId) { setErr('A contact is required.'); return; }
@@ -158,20 +144,27 @@ export default function ChangeAccountModal({
   };
 
   return (
-    <div style={overlay} role="dialog" aria-modal="true">
-      <div style={sheet}>
-        {/* border-bottom diukur mockup (pola uniform 4 modal lain): LINE_SOFT, bukan LINE (C.border). */}
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={(
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <RefreshCcw size={18} style={{ color: C.navy, flexShrink: 0, marginTop: 1 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 15.5, fontWeight: 700, color: C.text }}>Change Account</h3>
-            {inquiryNo && (
-              <div style={{ marginTop: 2, fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>Inquiry {inquiryNo}</div>
-            )}
-          </div>
-        </header>
-
-        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <span>Change Account</span>
+        </div>
+      )}
+      subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
+      footer={(
+        <>
+          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="button" style={btnPrimary(saving || !accountId || !contactId)} onClick={submit} disabled={saving || !accountId || !contactId}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </>
+      )}
+      width={480}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {(currentAccountName || currentContactName) && (
             <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>
               Currently: {currentAccountName || '—'}{currentContactName ? ` / ${currentContactName}` : ''}
@@ -236,15 +229,7 @@ export default function ChangeAccountModal({
               {err}
             </div>
           )}
-        </div>
-
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
-          <button type="button" style={btnPrimary(saving || !accountId || !contactId)} onClick={submit} disabled={saving || !accountId || !contactId}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 }

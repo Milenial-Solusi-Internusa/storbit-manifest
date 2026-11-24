@@ -25,6 +25,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2, AlertTriangle, Paperclip } from 'lucide-react';
+import { Modal } from '../../kit';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MarkAcceptedModal
@@ -42,8 +43,6 @@ export function MarkAcceptedModal({ open, quotationNo, saving, uploadError, toke
   const [notes, setNotes] = useState('');
   const [file,  setFile]  = useState(null);
   const [err,   setErr]   = useState('');
-
-  if (!open) return null;
 
   const submit = () => {
     if (!file) { setErr('Proof is required.'); return; }
@@ -63,12 +62,26 @@ export function MarkAcceptedModal({ open, quotationNo, saving, uploadError, toke
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,18,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} role="dialog" aria-modal="true">
-      <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '22px 24px', width: 460, maxWidth: '100%', boxShadow: '0 12px 40px rgba(0,0,0,.18)' }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 6 }}>
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={(
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <CheckCircle2 size={17} style={{ color: C.ok, flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: 15.5, fontWeight: 800 }}>Record customer acceptance</div>
+          <span>Record customer acceptance</span>
         </div>
+      )}
+      footer={(
+        <>
+          <button onClick={onCancel} disabled={saving} style={btnGhost}>Cancel</button>
+          <button onClick={submit} disabled={saving}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.ok, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {saving ? 'Working…' : 'Yes, Mark Accepted'}
+          </button>
+        </>
+      )}
+      width={460}
+    >
         <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>
           {quotationNo} will be marked ACCEPTED, and the linked inquiry will be moved to Won
           automatically. A proof document is required.
@@ -121,15 +134,6 @@ export function MarkAcceptedModal({ open, quotationNo, saving, uploadError, toke
             {err || uploadError}
           </div>
         )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 18 }}>
-          <button onClick={onCancel} disabled={saving} style={btnGhost}>Cancel</button>
-          <button onClick={submit} disabled={saving}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.ok, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            {saving ? 'Working…' : 'Yes, Mark Accepted'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

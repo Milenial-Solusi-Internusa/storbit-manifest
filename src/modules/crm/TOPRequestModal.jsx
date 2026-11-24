@@ -3,9 +3,10 @@
 // CustomerDetailPage (tombol "Ajukan TOP Request"), auto-fill dari accounts.
 // Submit → INSERT ke top_requests (status 'submitted'). Self-contained.
 import { useState } from 'react';
-import { X, CreditCard, Loader2 } from 'lucide-react';
+import { CreditCard, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { Modal } from '../../kit';
 
 const C = {
   navy: '#1B4D8A', accent: '#E85A1E', ink: '#23291E', inkSoft: '#5E6553',
@@ -32,6 +33,10 @@ function F({ label, full, children }) {
 }
 function tradeText(r) { return [r.nama, r.pic, r.hubungan, r.top].map(s => (s || '').trim()).filter(Boolean).join(' · ') || null; }
 
+// Batch DS 3 Batch 2: shell dialog custom digantikan `Modal` dari src/kit
+// (dipakai default, closeOnEscape + klik-backdrop aktif). Komponen ini tidak
+// punya prop `open` -- pemanggil (CustomerDetailPage.jsx) sudah mount/unmount
+// kondisional, jadi `open` selalu true selama komponen ini ter-mount.
 export default function TOPRequestModal({ account, onClose, showToast }) {
   const { profile } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -86,18 +91,27 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10003, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: '#fff', borderRadius: 16, maxWidth: 720, width: '100%', maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderBottom: `1px solid ${C.line}`, background: C.surface2, borderRadius: '16px 16px 0 0' }}>
+    <Modal
+      open
+      onClose={onClose}
+      title={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <CreditCard size={18} color={C.navy} />
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.ink, fontFamily: "'Montserrat',sans-serif" }}>Ajukan TOP Request</h2>
-            <div style={{ fontSize: 12, color: C.inkSoft }}>{account?.name}</div>
-          </div>
-          <button onClick={onClose} disabled={saving} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft, display: 'flex', padding: 4 }}><X size={18} /></button>
-        </header>
-
-        <div style={{ padding: 22, overflowY: 'auto' }}>
+          <span>Ajukan TOP Request</span>
+        </div>
+      )}
+      subtitle={account?.name}
+      footer={(
+        <>
+          <button onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={submit} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={15} />}Submit TOP Request
+          </button>
+        </>
+      )}
+      width={720}
+    >
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           <Section title="A — Identitas Perusahaan">
             <F label="Company Name"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
             <F label="Status PKP"><select value={f.status_pkp} onChange={set('status_pkp')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{PKP.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
@@ -162,16 +176,6 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
             <F label="Estimasi Volume"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
             <F label="TOP Reason" full><textarea rows={2} value={f.alasan_top} onChange={set('alasan_top')} style={taStyle} /></F>
           </Section>
-        </div>
-
-        <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.line}`, background: C.surface2, borderRadius: '0 0 16px 16px' }}>
-          <button onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={submit} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={15} />}Submit TOP Request
-          </button>
-        </footer>
-      </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </Modal>
   );
 }

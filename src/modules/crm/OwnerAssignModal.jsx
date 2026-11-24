@@ -47,6 +47,7 @@ import { supabase } from '../../lib/supabase';
 import { DEAL_C as C } from './inquiryTheme';
 import { HEAD, BODY, fmtRp } from './DealPanels';
 import { fetchOperationalRoster } from './salesRoster';
+import { Modal } from '../../kit';
 
 // Status "masih terbuka" -- SAMA PERSIS LOSABLE_INQUIRY_STATUS/
 // CANCELLABLE_INQUIRY_STATUS (DealDetailPage.jsx). Const itu tidak
@@ -54,19 +55,8 @@ import { fetchOperationalRoster } from './salesRoster';
 // menghitung label "(N open)" per kandidat New Owner -- bukan gerbang.
 const OPEN_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 
-// [Putaran 16a Tahap 1] Chrome overlay/sheet diukur mockup
-// data-screen-label="Modal/AssignOwner": backdrop INK rgba(51,66,43,.35)
-// (BUKAN rgba(22,36,58,.45) navy lama) + sheet NOL border, box-shadow
-// rgba(51,66,43,.22), radius 18 (bukan 16).
-const overlay = {
-  position: 'fixed', inset: 0, zIndex: 1000,
-  background: C.backdrop, display: 'flex',
-  alignItems: 'center', justifyContent: 'center', padding: 16,
-};
-const sheet = {
-  width: '100%', maxWidth: 480, background: C.surface,
-  borderRadius: 18, boxShadow: C.shadowModal, overflow: 'hidden',
-};
+// Batch DS 3 Batch 2: shell dialog custom (overlay/sheet) digantikan `Modal`
+// dari src/kit (dipakai default, closeOnEscape + klik-backdrop aktif).
 // [Putaran 16a Tahap 1] diukur mockup (label field "New Owner"/"Reason"
 // dkk): color INK_SOFT (textMute), BUKAN INK_FAINT (textFaint).
 const label = {
@@ -168,8 +158,6 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
     return () => { cancelled = true; };
   }, [open, companyId]);
 
-  if (!open) return null;
-
   // Reassign (selalu target tunggal): kandidat TIDAK termasuk owner
   // sekarang. Assign (tunggal atau bulk): SEMUA kandidat (mockup --
   // "options = all salespeople except current owner when reassigning,
@@ -227,20 +215,27 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
   }
 
   return (
-    <div style={overlay} role="dialog" aria-modal="true">
-      <div style={sheet}>
-        {/* [Putaran 16a Tahap 1] border-bottom diukur mockup: LINE_SOFT (#ECF0E9), bukan LINE (C.border). */}
-        <header style={{ padding: '16px 20px', borderBottom: `1px solid ${C.lineSoft}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={(
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <UserCog size={18} style={{ color: C.navy, flexShrink: 0, marginTop: 1 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontFamily: HEAD, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h3>
-            <div style={{ marginTop: 2, fontFamily: BODY, fontSize: 12.5, color: C.textMute }}>
-              {single ? `Inquiry ${targets[0]?.inquiry_no || ''}` : `${targets.length} inquiries`}
-            </div>
-          </div>
-        </header>
-
-        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <span>{title}</span>
+        </div>
+      )}
+      subtitle={single ? `Inquiry ${targets[0]?.inquiry_no || ''}` : `${targets.length} inquiries`}
+      footer={(
+        <>
+          <button type="button" style={btnGhost} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" style={btnPrimary(saving)} onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : submitLabel}
+          </button>
+        </>
+      )}
+      width={480}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={label}>Customer</label>
@@ -311,15 +306,7 @@ export default function OwnerAssignModal({ open, onClose, targets = [], mode = '
               {err}
             </div>
           )}
-        </div>
-
-        <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={btnGhost} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={btnPrimary(saving)} onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : submitLabel}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 }
