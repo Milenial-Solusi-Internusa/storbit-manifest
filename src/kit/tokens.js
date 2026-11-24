@@ -90,6 +90,20 @@ export const SIZE = { btnMd: 40, btnSm: 32, btnXs: 28, input: 44, inputFloating:
    (10/10.5/16px dkk) SENGAJA tak dimasukkan — tetap inline di komponen. */
 export const FONT_SIZE = { badge: 11.5, body: 13.5, label: 12, button: 13.5, hint: 12, tableHead: 11, modalTitle: 18 };
 
+/* Breakpoint resmi — ditemukan 24 Nov 2026 (investigasi item Dev Tracker
+   "Bangun component library UI Nexus") nol token sejenis pernah ada di kit
+   mana pun; ≥16 nilai @media berbeda hidup ad-hoc di seluruh src/ (860/760/
+   980/920/900/800/720/680/640/1180/1100/1080/1040/1000px dkk — DIBIARKAN,
+   tech debt terpisah, BUKAN diseragamkan sekarang). Dua tingkat saja sesuai
+   kenyataan kode (06_UI_UX_FLOW.md §6: `lg=1024` bawaan Tailwind, tanpa
+   override `screens`) — nol tingkat tablet terpisah hari ini. Konstanta ini
+   HANYA untuk kerjaan baru ke depan; titik lama tidak diganti. */
+export const BREAKPOINT = { mobile: 0, desktop: 1024 };
+/* Lebar sidebar `NexusSidebar` (App.jsx) — sebelumnya angka 248/264 di-hardcode
+   berulang di ≥3 tempat (App.jsx, komentar LeadQualificationPage.jsx x2,
+   komentar financeKit.jsx) tanpa satu sumber kebenaran. */
+export const SIDEBAR_WIDTH = { desktop: 248, mobileDrawer: 264 };
+
 /* =========================================================================
    4. PALET STATUS/DATA — kelas terpisah dari identitas (#60 b).
    ========================================================================= */
