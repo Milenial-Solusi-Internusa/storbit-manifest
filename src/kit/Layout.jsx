@@ -2,11 +2,15 @@
    Layout kit tunggal (Batch DS 1): PageHeader · SectionLabel · Card ·
    EmptyState · Skeleton · DocNo · FormSheet · Notebook.
 
-   `FormSheet` dan `Notebook` = SALINAN `src/modules/crm/v3/FormSheet.jsx` &
-   `Notebook.jsx` (bukan pindahan — file aslinya tetap dipakai DealDetailPage
-   sampai Batch DS 3). Kontrak keduanya TIDAK berubah; yang berubah hanya
-   token warna. `Notebook` menyerap `Tabs` AdminKit: tiap tab kini boleh
-   punya `icon` (node Lucide atau nama registri) dan `dot`.
+   `FormSheet` dan `Notebook` LAHIR sebagai SALINAN `src/modules/crm/
+   v3/FormSheet.jsx` & `Notebook.jsx`. Batch DS 3 memigrasikan satu-satunya
+   pemakai keduanya (DealDetailPage.jsx) ke sini dan menghapus kedua
+   berkas v3 aslinya. Kontrak warna TIDAK berubah dari salinan v3; Batch
+   DS 3 menambah 4 prop opt-in ke FormSheet (headerAside/footer/headerCard/
+   toolbarFirst, diport dari v3/FormSheet.jsx apa adanya) dan 1 prop
+   opt-in ke Notebook (`dense`, replika spacing v3/Notebook.jsx).
+   `Notebook` menyerap `Tabs` AdminKit: tiap tab kini boleh punya `icon`
+   (node Lucide atau nama registri) dan `dot`.
 
    `Card` melebur dua kartu lama: header ber-judul (v3) + `pad` numerik
    (AdminKit). Default padding 16 (v3); halaman admin yang ingin 24 mengoper

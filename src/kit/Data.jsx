@@ -1,9 +1,15 @@
 /* =========================================================================
    Data kit tunggal (Batch DS 1): Badge · StatusBar · ListView (+ re-export DocNo).
 
-   `StatusBar` dan `ListView` = SALINAN `src/modules/crm/v3/StatusBar.jsx` &
-   `ListView.jsx` (file aslinya tetap dipakai 3 halaman CRM sampai Batch DS 3;
-   dua salinan sementara DISENGAJA). Kontrak keduanya utuh — yang berubah:
+   `StatusBar` dan `ListView` LAHIR sebagai SALINAN `src/modules/crm/
+   v3/StatusBar.jsx` & `ListView.jsx` (dua salinan sementara disengaja saat
+   itu). Batch DS 3 memigrasikan satu-satunya pemakai keduanya
+   (DealDetailPage.jsx) ke sini dan menghapus `v3/StatusBar.jsx` --
+   `v3/ListView.jsx` TETAP ADA (PipelineKanbanPage.jsx belum pindah,
+   migrasi warnanya pekerjaan terpisah), jadi dua salinan ListView MASIH
+   hidup berdampingan, StatusBar sudah tidak.
+
+   Perbedaan isi dari salinan v3 aslinya:
      - warna identitas → token sage (segmen "dilewati" NAVY+putih → ACCENT+INK;
        segmen aktif ORANGE_AA+putih → ACCENT_2+INK; pil saved-view aktif navy
        solid → ACCENT+INK);
@@ -13,8 +19,9 @@
        hex literal karena tak ada token v3 yang cocok) → INPUT_BG / LINE_SOFT /
        RADIUS.lg — di kit tunggal tokennya ada;
      - penanda centang segmen "dilewati": string simbol → `<Check/>` Lucide
-       (arah TD-269, dibangun benar sejak lahir untuk kode baru; file v3
-       aslinya tidak disentuh).
+       (arah TD-269, dibangun benar sejak lahir untuk kode baru);
+     - StatusBar dapat prop `plain` (Batch DS 3), ListView dapat prop
+       `plainScroll` (Batch DS 3) -- keduanya opt-in, replika semantik v3.
    ========================================================================= */
 
 import { useMemo, useState } from 'react';
