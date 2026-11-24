@@ -154,65 +154,113 @@ export function DocNo({ children, style }) {
 }
 
 /* =========================================================================
-   FORMSHEET — cangkang halaman dokumen (salinan v3, kontrak utuh).
+   FORMSHEET — cangkang halaman dokumen (salinan v3, kontrak utuh + 4 prop
+   Batch DS 3: `headerAside`/`footer`/`headerCard`/`toolbarFirst`, diport
+   dari v3/FormSheet.jsx apa adanya -- satu-satunya pemakai hari ini
+   [DealDetailPage.jsx] sudah mengoper semuanya).
 
-   ANATOMI (semua slot opsional kecuali body):
-     header → breadcrumb · kicker · judul · docNo/meta · actions · status · toolbar
-     body   → children (biasanya <Notebook/>)
-     aside  → kolom kanan persisten lintas tab (biasanya Chatter)
+   ANATOMI (enam slot, semuanya opsional kecuali body):
+     header      → breadcrumb · kicker · judul · docNo/meta · actions ·
+                   status · toolbar (opsional dibungkus kartu putih via `headerCard`)
+     headerAside → kolom kanan sejajar header, isi tergantung tab aktif (pemanggil)
+     body        → children (biasanya <Notebook/>)
+     aside       → kolom kanan persisten lintas tab (biasanya Chatter)
+     footer      → baris full-width paling bawah (mis. Comments)
    `aside` hidup di level FormSheet, bukan di dalam tab, karena ia percakapan
    tentang DOKUMEN. `actions` = beberapa aksi pendek di sebelah judul;
    `toolbar` = baris aksi selebar dokumen (dua kolom), lahir dari kebutuhan
    terukur Detail Deal (986px) — bukan muat/tidak muat. Turun ke satu kolom
    <1024px lewat helper `nx-grid-2`/`nx-stack` yang sudah ada di index.css.
+   `headerAside` dan `footer` otomatis ikut turun/melebar lewat mekanisme
+   yang sama.
    ========================================================================= */
 export function FormSheet({
   docNo, title, kicker, status, actions, meta,
-  children, aside = null, breadcrumb = null, toolbar = null, maxWidth = 1240,
+  children, aside = null, headerAside = null, footer = null,
+  breadcrumb = null, toolbar = null, maxWidth = 1240, headerCard = false,
+  // Urutan status/toolbar di bawah ini selalu status-dulu -- cocok utk
+  // pemanggil lama. `toolbarFirst=true` membalik urutan DUA blok ini SAJA;
+  // default `false` mempertahankan perilaku lama byte-identik.
+  toolbarFirst = false,
 }) {
   return (
     <div
       className="nx-grid-2 nx-stack"
       style={{
         display: 'grid',
-        gridTemplateColumns: aside ? 'minmax(0,1.7fr) minmax(0,1fr)' : 'minmax(0,1fr)',
+        gridTemplateColumns: (aside || headerAside) ? 'minmax(0,1.7fr) minmax(0,1fr)' : 'minmax(0,1fr)',
         gap: SP.s6, alignItems: 'start', maxWidth,
         fontFamily: FONT_BODY, fontSize: 15, lineHeight: 1.55, color: INK,
       }}
     >
-      {/* Header membentang dua kolom supaya aside sejajar body, bukan breadcrumb. */}
-      <header style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: SP.s3, minWidth: 0 }}>
+      {/* Header: membentang dua kolom HANYA kalau `headerAside` kosong
+          (supaya kolom kanan lama, `aside`, tetap sejajar BODY). Kalau
+          `headerAside` terisi, header menyusut jadi kolom kiri saja supaya
+          `headerAside` bisa duduk sejajarnya di kolom kanan, baris yang
+          sama. `gap` berubah 12px→20px HANYA saat `headerCard=true` --
+          jarak breadcrumb-ke-kartu beda dari jarak antar-blok di dalam
+          header lama. */}
+      <header style={{ gridColumn: headerAside ? 'auto' : '1 / -1', display: 'flex', flexDirection: 'column', gap: headerCard ? SP.s5 : SP.s3, minWidth: 0 }}>
         {breadcrumb}
-        {kicker && (
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT }}>
-            {kicker}
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s4, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            {/* fontSize 24 (dulu 30) -- TD-318 Irisan 0d: persis <h1 style="font:700 24px
-                Montserrat,sans-serif"> h1 Detail di seluruh mockup design-handoff/mockup/
-                *.dc.html (verifikasi 2 kemunculan: baris 48 + 185 "Lead Management.dc.html").
-                fontWeight 700 + fontFamily Montserrat (FONT_HEAD) SUDAH cocok mockup sebelum
-                perubahan ini -- hanya fontSize yang meleset, nol pertanyaan IBM Plex Mono
-                (itu FONT_MONO, dipakai angka/kode, bukan h1). */}
-            <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, letterSpacing: '-.01em', color: INK, lineHeight: 1.15 }}>
-              {title}
-            </h1>
-            {(docNo || meta) && (
-              <div style={{ marginTop: SP.s2, display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
-                {docNo && <DocNo>{docNo}</DocNo>}
-                {meta}
+
+        {/* `headerInner` = satu sumber kebenaran utk isi header selain
+            breadcrumb -- dibungkus kartu putih saat `headerCard=true`,
+            atau dirender apa adanya (Fragment, nol DOM tambahan) saat
+            `false` -- byte-identik dgn perilaku sebelum `headerCard` ada. */}
+        {(() => {
+          const headerInner = (
+            <>
+              {kicker && (
+                <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: INK_SOFT }}>
+                  {kicker}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: SP.s4, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  {/* fontSize 24 -- TD-318 Irisan 0d: persis <h1 style="font:700 24px
+                      Montserrat,sans-serif"> h1 Detail di seluruh mockup design-handoff/mockup/
+                      *.dc.html. */}
+                  <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, letterSpacing: '-.01em', color: INK, lineHeight: 1.15 }}>
+                    {title}
+                  </h1>
+                  {(docNo || meta) && (
+                    <div style={{ marginTop: SP.s2, display: 'flex', alignItems: 'center', gap: SP.s3, flexWrap: 'wrap' }}>
+                      {docNo && <DocNo>{docNo}</DocNo>}
+                      {meta}
+                    </div>
+                  )}
+                </div>
+
+                {actions && (
+                  <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {actions}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          {actions && (
-            <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>{actions}</div>
-          )}
-        </div>
-        {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
-        {toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+
+              {toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+              {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
+              {!toolbarFirst && toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
+            </>
+          );
+          return headerCard ? (
+            <div style={{
+              background: CARD, border: `1px solid ${LINE}`, borderRadius: RADIUS.lg,
+              padding: SP.s4, display: 'flex', flexDirection: 'column', gap: SP.s4,
+            }}>
+              {headerInner}
+            </div>
+          ) : headerInner;
+        })()}
       </header>
+
+      {/* Header-aside: sejajar <header>, BUKAN sticky. Dibungkus satu div
+          supaya `headerAside` boleh berisi beberapa elemen tanpa memecah
+          grid-placement. */}
+      {headerAside && (
+        <div style={{ minWidth: 0 }}>{headerAside}</div>
+      )}
 
       <main style={{ minWidth: 0 }}>{children}</main>
 
@@ -223,6 +271,11 @@ export function FormSheet({
         }}>
           {aside}
         </aside>
+      )}
+
+      {/* Footer: SELALU full-width, dirender terakhir (mis. Comments). */}
+      {footer && (
+        <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>{footer}</div>
       )}
     </div>
   );
