@@ -107,7 +107,7 @@ import { isManagerOrAbove } from '../../lib/roles';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { fetchOperationalRoster } from './salesRoster';
-import { STATUS_LABEL } from './v3/tokens';
+import { STATUS_LABEL } from './dealStatus';
 import { fmtRp } from './DealPanels';
 import ConfirmModal from '../../components/ConfirmModal';
 import OwnerAssignModal from './OwnerAssignModal';

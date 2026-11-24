@@ -22,7 +22,7 @@
 import { Lock } from 'lucide-react';
 import { DEAL_C as C } from './inquiryTheme';
 import { HEAD, BODY } from './DealPanels';
-import { FONT_MONO } from './v3/tokens';
+import { FONT_MONO } from '../../kit/tokens';
 
 const boxBase = {
   width: '100%', minHeight: 56, boxSizing: 'border-box', border: `1px solid ${C.border}`,
