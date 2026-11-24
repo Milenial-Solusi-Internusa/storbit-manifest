@@ -44,8 +44,7 @@ import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import { HEAD, BODY, fmtDate, fmtRp } from './DealPanels';
 import { DEAL_C as C } from './inquiryTheme';
 import { Card, PriceSummaryCard } from './inquiryParts';
-import { StatusBar, FormSheet, ListView } from '../../kit';
-import Notebook from './v3/Notebook';
+import { StatusBar, FormSheet, ListView, Notebook } from '../../kit';
 import { RADIUS, SP, FONT_MONO, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
@@ -2426,6 +2425,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Notebook
         value={tab}
         onChange={setTab}
+        dense
         tabs={[
           {
             id: 'overview',

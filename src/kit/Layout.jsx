@@ -289,8 +289,15 @@ export function FormSheet({
    undefined/true → tampil · false → tidak · function → dipanggil sekali.
    Controlled: pemanggil memegang `value`; komponen hanya mengoreksi otomatis
    bila `value` menunjuk tab yang tak (lagi) berhak.
-   ========================================================================= */
-export function Notebook({ tabs = [], value, onChange, children, right = null, style }) {
+
+   `dense` (Batch DS 3) -- varian spacing yang mencocokkan
+   v3/Notebook.jsx persis (gap 24px, tinggi tab 48px, padding tombol 0,
+   wrapper padding '0 16px' + `overflowX:auto`, sudut tombol lurus bukan
+   membulat) -- dipakai halaman yang mockup-nya sudah mensyaratkan ukuran
+   itu (Detail Inquiry). Default `false` = gaya kit biasa (gap rapat 2px,
+   padding tombol 10px/16px, sudut membulat), byte-identik untuk konsumen
+   lain (KitGallery demo). `icon`/`dot` tetap berfungsi di kedua varian. */
+export function Notebook({ tabs = [], value, onChange, children, right = null, style, dense = false }) {
   const visible = useMemo(
     () => tabs.filter((t) => (typeof t.gate === 'function' ? !!t.gate() : t.gate !== false)),
     [tabs],
@@ -305,7 +312,12 @@ export function Notebook({ tabs = [], value, onChange, children, right = null, s
 
   return (
     <div style={style}>
-      <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 2, borderBottom: `1px solid ${LINE}`, marginBottom: SP.s5, flexWrap: 'wrap' }}>
+      <div
+        role="tablist"
+        style={dense
+          ? { display: 'flex', alignItems: 'center', gap: 24, padding: '0 16px', borderBottom: `1px solid ${LINE}`, marginBottom: SP.s5, flexWrap: 'wrap', overflowX: 'auto' }
+          : { display: 'flex', alignItems: 'center', gap: 2, borderBottom: `1px solid ${LINE}`, marginBottom: SP.s5, flexWrap: 'wrap' }}
+      >
         {visible.map((t) => {
           const on = t.id === activeId;
           return (
@@ -314,11 +326,12 @@ export function Notebook({ tabs = [], value, onChange, children, right = null, s
               onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}
               style={{
                 appearance: 'none', border: 'none', background: 'transparent', cursor: 'pointer',
-                padding: '10px 16px', marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: dense ? 0 : '10px 16px', height: dense ? 48 : undefined,
+                marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 8,
                 fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: on ? 700 : 600,
                 color: on || hover === t.id ? INK : INK_SOFT,
                 borderBottom: `2px solid ${on ? INK : 'transparent'}`, transition: `color ${MOTION.base}`,
-                borderRadius: '4px 4px 0 0',
+                borderRadius: dense ? 0 : '4px 4px 0 0',
               }}
             >
               {t.icon && renderIcon(t.icon, 16)}
