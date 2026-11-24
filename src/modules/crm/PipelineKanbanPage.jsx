@@ -38,7 +38,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import ListView from './v3/ListView';
-import { Badge, OutlineBtn } from './v3/kit';
+import { Badge, OutlineBtn } from '../../kit';
 import {
   NAVY, INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
   SP, RADIUS, STATUS_LABEL,
