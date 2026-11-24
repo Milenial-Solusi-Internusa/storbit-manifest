@@ -333,15 +333,34 @@ export default function QuotationPDF({
           <View style={styles.summaryTable}>
             {pdfMode === 'per_currency' ? (
               <>
-                {Object.entries(perCurrency).map(([code, amt]) => (
-                  <View key={code} style={styles.sumRow}>
-                    <Text style={styles.sumLabel}>{`Subtotal (${code})`}</Text>
-                    <Text style={styles.sumVal}>{fmtAmt(amt, code)}</Text>
-                  </View>
-                ))}
+                {/* Kurs ditampilkan di bawah tiap subtotal mata uang asing --
+                    memulihkan keterangan "× kurs" yang dulu melekat per-baris
+                    item sebelum mode ini ada (baris item Mode 1 sengaja TANPA
+                    konversi, jadi kursnya pindah ke level subtotal di sini).
+                    Sumber: quot.exchange_rates (kurs header), sama dengan yang
+                    dipakai Mode 3 (`singleForeignRate`) -- bukan r.exchange_rate
+                    per baris, supaya satu kurs per mata uang per quotation. */}
+                {Object.entries(perCurrency).map(([code, amt]) => {
+                  const rate = code !== 'IDR' ? (Number(quot?.exchange_rates?.[code]) || 0) : 0;
+                  return (
+                    <View key={code} style={styles.sumRow}>
+                      <View>
+                        <Text style={styles.sumLabel}>{`Subtotal (${code})`}</Text>
+                        {rate > 0 && (
+                          <Text style={{ fontSize: 6.5, color: '#999' }}>{`× kurs ${rpN(rate)}`}</Text>
+                        )}
+                      </View>
+                      <Text style={styles.sumVal}>{fmtAmt(amt, code)}</Text>
+                    </View>
+                  );
+                })}
+                {/* "Ekuivalen IDR" = subtotal gabungan (sudah cross-currency,
+                    sama dengan "Subtotal" di bawah) -- sebelumnya dibiarkan
+                    kosong (bug), sekarang diisi supaya baris ini genuinely
+                    menjembatani subtotal per mata uang ke GRAND TOTAL (IDR). */}
                 <View style={[styles.sumRow, { marginTop: 4 }]}>
                   <Text style={[styles.sumLabel, { fontFamily: 'Helvetica-Bold' }]}>Ekuivalen IDR</Text>
-                  <Text style={styles.sumVal}> </Text>
+                  <Text style={[styles.sumVal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(subtotal)}</Text>
                 </View>
                 <View style={styles.sumRow}>
                   <Text style={styles.sumLabel}>Subtotal</Text>
