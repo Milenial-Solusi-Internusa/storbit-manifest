@@ -84,8 +84,12 @@ const CLOSED_STYLE = {
  * @param {Object}  [props.closed] - { stage, label } bila sumbu sudah ditutup
  * @param {boolean} [props.compact]
  * @param {string}  [props.notClosedLabel='Not closed']
+ * @param {boolean} [props.plain] - tanpa nomor/centang per segmen, dan tanpa
+ *   placeholder "Not closed" (atau pemisahnya) saat `closed` kosong --
+ *   dipakai halaman yang mockup-nya cuma merender `{{stage.name}}` polos
+ *   (pola `v3/StatusBar.jsx`, Batch DS 3).
  */
-export function StatusBar({ stages = [], current, closed = null, compact = false, notClosedLabel = 'Not closed' }) {
+export function StatusBar({ stages = [], current, closed = null, compact = false, notClosedLabel = 'Not closed', plain = false }) {
   const notch = compact ? NOTCH.compact : NOTCH.normal;
   const height = compact ? 40 : 52;
   const labelSize = compact ? 10 : 11;
@@ -121,9 +125,11 @@ export function StatusBar({ stages = [], current, closed = null, compact = false
               filter: isNow ? SHADOW_DROP : undefined,
             }}
           >
-            <span aria-hidden="true" style={{ fontFamily: FONT_HEAD, fontSize: markSize, fontWeight: 700, lineHeight: 1, display: 'inline-flex' }}>
-              {isPast ? <Check size={markSize} strokeWidth={3} /> : i + 1}
-            </span>
+            {!plain && (
+              <span aria-hidden="true" style={{ fontFamily: FONT_HEAD, fontSize: markSize, fontWeight: 700, lineHeight: 1, display: 'inline-flex' }}>
+                {isPast ? <Check size={markSize} strokeWidth={3} /> : i + 1}
+              </span>
+            )}
             <span style={{ fontFamily: FONT_HEAD, fontSize: labelSize, fontWeight: tone.weight, letterSpacing: '.02em', whiteSpace: 'nowrap', lineHeight: 1 }}>
               {s.label}
             </span>
@@ -131,7 +137,7 @@ export function StatusBar({ stages = [], current, closed = null, compact = false
         );
       })}
 
-      {stages.length > 0 && (
+      {stages.length > 0 && (closed || !plain) && (
         <span aria-hidden="true" style={{ width: 1, height: height - 16, background: LINE, margin: '0 14px' }} />
       )}
 
@@ -143,11 +149,11 @@ export function StatusBar({ stages = [], current, closed = null, compact = false
         }}>
           {closed.label}
         </span>
-      ) : (
+      ) : !plain ? (
         <span style={{ fontFamily: FONT_HEAD, fontSize: closeSize, fontWeight: 600, color: INK_SOFT, whiteSpace: 'nowrap' }}>
           {notClosedLabel}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }

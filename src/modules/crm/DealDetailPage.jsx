@@ -44,7 +44,7 @@ import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import { HEAD, BODY, fmtDate, fmtRp } from './DealPanels';
 import { DEAL_C as C } from './inquiryTheme';
 import { Card, PriceSummaryCard } from './inquiryParts';
-import StatusBar from './v3/StatusBar';
+import { StatusBar } from '../../kit';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
