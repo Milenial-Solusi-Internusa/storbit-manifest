@@ -317,12 +317,15 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {Function} [props.onRowClick]  - table: baris bisa diklik (hover + cursor)
  * @param {boolean}  [props.loading]     - table: 5 baris skeleton, header tetap
  * @param {string}   [props.emptyTitle='No data'] · {string} [props.emptySub]
+ * @param {boolean}  [props.plainScroll] - table: lepas class `nk-scroll`
+ *   (scrollbar selalu terlihat) saat mockup halaman ini cuma `overflow-x:auto`
+ *   polos. Default `false` = perilaku kit biasa.
  */
 export function ListView({
   mode = 'table', columns = [], rows = [], lanes = [], renderCard,
   search, onSearch, searchPlaceholder = 'Search…', filters, savedViews, activeView, onSelectView, right,
   filterCard = false, emptyTitle = 'No data', emptySub, groupedBoard = false,
-  onRowClick, loading = false,
+  onRowClick, loading = false, plainScroll = false,
 }) {
   const [expanded, setExpanded] = useState({});
   const [hoverRow, setHoverRow] = useState(-1);
@@ -383,9 +386,13 @@ export function ListView({
      dalam kartunya sendiri -- tanpa ini, overflow yang BENAR secara desain
      (tabel padat memang boleh scroll di dalam kartu, pola yang sama dengan
      mockup) tidak kelihatan ADA-nya di macOS sampai pengguna kebetulan
-     menggeser trackpad, diukur jadi akar persepsi "kepotong"/"kebesaran". */
+     menggeser trackpad, diukur jadi akar persepsi "kepotong"/"kebesaran".
+     `plainScroll` (Batch DS 3) -- opt-out KHUSUS halaman yang mockup-nya
+     sendiri cuma `overflow-x:auto` polos (nol `::-webkit-scrollbar` kustom,
+     pola v3/ListView.jsx lama) -- default `false` mempertahankan `nk-scroll`
+     utk semua pemakai lain. */
   const shell = (body) => (
-    <div className="nk-scroll" style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
+    <div className={plainScroll ? undefined : 'nk-scroll'} style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT_BODY, fontSize: 13.5 }}>
         <thead>
           <tr style={{ background: HEAD_BG }}>

@@ -44,9 +44,8 @@ import { useDetailCrumb } from '../../routes/useDetailCrumb';
 import { HEAD, BODY, fmtDate, fmtRp } from './DealPanels';
 import { DEAL_C as C } from './inquiryTheme';
 import { Card, PriceSummaryCard } from './inquiryParts';
-import { StatusBar, FormSheet } from '../../kit';
+import { StatusBar, FormSheet, ListView } from '../../kit';
 import Notebook from './v3/Notebook';
-import ListView from './v3/ListView';
 import { RADIUS, SP, FONT_MONO, STATUS_LABEL } from './v3/tokens';
 import { DEAL_STATUS } from '../../kit/tokens';
 import { RouteStrip, RouteStripDoorToDoor } from '../../kit/RouteStrip';
@@ -3182,7 +3181,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                     mode="table"
                     rows={quotations}
                     onRowClick={onViewQuotation}
-                    tokens={{ navy: C.navy, ink: C.text, inkSoft: C.textMute, faint: C.textFaint, line: C.border, lineSoft: C.lineSoft, surface: C.surface, surface2: C.surfaceAlt }}
+                    plainScroll
                     columns={QUOTATION_COLUMNS}
                   />
                 )}
