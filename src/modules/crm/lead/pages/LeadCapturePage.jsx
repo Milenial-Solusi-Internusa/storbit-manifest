@@ -21,7 +21,7 @@
 // Activity aktif DAN kotak catatan sudah terbuka (onAddNote, location.state
 // `openNote`) -- GANTI dari AddNoteModal lokal (mockup tak punya modal
 // terpisah untuk aksi ini, satu-satunya jalur edit/catat tetap Lead Detail).
-// Pager bernomor (komponen baru, src/modules/crm/lead/components/Pager.jsx)
+// Pager bernomor (src/kit/Pager.jsx, dipromosikan ke kit 24 Nov 2026)
 // menggantikan ‹ Prev / Next › polos.
 //
 // Dua deviasi dari batas awal irisan ini, DIPUTUSKAN Den sesudah verifikasi
@@ -46,7 +46,7 @@ import ImportLeadsModal from '../components/ImportLeadsModal';
 import ReassignModal from '../components/ReassignModal';
 import MarkAsLostModal from '../components/MarkAsLostModal';
 import ArchiveModal from '../components/ArchiveModal';
-import Pager from '../components/Pager';
+import Pager from '../../../../kit/Pager';
 
 const PAGE_SIZE = 20;
 // Sentinel filter Owner (irisan 7 Bagian 2, poin 3 Paket 2) -- bukan id

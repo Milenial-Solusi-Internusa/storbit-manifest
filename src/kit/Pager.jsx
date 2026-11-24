@@ -1,17 +1,21 @@
-// src/modules/crm/lead/components/Pager.jsx
-// Paginasi bernomor -- design-handoff/crm-2026-10-11/shots/lead/01/02/10 (list
-// Capture Lead + preview Import Leads step 3). Diukur langsung dari DOM
+// src/kit/Pager.jsx
+// Paginasi bernomor -- dipromosikan dari src/modules/crm/lead/components/Pager.jsx
+// (lahir utk Lead Management, design-handoff/crm-2026-10-11/shots/lead/01/02/10:
+// list Capture Lead + preview Import Leads step 3; diukur langsung dari DOM
 // mockup: tombol bulat 32x32, radius 10 (RADIUS.md), aktif = ROW_HOVER bg +
-// border ACCENT_HOVER (token kit yang sudah ada, nol hex baru). Koreksi
-// visual Paket 1 -- sebelumnya LeadCapturePage/ImportLeadsModal cuma punya
-// ‹ Prev / Next › tanpa nomor halaman.
+// border ACCENT_HOVER). Dipromosikan ke kit 24 Nov 2026 -- nol pemakai lain
+// ternyata memakai KODE ini (RiwayatVisitPage/SalesOrderPage punya PagerBtn
+// lokal sendiri, HrgaShared.jsx punya Pager sendiri dgn signature beda --
+// sama-sama kebetulan sama nama, bukan kode yang sama); promosi ini murni
+// supaya pagination bernomor BERIKUTNYA punya satu tempat, bukan konsolidasi
+// pemakai yang sudah ada.
 //
-// Windowing >7 halaman TIDAK ada di mockup (datanya cuma 7 halaman) --
+// Windowing >7 halaman TIDAK ada di mockup asal (datanya cuma 7 halaman) --
 // keputusan desain sendiri, pola umum: selalu 1 & halaman terakhir, 1 angka
 // di kiri-kanan halaman aktif, "…" untuk yang dilewati. Di-flag di laporan
 // akhir, bukan keputusan diam-diam.
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { CARD, INK, INK_FAINT, LINE, ACCENT_HOVER, ROW_HOVER, FONT_BODY, RADIUS } from '../../../../kit/tokens';
+import { CARD, INK, INK_FAINT, LINE, ACCENT_HOVER, ROW_HOVER, FONT_BODY, RADIUS } from './tokens';
 
 function pageList(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i);

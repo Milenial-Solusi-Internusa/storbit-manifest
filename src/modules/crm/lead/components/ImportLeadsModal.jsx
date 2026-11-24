@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Upload, Check, AlertTriangle, FileText, X } from 'lucide-react';
 import { Modal, FloatingSelect, SaveButton, OutlineBtn, PrimaryBtn } from '../../../../kit';
 import { INK, INK_SOFT, INK_FAINT, LINE, LINE_SOFT, HEAD_BG, SEMANTIC, FONT_BODY, FONT_HEAD, FONT_MONO, RADIUS, SP } from '../../../../kit/tokens';
-import Pager from './Pager';
+import Pager from '../../../../kit/Pager';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole } from '../../../../lib/roles';
