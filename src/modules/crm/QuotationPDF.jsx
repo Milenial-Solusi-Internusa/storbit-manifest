@@ -5,10 +5,11 @@
 // or internal_notes here.
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
 import { formatQuotationNo } from './quotationVersion';
+import { MSI_LOGO_URL } from '../../kit/brand';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
-const LOGO_URL = 'https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png';
+const LOGO_URL = MSI_LOGO_URL;
 const VAT_RATE = 0.011;
 
 

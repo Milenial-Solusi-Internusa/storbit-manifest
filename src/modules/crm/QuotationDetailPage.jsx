@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, Edit2, Download, Receipt, Send, Copy, GitBranch, CheckCircle2, XCircle, ClipboardCheck } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
+import { MSI_LOGO_URL } from '../../kit/brand';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove as isManagerOrAboveRole } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -1074,7 +1075,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #1B4D8A' }}>
             <div>
               <img
-                src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
+                src={MSI_LOGO_URL}
                 alt="MSI Logo"
                 style={{ height: '48px', marginBottom: '8px', display: 'block' }}
                 crossOrigin="anonymous"
@@ -1275,7 +1276,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             gap: '24px',
           }}>
             <img
-              src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
+              src={MSI_LOGO_URL}
               crossOrigin="anonymous"
               alt="MSI"
               style={{ height: '48px', filter: 'brightness(0) invert(1)', flexShrink: 0 }}

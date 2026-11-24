@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/useAuth';
+import { MSI_LOGO_URL } from '../kit/brand';
 
 // ─── Design tokens (from styles.css + storbit.css in design bundle) ───────
 const T = {
@@ -28,8 +29,7 @@ const T = {
 
 const PHOTO_URL =
   'https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/pexels-samuel-wolfl-628277-1427541.jpg';
-const LOGO_URL =
-  'https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png';
+const LOGO_URL = MSI_LOGO_URL;
 
 export default function Login() {
   // ── Auth logic — UNCHANGED ─────────────────────────────────────────────

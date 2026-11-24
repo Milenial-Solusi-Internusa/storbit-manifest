@@ -4,6 +4,7 @@
 // Brand: navy #144682, orange #E85A1E, cream #F6EFE3. No registered fonts —
 // Helvetica / Helvetica-Bold + Courier (mono), matching QuotationPDF/InquiryPDF.
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import { MSI_LOGO_URL } from '../../kit/brand';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -12,7 +13,7 @@ const INK = '#1B1B1B';
 const MUTE = '#6B7280';
 const LINE = '#E4DCCB';
 // Logo: MSI for all entities (per brief).
-const LOGO_URL = 'https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png';
+const LOGO_URL = MSI_LOGO_URL;
 
 function fmtDate(iso) {
   if (!iso) return '—';

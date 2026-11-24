@@ -49,6 +49,7 @@ import { getTodayWIB } from './lib/dateUtils';
 // dipakai KHUSUS merestyle kotak toast di bawah ke kotak mockup (tanpa
 // mengubah `PASTEL`, dipakai luas di tempat lain file ini).
 import { INK, WHITE, ACCENT, SEMANTIC, RADIUS } from './kit/tokens';
+import { MSI_LOGO_URL } from './kit/brand';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
 // AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
@@ -2905,7 +2906,7 @@ export default function StorbitManifest() {
               {/* ── LEFT: MSI logo ── */}
               <div className="lg:shrink-0">
                 <img
-                  src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
+                  src={MSI_LOGO_URL}
                   height="36"
                   alt="MSI"
                   style={{ height: '36px', width: 'auto', objectFit: 'contain', maxWidth: '120px', display: 'block' }}
